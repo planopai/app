@@ -12,15 +12,13 @@ import {
 
 type SalaKey = "sala_01" | "sala_02" | "sala_03";
 
-const GET_SENHA_ENDPOINT = "/api/php/get_senha.php"; // se precisar proxy, troque por /api/php/get_senha
+const GET_SENHA_ENDPOINT = "/api/php/get_senha.php"; // se precisar proxy: /api/php/get_senha
 
+// mesmo tom para ambos os botões (primary)
 const btnOutline =
-    "inline-flex items-center justify-center rounded-md border px-4 py-2 text-base font-semibold " +
-    "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50 disabled:pointer-events-none";
-
-const btnOutlineAlt =
-    "inline-flex items-center justify-center rounded-md border px-4 py-2 text-base font-semibold " +
-    "border-secondary text-secondary hover:bg-secondary/10 active:bg-secondary/20 disabled:opacity-50 disabled:pointer-events-none";
+    "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-base font-semibold " +
+    "border border-primary text-primary hover:bg-primary/10 active:bg-primary/20 " +
+    "disabled:opacity-60 disabled:pointer-events-none";
 
 export default function AcessoCompartilhamentoPage() {
     const [loadingSala, setLoadingSala] = useState<SalaKey | null>(null);
@@ -49,7 +47,10 @@ export default function AcessoCompartilhamentoPage() {
 
     const buildWhatsappUrl = (sala: SalaKey, senha: string) => {
         const salaFormatada = sala.replace("_", "-");
-        const texto = `Acesso Ao Sistema Velório Online - Plano PAI: Link de acesso: https://planoassistencialintegrado.com.br/velorio-online-${salaFormatada}/ Senha: ${senha}`;
+        const texto =
+            `Acesso Ao Sistema Velório Online - Plano PAI: ` +
+            `Link de acesso: https://planoassistencialintegrado.com.br/velorio-online-${salaFormatada}/ ` +
+            `Senha: ${senha}`;
         const encoded = encodeURIComponent(texto);
         return `https://api.whatsapp.com/send/?text=${encoded}`;
     };
@@ -62,12 +63,10 @@ export default function AcessoCompartilhamentoPage() {
             const res = await fetch(url, { cache: "no-store" });
             if (!res.ok) throw new Error(await res.text());
             const senha = (await res.text()).trim();
-
             if (!senha) throw new Error("Senha vazia retornada pela API.");
 
             const wa = buildWhatsappUrl(sala, senha);
-            window.open(wa, "_blank");
-
+            window.open(wa, "_blank", "noopener,noreferrer");
             setMsg({ type: "success", text: "Link de acesso preparado no WhatsApp." });
         } catch (e) {
             console.error(e);
@@ -79,7 +78,7 @@ export default function AcessoCompartilhamentoPage() {
 
     return (
         <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
-            {/* Título simples */}
+            {/* Título */}
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Acesso e Compartilhamento</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -112,7 +111,8 @@ export default function AcessoCompartilhamentoPage() {
                                 href={sala.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={btnOutline + " gap-2"}
+                                className={btnOutline}
+                                title="Abrir a sala em nova aba"
                             >
                                 <IconExternalLink className="size-5" />
                                 Acessar Sala
@@ -121,11 +121,13 @@ export default function AcessoCompartilhamentoPage() {
                             <button
                                 onClick={() => handleEnviarAcesso(sala.key)}
                                 disabled={loadingSala === sala.key}
-                                className={btnOutlineAlt + " gap-2"}
+                                className={btnOutline}
+                                aria-busy={loadingSala === sala.key}
+                                title="Gerar mensagem de acesso no WhatsApp"
                             >
                                 {loadingSala === sala.key ? (
                                     <>
-                                        <svg className="size-4 animate-spin" viewBox="0 0 24 24">
+                                        <svg className="size-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
                                             <circle
                                                 className="opacity-25"
                                                 cx="12"
