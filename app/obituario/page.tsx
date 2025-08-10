@@ -12,29 +12,27 @@ import {
     IconClock,
     IconX,
 } from "@tabler/icons-react";
-import type { StaticImageData } from "next/image";
 
-// ===== Imports de imagens locais (app/images) =====
-import M01 from "@/app/images/MM1.png";
-import M02 from "@/app/images/MM2.png";
-import M03 from "@/app/images/M3.png";
-import M04 from "@/app/images/M4.png";
-import F01 from "@/app/images/F1.png";
-import F02 from "@/app/images/F2.png";
-import F03 from "@/app/images/F3.png";
-import F04 from "@/app/images/F4.png";
-import I01 from "@/app/images/I1.png";
-import I02 from "@/app/images/I2.png";
-import I03 from "@/app/images/I3.png";
-import I04 from "@/app/images/I4.png";
-
-// ==================== Tipos & Constantes ====================
+/* ==================== Tipos & Constantes ==================== */
 type Formato = "vertical";
 type ModeloKey =
     | "modelo01" | "modelo02" | "modelo03" | "modelo04"
     | "modelo05" | "modelo06" | "modelo07" | "modelo08"
-    | "modelo09" | "modelo010" | "modelo011" | "modelo012"
+    | "modelo09"
     | "personalizado";
+
+/** IMAGENS EM public/obituario-modelos/ (same-origin, sem CORS) */
+const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
+    modelo01: "/obituario-modelos/MM1.png",
+    modelo02: "/obituario-modelos/MM2.png",
+    modelo03: "/obituario-modelos/M3.png",
+    modelo04: "/obituario-modelos/M4.png",
+    modelo05: "/obituario-modelos/F1.png",
+    modelo06: "/obituario-modelos/F2.png",
+    modelo07: "/obituario-modelos/F3.png",
+    modelo08: "/obituario-modelos/F4.png",
+    modelo09: "/obituario-modelos/I1.png",
+};
 
 const STEPS = [
     "Falecido",
@@ -44,27 +42,9 @@ const STEPS = [
     "Finalização",
 ] as const;
 
-// helper p/ extrair .src (Next transforma import de imagem em StaticImageData)
-const asSrc = (img: StaticImageData | string) =>
-    typeof img === "string" ? img : img.src;
+/* ==================== Utils (datas/horas) ==================== */
+const onlyDigits = (s: string) => s.replace(/\D+/g, "");
 
-const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
-    modelo01: asSrc(M01),
-    modelo02: asSrc(M02),
-    modelo03: asSrc(M03),
-    modelo04: asSrc(M04),
-    modelo05: asSrc(F01),
-    modelo06: asSrc(F02),
-    modelo07: asSrc(F03),
-    modelo08: asSrc(F04),
-    modelo09: asSrc(I01),
-    modelo010: asSrc(I02),
-    modelo011: asSrc(I03),
-    modelo012: asSrc(I04),
-};
-
-// ==================== Utils (datas/horas) ====================
-function onlyDigits(s: string) { return s.replace(/\D+/g, ""); }
 function maskDateBR(v: string) {
     const d = onlyDigits(v).slice(0, 8);
     const p1 = d.slice(0, 2);
@@ -72,31 +52,47 @@ function maskDateBR(v: string) {
     const p3 = d.slice(4, 8);
     return [p1, p2, p3].filter(Boolean).join("/");
 }
+
 function maskTime(v: string) {
     const d = onlyDigits(v).slice(0, 4);
     const p1 = d.slice(0, 2);
     const p2 = d.slice(2, 4);
     return [p1, p2].filter(Boolean).join(":");
 }
+
 function isoToBR(iso: string) {
     const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return "";
     const [, yyyy, mm, dd] = m;
     return `${dd}/${mm}/${yyyy}`;
 }
+
 function brToISO(br: string) {
     const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m) return "";
     const [, dd, mm, yyyy] = m;
     return `${yyyy}-${mm}-${dd}`;
 }
+
 function normalizeDateToBR(input: string) {
     if (!input) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return isoToBR(input);
     return maskDateBR(input);
 }
 
-// ==================== Inputs com digitação + picker ====================
+/** Normaliza “17:0”, “9:5”, “1700”, etc -> “HH:mm” */
+function normalizeHHMM(v: string) {
+    const d = onlyDigits(v);
+    if (!d) return "";
+    let hh = d.slice(0, 2);
+    let mm = d.slice(2, 4);
+    if (hh.length === 1) hh = "0" + hh;
+    if (!mm) mm = "00";
+    if (mm.length === 1) mm = mm + "0";
+    return `${hh}:${mm}`;
+}
+
+/* ==================== Inputs com digitação + picker ==================== */
 function SmartDateInput({
     label,
     valueBR,
@@ -112,7 +108,8 @@ function SmartDateInput({
 }) {
     const id = React.useId();
     const hiddenId = `${id}-native`;
-    const iso = brToISO(valueBR);
+    const iso = brToISO(valueBR); // "" se inválido
+
     return (
         <div>
             <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
@@ -137,7 +134,7 @@ function SmartDateInput({
                 >
                     <IconCalendar className="size-4" />
                 </button>
-                {/* só joga valor válido no input nativo */}
+                {/* Só passamos valor válido (ISO) no input nativo */}
                 <input
                     id={hiddenId}
                     type="date"
@@ -165,9 +162,8 @@ function SmartTimeInput({
 }) {
     const id = React.useId();
     const hiddenId = `${id}-native`;
-    const masked = maskTime(value);
-    // evita erro "17:0" no input time
-    const nativeValue = masked.length === 5 ? masked : "";
+    const safeTime = /^\d{2}:\d{2}$/.test(value) ? value : ""; // evita “17:0” no input time
+
     return (
         <div>
             <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
@@ -179,7 +175,7 @@ function SmartTimeInput({
                     autoComplete="off"
                     className="input w-full"
                     placeholder={placeholder}
-                    value={masked}
+                    value={value}
                     onChange={(e) => onChange(maskTime(e.target.value))}
                     required={required}
                 />
@@ -196,7 +192,7 @@ function SmartTimeInput({
                     id={hiddenId}
                     type="time"
                     className="sr-only"
-                    value={nativeValue}
+                    value={safeTime}
                     onChange={(e) => onChange(e.target.value)}
                 />
             </div>
@@ -204,7 +200,7 @@ function SmartTimeInput({
     );
 }
 
-// ==================== Página ====================
+/* ==================== Página ==================== */
 export default function ObituarioPage() {
     const [step, setStep] = React.useState(0);
     const stepsTotal = STEPS.length;
@@ -213,33 +209,24 @@ export default function ObituarioPage() {
 
     // estado do formulário
     const [form, setForm] = React.useState({
-        // step 0
         foto_falecido: null as File | null,
         foto_preto_branco: false,
         nome: "",
         data_nascimento: "",
         data_falecimento: "",
-
-        // step 1
         local_cerimonia: "",
         data_cerimonia: "",
         velorio_inicio: "",
         velorio_fim: "",
         fim_data_cerimonia: "",
-
-        // step 2
         data_sepultamento: "",
         hora_sepultamento: "",
         local_sepultamento: "",
-
-        // step 3
         nota_pesar: "",
         transmissao_inicio_data: "",
         transmissao_inicio_hora: "",
         transmissao_fim_data: "",
         transmissao_fim_hora: "",
-
-        // step 4
         formato: "vertical" as Formato,
         modelo_fundo: "modelo01" as ModeloKey,
         fundo_personalizado: null as File | null,
@@ -254,9 +241,25 @@ export default function ObituarioPage() {
         typeof window !== "undefined" ? localStorage.getItem("fontColor") || "#111827" : "#111827",
     );
 
-    // salva prefs
     React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontName", fontName); }, [fontName]);
     React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontColor", fontColor); }, [fontColor]);
+
+    const modelosOptions = React.useMemo(
+        () =>
+        ([
+            { value: "modelo01", label: "Masculino 01" },
+            { value: "modelo02", label: "Masculino 02" },
+            { value: "modelo03", label: "Masculino 03" },
+            { value: "modelo04", label: "Masculino 04" },
+            { value: "modelo05", label: "Feminino 01" },
+            { value: "modelo06", label: "Feminino 02" },
+            { value: "modelo07", label: "Feminino 03" },
+            { value: "modelo08", label: "Feminino 04" },
+            { value: "modelo09", label: "Infantil 01" },
+            { value: "personalizado", label: "Enviar Modelo" },
+        ] as { value: ModeloKey; label: string }[]),
+        [],
+    );
 
     const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
         setForm((f) => ({ ...f, [k]: v }));
@@ -387,41 +390,50 @@ export default function ObituarioPage() {
             const fimDataCer = normalizeDateToBR(form.fim_data_cerimonia);
             const dataSep = normalizeDateToBR(form.data_sepultamento);
 
+            const velorioInicio = form.velorio_inicio ? normalizeHHMM(form.velorio_inicio) : "";
+            const velorioFim = form.velorio_fim ? normalizeHHMM(form.velorio_fim) : "";
+            const horaSep = form.hora_sepultamento ? normalizeHHMM(form.hora_sepultamento) : "";
+
             if (form.formato === "vertical") {
                 ctx.textAlign = "left";
-                ctx.fillText(`Horário de Início: ${form.velorio_inicio}`, 110, 1360);
+                ctx.fillText(`Horário de Início: ${velorioInicio}`, 110, 1360);
                 ctx.fillText(`Data: ${dataCerimonia}`, 110, 1390);
-                ctx.fillText(`Horário de Término: ${form.velorio_fim}`, 110, 1420);
+                ctx.fillText(`Horário de Término: ${velorioFim}`, 110, 1420);
                 ctx.fillText(`Data: ${fimDataCer}`, 110, 1450);
                 ctx.fillText(`Local: ${form.local_cerimonia}`, 110, 1480);
 
                 ctx.textAlign = "left";
                 ctx.fillText(`Data: ${dataSep}`, canvas.width - 970, 1610);
-                ctx.fillText(`Hora: ${form.hora_sepultamento}`, canvas.width - 970, 1640);
+                ctx.fillText(`Hora: ${horaSep}`, canvas.width - 970, 1640);
                 ctx.fillText(`Local: ${form.local_sepultamento}`, canvas.width - 970, 1670);
             } else {
                 ctx.textAlign = "left";
-                ctx.fillText(`Horário de Início: ${form.velorio_inicio}`, 48, 602);
+                ctx.fillText(`Horário de Início: ${velorioInicio}`, 48, 602);
                 ctx.fillText(`Data: ${dataCerimonia}`, 48, 632);
-                ctx.fillText(`Horário de Término: ${form.velorio_fim}`, 48, 662);
+                ctx.fillText(`Horário de Término: ${velorioFim}`, 48, 662);
                 ctx.fillText(`Data: ${fimDataCer}`, 48, 692);
                 ctx.fillText(`Local: ${form.local_cerimonia}`, 48, 722);
 
                 ctx.textAlign = "right";
                 ctx.fillText(`Data: ${dataSep}`, canvas.width - 50, 602);
-                ctx.fillText(`Hora: ${form.hora_sepultamento}`, canvas.width - 50, 632);
+                ctx.fillText(`Hora: ${horaSep}`, canvas.width - 50, 632);
                 ctx.fillText(`Local: ${form.local_sepultamento}`, canvas.width - 50, 662);
             }
 
             // Transmissão (rodapé)
-            if (form.transmissao_inicio_data && form.transmissao_inicio_hora) {
+            const tInicioData = normalizeDateToBR(form.transmissao_inicio_data);
+            const tInicioHora = form.transmissao_inicio_hora ? normalizeHHMM(form.transmissao_inicio_hora) : "";
+            const tFimData = normalizeDateToBR(form.transmissao_fim_data);
+            const tFimHora = form.transmissao_fim_hora ? normalizeHHMM(form.transmissao_fim_hora) : "";
+
+            if (tInicioData && tInicioHora) {
                 ctx.textAlign = "center";
                 let baseY = form.formato === "vertical" ? 1750 : 760;
                 ctx.fillText(`Transmissão Online: Informações e senha com familiares`, canvas.width / 2, baseY);
                 baseY += 34;
-                let linha = `Início: ${normalizeDateToBR(form.transmissao_inicio_data)} ${form.transmissao_inicio_hora}`;
-                if (form.transmissao_fim_data && form.transmissao_fim_hora) {
-                    linha += ` | Fim: ${normalizeDateToBR(form.transmissao_fim_data)} ${form.transmissao_fim_hora}`;
+                let linha = `Início: ${tInicioData} ${tInicioHora}`;
+                if (tFimData && tFimHora) {
+                    linha += ` | Fim: ${tFimData} ${tFimHora}`;
                 }
                 ctx.fillText(linha, canvas.width / 2, baseY);
             }
@@ -441,7 +453,7 @@ export default function ObituarioPage() {
         a.click();
     }
 
-    // ==================== UI ====================
+    /* ==================== UI ==================== */
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             {/* estilos rápidos */}
@@ -723,7 +735,7 @@ export default function ObituarioPage() {
                                             value={form.modelo_fundo}
                                             onChange={(e) => set("modelo_fundo", e.target.value as ModeloKey)}
                                         >
-                                            {Object.keys(MODELOS).map((k) => (
+                                            {Object.entries(MODELOS).map(([k]) => (
                                                 <option key={k} value={k}>{k.replace("modelo", "Modelo ")}</option>
                                             ))}
                                             <option value="personalizado">Enviar Modelo</option>
@@ -874,7 +886,7 @@ export default function ObituarioPage() {
     );
 }
 
-// ==================== Helpers ====================
+/* ==================== Helpers ==================== */
 function drawWrapText(
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -904,13 +916,11 @@ function drawWrapText(
 function loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const img = new Image();
-
-        // Define crossOrigin somente se for URL absoluta e de outro domínio
+        // same-origin (caminhos de /public) NÃO precisa de crossOrigin
         const isAbsolute = /^https?:\/\//i.test(src);
-        if (isAbsolute && typeof location !== "undefined" && !src.startsWith(location.origin)) {
+        if (isAbsolute && !src.startsWith(location.origin)) {
             img.crossOrigin = "anonymous";
         }
-
         img.onload = () => resolve(img);
         img.onerror = (e) => reject(e);
         img.src = src;
