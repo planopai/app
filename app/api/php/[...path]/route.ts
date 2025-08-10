@@ -1,4 +1,4 @@
-// app/api/php/[...path]/route.ts  (ou src/app/...)
+// app/api/php/[...path]/route.ts
 import type { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -7,42 +7,92 @@ export const revalidate = 0;
 
 const TARGET_BASE = "https://planoassistencialintegrado.com.br";
 
+/** Headers que não devem ser repassados ao upstream */
+const HOP_BY_HOP = new Set([
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "accept-encoding", // evita problemas de decodificação
+    "content-length",  // será recalculado
+    "host",
+]);
+
+function buildUpstreamUrl(base: string, parts?: string[], search?: URLSearchParams) {
+    const path = "/" + (parts?.join("/") ?? "");
+    const url = new URL(base);
+    // Garante concatenação correta de path
+    url.pathname = new URL(path, base).pathname;
+    if (search) {
+        for (const [k, v] of search) url.searchParams.set(k, v);
+    }
+    return url;
+}
+
+function buildUpstreamHeaders(req: NextRequest) {
+    const headers = new Headers();
+    // Copia somente o que é seguro/útil
+    req.headers.forEach((v, k) => {
+        const key = k.toLowerCase();
+        if (!HOP_BY_HOP.has(key)) headers.set(key, v);
+    });
+    // Garante alguns cabeçalhos úteis
+    headers.set("x-requested-with", "XMLHttpRequest");
+    // Content-Type: apenas se existir no request original
+    const ct = req.headers.get("content-type");
+    if (ct) headers.set("content-type", ct);
+    return headers;
+}
+
 async function handler(
     req: NextRequest,
     { params }: { params: { path?: string[] } }
 ) {
-    const targetPath = "/" + (params.path?.join("/") ?? "");
-    const url = new URL(TARGET_BASE + targetPath);
-    // replica querystring
-    for (const [k, v] of req.nextUrl.searchParams) url.searchParams.set(k, v);
+    // Monta URL final do upstream
+    const upstreamUrl = buildUpstreamUrl(
+        TARGET_BASE,
+        params.path,
+        req.nextUrl.searchParams
+    );
 
-    // monta headers sem undefined
-    const headers = new Headers();
-    const ct = req.headers.get("content-type");
-    if (ct) headers.set("Content-Type", ct);
-    headers.set("X-Requested-With", "XMLHttpRequest");
-    const cookie = req.headers.get("cookie");
-    if (cookie) headers.set("cookie", cookie);
+    // Repassa headers (sem hop-by-hop)
+    const headers = buildUpstreamHeaders(req);
+
+    // Só envia body para métodos com corpo
+    const hasBody = !["GET", "HEAD"].includes(req.method.toUpperCase());
+    const body = hasBody ? await req.arrayBuffer() : undefined;
 
     const init: RequestInit = {
         method: req.method,
         headers,
-        body:
-            req.method === "GET" || req.method === "HEAD"
-                ? undefined
-                : await req.arrayBuffer(),
-        redirect: "manual",
+        body,
+        // "follow" resolve redirecionamentos no servidor
+        redirect: "follow",
+        // Evita cache no lado do servidor
+        cache: "no-store",
     };
 
-    const resp = await fetch(url.toString(), init);
+    const upstreamResp = await fetch(upstreamUrl.toString(), init);
 
-    // ajusta headers de saída (evita ERR_CONTENT_DECODING_FAILED)
-    const out = new Headers(resp.headers);
+    // Ajusta headers de saída (cliente)
+    const out = new Headers(upstreamResp.headers);
+    // Remove encodings e length (serão recalculados pelo Next)
     out.delete("content-encoding");
     out.delete("content-length");
+    out.delete("transfer-encoding");
+    out.delete("connection");
+    // Política de cache
     out.set("Cache-Control", "no-store");
 
-    return new Response(resp.body, { status: resp.status, headers: out });
+    // Retorna o corpo tal como veio do upstream
+    return new Response(upstreamResp.body, {
+        status: upstreamResp.status,
+        headers: out,
+    });
 }
 
 export {
@@ -52,4 +102,5 @@ export {
     handler as PATCH,
     handler as DELETE,
     handler as OPTIONS,
+    handler as HEAD,
 };

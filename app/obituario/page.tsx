@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React from "react";
 import {
     IconChevronLeft,
     IconChevronRight,
@@ -21,26 +21,31 @@ type ModeloKey =
     | "modelo09" | "modelo010" | "modelo011" | "modelo012"
     | "personalizado";
 
+const STEPS = [
+    "Falecido",
+    "Cerimônia",
+    "Sepultamento",
+    "Nota & Transmissão",
+    "Finalização",
+] as const;
+
+// helper para montar URL do proxy do WP
+const WP = (p: string) => `/api/wp${p}`;
+
 const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
-    modelo01: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/MM1.png",
-    modelo02: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/MM2.png",
-    modelo03: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/M3.png",
-    modelo04: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/M4.png",
-    modelo05: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/F1.png",
-    modelo06: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/F2.png",
-    modelo07: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/F3.png",
-    modelo08: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/F4.png",
-    modelo09: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/I1.png",
-    modelo010: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/I2.png",
-    modelo011: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/I3.png",
-    modelo012: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/I4.png",
+    modelo01: WP("/wp-content/uploads/2024/10/MM1.png"),
+    modelo02: WP("/wp-content/uploads/2024/10/MM2.png"),
+    modelo03: WP("/wp-content/uploads/2024/10/M3.png"),
+    modelo04: WP("/wp-content/uploads/2024/10/M4.png"),
+    modelo05: WP("/wp-content/uploads/2024/10/F1.png"),
+    modelo06: WP("/wp-content/uploads/2024/10/F2.png"),
+    modelo07: WP("/wp-content/uploads/2024/10/F3.png"),
+    modelo08: WP("/wp-content/uploads/2024/10/F4.png"),
+    modelo09: WP("/wp-content/uploads/2024/10/I1.png"),
+    modelo010: WP("/wp-content/uploads/2024/10/I2.png"),
+    modelo011: WP("/wp-content/uploads/2024/10/I3.png"),
+    modelo012: WP("/wp-content/uploads/2024/10/I4.png"),
 };
-
-const STEPS = ["Falecido", "Cerimônia", "Sepultamento", "Nota & Transmissão", "Finalização"];
-
-// formatos suportados (evita HEIC/HEIF)
-const SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
-type SupportedMime = typeof SUPPORTED_TYPES[number];
 
 /* ==================== Utils (datas/horas) ==================== */
 function onlyDigits(s: string) { return s.replace(/\D+/g, ""); }
@@ -71,15 +76,23 @@ function brToISO(br: string) {
 }
 function normalizeDateToBR(input: string) {
     if (!input) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return isoToBR(input);
+    if (/\d{4}-\d{2}-\d{2}/.test(input)) return isoToBR(input);
     return maskDateBR(input);
 }
 
 /* ==================== Inputs com digitação + picker ==================== */
 function SmartDateInput({
-    label, valueBR, onChange, required, placeholder = "dd/mm/aaaa",
+    label,
+    valueBR,
+    onChange,
+    required,
+    placeholder = "dd/mm/aaaa",
 }: {
-    label: string; valueBR: string; onChange: (br: string) => void; required?: boolean; placeholder?: string;
+    label: string;
+    valueBR: string;
+    onChange: (br: string) => void;
+    required?: boolean;
+    placeholder?: string;
 }) {
     const id = React.useId();
     const hiddenId = `${id}-native`;
@@ -120,9 +133,17 @@ function SmartDateInput({
 }
 
 function SmartTimeInput({
-    label, value, onChange, required, placeholder = "hh:mm",
+    label,
+    value,
+    onChange,
+    required,
+    placeholder = "hh:mm",
 }: {
-    label: string; value: string; onChange: (hhmm: string) => void; required?: boolean; placeholder?: string;
+    label: string;
+    value: string;
+    onChange: (hhmm: string) => void;
+    required?: boolean;
+    placeholder?: string;
 }) {
     const id = React.useId();
     const hiddenId = `${id}-native`;
@@ -164,53 +185,59 @@ function SmartTimeInput({
 
 /* ==================== Página ==================== */
 export default function ObituarioPage() {
-    const [step, setStep] = useState(0);
+    const [step, setStep] = React.useState(0);
     const stepsTotal = STEPS.length;
     const isFirst = step === 0;
     const isLast = step === stepsTotal - 1;
 
     // estado do formulário
-    const [form, setForm] = useState({
+    const [form, setForm] = React.useState({
+        // step 0
         foto_falecido: null as File | null,
         foto_preto_branco: false,
         nome: "",
         data_nascimento: "",
         data_falecimento: "",
+
+        // step 1
         local_cerimonia: "",
         data_cerimonia: "",
         velorio_inicio: "",
         velorio_fim: "",
         fim_data_cerimonia: "",
+
+        // step 2
         data_sepultamento: "",
         hora_sepultamento: "",
         local_sepultamento: "",
+
+        // step 3
         nota_pesar: "",
         transmissao_inicio_data: "",
         transmissao_inicio_hora: "",
         transmissao_fim_data: "",
         transmissao_fim_hora: "",
+
+        // step 4
         formato: "vertical" as Formato,
         modelo_fundo: "modelo01" as ModeloKey,
         fundo_personalizado: null as File | null,
     });
 
-    // preview da foto escolhida (pra “ficar” visualmente)
-    const [fotoPreview, setFotoPreview] = useState<string>("");
-    useEffect(() => () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview); }, [fotoPreview]);
-
-    const [previewSrc, setPreviewSrc] = useState<string>("");
-    const [settingsOpen, setSettingsOpen] = useState(false);
-    const [fontName, setFontName] = useState<string>(
+    const [previewSrc, setPreviewSrc] = React.useState<string>("");
+    const [settingsOpen, setSettingsOpen] = React.useState(false);
+    const [fontName, setFontName] = React.useState<string>(
         typeof window !== "undefined" ? localStorage.getItem("fontName") || "Nunito" : "Nunito",
     );
-    const [fontColor, setFontColor] = useState<string>(
+    const [fontColor, setFontColor] = React.useState<string>(
         typeof window !== "undefined" ? localStorage.getItem("fontColor") || "#111827" : "#111827",
     );
 
-    useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontName", fontName); }, [fontName]);
-    useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontColor", fontColor); }, [fontColor]);
+    // salva prefs
+    React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontName", fontName); }, [fontName]);
+    React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontColor", fontColor); }, [fontColor]);
 
-    const modelosOptions = useMemo(
+    const modelosOptions = React.useMemo(
         () =>
         ([
             { value: "modelo01", label: "Masculino Rede Social 01" },
@@ -233,6 +260,18 @@ export default function ObituarioPage() {
     const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
         setForm((f) => ({ ...f, [k]: v }));
 
+    // preview da foto selecionada
+    const [fotoPreview, setFotoPreview] = React.useState<string>("");
+    React.useEffect(() => {
+        if (!form.foto_falecido) {
+            setFotoPreview("");
+            return;
+        }
+        const url = URL.createObjectURL(form.foto_falecido);
+        setFotoPreview(url);
+        return () => URL.revokeObjectURL(url);
+    }, [form.foto_falecido]);
+
     function handlePrev() { if (!isFirst) setStep((s) => s - 1); }
     function handleNext() { if (!isLast) setStep((s) => s + 1); }
 
@@ -240,7 +279,7 @@ export default function ObituarioPage() {
         try {
             setPreviewSrc("");
 
-            // fundo
+            // escolhe fundo
             let bgUrl = MODELOS["modelo01"];
             if (form.modelo_fundo === "personalizado") {
                 if (!form.fundo_personalizado) {
@@ -252,18 +291,6 @@ export default function ObituarioPage() {
                 bgUrl = MODELOS[form.modelo_fundo as keyof typeof MODELOS] ?? MODELOS["modelo01"];
             }
 
-            // validação básica
-            if (!form.foto_falecido) {
-                alert("Selecione a foto do falecido.");
-                setStep(0);
-                return;
-            }
-            if (!form.nome || !form.data_nascimento || !form.data_falecimento) {
-                alert("Preencha os dados do falecido.");
-                setStep(0);
-                return;
-            }
-
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             if (!ctx) throw new Error("Canvas não suportado.");
@@ -271,10 +298,11 @@ export default function ObituarioPage() {
             if (form.formato === "vertical") { canvas.width = 1080; canvas.height = 1920; }
             else { canvas.width = 928; canvas.height = 824; }
 
-            // fundo branco (evita “tela preta” enquanto carrega)
+            // fundo branco antes do bg (evita “tela preta”)
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+            // carrega e desenha fundo
             const bg = await loadImage(bgUrl);
             ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
@@ -291,7 +319,7 @@ export default function ObituarioPage() {
             ctx.font = `${fontSizeName}px ${_fontName}`;
             ctx.fillText(form.nome, canvas.width / 2, form.formato === "vertical" ? 1000 : 80);
 
-            // Datas nascimento/falecimento
+            // Datas Nasc/Fal
             ctx.font = `${fontSizeDetails}px ${_fontName}`;
             if (form.formato === "vertical") {
                 ctx.fillText(`${normalizeDateToBR(form.data_nascimento)}`, canvas.width / 2 - 180, 1120);
@@ -303,41 +331,39 @@ export default function ObituarioPage() {
 
             // Foto circular
             if (form.foto_falecido) {
-                const imgURL = fotoPreview || URL.createObjectURL(form.foto_falecido);
-                try {
-                    const img = await loadImage(imgURL);
-                    const radius = form.formato === "vertical" ? 270 : 130;
-                    const x = form.formato === "vertical" ? canvas.width / 2 : 150;
-                    const y = form.formato === "vertical" ? 620 : 345;
+                const imgURL = URL.createObjectURL(form.foto_falecido);
+                const img = await loadImage(imgURL);
+                const radius = form.formato === "vertical" ? 270 : 130;
+                const x = form.formato === "vertical" ? canvas.width / 2 : 150;
+                const y = form.formato === "vertical" ? 620 : 345;
 
-                    const buff = document.createElement("canvas");
-                    buff.width = buff.height = radius * 2;
-                    const bctx = buff.getContext("2d")!;
-                    bctx.save();
-                    bctx.beginPath();
-                    bctx.arc(radius, radius, radius, 0, Math.PI * 2);
-                    bctx.clip();
-                    bctx.drawImage(img, 0, 0, radius * 2, radius * 2);
+                const buff = document.createElement("canvas");
+                buff.width = buff.height = radius * 2;
+                const bctx = buff.getContext("2d")!;
+                bctx.save();
+                bctx.beginPath();
+                bctx.arc(radius, radius, radius, 0, Math.PI * 2);
+                bctx.clip();
+                bctx.drawImage(img, 0, 0, radius * 2, radius * 2);
 
-                    if (form.foto_preto_branco) {
-                        const id = bctx.getImageData(0, 0, buff.width, buff.height);
-                        const d = id.data;
-                        for (let i = 0; i < d.length; i += 4) {
-                            const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-                            d[i] = avg; d[i + 1] = avg; d[i + 2] = avg;
-                        }
-                        bctx.putImageData(id, 0, 0);
+                if (form.foto_preto_branco) {
+                    const id = bctx.getImageData(0, 0, buff.width, buff.height);
+                    const d = id.data;
+                    for (let i = 0; i < d.length; i += 4) {
+                        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+                        d[i] = avg; d[i + 1] = avg; d[i + 2] = avg;
                     }
-
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.arc(x, y, radius, 0, Math.PI * 2);
-                    ctx.clip();
-                    ctx.drawImage(buff, x - radius, y - radius);
-                    ctx.restore();
-                } finally {
-                    if (!fotoPreview) URL.revokeObjectURL(imgURL);
+                    bctx.putImageData(id, 0, 0);
                 }
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(buff, x - radius, y - radius);
+                ctx.restore();
+
+                URL.revokeObjectURL(imgURL);
             }
 
             // Nota de pesar
@@ -428,39 +454,38 @@ export default function ObituarioPage() {
         .card { border: 1px solid hsl(var(--border, 214 32% 91%)); background: hsl(var(--card, 0 0% 100%)/.7);
                 backdrop-filter: blur(6px); border-radius: 1rem; box-shadow: 0 10px 20px rgba(0,0,0,.04); }
         .step-dot { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; font-size: .8rem; }
+        /* Stepper responsivo: rolagem horizontal no mobile */
+        .stepper { display: flex; gap: .75rem; overflow-x: auto; padding-bottom: .25rem; scroll-snap-type: x mandatory; }
+        .stepper > * { scroll-snap-align: start; flex: 0 0 auto; }
+        .step-label { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media (min-width: 640px) { .step-label { max-width: 180px; } }
       `}</style>
 
-            {/* Header + progress (mobile compacto + desktop completo) */}
+            {/* Header + progress */}
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Gerar Obituário</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Preencha as etapas, gere a arte e faça o download.</p>
             </header>
 
+            {/* Stepper */}
             <div className="mb-6">
-                {/* Compacto no mobile */}
-                <div className="flex items-center justify-between text-xs sm:text-sm sm:hidden">
-                    <span className="font-medium">Etapa {step + 1} de {stepsTotal}</span>
-                    <span className="text-muted-foreground">{STEPS[step]}</span>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted sm:mt-3">
-                    <div className="h-full bg-blue-600 transition-all" style={{ width: `${((step + 1) / stepsTotal) * 100}%` }} />
-                </div>
-
-                {/* Completo a partir de sm */}
-                <div className="mt-3 hidden flex-wrap items-center gap-3 sm:flex">
+                <div className="stepper">
                     {STEPS.map((label, i) => {
                         const active = i === step;
                         const done = i < step;
                         return (
-                            <div key={label} className="flex items-center gap-3">
+                            <div key={label} className="flex items-center gap-2">
                                 <div className={`step-dot ${active ? "bg-blue-600 text-white" : done ? "bg-blue-100 text-blue-700" : "bg-muted text-foreground/60"}`} aria-current={active ? "step" : undefined}>
                                     {i + 1}
                                 </div>
-                                <div className={`text-sm ${active ? "font-semibold" : "text-muted-foreground"}`}>{label}</div>
+                                <div className={`step-label text-sm ${active ? "font-semibold" : "text-muted-foreground"}`}>{label}</div>
                                 {i < STEPS.length - 1 && <div className="h-px w-10 bg-muted" />}
                             </div>
                         );
                     })}
+                </div>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div className="h-full bg-blue-600 transition-all" style={{ width: `${((step + 1) / stepsTotal) * 100}%` }} />
                 </div>
             </div>
 
@@ -476,60 +501,45 @@ export default function ObituarioPage() {
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm">Foto do Falecido</label>
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted">
-                                                <IconPhoto className="size-4" />
-                                                <span>Selecionar imagem</span>
-                                                <input
-                                                    type="file"
-                                                    accept="image/jpeg,image/png,image/webp,image/gif"
-                                                    capture="environment"
-                                                    className="hidden"
-                                                    onChange={(e) => {
-                                                        const file = e.target.files?.[0] ?? null;
-                                                        if (fotoPreview) URL.revokeObjectURL(fotoPreview);
-                                                        if (!file) {
-                                                            set("foto_falecido", null);
-                                                            setFotoPreview("");
-                                                            return;
-                                                        }
-                                                        const isHeic = /heic|heif/i.test(file.type) || /\.hei[c|f]$/i.test(file.name);
-                                                        if (isHeic || !SUPPORTED_TYPES.includes(file.type as SupportedMime)) {
-                                                            alert("Formato de imagem não suportado (ex.: HEIC). Use JPEG/PNG/WEBP.");
-                                                            e.currentTarget.value = "";
-                                                            set("foto_falecido", null);
-                                                            setFotoPreview("");
-                                                            return;
-                                                        }
-                                                        set("foto_falecido", file);
-                                                        setFotoPreview(URL.createObjectURL(file));
-                                                    }}
-                                                    required
-                                                />
-                                            </label>
+                                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                                            <div className="flex items-center gap-3">
+                                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted">
+                                                    <IconPhoto className="size-4" />
+                                                    <span>Selecionar imagem</span>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        required
+                                                        className="hidden"
+                                                        onChange={(e) => set("foto_falecido", e.target.files?.[0] ?? null)}
+                                                    />
+                                                </label>
+                                                {form.foto_falecido && (
+                                                    <button
+                                                        type="button"
+                                                        className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                                        onClick={() => set("foto_falecido", null)}
+                                                    >
+                                                        Remover
+                                                    </button>
+                                                )}
+                                            </div>
 
-                                            {fotoPreview && (
+                                            {/* Preview da imagem (miniatura) */}
+                                            {fotoPreview ? (
                                                 <div className="flex items-center gap-3">
                                                     <img
                                                         src={fotoPreview}
-                                                        alt="Pré-visualização"
-                                                        className="h-12 w-12 rounded-full border object-cover"
+                                                        alt="Pré-visualização da foto"
+                                                        className="h-12 w-12 rounded-md object-cover border"
                                                     />
-                                                    <span className="text-xs text-muted-foreground max-w-[180px] truncate">
+                                                    <div className="text-xs text-muted-foreground max-w-[160px] truncate">
                                                         {form.foto_falecido?.name}
-                                                    </span>
+                                                    </div>
                                                 </div>
+                                            ) : (
+                                                <div className="text-xs text-muted-foreground">Nenhuma imagem selecionada</div>
                                             )}
-
-                                            <label className="inline-flex items-center gap-2 text-sm">
-                                                <input
-                                                    type="checkbox"
-                                                    className="h-4 w-4"
-                                                    checked={form.foto_preto_branco}
-                                                    onChange={(e) => set("foto_preto_branco", e.target.checked)}
-                                                />
-                                                Preto/Branco
-                                            </label>
                                         </div>
                                     </div>
 
@@ -557,6 +567,16 @@ export default function ObituarioPage() {
                                         required
                                     />
                                 </div>
+
+                                <label className="inline-flex items-center gap-2 text-sm">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4"
+                                        checked={form.foto_preto_branco}
+                                        onChange={(e) => set("foto_preto_branco", e.target.checked)}
+                                    />
+                                    Converter foto para Preto/Branco
+                                </label>
                             </fieldset>
                         )}
 
@@ -564,6 +584,7 @@ export default function ObituarioPage() {
                         {step === 1 && (
                             <fieldset className="space-y-4">
                                 <legend className="mb-2 text-lg font-semibold">Informações do Velório e Cerimônia</legend>
+
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm">Local da Cerimônia</label>
@@ -681,6 +702,7 @@ export default function ObituarioPage() {
                         {step === 4 && (
                             <fieldset className="space-y-4">
                                 <legend className="mb-2 text-lg font-semibold">Configurações Finais</legend>
+
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div>
                                         <label className="mb-1 block text-sm">Formato</label>
@@ -700,9 +722,10 @@ export default function ObituarioPage() {
                                             value={form.modelo_fundo}
                                             onChange={(e) => set("modelo_fundo", e.target.value as ModeloKey)}
                                         >
-                                            {modelosOptions.map((m) => (
-                                                <option key={m.value} value={m.value}>{m.label}</option>
+                                            {Object.keys(MODELOS).map((k) => (
+                                                <option key={k} value={k}>{k.replace("modelo", "Modelo ")}</option>
                                             ))}
+                                            <option value="personalizado">Enviar Modelo</option>
                                         </select>
                                     </div>
 
@@ -711,7 +734,7 @@ export default function ObituarioPage() {
                                             <label className="mb-1 block text-sm">Enviar Fundo Personalizado</label>
                                             <input
                                                 type="file"
-                                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                                accept="image/*"
                                                 className="input"
                                                 onChange={(e) => set("fundo_personalizado", e.target.files?.[0] ?? null)}
                                             />
@@ -724,18 +747,33 @@ export default function ObituarioPage() {
                         {/* AÇÕES DO WIZARD */}
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                             <div className="flex gap-2">
-                                <button type="button" onClick={handlePrev} disabled={isFirst} className="btn inline-flex items-center gap-2">
-                                    <IconChevronLeft className="size-4" /> Anterior
+                                <button
+                                    type="button"
+                                    onClick={handlePrev}
+                                    disabled={isFirst}
+                                    className="btn inline-flex items-center gap-2"
+                                >
+                                    <IconChevronLeft className="size-4" />
+                                    Anterior
                                 </button>
 
                                 {!isLast && (
-                                    <button type="button" onClick={handleNext} className="btn btn-primary inline-flex items-center gap-2">
-                                        Próximo <IconChevronRight className="size-4" />
+                                    <button
+                                        type="button"
+                                        onClick={handleNext}
+                                        className="btn btn-primary inline-flex items-center gap-2"
+                                    >
+                                        Próximo
+                                        <IconChevronRight className="size-4" />
                                     </button>
                                 )}
 
                                 {isLast && (
-                                    <button type="button" onClick={generate} className="btn btn-primary inline-flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={generate}
+                                        className="btn btn-primary inline-flex items-center gap-2"
+                                    >
                                         Gerar Obituário
                                     </button>
                                 )}
@@ -747,7 +785,8 @@ export default function ObituarioPage() {
                                 className="btn inline-flex items-center gap-2"
                                 title="Configurações"
                             >
-                                <IconSettings className="size-4" /> Configurações
+                                <IconSettings className="size-4" />
+                                Configurações
                             </button>
                         </div>
                     </form>
@@ -766,7 +805,8 @@ export default function ObituarioPage() {
                             />
                             <div className="mt-4 flex justify-center">
                                 <button onClick={download} className="btn btn-primary inline-flex items-center gap-2">
-                                    <IconDownload className="size-4" /> Baixar Obituário
+                                    <IconDownload className="size-4" />
+                                    Baixar Obituário
                                 </button>
                             </div>
                         </>
@@ -792,7 +832,11 @@ export default function ObituarioPage() {
                         <div className="space-y-4">
                             <label className="block text-sm">
                                 Fonte
-                                <select className="input mt-1" value={fontName} onChange={(e) => setFontName(e.target.value)}>
+                                <select
+                                    className="input mt-1"
+                                    value={fontName}
+                                    onChange={(e) => setFontName(e.target.value)}
+                                >
                                     <option value="Nunito">Nunito</option>
                                     <option value="Roboto">Roboto</option>
                                     <option value="Arial">Arial</option>
@@ -859,7 +903,13 @@ function drawWrapText(
 function loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.crossOrigin = "anonymous"; // se o host permitir, evita canvas taint
+
+        // Define crossOrigin somente se for URL absoluta e de outro domínio
+        const isAbsolute = /^https?:\/\//i.test(src);
+        if (isAbsolute && !src.startsWith(location.origin)) {
+            img.crossOrigin = "anonymous";
+        }
+
         img.onload = () => resolve(img);
         img.onerror = (e) => reject(e);
         img.src = src;
