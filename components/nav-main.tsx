@@ -15,7 +15,7 @@ import {
 
 export function NavMain({
   items,
-  iconClass = "size-5 lg:size-6",     // <— ajuste aqui o tamanho padrão dos ícones
+  iconClass = "size-7 lg:size-8",     // <— ajuste aqui o tamanho padrão dos ícones
   textClass = "text-sm lg:text-base",   // <— ajuste aqui o tamanho padrão dos títulos
   itemClass = "gap-2",                   // espaçamento entre ícone/texto
 }: {
