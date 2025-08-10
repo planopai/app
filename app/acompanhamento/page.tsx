@@ -15,8 +15,8 @@ type Registro = {
     convenio?: string;
     urna?: string;
     roupa?: string;
-    assistencia?: string;
-    tanato?: string;
+    assistencia?: string; // "Sim" | "Não"
+    tanato?: string;      // "Sim" | "Não"
     local?: string;
     local_velorio?: string;
     data_inicio_velorio?: string;
@@ -24,6 +24,12 @@ type Registro = {
     hora_inicio_velorio?: string;
     hora_fim_velorio?: string;
     observacao?: string;
+
+    // Materiais (opcional)
+    materiais_json?: string;
+    materiais_cadeiras_qtd?: string | number;
+    materiais_bebedouros_qtd?: string | number;
+
     [k: string]: any;
 };
 
@@ -35,15 +41,20 @@ type Aviso = {
     finalizado?: number;
 };
 
+type MateriaisState = {
+    cadeiras: { checked: boolean; qtd: number };
+    bebedouros: { checked: boolean; qtd: number };
+};
+
 /* -----------------------------------------------------------
-   Constantes / helpers (mantendo a lógica original)
+   Constantes / helpers
 ----------------------------------------------------------- */
 const wizardStepTitles = ["Atendimento", "Itens", "Velório 01", "Velório 02"];
 const wizardStepIndexes = [
-    [0, 1, 2, 3, 14],
-    [4, 5, 6, 7, 14],
-    [8, 9, 10, 14],
-    [11, 12, 13, 14],
+    [0, 1, 2, 3, 14], // Atendimento
+    [4, 5, 6, 7, 14], // Itens
+    [8, 9, 10, 14],   // Velório 01
+    [11, 12, 13, 14], // Velório 02
 ];
 
 const steps = [
@@ -160,6 +171,12 @@ function acaoToStatus(acao: string) {
     return map[acao] ?? "fase01";
 }
 
+function isTanatoNo(v?: string) {
+    if (!v) return false;
+    const s = v.trim().toLowerCase();
+    return s === "não" || s === "nao" || s === "n";
+}
+
 /* -----------------------------------------------------------
    Componentes auxiliares
 ----------------------------------------------------------- */
@@ -240,6 +257,17 @@ export default function AcompanhamentoPage() {
     const [wizardData, setWizardData] = useState<Registro>({});
     const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
+    // para controlar os selects que mudam UI (assistencia/tanato)
+    const [assistenciaVal, setAssistenciaVal] = useState<string>("");
+    const [tanatoVal, setTanatoVal] = useState<string>("");
+
+    // Materiais
+    const [materiaisOpen, setMateriaisOpen] = useState(false);
+    const [materiais, setMateriais] = useState<MateriaisState>({
+        cadeiras: { checked: false, qtd: 0 },
+        bebedouros: { checked: false, qtd: 0 },
+    });
+
     // Ações
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoIdx, setAcaoIdx] = useState<number | null>(null);
@@ -273,7 +301,29 @@ export default function AcompanhamentoPage() {
     }, []);
 
     const enviarRegistroPHP = useCallback((data: any) => {
-        const body = { ...data, local: data.local || "" };
+        // achata materiais
+        let materiais_json = "";
+        let materiais_cadeiras_qtd = "";
+        let materiais_bebedouros_qtd = "";
+
+        if (data.materiais) {
+            materiais_json = JSON.stringify(data.materiais);
+            if (data.materiais.cadeiras?.checked) {
+                materiais_cadeiras_qtd = String(data.materiais.cadeiras.qtd ?? "");
+            }
+            if (data.materiais.bebedouros?.checked) {
+                materiais_bebedouros_qtd = String(data.materiais.bebedouros.qtd ?? "");
+            }
+        }
+
+        const body = {
+            ...data,
+            local: data.local || "",
+            materiais_json,
+            materiais_cadeiras_qtd,
+            materiais_bebedouros_qtd,
+        };
+
         return fetch("/api/php/informativo.php?listar=1&_nocache=", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -308,6 +358,7 @@ export default function AcompanhamentoPage() {
                 setWizardOpen(false);
                 setAcaoOpen(false);
                 setInfoOpen(false);
+                setMateriaisOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
@@ -321,6 +372,37 @@ export default function AcompanhamentoPage() {
     );
 
     /* -------------------- Wizard -------------------- */
+    const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
+        // tenta json
+        if (r.materiais_json) {
+            try {
+                const parsed = JSON.parse(String(r.materiais_json));
+                return {
+                    cadeiras: {
+                        checked: !!parsed?.cadeiras?.checked || Number(r.materiais_cadeiras_qtd) > 0,
+                        qtd: Number(parsed?.cadeiras?.qtd ?? r.materiais_cadeiras_qtd ?? 0),
+                    },
+                    bebedouros: {
+                        checked: !!parsed?.bebedouros?.checked || Number(r.materiais_bebedouros_qtd) > 0,
+                        qtd: Number(parsed?.bebedouros?.qtd ?? r.materiais_bebedouros_qtd ?? 0),
+                    },
+                };
+            } catch {
+                // cai para os campos achatados
+            }
+        }
+        return {
+            cadeiras: {
+                checked: Number(r.materiais_cadeiras_qtd) > 0,
+                qtd: Number(r.materiais_cadeiras_qtd ?? 0),
+            },
+            bebedouros: {
+                checked: Number(r.materiais_bebedouros_qtd) > 0,
+                qtd: Number(r.materiais_bebedouros_qtd ?? 0),
+            },
+        };
+    };
+
     const abrirWizard = useCallback(
         (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
             const editing = tipo === "editar";
@@ -333,16 +415,31 @@ export default function AcompanhamentoPage() {
 
             if (editing && idx !== null && registros[idx]) {
                 const r = registros[idx];
+                // preenche TODOS os campos existentes do registro diretamente
                 const data: Registro = {};
-                steps.forEach((s) => {
-                    
-                    
+                steps.forEach((s: any) => {
+                    (data as any)[s.id] = (r as any)[s.id] ?? "";
                 });
                 data.id = r.id;
+
+                // materiais
+                const mats = parseMateriaisFromRegistro(r);
+                setMateriais(mats);
+                // também guarda no wizardData
+                (data as any).materiais = mats;
+
                 setWizardData(data);
+                setAssistenciaVal(String((r.assistencia ?? "") as string));
+                setTanatoVal(String((r.tanato ?? "") as string));
             } else {
-                setWizardData({});
+                const empty: Registro = {};
+                steps.forEach((s: any) => ((empty as any)[s.id] = ""));
+                setWizardData(empty);
+                setMateriais({ cadeiras: { checked: false, qtd: 0 }, bebedouros: { checked: false, qtd: 0 } });
+                setAssistenciaVal("");
+                setTanatoVal("");
             }
+
             setWizardOpen(true);
         },
         [registros]
@@ -351,20 +448,26 @@ export default function AcompanhamentoPage() {
     const salvarGrupoWizard = useCallback(() => {
         const grupo = wizardStepIndexes[wizardStep];
         const next = { ...wizardData };
+
         for (const idx of grupo) {
             const s = steps[idx] as any;
             const el = document.getElementById("wizard-" + s.id) as HTMLInputElement | null;
             const v = (el?.value ?? "").trim();
+
             if (obrigatorios.includes(s.id) && !v) {
                 el?.focus();
                 setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
                 return false;
             }
-            next[s.id] = v;
+            (next as any)[s.id] = v;
         }
+
+        // garante que materiais atuais fiquem no wizardData
+        (next as any).materiais = materiais;
+
         setWizardData(next);
         return true;
-    }, [wizardData, wizardStep]);
+    }, [wizardData, wizardStep, materiais]);
 
     const concluirWizard = useCallback(async () => {
         if (!salvarGrupoWizard()) return;
@@ -385,7 +488,7 @@ export default function AcompanhamentoPage() {
             }
         }
 
-        const payload = { ...wizardData, acao: wizardEditing ? "editar" : "novo" };
+        const payload = { ...wizardData, materiais, acao: wizardEditing ? "editar" : "novo" };
         const json = await enviarRegistroPHP(payload);
         if (json?.sucesso) {
             setWizardMsg({ text: "Registro salvo!", ok: true });
@@ -394,7 +497,7 @@ export default function AcompanhamentoPage() {
         } else {
             setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
         }
-    }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros]);
+    }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros, materiais]);
 
     /* -------------------- Ações (status) -------------------- */
     const abrirPopupAcao = useCallback(
@@ -402,43 +505,45 @@ export default function AcompanhamentoPage() {
             setAcaoMsg(null);
             setAcaoIdx(idx);
 
-            const registro = registros[idx];
-            if (!registro) return;
-
-            if (registro.status === "fase10") {
-                setAcaoOpen(false);
-                return;
-            }
+            // agora SEM bloquear fase10 (precisamos mostrar "Material Recolhido")
             setAcaoOpen(true);
         },
-        [registros]
+        []
     );
 
     const proximaFase = useCallback(
         (r: Registro) => {
             const atual = r.status || "fase00";
+            // encontra o próximo válido considerando regras
             let nextIdx = fases.indexOf(atual as any) + 1;
-            const esconderTransportando = salasMemorial.includes((r.local_velorio || "").trim());
-            if (esconderTransportando && fases[nextIdx] === "fase07") nextIdx++;
-            return fases[nextIdx] ?? null;
+
+            const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
+            const skipConservacao = isTanatoNo(r.tanato);
+
+            while (nextIdx < fases.length) {
+                const next = fases[nextIdx];
+                if (skipTransportando && next === "fase07") {
+                    nextIdx++;
+                    continue;
+                }
+                if (skipConservacao && (next === "fase03" || next === "fase04")) {
+                    nextIdx++;
+                    continue;
+                }
+                return next;
+            }
+            return null;
         },
         []
     );
 
     const registrarAcao = useCallback(
         async (acao: string) => {
-            if (acao === "fase10") {
-                const ok = window.confirm(
-                    "O material desse serviço foi recolhido?\n(se SIM, a ação será concluída)"
-                );
-                if (!ok) return;
-            } else {
-                const ok = window.confirm("Deseja confirmar essa ação?");
-                if (!ok) return;
-            }
-
             if (acaoIdx == null || !registros[acaoIdx]) return;
             const id = registros[acaoIdx].id;
+
+            const ok = window.confirm("Deseja confirmar essa ação?");
+            if (!ok) return;
 
             const json = await enviarRegistroPHP({ acao: "atualizar_status", id, status: acao });
             if (json?.sucesso) {
@@ -446,7 +551,7 @@ export default function AcompanhamentoPage() {
                 fetchRegistros();
                 setTimeout(() => {
                     setAcaoOpen(false);
-                    if (acao !== "fase10") setTimeout(() => setAcaoOpen(true), 100);
+                    if (acao !== "fase10") setTimeout(() => setAcaoOpen(true), 120);
                 }, 600);
             } else {
                 setAcaoMsg({ text: "Erro ao atualizar status.", ok: false });
@@ -454,6 +559,23 @@ export default function AcompanhamentoPage() {
         },
         [acaoIdx, registros, enviarRegistroPHP, fetchRegistros]
     );
+
+    const registrarMaterialRecolhido = useCallback(async () => {
+        if (acaoIdx == null || !registros[acaoIdx]) return;
+        const id = registros[acaoIdx].id;
+
+        const ok = window.confirm("Confirmar material recolhido?");
+        if (!ok) return;
+
+        const json = await enviarRegistroPHP({ acao: "material_recolhido", id });
+        if (json?.sucesso) {
+            setAcaoMsg({ text: "Material marcado como recolhido.", ok: true });
+            fetchRegistros();
+            setTimeout(() => setAcaoOpen(false), 600);
+        } else {
+            setAcaoMsg({ text: "Erro ao registrar recolhimento.", ok: false });
+        }
+    }, [acaoIdx, registros, enviarRegistroPHP, fetchRegistros]);
 
     /* -------------------- Info Etapas -------------------- */
     const abrirInfoEtapas = useCallback((idx: number) => {
@@ -649,9 +771,7 @@ export default function AcompanhamentoPage() {
                                     onSave={(t) => editarAviso(a.id, t)}
                                     className="min-w-[220px] flex-1"
                                 />
-                                <span className="text-xs opacity-70">
-                                    {new Date(a.criado_em).toLocaleString()}
-                                </span>
+                                <span className="text-xs opacity-70">{new Date(a.criado_em).toLocaleString()}</span>
                                 <div className="ml-auto flex gap-2">
                                     <button className="rounded-md border px-2 py-1 text-xs" onClick={() => excluirAviso(a.id)}>
                                         Excluir
@@ -681,6 +801,7 @@ export default function AcompanhamentoPage() {
                             const val = (wizardData as any)[s.id] ?? "";
                             const id = "wizard-" + s.id;
 
+                            // Input/Date/Time
                             if (s.type === "input" || s.type === "date" || s.type === "time") {
                                 return (
                                     <div key={id}>
@@ -699,7 +820,83 @@ export default function AcompanhamentoPage() {
                                     </div>
                                 );
                             }
+
+                            // Selects
                             if (s.type === "select") {
+                                // Assistência com botão Materiais
+                                if (s.id === "assistencia") {
+                                    return (
+                                        <div key={id}>
+                                            <FieldLabel>
+                                                {s.label}
+                                                {obrigatorios.includes(s.id) ? " *" : ""}
+                                            </FieldLabel>
+                                            <div className="flex items-center gap-2">
+                                                <select
+                                                    id={id}
+                                                    name={s.id}
+                                                    value={assistenciaVal || val}
+                                                    onChange={(e) => setAssistenciaVal(e.target.value)}
+                                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                                >
+                                                    {s.options.map((opt: string) => (
+                                                        <option key={opt} value={opt}>
+                                                            {opt}
+                                                        </option>
+                                                    ))}
+                                                </select>
+
+                                                {((assistenciaVal || val) === "Sim") && (
+                                                    <button
+                                                        type="button"
+                                                        className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                                        onClick={() => setMateriaisOpen(true)}
+                                                        title="Selecionar materiais"
+                                                    >
+                                                        Materiais
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Indicação rápida de materiais já selecionados */}
+                                            {((assistenciaVal || val) === "Sim") && (materiais.cadeiras.checked || materiais.bebedouros.checked) && (
+                                                <div className="mt-2 text-xs text-muted-foreground">
+                                                    Selecionados:&nbsp;
+                                                    {materiais.cadeiras.checked && `Cadeiras (${materiais.cadeiras.qtd})`}
+                                                    {materiais.cadeiras.checked && materiais.bebedouros.checked && " • "}
+                                                    {materiais.bebedouros.checked && `Bebedouros (${materiais.bebedouros.qtd})`}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                // Tanatopraxia (controlada para ocultar fases depois)
+                                if (s.id === "tanato") {
+                                    return (
+                                        <div key={id}>
+                                            <FieldLabel>
+                                                {s.label}
+                                                {obrigatorios.includes(s.id) ? " *" : ""}
+                                            </FieldLabel>
+                                            <select
+                                                id={id}
+                                                name={s.id}
+                                                value={tanatoVal || val}
+                                                onChange={(e) => setTanatoVal(e.target.value)}
+                                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                            >
+                                                {s.options.map((opt: string) => (
+                                                    <option key={opt} value={opt}>
+                                                        {opt}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                }
+
+                                // demais selects
                                 return (
                                     <div key={id}>
                                         <FieldLabel>
@@ -721,6 +918,8 @@ export default function AcompanhamentoPage() {
                                     </div>
                                 );
                             }
+
+                            // Datalist
                             if (s.type === "datalist") {
                                 return (
                                     <div key={id}>
@@ -741,6 +940,7 @@ export default function AcompanhamentoPage() {
                                     </div>
                                 );
                             }
+
                             // textarea
                             return (
                                 <div key={id}>
@@ -801,32 +1001,140 @@ export default function AcompanhamentoPage() {
                 </form>
             </Modal>
 
+            {/* Modal: Materiais */}
+            <Modal open={materiaisOpen} onClose={() => setMateriaisOpen(false)} ariaLabel="Materiais" maxWidth={520}>
+                <h3 className="text-lg font-semibold">Materiais para Assistência</h3>
+                <div className="mt-4 space-y-3">
+                    {/* Cadeiras */}
+                    <div className="flex items-center gap-3">
+                        <label className="inline-flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={materiais.cadeiras.checked}
+                                onChange={(e) =>
+                                    setMateriais((m) => ({
+                                        ...m,
+                                        cadeiras: { ...m.cadeiras, checked: e.target.checked, qtd: e.target.checked ? Math.max(1, m.cadeiras.qtd) : 0 },
+                                    }))
+                                }
+                            />
+                            <span>Cadeiras</span>
+                        </label>
+                        <input
+                            type="number"
+                            min={1}
+                            className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50"
+                            disabled={!materiais.cadeiras.checked}
+                            value={materiais.cadeiras.qtd || ""}
+                            onChange={(e) =>
+                                setMateriais((m) => ({
+                                    ...m,
+                                    cadeiras: { ...m.cadeiras, qtd: Math.max(1, Number(e.target.value || 0)) },
+                                }))
+                            }
+                            placeholder="Qtd"
+                        />
+                    </div>
+
+                    {/* Bebedouros */}
+                    <div className="flex items-center gap-3">
+                        <label className="inline-flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={materiais.bebedouros.checked}
+                                onChange={(e) =>
+                                    setMateriais((m) => ({
+                                        ...m,
+                                        bebedouros: { ...m.bebedouros, checked: e.target.checked, qtd: e.target.checked ? Math.max(1, m.bebedouros.qtd) : 0 },
+                                    }))
+                                }
+                            />
+                            <span>Bebedouros</span>
+                        </label>
+                        <input
+                            type="number"
+                            min={1}
+                            className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50"
+                            disabled={!materiais.bebedouros.checked}
+                            value={materiais.bebedouros.qtd || ""}
+                            onChange={(e) =>
+                                setMateriais((m) => ({
+                                    ...m,
+                                    bebedouros: { ...m.bebedouros, qtd: Math.max(1, Number(e.target.value || 0)) },
+                                }))
+                            }
+                            placeholder="Qtd"
+                        />
+                    </div>
+                </div>
+
+                <div className="mt-5 flex justify-end gap-2">
+                    <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setMateriaisOpen(false)}>
+                        Cancelar
+                    </button>
+                    <button
+                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                        onClick={() => {
+                            // grava nos dados do wizard
+                            setWizardData((d) => ({ ...d, materiais }));
+                            setMateriaisOpen(false);
+                        }}
+                    >
+                        Salvar Materiais
+                    </button>
+                </div>
+            </Modal>
+
             {/* Modal: Registrar Ação */}
             <Modal open={acaoOpen} onClose={() => setAcaoOpen(false)} ariaLabel="Registrar ação">
                 <h2 className="text-xl font-semibold">Registrar uma ação</h2>
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {fases.map((f) => {
-                        const r = acaoIdx != null ? registros[acaoIdx] : undefined;
-                        const prox = r ? proximaFase(r) : null;
-                        const esconder =
-                            r && salasMemorial.includes((r.local_velorio || "").trim()) && f === "fase07";
-                        if (esconder) return null;
 
-                        const habilitar = prox === f && r?.status !== "fase10";
-                        return (
-                            <button
-                                key={f}
-                                type="button"
-                                disabled={!habilitar}
-                                onClick={() => registrarAcao(f)}
-                                className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "opacity-100" : "pointer-events-none opacity-50"
-                                    }`}
-                            >
-                                {acaoToStatus(f)}
-                            </button>
-                        );
-                    })}
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {(() => {
+                        const r = acaoIdx != null ? registros[acaoIdx] : undefined;
+                        const skipConservacao = r ? isTanatoNo(r.tanato) : false;
+                        const skipTransportando = r ? salasMemorial.includes((r.local_velorio || "").trim()) : false;
+                        const prox = r ? proximaFase(r) : null;
+
+                        return fases.map((f) => {
+                            if (!r) return null;
+
+                            // esconde fase07 (transportando) quando é sala memorial
+                            if (skipTransportando && f === "fase07") return null;
+
+                            // esconde conservação quando tanato = Não
+                            if (skipConservacao && (f === "fase03" || f === "fase04")) return null;
+
+                            const habilitar = prox === f && r.status !== "fase10";
+                            return (
+                                <button
+                                    key={f}
+                                    type="button"
+                                    disabled={!habilitar}
+                                    onClick={() => registrarAcao(f)}
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "opacity-100" : "pointer-events-none opacity-50"
+                                        }`}
+                                >
+                                    {acaoToStatus(f)}
+                                </button>
+                            );
+                        });
+                    })()}
                 </div>
+
+                {/* Após fase10, mostrar "Material Recolhido" */}
+                {acaoIdx != null && registros[acaoIdx]?.status === "fase10" && (
+                    <div className="mt-4">
+                        <button
+                            type="button"
+                            onClick={registrarMaterialRecolhido}
+                            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                        >
+                            Material Recolhido
+                        </button>
+                    </div>
+                )}
+
                 {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
             </Modal>
 
