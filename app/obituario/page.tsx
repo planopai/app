@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
     IconChevronLeft,
     IconChevronRight,
@@ -8,6 +8,8 @@ import {
     IconSettings,
     IconPhoto,
     IconColorSwatch,
+    IconCalendar,
+    IconClock,
     IconX,
 } from "@tabler/icons-react";
 
@@ -34,23 +36,161 @@ const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
     modelo012: "https://planoassistencialintegrado.com.br/wp-content/uploads/2024/10/I4.png",
 };
 
-function formatDateBr(d?: string) {
-    if (!d) return "";
-    const dt = new Date(d);
-    const day = String(dt.getDate()).padStart(2, "0");
-    const month = String(dt.getMonth() + 1).padStart(2, "0");
-    const year = dt.getFullYear();
-    return `${day}/${month}/${year}`;
+const STEPS = [
+    "Falecido",
+    "Cerimônia",
+    "Sepultamento",
+    "Nota & Transmissão",
+    "Finalização",
+];
+
+/* ==================== Utils (datas/horas) ==================== */
+function onlyDigits(s: string) { return s.replace(/\D+/g, ""); }
+
+function maskDateBR(v: string) {
+    const d = onlyDigits(v).slice(0, 8);
+    const p1 = d.slice(0, 2);
+    const p2 = d.slice(2, 4);
+    const p3 = d.slice(4, 8);
+    return [p1, p2, p3].filter(Boolean).join("/");
+}
+function maskTime(v: string) {
+    const d = onlyDigits(v).slice(0, 4);
+    const p1 = d.slice(0, 2);
+    const p2 = d.slice(2, 4);
+    return [p1, p2].filter(Boolean).join(":");
+}
+function brToISO(br: string) {
+    // dd/mm/aaaa -> aaaa-mm-dd
+    const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return "";
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm}-${dd}`;
+}
+function isoToBR(iso: string) {
+    // aaaa-mm-dd -> dd/mm/aaaa
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return "";
+    const [, yyyy, mm, dd] = m;
+    return `${dd}/${mm}/${yyyy}`;
+}
+function normalizeDateToBR(input: string) {
+    if (!input) return "";
+    if (/\d{4}-\d{2}-\d{2}/.test(input)) return isoToBR(input);
+    return maskDateBR(input);
 }
 
-/* ==================== Componente ==================== */
+/* ==================== Inputs com digitação + picker ==================== */
+function SmartDateInput({
+    label,
+    valueBR,
+    onChange,
+    required,
+    placeholder = "dd/mm/aaaa",
+}: {
+    label: string;
+    valueBR: string;
+    onChange: (br: string) => void;
+    required?: boolean;
+    placeholder?: string;
+}) {
+    const id = React.useId();
+    const hiddenId = `${id}-native`;
+    return (
+        <div>
+            <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
+            <div className="relative flex items-center gap-2">
+                <input
+                    id={id}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    className="input w-full"
+                    placeholder={placeholder}
+                    value={valueBR}
+                    onChange={(e) => onChange(maskDateBR(e.target.value))}
+                    required={required}
+                />
+                <button
+                    type="button"
+                    className="absolute right-2 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    onClick={() => (document.getElementById(hiddenId) as HTMLInputElement)?.showPicker?.()}
+                    aria-label="Abrir calendário"
+                    title="Abrir calendário"
+                >
+                    <IconCalendar className="size-4" />
+                </button>
+                <input
+                    id={hiddenId}
+                    type="date"
+                    className="sr-only"
+                    value={brToISO(valueBR)}
+                    onChange={(e) => onChange(isoToBR(e.target.value))}
+                />
+            </div>
+        </div>
+    );
+}
+
+function SmartTimeInput({
+    label,
+    value,
+    onChange,
+    required,
+    placeholder = "hh:mm",
+}: {
+    label: string;
+    value: string;
+    onChange: (hhmm: string) => void;
+    required?: boolean;
+    placeholder?: string;
+}) {
+    const id = React.useId();
+    const hiddenId = `${id}-native`;
+    return (
+        <div>
+            <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
+            <div className="relative flex items-center gap-2">
+                <input
+                    id={id}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    className="input w-full"
+                    placeholder={placeholder}
+                    value={value}
+                    onChange={(e) => onChange(maskTime(e.target.value))}
+                    required={required}
+                />
+                <button
+                    type="button"
+                    className="absolute right-2 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    onClick={() => (document.getElementById(hiddenId) as HTMLInputElement)?.showPicker?.()}
+                    aria-label="Abrir seletor de hora"
+                    title="Abrir seletor de hora"
+                >
+                    <IconClock className="size-4" />
+                </button>
+                <input
+                    id={hiddenId}
+                    type="time"
+                    className="sr-only"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                />
+            </div>
+        </div>
+    );
+}
+
+/* ==================== Página ==================== */
 export default function ObituarioPage() {
     const [step, setStep] = useState(0);
-    const stepsTotal = 5;
+    const stepsTotal = STEPS.length;
     const isFirst = step === 0;
     const isLast = step === stepsTotal - 1;
 
-    // estado do formulário (controlado)
+    // estado do formulário (datas em BR: dd/mm/aaaa; horas HH:mm)
     const [form, setForm] = useState({
         // step 0
         foto_falecido: null as File | null,
@@ -84,28 +224,18 @@ export default function ObituarioPage() {
         fundo_personalizado: null as File | null,
     });
 
-    // preview
     const [previewSrc, setPreviewSrc] = useState<string>("");
-
-    // settings modal
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [fontName, setFontName] = useState<string>(
         typeof window !== "undefined" ? localStorage.getItem("fontName") || "Nunito" : "Nunito",
     );
     const [fontColor, setFontColor] = useState<string>(
-        typeof window !== "undefined" ? localStorage.getItem("fontColor") || "#000000" : "#000000",
+        typeof window !== "undefined" ? localStorage.getItem("fontColor") || "#111827" : "#111827", // slate-900
     );
 
-    // aplicar preferências automaticamente ao mudar
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        localStorage.setItem("fontName", fontName);
-    }, [fontName]);
-
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        localStorage.setItem("fontColor", fontColor);
-    }, [fontColor]);
+    // salvar prefs
+    React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontName", fontName); }, [fontName]);
+    React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontColor", fontColor); }, [fontColor]);
 
     const modelosOptions = useMemo(
         () =>
@@ -127,18 +257,16 @@ export default function ObituarioPage() {
         [],
     );
 
-    function handlePrev() {
-        if (!isFirst) setStep((s) => s - 1);
-    }
-    function handleNext() {
-        if (!isLast) setStep((s) => s + 1);
-    }
+    const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+        setForm((f) => ({ ...f, [k]: v }));
+
+    function handlePrev() { if (!isFirst) setStep((s) => s - 1); }
+    function handleNext() { if (!isLast) setStep((s) => s + 1); }
 
     async function generate() {
         try {
             setPreviewSrc("");
 
-            // escolher fundo
             let bgUrl = MODELOS["modelo01"];
             if (form.modelo_fundo === "personalizado") {
                 if (!form.fundo_personalizado) {
@@ -150,51 +278,41 @@ export default function ObituarioPage() {
                 bgUrl = MODELOS[form.modelo_fundo as keyof typeof MODELOS] ?? MODELOS["modelo01"];
             }
 
-            // canvas
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             if (!ctx) throw new Error("Canvas não suportado.");
 
-            if (form.formato === "vertical") {
-                canvas.width = 1080;
-                canvas.height = 1920;
-            } else {
-                canvas.width = 928;
-                canvas.height = 824;
-            }
+            if (form.formato === "vertical") { canvas.width = 1080; canvas.height = 1920; }
+            else { canvas.width = 928; canvas.height = 824; }
 
-            // fundo branco (evita tela preta antes do bg carregar)
+            // fundo branco antes do bg (evita "tela preta")
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // carrega e desenha fundo
             const bg = await loadImage(bgUrl);
             ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
-            // fontes preferidas
+            // fontes
             const _fontName = fontName || "Nunito";
-            const _fontColor = fontColor || "#000000";
-            const fontSizeName = form.formato === "vertical" ? 45 : 40;
-            const fontSizeDetails = form.formato === "vertical" ? 30 : 25;
-            const fontSizeNote = form.formato === "vertical" ? 30 : 25;
+            const _fontColor = fontColor || "#111827";
+            const fontSizeName = form.formato === "vertical" ? 48 : 40;
+            const fontSizeDetails = form.formato === "vertical" ? 32 : 26;
+            const fontSizeNote = form.formato === "vertical" ? 30 : 24;
 
             // Nome
             ctx.fillStyle = _fontColor;
             ctx.textAlign = "center";
             ctx.font = `${fontSizeName}px ${_fontName}`;
-            if (form.formato === "vertical") ctx.fillText(form.nome, canvas.width / 2, 1000);
-            else ctx.fillText(form.nome, canvas.width / 2, 80);
+            ctx.fillText(form.nome, canvas.width / 2, form.formato === "vertical" ? 1000 : 80);
 
-            // Datas nascimento/falecimento
+            // Datas nascimento/falecimento (já em BR)
             ctx.font = `${fontSizeDetails}px ${_fontName}`;
-            const dataNasc = formatDateBr(form.data_nascimento);
-            const dataFal = formatDateBr(form.data_falecimento);
             if (form.formato === "vertical") {
-                ctx.fillText(`${dataNasc}`, canvas.width / 2 - 180, 1120);
-                ctx.fillText(`${dataFal}`, canvas.width / 2 + 200, 1120);
+                ctx.fillText(`${normalizeDateToBR(form.data_nascimento)}`, canvas.width / 2 - 180, 1120);
+                ctx.fillText(`${normalizeDateToBR(form.data_falecimento)}`, canvas.width / 2 + 200, 1120);
             } else {
-                ctx.fillText(`${dataNasc}`, canvas.width / 2 - 110, 140);
-                ctx.fillText(`${dataFal}`, canvas.width / 2 + 120, 140);
+                ctx.fillText(`${normalizeDateToBR(form.data_nascimento)}`, canvas.width / 2 - 110, 140);
+                ctx.fillText(`${normalizeDateToBR(form.data_falecimento)}`, canvas.width / 2 + 120, 140);
             }
 
             // Foto circular
@@ -219,9 +337,7 @@ export default function ObituarioPage() {
                     const d = id.data;
                     for (let i = 0; i < d.length; i += 4) {
                         const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-                        d[i] = avg;
-                        d[i + 1] = avg;
-                        d[i + 2] = avg;
+                        d[i] = avg; d[i + 1] = avg; d[i + 2] = avg;
                     }
                     bctx.putImageData(id, 0, 0);
                 }
@@ -234,28 +350,25 @@ export default function ObituarioPage() {
                 ctx.restore();
             }
 
-            // Nota de pesar (wrap)
+            // Nota de pesar
             ctx.textAlign = "center";
             ctx.font = `${fontSizeNote}px ${_fontName}`;
             ctx.fillStyle = _fontColor;
 
             const maxLineWidth = form.formato === "vertical" ? 800 : 400;
-            const lineHeight = 30;
+            const lineHeight = 34;
             const startY = form.formato === "vertical" ? 200 : 270;
             if (form.nota_pesar) {
-                if (form.formato === "vertical") {
-                    drawWrapText(ctx, form.nota_pesar, canvas.width / 2, startY, maxLineWidth, lineHeight, "center");
-                } else {
-                    drawWrapText(ctx, form.nota_pesar, canvas.width - 50, startY, maxLineWidth, lineHeight, "right");
-                }
+                if (form.formato === "vertical") drawWrapText(ctx, form.nota_pesar, canvas.width / 2, startY, maxLineWidth, lineHeight, "center");
+                else drawWrapText(ctx, form.nota_pesar, canvas.width - 50, startY, maxLineWidth, lineHeight, "right");
             }
 
             // Bloco velório / cerimônia
             ctx.font = `${fontSizeNote}px ${_fontName}`;
             ctx.fillStyle = _fontColor;
-            const dataCerimonia = formatDateBr(form.data_cerimonia);
-            const fimDataCer = formatDateBr(form.fim_data_cerimonia);
-            const dataSep = formatDateBr(form.data_sepultamento);
+            const dataCerimonia = normalizeDateToBR(form.data_cerimonia);
+            const fimDataCer = normalizeDateToBR(form.fim_data_cerimonia);
+            const dataSep = normalizeDateToBR(form.data_sepultamento);
 
             if (form.formato === "vertical") {
                 ctx.textAlign = "left";
@@ -288,15 +401,15 @@ export default function ObituarioPage() {
                 ctx.textAlign = "center";
                 let baseY = form.formato === "vertical" ? 1750 : 760;
                 ctx.fillText(`Transmissão Online: Informações e senha com familiares`, canvas.width / 2, baseY);
-                baseY += 30;
-                let linha = `Início: ${formatDateBr(form.transmissao_inicio_data)} ${form.transmissao_inicio_hora}`;
+                baseY += 34;
+                let linha = `Início: ${normalizeDateToBR(form.transmissao_inicio_data)} ${form.transmissao_inicio_hora}`;
                 if (form.transmissao_fim_data && form.transmissao_fim_hora) {
-                    linha += ` | Fim: ${formatDateBr(form.transmissao_fim_data)} ${form.transmissao_fim_hora}`;
+                    linha += ` | Fim: ${normalizeDateToBR(form.transmissao_fim_data)} ${form.transmissao_fim_hora}`;
                 }
                 ctx.fillText(linha, canvas.width / 2, baseY);
             }
 
-            setPreviewSrc(canvas.toDataURL("image/jpeg"));
+            setPreviewSrc(canvas.toDataURL("image/jpeg", 0.92));
         } catch (err) {
             console.error(err);
             alert("Não foi possível gerar a arte. Verifique os campos e tente novamente.");
@@ -311,30 +424,61 @@ export default function ObituarioPage() {
         a.click();
     }
 
-    // util p/ inputs controlados
-    const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
-        setForm((f) => ({ ...f, [k]: v }));
-
+    /* ==================== UI ==================== */
     return (
-        <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
-            {/* Correção iOS/Android para date/time */}
+        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+            {/* estilos rápidos para inputs/btns (caso seu projeto não tenha util classes) */}
             <style>{`
-        input[type="date"], input[type="time"] {
-          -webkit-appearance: auto !important;
-          appearance: auto !important;
-        }
+        .input { border: 1px solid hsl(var(--border, 214 32% 91%)); background: hsl(var(--card, 0 0% 100%));
+                 padding: .6rem .75rem; border-radius: .75rem; outline: none; width: 100%; }
+        .input:focus { box-shadow: 0 0 0 4px rgba(59,130,246,.2); border-color: rgb(59,130,246); }
+        .btn { border: 1px solid hsl(var(--border, 214 32% 91%)); padding: .55rem .8rem; border-radius: .75rem; font-weight: 600; }
+        .btn-primary { color: white; background: rgb(59,130,246); border-color: rgb(59,130,246); }
+        .btn-primary:hover { filter: brightness(.95) }
+        .card { border: 1px solid hsl(var(--border, 214 32% 91%)); background: hsl(var(--card, 0 0% 100%)/.7);
+                backdrop-filter: blur(6px); border-radius: 1rem; box-shadow: 0 10px 20px rgba(0,0,0,.04); }
+        .step-dot { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; font-size: .8rem; }
       `}</style>
 
+            {/* Header + progress */}
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Gerar Obituário</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Preencha as etapas, gere a arte e faça o download. Totalmente responsivo.
+                    Preencha as etapas, gere a arte e faça o download.
                 </p>
             </header>
 
+            {/* Stepper */}
+            <div className="mb-6">
+                <div className="flex items-center gap-3">
+                    {STEPS.map((label, i) => {
+                        const active = i === step;
+                        const done = i < step;
+                        return (
+                            <div key={label} className="flex items-center gap-3">
+                                <div
+                                    className={`step-dot ${active ? "bg-blue-600 text-white" : done ? "bg-blue-100 text-blue-700" : "bg-muted text-foreground/60"}`}
+                                    aria-current={active ? "step" : undefined}
+                                >
+                                    {i + 1}
+                                </div>
+                                <div className={`text-sm ${active ? "font-semibold" : "text-muted-foreground"}`}>{label}</div>
+                                {i < STEPS.length - 1 && <div className="h-px w-10 bg-muted" />}
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                        className="h-full bg-blue-600 transition-all"
+                        style={{ width: `${((step + 1) / stepsTotal) * 100}%` }}
+                    />
+                </div>
+            </div>
+
             <div className="grid gap-6 lg:grid-cols-2">
                 {/* FORM CARD */}
-                <div className="rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur sm:p-6">
+                <div className="card p-4 sm:p-6">
                     <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
                         {/* STEP 1 */}
                         {step === 0 && (
@@ -380,28 +524,18 @@ export default function ObituarioPage() {
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="mb-1 block text-sm">Data de Nascimento</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            required
-                                            value={form.data_nascimento}
-                                            onChange={(e) => set("data_nascimento", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Data de Falecimento</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            required
-                                            value={form.data_falecimento}
-                                            onChange={(e) => set("data_falecimento", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
+                                    <SmartDateInput
+                                        label="Data de Nascimento"
+                                        valueBR={form.data_nascimento}
+                                        onChange={(v) => set("data_nascimento", v)}
+                                        required
+                                    />
+                                    <SmartDateInput
+                                        label="Data de Falecimento"
+                                        valueBR={form.data_falecimento}
+                                        onChange={(v) => set("data_falecimento", v)}
+                                        required
+                                    />
                                 </div>
                             </fieldset>
                         )}
@@ -419,53 +553,34 @@ export default function ObituarioPage() {
                                             required
                                             value={form.local_cerimonia}
                                             onChange={(e) => set("local_cerimonia", e.target.value)}
+                                            placeholder="Ex: Memorial Senhor do Bonfim"
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="mb-1 block text-sm">Início (Data)</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            required
-                                            value={form.data_cerimonia}
-                                            onChange={(e) => set("data_cerimonia", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Velório - Início</label>
-                                        <input
-                                            type="time"
-                                            className="input"
-                                            required
-                                            value={form.velorio_inicio}
-                                            onChange={(e) => set("velorio_inicio", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Velório - Fim</label>
-                                        <input
-                                            type="time"
-                                            className="input"
-                                            required
-                                            value={form.velorio_fim}
-                                            onChange={(e) => set("velorio_fim", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Fim (Data)</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            required
-                                            value={form.fim_data_cerimonia}
-                                            onChange={(e) => set("fim_data_cerimonia", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
+                                    <SmartDateInput
+                                        label="Início (Data)"
+                                        valueBR={form.data_cerimonia}
+                                        onChange={(v) => set("data_cerimonia", v)}
+                                        required
+                                    />
+                                    <SmartTimeInput
+                                        label="Velório - Início"
+                                        value={form.velorio_inicio}
+                                        onChange={(v) => set("velorio_inicio", v)}
+                                        required
+                                    />
+                                    <SmartTimeInput
+                                        label="Velório - Fim"
+                                        value={form.velorio_fim}
+                                        onChange={(v) => set("velorio_fim", v)}
+                                        required
+                                    />
+                                    <SmartDateInput
+                                        label="Fim (Data)"
+                                        valueBR={form.fim_data_cerimonia}
+                                        onChange={(v) => set("fim_data_cerimonia", v)}
+                                        required
+                                    />
                                 </div>
                             </fieldset>
                         )}
@@ -475,28 +590,18 @@ export default function ObituarioPage() {
                             <fieldset className="space-y-4">
                                 <legend className="mb-2 text-lg font-semibold">Informações do Sepultamento</legend>
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <label className="mb-1 block text-sm">Data do Sepultamento</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            required
-                                            value={form.data_sepultamento}
-                                            onChange={(e) => set("data_sepultamento", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Hora do Sepultamento</label>
-                                        <input
-                                            type="time"
-                                            className="input"
-                                            required
-                                            value={form.hora_sepultamento}
-                                            onChange={(e) => set("hora_sepultamento", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
+                                    <SmartDateInput
+                                        label="Data do Sepultamento"
+                                        valueBR={form.data_sepultamento}
+                                        onChange={(v) => set("data_sepultamento", v)}
+                                        required
+                                    />
+                                    <SmartTimeInput
+                                        label="Hora do Sepultamento"
+                                        value={form.hora_sepultamento}
+                                        onChange={(v) => set("hora_sepultamento", v)}
+                                        required
+                                    />
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm">Local do Sepultamento</label>
                                         <input
@@ -504,6 +609,7 @@ export default function ObituarioPage() {
                                             required
                                             value={form.local_sepultamento}
                                             onChange={(e) => set("local_sepultamento", e.target.value)}
+                                            placeholder="Ex: Cemitério Municipal"
                                         />
                                     </div>
                                 </div>
@@ -523,50 +629,31 @@ export default function ObituarioPage() {
                                         required
                                         value={form.nota_pesar}
                                         onChange={(e) => set("nota_pesar", e.target.value)}
+                                        placeholder="Escreva uma mensagem..."
                                     />
                                 </div>
 
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <label className="mb-1 block text-sm">Transmissão - Início (Data)</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            value={form.transmissao_inicio_data}
-                                            onChange={(e) => set("transmissao_inicio_data", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Transmissão - Início (Hora)</label>
-                                        <input
-                                            type="time"
-                                            className="input"
-                                            value={form.transmissao_inicio_hora}
-                                            onChange={(e) => set("transmissao_inicio_hora", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Transmissão - Fim (Data)</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            value={form.transmissao_fim_data}
-                                            onChange={(e) => set("transmissao_fim_data", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-sm">Transmissão - Fim (Hora)</label>
-                                        <input
-                                            type="time"
-                                            className="input"
-                                            value={form.transmissao_fim_hora}
-                                            onChange={(e) => set("transmissao_fim_hora", e.target.value)}
-                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
-                                        />
-                                    </div>
+                                    <SmartDateInput
+                                        label="Transmissão - Início (Data)"
+                                        valueBR={form.transmissao_inicio_data}
+                                        onChange={(v) => set("transmissao_inicio_data", v)}
+                                    />
+                                    <SmartTimeInput
+                                        label="Transmissão - Início (Hora)"
+                                        value={form.transmissao_inicio_hora}
+                                        onChange={(v) => set("transmissao_inicio_hora", v)}
+                                    />
+                                    <SmartDateInput
+                                        label="Transmissão - Fim (Data)"
+                                        valueBR={form.transmissao_fim_data}
+                                        onChange={(v) => set("transmissao_fim_data", v)}
+                                    />
+                                    <SmartTimeInput
+                                        label="Transmissão - Fim (Hora)"
+                                        value={form.transmissao_fim_hora}
+                                        onChange={(v) => set("transmissao_fim_hora", v)}
+                                    />
                                 </div>
                             </fieldset>
                         )}
@@ -584,7 +671,7 @@ export default function ObituarioPage() {
                                             value={form.formato}
                                             onChange={(e) => set("formato", e.target.value as Formato)}
                                         >
-                                            <option value="vertical">Redes Sociais</option>
+                                            <option value="vertical">Redes Sociais (1080×1920)</option>
                                         </select>
                                     </div>
 
@@ -667,7 +754,7 @@ export default function ObituarioPage() {
                 </div>
 
                 {/* PREVIEW CARD */}
-                <div className="rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur sm:p-6">
+                <div className="card p-4 sm:p-6">
                     <h2 className="mb-3 text-lg font-semibold">Pré-visualização do Obituário</h2>
 
                     {previewSrc ? (
@@ -695,8 +782,8 @@ export default function ObituarioPage() {
 
             {/* SETTINGS MODAL */}
             {settingsOpen && (
-                <div className="modal-overlay" role="dialog" aria-modal="true">
-                    <div className="modal w-full max-w-md">
+                <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true">
+                    <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
                         <div className="mb-3 flex items-center justify-between">
                             <h3 className="text-lg font-semibold">Configurações</h3>
                             <button className="rounded-md p-1 hover:bg-muted" onClick={() => setSettingsOpen(false)}>
@@ -749,7 +836,6 @@ export default function ObituarioPage() {
 }
 
 /* ==================== Helpers ==================== */
-
 function drawWrapText(
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -779,7 +865,7 @@ function drawWrapText(
 function loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.crossOrigin = "anonymous";
+        img.crossOrigin = "anonymous"; // precisa de CORS habilitado no host dos PNGs
         img.onload = () => resolve(img);
         img.onerror = (e) => reject(e);
         img.src = src;
