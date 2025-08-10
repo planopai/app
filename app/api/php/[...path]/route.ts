@@ -33,6 +33,41 @@ function buildUpstreamUrl(base: string, parts?: string[], search?: URLSearchPara
     return url;
 }
 
+function parseCookieHeader(cookieHeader: string | null) {
+    const map = new Map<string, string>();
+    if (!cookieHeader) return map;
+    cookieHeader.split(/; */).forEach((p) => {
+        if (!p) return;
+        const [k, ...rest] = p.split("=");
+        const v = rest.join("=") ?? "";
+        map.set(k.trim(), decodeURIComponent(v));
+    });
+    return map;
+}
+
+function serializeCookies(cookies: Array<[string, string]>) {
+    return cookies.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("; ");
+}
+
+/**
+ * Reescreve cookies para o upstream:
+ * - Remove cookies internos (pai_auth, php_session)
+ * - Se existir php_session no cliente, envia como PHPSESSID para o PHP
+ */
+function buildUpstreamCookieHeader(req: NextRequest): string | null {
+    const jar = parseCookieHeader(req.headers.get("cookie"));
+    const forward: Array<[string, string]> = [];
+    const phpSess = jar.get("php_session");
+
+    for (const [k, v] of jar) {
+        if (k === "pai_auth" || k === "php_session") continue; // não precisa no WordPress/PHP
+        forward.push([k, v]);
+    }
+    if (phpSess) forward.push(["PHPSESSID", phpSess]);
+
+    return forward.length ? serializeCookies(forward) : null;
+}
+
 function buildUpstreamHeaders(req: NextRequest) {
     const headers = new Headers();
     // Copia somente o que é seguro/útil
@@ -45,6 +80,12 @@ function buildUpstreamHeaders(req: NextRequest) {
     // Content-Type: apenas se existir no request original
     const ct = req.headers.get("content-type");
     if (ct) headers.set("content-type", ct);
+
+    // 🔁 Cookies reescritos para o upstream (php_session -> PHPSESSID)
+    const cooked = buildUpstreamCookieHeader(req);
+    if (cooked) headers.set("cookie", cooked);
+    else headers.delete("cookie");
+
     return headers;
 }
 
@@ -59,7 +100,7 @@ async function handler(
         req.nextUrl.searchParams
     );
 
-    // Repassa headers (sem hop-by-hop)
+    // Repassa headers (sem hop-by-hop) + cookie reescrito
     const headers = buildUpstreamHeaders(req);
 
     // Só envia body para métodos com corpo
@@ -70,9 +111,9 @@ async function handler(
         method: req.method,
         headers,
         body,
-        // "follow" resolve redirecionamentos no servidor
+        // "follow" lida com redirects do WP (ex.: trailing slash). Para capturar Set-Cookie
+        // em redirects, preferir "manual" e tratar Location, mas para avisos/informativo não é necessário.
         redirect: "follow",
-        // Evita cache no lado do servidor
         cache: "no-store",
     };
 
@@ -87,6 +128,20 @@ async function handler(
     out.delete("connection");
     // Política de cache
     out.set("Cache-Control", "no-store");
+
+    // ❗ Opcional: se o upstream devolver um PHPSESSID novo, podemos espelhar em "php_session"
+    const setCookie = upstreamResp.headers.get("set-cookie");
+    if (setCookie) {
+        const m = setCookie.match(/PHPSESSID=([^;]+)/i);
+        if (m && m[1]) {
+            const isProd = process.env.NODE_ENV === "production";
+            const ours =
+                `php_session=${encodeURIComponent(m[1])}; Path=/; HttpOnly; SameSite=Lax;` +
+                (isProd ? " Secure;" : "");
+            // Anexa nosso cookie sem remover o do upstream
+            out.append("set-cookie", ours);
+        }
+    }
 
     // Retorna o corpo tal como veio do upstream
     return new Response(upstreamResp.body, {
