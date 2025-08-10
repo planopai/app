@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Icon } from "@tabler/icons-react";
+import clsx from "clsx";
 
 import {
   SidebarGroup,
@@ -14,35 +15,45 @@ import {
 
 export function NavMain({
   items,
+  iconClass = "size-5 lg:size-6",     // <— ajuste aqui o tamanho padrão dos ícones
+  textClass = "text-sm lg:text-base",   // <— ajuste aqui o tamanho padrão dos títulos
+  itemClass = "gap-2",                   // espaçamento entre ícone/texto
 }: {
   items: {
     title: string;
     url: string;
     icon?: Icon;
   }[];
+  iconClass?: string;
+  textClass?: string;
+  itemClass?: string;
 }) {
   const pathname = usePathname();
 
   return (
     <SidebarGroup>
       <SidebarGroupContent>
-        {/* Navegação principal (SEM quick create / inbox) */}
         <SidebarMenu>
           {items.map((item) => {
             const active =
               pathname === item.url ||
               (item.url !== "/" && pathname?.startsWith(item.url + "/"));
 
+            const Icon = item.icon;
+
             return (
               <SidebarMenuItem key={item.url}>
                 <SidebarMenuButton
                   asChild
                   tooltip={item.title}
-                  className={active ? "bg-muted font-medium" : ""}
+                  className={clsx(
+                    itemClass,
+                    active && "bg-muted font-medium"
+                  )}
                 >
                   <Link href={item.url} aria-current={active ? "page" : undefined}>
-                    {item.icon ? <item.icon /> : null}
-                    <span>{item.title}</span>
+                    {Icon ? <Icon className={clsx("shrink-0", iconClass)} /> : null}
+                    <span className={textClass}>{item.title}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
