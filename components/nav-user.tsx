@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+import { useRouter } from "next/navigation";
 import { IconDotsVertical, IconLogout } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -15,32 +17,51 @@ import {
 } from "@/components/ui/sidebar";
 
 type User = {
-  name: string;
-  email: string;   // mantido no tipo caso você use em outro lugar
-  avatar: string;  // mantido no tipo caso você use em outro lugar
+  name?: string;
+  email?: string;
+  avatar?: string;
 };
+
+function readCookie(name: string) {
+  if (typeof document === "undefined") return null;
+  const v = document.cookie
+    ?.split("; ")
+    .find((r) => r.startsWith(name + "="))
+    ?.split("=")[1];
+  return v ? decodeURIComponent(v) : null;
+}
 
 export function NavUser({
   user,
   onLogout,
 }: {
-  user: User;
-  /** Opcional: passe sua ação de logout. Se não passar, uso um fallback simples. */
+  user?: User;
   onLogout?: () => Promise<void> | void;
 }) {
+  const router = useRouter();
   const { isMobile } = useSidebar();
+
+  const [displayName, setDisplayName] = React.useState<string>(
+    user?.name || "Usuário"
+  );
+
+  React.useEffect(() => {
+    const fromCookie = readCookie("pai_name");
+    if (fromCookie) setDisplayName(fromCookie);
+    else if (user?.name) setDisplayName(user.name);
+  }, [user?.name]);
 
   async function handleLogout() {
     try {
       if (onLogout) {
         await onLogout();
       } else {
-        // Fallback genérico — ajuste conforme seu backend/autenticação
-        await fetch("/api/logout", { method: "POST" }).catch(() => { });
-        location.href = "/login";
+        await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
       }
     } catch {
-      // silencioso; ajuste se quiser feedback
+      // silencioso
+    } finally {
+      router.replace("/login");
     }
   }
 
@@ -53,9 +74,7 @@ export function NavUser({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              {/* Apenas o NOME do usuário */}
-              <span className="truncate font-medium">{user.name}</span>
-              {/* Três pontinhos à direita */}
+              <span className="truncate font-medium">{displayName}</span>
               <IconDotsVertical className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>

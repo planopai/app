@@ -1,3 +1,4 @@
+// app/api/auth/login/route.ts
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -20,11 +21,11 @@ export async function POST(req: NextRequest) {
         if (!usuario || !senha) {
             return NextResponse.json(
                 { sucesso: false, error: "Credenciais ausentes." },
-                { status: 400 }
+                { status: 400 },
             );
         }
 
-        // Encaminha para o PHP
+        // Encaminha credenciais ao PHP
         const resp = await fetch(`${TARGET_BASE}${PHP_LOGIN}`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -34,7 +35,11 @@ export async function POST(req: NextRequest) {
 
         const text = await resp.text();
         let data: any = {};
-        try { data = JSON.parse(text); } catch { }
+        try {
+            data = JSON.parse(text);
+        } catch {
+            /* resposta não era JSON, ignora */
+        }
 
         const ok = resp.ok && (data?.sucesso === true || data?.success === true);
         if (!ok) {
@@ -42,13 +47,18 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ sucesso: false, error: msg }, { status: 401 });
         }
 
+        // Lê o PHPSESSID (se enviado) para manter a sessão no seu proxy
         const setCookie = resp.headers.get("set-cookie");
         const phpSess = extractPhpSessId(setCookie) || data?.sessid || "";
 
         const isProd = process.env.NODE_ENV === "production";
-        const res = NextResponse.json({ sucesso: true, nome: data?.nome ?? usuario });
+        const nome = data?.nome ?? usuario;
 
-        // marca que está logado
+        // Resposta
+        const res = NextResponse.json({ sucesso: true, nome });
+        res.headers.set("Cache-Control", "no-store");
+
+        // Marca login no app (HttpOnly)
         res.cookies.set("pai_auth", "1", {
             httpOnly: true,
             sameSite: "lax",
@@ -57,7 +67,16 @@ export async function POST(req: NextRequest) {
             maxAge: 60 * 60 * 8, // 8h
         });
 
-        // guarda o PHPSESSID pra usar no proxy
+        // Cookie legível no client para exibir o nome no header
+        res.cookies.set("pai_name", encodeURIComponent(nome), {
+            httpOnly: false, // precisa ser legível no client
+            sameSite: "lax",
+            secure: isProd,
+            path: "/",
+            maxAge: 60 * 60 * 8,
+        });
+
+        // Guarda PHPSESSID para chamadas ao WordPress via proxy
         if (phpSess) {
             res.cookies.set("php_session", phpSess, {
                 httpOnly: true,
@@ -72,7 +91,7 @@ export async function POST(req: NextRequest) {
     } catch {
         return NextResponse.json(
             { sucesso: false, error: "Falha no login." },
-            { status: 500 }
+            { status: 500 },
         );
     }
 }
