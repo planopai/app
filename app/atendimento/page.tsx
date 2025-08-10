@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 
 /* ============================================================
    Tipos
 ============================================================ */
 type RegistroSala = {
     id: number | string;
-    sala: string;
+    sala: "Sala 01" | "Sala 02" | "Sala 03" | string;
     nome_completo: string;
     horario_inicio?: string;
     horario_termino?: string;
@@ -63,13 +63,21 @@ function TextFeedback({
     if (!children) return null;
     return (
         <div
-            className={`mt-3 rounded-md px-3 py-2 text-sm ${kind === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+            className={`mt-3 rounded-md px-3 py-2 text-sm ${kind === "success"
+                    ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-200"
+                    : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-200"
                 }`}
         >
             {children}
         </div>
     );
 }
+
+/* helper de estilo para os botões de sala */
+const salaBtn = (active: boolean) =>
+    `w-full rounded-2xl border px-6 py-3 text-base font-semibold transition
+   ${active ? "border-primary bg-primary/5 text-primary shadow-sm"
+        : "border-muted hover:bg-muted/50"}`;
 
 /* ============================================================
    Página
@@ -79,8 +87,10 @@ export default function AtendimentoPage() {
     const TOTAL_STEPS = 11; // 0..10
     const [step, setStep] = useState(0);
 
-    // Refs para os campos (mantém simples e alinhado ao formulário original)
-    const refSala = useRef<HTMLSelectElement>(null);
+    // Sala com botões (substitui o <select>)
+    const [salaSelecionada, setSalaSelecionada] = useState<"Sala 01" | "Sala 02" | "Sala 03">("Sala 01");
+
+    // Refs p/ campos
     const refNome = useRef<HTMLInputElement>(null);
     const refFoto = useRef<HTMLInputElement>(null);
     const refLocalVelorio = useRef<HTMLInputElement>(null);
@@ -102,21 +112,40 @@ export default function AtendimentoPage() {
         setStep((s) => Math.min(Math.max(0, s + delta), TOTAL_STEPS - 1));
     };
 
+    const limparFormulario = () => {
+        setSalaSelecionada("Sala 01");
+        [refNome, refLocalVelorio, refLocalSep].forEach((r) => {
+            if (r.current) r.current.value = "";
+        });
+        [refDataSep, refDataVelorio, refDataFim].forEach((r) => {
+            if (r.current) r.current.value = "";
+        });
+        [refHoraSep, refHoraInicio, refHoraTermino].forEach((r) => {
+            if (r.current) r.current.value = "";
+        });
+        if (refFoto.current) refFoto.current.value = "";
+    };
+
     const salvarInformacoes = useCallback(async () => {
-        const sala = refSala.current?.value ?? "";
-        const nome = refNome.current?.value ?? "";
-        const localVelorio = refLocalVelorio.current?.value ?? "";
-        const dataSepultamento = refDataSep.current?.value ?? "";
-        const horarioSepultamento = refHoraSep.current?.value ?? "";
-        const localSepultamento = refLocalSep.current?.value ?? "";
-        const dataVelorio = refDataVelorio.current?.value ?? "";
-        const horarioInicio = refHoraInicio.current?.value ?? "";
-        const dataFim = refDataFim.current?.value ?? "";
-        const horarioTermino = refHoraTermino.current?.value ?? "";
+        const nome = refNome.current?.value?.trim() || "";
+        const localVelorio = refLocalVelorio.current?.value?.trim() || "";
+        const dataSepultamento = refDataSep.current?.value || "";
+        const horarioSepultamento = refHoraSep.current?.value || "";
+        const localSepultamento = refLocalSep.current?.value?.trim() || "";
+        const dataVelorio = refDataVelorio.current?.value || "";
+        const horarioInicio = refHoraInicio.current?.value || "";
+        const dataFim = refDataFim.current?.value || "";
+        const horarioTermino = refHoraTermino.current?.value || "";
         const fotoFalecido = refFoto.current?.files?.[0] ?? null;
 
+        // validação mínima — ajuste conforme sua regra
+        if (!nome || !localVelorio || !dataVelorio || !horarioInicio) {
+            setRespMsg({ text: "Preencha os campos obrigatórios.", ok: false });
+            return;
+        }
+
         const formData = new FormData();
-        formData.append("sala", sala);
+        formData.append("sala", salaSelecionada);
         formData.append("nome", nome);
         formData.append("localVelorio", localVelorio);
         formData.append("dataSepultamento", dataSepultamento);
@@ -129,18 +158,34 @@ export default function AtendimentoPage() {
         if (fotoFalecido) formData.append("foto_falecido", fotoFalecido);
 
         try {
-            const res = await fetch("/api/php/salvarDados.php", { method: "POST", body: formData });
-            const data = await res.json();
-            if (data?.success) {
+            // OBS: NÃO definir Content-Type manualmente com FormData
+            const res = await fetch("/api/php/salvarDados.php", {
+                method: "POST",
+                body: formData,
+                cache: "no-store",
+            });
+
+            // tenta ler JSON; se der erro, trata como falha
+            let data: any = null;
+            try {
+                data = await res.json();
+            } catch { }
+
+            if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setRespMsg({ text: "Atendimento Criado Com Sucesso!", ok: true });
-                carregarDados(); // atualiza a tabela
+                carregarDados();
+                limparFormulario();
+                setStep(0);
             } else {
-                setRespMsg({ text: "Erro ao Criar o Atendimento", ok: false });
+                setRespMsg({
+                    text: data?.message || data?.msg || `Erro ao criar (HTTP ${res.status})`,
+                    ok: false,
+                });
             }
         } catch (e) {
-            setRespMsg({ text: "Erro ao Criar o Atendimento", ok: false });
+            setRespMsg({ text: "Erro ao Criar o Atendimento.", ok: false });
         }
-    }, []);
+    }, [salaSelecionada]);
 
     // ----------------- Tabela / Edição -----------------
     const [linhas, setLinhas] = useState<RegistroSala[]>([]);
@@ -148,14 +193,16 @@ export default function AtendimentoPage() {
 
     const carregarDados = useCallback(async () => {
         try {
-            const res = await fetch("/api/php/salaControle.php?action=listar&_=" + Date.now());
+            const res = await fetch("/api/php/salaControle.php?action=listar&_=" + Date.now(), {
+                cache: "no-store",
+            });
             if (!res.ok) throw new Error(res.statusText);
-            const data = (await res.json()) as RegistroSala[];
-            setLinhas(Array.isArray(data) ? data : []);
+            const data = (await res.json()) as RegistroSala[] | { dados?: RegistroSala[] };
+            const arr = Array.isArray(data) ? data : (data?.dados ?? []);
+            setLinhas(arr || []);
             setErrEdicao(null);
         } catch (e: any) {
             setErrEdicao("Erro ao carregar dados. Verifique o console para detalhes.");
-            // eslint-disable-next-line no-console
             console.error("Erro ao carregar dados:", e);
         }
     }, []);
@@ -166,18 +213,20 @@ export default function AtendimentoPage() {
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
-            const res = await fetch(`/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`);
+            const res = await fetch(`/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`, {
+                cache: "no-store",
+            });
             if (!res.ok) throw new Error(res.statusText);
-            const data = await res.json();
+            const d = await res.json();
             setEdit({
-                id: data.id,
-                sala: data.sala ?? "",
-                nome_completo: data.nome_completo ?? "",
-                horario_inicio: data.horario_inicio ?? "",
-                horario_termino: data.horario_termino ?? "",
-                data_sepultamento: data.data_sepultamento ?? "",
-                horario_sepultamento: data.horario_sepultamento ?? "",
-                local_sepultamento: data.local_sepultamento ?? "",
+                id: d.id,
+                sala: d.sala ?? "Sala 01",
+                nome_completo: d.nome_completo ?? "",
+                horario_inicio: d.horario_inicio ?? "",
+                horario_termino: d.horario_termino ?? "",
+                data_sepultamento: d.data_sepultamento ?? "",
+                horario_sepultamento: d.horario_sepultamento ?? "",
+                local_sepultamento: d.local_sepultamento ?? "",
             });
             setEditOpen(true);
             setErrEdicao(null);
@@ -206,14 +255,13 @@ export default function AtendimentoPage() {
                 body: JSON.stringify(payload),
                 cache: "no-store",
             });
-            if (!res.ok) throw new Error(res.statusText);
-            const data = await res.json();
-            if (data?.success) {
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setEditOpen(false);
                 setEdit(null);
                 carregarDados();
             } else {
-                alert("Erro ao salvar edição: " + (data?.message || "Desconhecido"));
+                alert("Erro ao salvar edição: " + (data?.message || data?.msg || "Desconhecido"));
             }
         } catch (e: any) {
             setErrEdicao("Erro ao salvar edição. Verifique o console para detalhes.");
@@ -237,14 +285,13 @@ export default function AtendimentoPage() {
                 method: "DELETE",
                 cache: "no-store",
             });
-            if (!res.ok) throw new Error(res.statusText);
-            const data = await res.json();
-            if (data?.success) {
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setDelOpen(false);
                 setDelId(null);
                 carregarDados();
             } else {
-                alert("Erro ao excluir registro: " + (data?.message || "Desconhecido"));
+                alert("Erro ao excluir registro: " + (data?.message || data?.msg || "Desconhecido"));
             }
         } catch (e: any) {
             setErrEdicao("Erro ao excluir registro. Verifique o console para detalhes.");
@@ -252,7 +299,7 @@ export default function AtendimentoPage() {
         }
     }, [delId, carregarDados]);
 
-    // Polling/Inicialização
+    // Polling / init
     useEffect(() => {
         carregarDados();
         const id = setInterval(carregarDados, 30000);
@@ -268,24 +315,27 @@ export default function AtendimentoPage() {
             <h1 className="text-2xl font-semibold">Novo Atendimento</h1>
 
             <div className="mt-4 space-y-0">
-                {/* Step 0 */}
+                {/* Step 0 - Escolha da sala (3 botões) */}
                 {step === 0 && (
                     <section className="step active">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
-                            <label htmlFor="sala" className="text-sm font-medium">
-                                Escolha a Sala:
-                            </label>
-                            <select
-                                id="sala"
-                                name="sala"
-                                ref={refSala}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                defaultValue="Sala 01"
-                            >
-                                <option value="Sala 01">Sala 01</option>
-                                <option value="Sala 02">Sala 02</option>
-                                <option value="Sala 03">Sala 03</option>
-                            </select>
+                        <fieldset className="rounded-2xl border p-4">
+                            <div className="mb-2 text-sm font-semibold">Escolha a Sala</div>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                {(["Sala 01", "Sala 02", "Sala 03"] as const).map((s) => (
+                                    <button
+                                        key={s}
+                                        type="button"
+                                        className={salaBtn(salaSelecionada === s)}
+                                        onClick={() => setSalaSelecionada(s)}
+                                        aria-pressed={salaSelecionada === s}
+                                    >
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                A senha/definição será aplicada para a sala selecionada.
+                            </p>
                         </fieldset>
                     </section>
                 )}
@@ -293,7 +343,7 @@ export default function AtendimentoPage() {
                 {/* Step 1 */}
                 {step === 1 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="nome" className="text-sm font-medium">
                                 Nome Completo:
                             </label>
@@ -313,7 +363,7 @@ export default function AtendimentoPage() {
                 {/* Step 2 */}
                 {step === 2 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="foto-falecido" className="text-sm font-medium">
                                 Foto do Falecido:
                             </label>
@@ -333,7 +383,7 @@ export default function AtendimentoPage() {
                 {/* Step 3 */}
                 {step === 3 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="local-velorio" className="text-sm font-medium">
                                 Local do Velório:
                             </label>
@@ -353,7 +403,7 @@ export default function AtendimentoPage() {
                 {/* Step 4 */}
                 {step === 4 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="data-sepultamento" className="text-sm font-medium">
                                 Data do Sepultamento:
                             </label>
@@ -372,7 +422,7 @@ export default function AtendimentoPage() {
                 {/* Step 5 */}
                 {step === 5 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="horario-sepultamento" className="text-sm font-medium">
                                 Horário do Sepultamento:
                             </label>
@@ -391,7 +441,7 @@ export default function AtendimentoPage() {
                 {/* Step 6 */}
                 {step === 6 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="local-sepultamento" className="text-sm font-medium">
                                 Local do Sepultamento:
                             </label>
@@ -410,9 +460,9 @@ export default function AtendimentoPage() {
                 {/* Step 7 */}
                 {step === 7 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="data-velorio" className="text-sm font-medium">
-                                Data Inicio (Velório):
+                                Data Início (Velório):
                             </label>
                             <input
                                 type="date"
@@ -429,7 +479,7 @@ export default function AtendimentoPage() {
                 {/* Step 8 */}
                 {step === 8 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="horario-inicio" className="text-sm font-medium">
                                 Horário de Início (Velório):
                             </label>
@@ -448,7 +498,7 @@ export default function AtendimentoPage() {
                 {/* Step 9 */}
                 {step === 9 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="data-fim" className="text-sm font-medium">
                                 Data Fim (Velório):
                             </label>
@@ -467,7 +517,7 @@ export default function AtendimentoPage() {
                 {/* Step 10 */}
                 {step === 10 && (
                     <section className="step">
-                        <fieldset className="grid gap-2 rounded-xl border p-4">
+                        <fieldset className="grid gap-2 rounded-2xl border p-4">
                             <label htmlFor="horario-termino" className="text-sm font-medium">
                                 Horário de Término (Velório):
                             </label>
@@ -489,7 +539,7 @@ export default function AtendimentoPage() {
                 <TextFeedback kind={respMsg.ok ? "success" : "error"}>{respMsg.text}</TextFeedback>
             )}
 
-            {/* Botões */}
+            {/* Navegação */}
             <div className="mt-4 flex items-center gap-2">
                 {showPrev && (
                     <button
@@ -524,7 +574,7 @@ export default function AtendimentoPage() {
             <h1 className="mt-9 text-2xl font-semibold">Edição de Dados</h1>
             {errEdicao && <div className="mt-2 text-sm text-red-600">{errEdicao}</div>}
 
-            <div className="mt-3 overflow-x-auto rounded-xl border">
+            <div className="mt-3 overflow-x-auto rounded-2xl border">
                 <table className="min-w-full text-sm" id="salaTable">
                     <thead className="bg-muted/50">
                         <tr>
@@ -583,17 +633,21 @@ export default function AtendimentoPage() {
                 <div className="mt-4 grid gap-3">
                     <input type="hidden" value={edit?.id ?? ""} readOnly />
 
+                    {/* Sala com botões no modal */}
                     <div>
                         <label className="mb-1 block text-sm font-medium">Sala</label>
-                        <select
-                            className="w-full rounded-md border px-3 py-2 text-sm"
-                            value={edit?.sala ?? ""}
-                            onChange={(e) => setEdit((v) => (v ? { ...v, sala: e.target.value } : v))}
-                        >
-                            <option value="Sala 01">Sala 01</option>
-                            <option value="Sala 02">Sala 02</option>
-                            <option value="Sala 03">Sala 03</option>
-                        </select>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                            {(["Sala 01", "Sala 02", "Sala 03"] as const).map((s) => (
+                                <button
+                                    key={s}
+                                    type="button"
+                                    className={salaBtn(edit?.sala === s)}
+                                    onClick={() => setEdit((v) => (v ? { ...v, sala: s } : v))}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     <div>
