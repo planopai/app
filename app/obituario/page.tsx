@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     IconChevronLeft,
     IconChevronRight,
@@ -11,6 +11,7 @@ import {
     IconX,
 } from "@tabler/icons-react";
 
+/* ==================== Tipos & Constantes ==================== */
 type Formato = "vertical";
 type ModeloKey =
     | "modelo01" | "modelo02" | "modelo03" | "modelo04"
@@ -36,15 +37,52 @@ const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
 function formatDateBr(d?: string) {
     if (!d) return "";
     const dt = new Date(d);
-    const day = String(dt.getUTCDate()).padStart(2, "0");
-    const month = String(dt.getUTCMonth() + 1).padStart(2, "0");
-    const year = dt.getUTCFullYear();
+    const day = String(dt.getDate()).padStart(2, "0");
+    const month = String(dt.getMonth() + 1).padStart(2, "0");
+    const year = dt.getFullYear();
     return `${day}/${month}/${year}`;
 }
 
+/* ==================== Componente ==================== */
 export default function ObituarioPage() {
-    const formRef = useRef<HTMLFormElement>(null);
     const [step, setStep] = useState(0);
+    const stepsTotal = 5;
+    const isFirst = step === 0;
+    const isLast = step === stepsTotal - 1;
+
+    // estado do formulário (controlado)
+    const [form, setForm] = useState({
+        // step 0
+        foto_falecido: null as File | null,
+        foto_preto_branco: false,
+        nome: "",
+        data_nascimento: "",
+        data_falecimento: "",
+
+        // step 1
+        local_cerimonia: "",
+        data_cerimonia: "",
+        velorio_inicio: "",
+        velorio_fim: "",
+        fim_data_cerimonia: "",
+
+        // step 2
+        data_sepultamento: "",
+        hora_sepultamento: "",
+        local_sepultamento: "",
+
+        // step 3
+        nota_pesar: "",
+        transmissao_inicio_data: "",
+        transmissao_inicio_hora: "",
+        transmissao_fim_data: "",
+        transmissao_fim_hora: "",
+
+        // step 4
+        formato: "vertical" as Formato,
+        modelo_fundo: "modelo01" as ModeloKey,
+        fundo_personalizado: null as File | null,
+    });
 
     // preview
     const [previewSrc, setPreviewSrc] = useState<string>("");
@@ -58,27 +96,34 @@ export default function ObituarioPage() {
         typeof window !== "undefined" ? localStorage.getItem("fontColor") || "#000000" : "#000000",
     );
 
-    const stepsTotal = 5;
-    const isFirst = step === 0;
-    const isLast = step === stepsTotal - 1;
+    // aplicar preferências automaticamente ao mudar
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        localStorage.setItem("fontName", fontName);
+    }, [fontName]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        localStorage.setItem("fontColor", fontColor);
+    }, [fontColor]);
 
     const modelosOptions = useMemo(
         () =>
-            [
-                { value: "modelo01", label: "Masculino Rede Social 01" },
-                { value: "modelo02", label: "Masculino Rede Social 02" },
-                { value: "modelo03", label: "Masculino Rede Social 03" },
-                { value: "modelo04", label: "Masculino Rede Social 04" },
-                { value: "modelo05", label: "Feminino Rede Social 01" },
-                { value: "modelo06", label: "Feminino Rede Social 02" },
-                { value: "modelo07", label: "Feminino Rede Social 03" },
-                { value: "modelo08", label: "Feminino Rede Social 04" },
-                { value: "modelo09", label: "Infantil Rede Social 01" },
-                { value: "modelo010", label: "Infantil Rede Social 02" },
-                { value: "modelo011", label: "Infantil Rede Social 03" },
-                { value: "modelo012", label: "Infantil Rede Social 04" },
-                { value: "personalizado", label: "Enviar Modelo" },
-            ] as { value: ModeloKey; label: string }[],
+        ([
+            { value: "modelo01", label: "Masculino Rede Social 01" },
+            { value: "modelo02", label: "Masculino Rede Social 02" },
+            { value: "modelo03", label: "Masculino Rede Social 03" },
+            { value: "modelo04", label: "Masculino Rede Social 04" },
+            { value: "modelo05", label: "Feminino Rede Social 01" },
+            { value: "modelo06", label: "Feminino Rede Social 02" },
+            { value: "modelo07", label: "Feminino Rede Social 03" },
+            { value: "modelo08", label: "Feminino Rede Social 04" },
+            { value: "modelo09", label: "Infantil Rede Social 01" },
+            { value: "modelo010", label: "Infantil Rede Social 02" },
+            { value: "modelo011", label: "Infantil Rede Social 03" },
+            { value: "modelo012", label: "Infantil Rede Social 04" },
+            { value: "personalizado", label: "Enviar Modelo" },
+        ] as { value: ModeloKey; label: string }[]),
         [],
     );
 
@@ -89,194 +134,173 @@ export default function ObituarioPage() {
         if (!isLast) setStep((s) => s + 1);
     }
 
-    function applySettings() {
-        localStorage.setItem("fontName", fontName);
-        localStorage.setItem("fontColor", fontColor);
-        setSettingsOpen(false);
-    }
-
     async function generate() {
-        const form = formRef.current;
-        if (!form) return;
-        const fd = new FormData(form);
+        try {
+            setPreviewSrc("");
 
-        const formato = (fd.get("formato") as Formato) || "vertical";
-        const modelo = (fd.get("modelo_fundo") as ModeloKey) || "modelo01";
-
-        let bgUrl = MODELOS["modelo01"];
-        if (modelo === "personalizado") {
-            const file = fd.get("fundo_personalizado") as File;
-            if (!file || !file.size) {
-                alert("Envie um modelo de fundo personalizado.");
-                return;
-            }
-            bgUrl = await fileToDataURL(file);
-        } else {
-            bgUrl = MODELOS[modelo as keyof typeof MODELOS] ?? MODELOS["modelo01"];
-        }
-
-        // Canvas base
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        // somente vertical (como no HTML original)
-        if (formato === "vertical") {
-            canvas.width = 1080;
-            canvas.height = 1920;
-        } else {
-            canvas.width = 928;
-            canvas.height = 824;
-        }
-
-        // desenha fundo
-        const bg = await loadImage(bgUrl);
-        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-
-        // helpers
-        const nome = String(fd.get("nome") || "");
-        const dataNasc = formatDateBr(String(fd.get("data_nascimento") || ""));
-        const dataFal = formatDateBr(String(fd.get("data_falecimento") || ""));
-        const velorioInicio = String(fd.get("velorio_inicio") || "");
-        const velorioFim = String(fd.get("velorio_fim") || "");
-        const dataCerimonia = formatDateBr(String(fd.get("data_cerimonia") || ""));
-        const fimDataCer = formatDateBr(String(fd.get("fim_data_cerimonia") || ""));
-        const localCer = String(fd.get("local_cerimonia") || "");
-        const dataSep = formatDateBr(String(fd.get("data_sepultamento") || ""));
-        const horaSep = String(fd.get("hora_sepultamento") || "");
-        const localSep = String(fd.get("local_sepultamento") || "");
-        const nota = String(fd.get("nota_pesar") || "");
-
-        const tInicioData = String(fd.get("transmissao_inicio_data") || "");
-        const tInicioHora = String(fd.get("transmissao_inicio_hora") || "");
-        const tFimData = String(fd.get("transmissao_fim_data") || "");
-        const tFimHora = String(fd.get("transmissao_fim_hora") || "");
-
-        const foto = fd.get("foto_falecido") as File | null;
-        const pretoBranco = fd.get("foto_preto_branco") === "on";
-
-        // fontes
-        const _fontName = localStorage.getItem("fontName") || "Nunito";
-        const _fontColor = localStorage.getItem("fontColor") || "#FFFFFF";
-        const fontSizeName = formato === "vertical" ? 45 : 40;
-        const fontSizeDetails = formato === "vertical" ? 30 : 25;
-        const fontSizeNote = formato === "vertical" ? 30 : 25;
-
-        // nome
-        ctx.fillStyle = _fontColor;
-        ctx.textAlign = "center";
-        ctx.font = `${fontSizeName}px ${_fontName}`;
-        if (formato === "vertical") ctx.fillText(nome, canvas.width / 2, 1000);
-        else ctx.fillText(nome, canvas.width / 2, 80);
-
-        // datas
-        ctx.font = `${fontSizeDetails}px ${_fontName}`;
-        if (formato === "vertical") {
-            ctx.fillText(`${dataNasc}`, canvas.width / 2 - 180, 1120);
-            ctx.fillText(`${dataFal}`, canvas.width / 2 + 200, 1120);
-        } else {
-            ctx.fillText(`${dataNasc}`, canvas.width / 2 - 110, 140);
-            ctx.fillText(`${dataFal}`, canvas.width / 2 + 120, 140);
-        }
-
-        // foto circular
-        if (foto && foto.size) {
-            const imgURL = URL.createObjectURL(foto);
-            const img = await loadImage(imgURL);
-            const radius = formato === "vertical" ? 270 : 130;
-            const x = formato === "vertical" ? canvas.width / 2 : 150;
-            const y = formato === "vertical" ? 620 : 345;
-
-            const buff = document.createElement("canvas");
-            buff.width = buff.height = radius * 2;
-            const bctx = buff.getContext("2d")!;
-            bctx.save();
-            bctx.beginPath();
-            bctx.arc(radius, radius, radius, 0, Math.PI * 2);
-            bctx.clip();
-            bctx.drawImage(img, 0, 0, radius * 2, radius * 2);
-
-            if (pretoBranco) {
-                const id = bctx.getImageData(0, 0, buff.width, buff.height);
-                const d = id.data;
-                for (let i = 0; i < d.length; i += 4) {
-                    const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-                    d[i] = avg;
-                    d[i + 1] = avg;
-                    d[i + 2] = avg;
+            // escolher fundo
+            let bgUrl = MODELOS["modelo01"];
+            if (form.modelo_fundo === "personalizado") {
+                if (!form.fundo_personalizado) {
+                    alert("Envie um modelo de fundo personalizado.");
+                    return;
                 }
-                bctx.putImageData(id, 0, 0);
-            }
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.clip();
-            ctx.drawImage(buff, x - radius, y - radius);
-            ctx.restore();
-        }
-
-        // nota de pesar (wrap)
-        ctx.textAlign = "center";
-        ctx.font = `${fontSizeNote}px ${_fontName}`;
-        ctx.fillStyle = _fontColor;
-
-        const maxLineWidth = formato === "vertical" ? 800 : 400;
-        const lineHeight = 30;
-        const startY = formato === "vertical" ? 200 : 270;
-        if (nota) {
-            if (formato === "vertical") {
-                drawWrapText(ctx, nota, canvas.width / 2, startY, maxLineWidth, lineHeight, "center");
+                bgUrl = await fileToDataURL(form.fundo_personalizado);
             } else {
-                drawWrapText(ctx, nota, canvas.width - 50, startY, maxLineWidth, lineHeight, "right");
+                bgUrl = MODELOS[form.modelo_fundo as keyof typeof MODELOS] ?? MODELOS["modelo01"];
             }
-        }
 
-        // blocos: velório / sepultamento
-        ctx.font = `${fontSizeNote}px ${_fontName}`;
-        ctx.fillStyle = _fontColor;
+            // canvas
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            if (!ctx) throw new Error("Canvas não suportado.");
 
-        if (formato === "vertical") {
-            ctx.textAlign = "left";
-            ctx.fillText(`Horário de Início: ${velorioInicio}`, 110, 1360);
-            ctx.fillText(`Data: ${dataCerimonia}`, 110, 1390);
-            ctx.fillText(`Horário de Término: ${velorioFim}`, 110, 1420);
-            ctx.fillText(`Data: ${fimDataCer}`, 110, 1450);
-            ctx.fillText(`Local: ${localCer}`, 110, 1480);
+            if (form.formato === "vertical") {
+                canvas.width = 1080;
+                canvas.height = 1920;
+            } else {
+                canvas.width = 928;
+                canvas.height = 824;
+            }
 
-            ctx.textAlign = "left";
-            ctx.fillText(`Data: ${dataSep}`, canvas.width - 970, 1610);
-            ctx.fillText(`Hora: ${horaSep}`, canvas.width - 970, 1640);
-            ctx.fillText(`Local: ${localSep}`, canvas.width - 970, 1670);
-        } else {
-            ctx.textAlign = "left";
-            ctx.fillText(`Horário de Início: ${velorioInicio}`, 48, 602);
-            ctx.fillText(`Data: ${dataCerimonia}`, 48, 632);
-            ctx.fillText(`Horário de Término: ${velorioFim}`, 48, 662);
-            ctx.fillText(`Data: ${fimDataCer}`, 48, 692);
-            ctx.fillText(`Local: ${localCer}`, 48, 722);
+            // fundo branco (evita tela preta antes do bg carregar)
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            ctx.textAlign = "right";
-            ctx.fillText(`Data: ${dataSep}`, canvas.width - 50, 602);
-            ctx.fillText(`Hora: ${horaSep}`, canvas.width - 50, 632);
-            ctx.fillText(`Local: ${localSep}`, canvas.width - 50, 662);
-        }
+            // carrega e desenha fundo
+            const bg = await loadImage(bgUrl);
+            ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
-        // transmissão (rodapé)
-        if (tInicioData && tInicioHora) {
+            // fontes preferidas
+            const _fontName = fontName || "Nunito";
+            const _fontColor = fontColor || "#000000";
+            const fontSizeName = form.formato === "vertical" ? 45 : 40;
+            const fontSizeDetails = form.formato === "vertical" ? 30 : 25;
+            const fontSizeNote = form.formato === "vertical" ? 30 : 25;
+
+            // Nome
+            ctx.fillStyle = _fontColor;
             ctx.textAlign = "center";
-            let baseY = formato === "vertical" ? 1750 : 760;
-            ctx.fillText(`Transmissão Online: Informações e senha com familiares`, canvas.width / 2, baseY);
-            baseY += 30;
-            let linha = `Início: ${formatDateBr(tInicioData)} ${tInicioHora}`;
-            if (tFimData && tFimHora) {
-                linha += ` | Fim: ${formatDateBr(tFimData)} ${tFimHora}`;
-            }
-            ctx.fillText(linha, canvas.width / 2, baseY);
-        }
+            ctx.font = `${fontSizeName}px ${_fontName}`;
+            if (form.formato === "vertical") ctx.fillText(form.nome, canvas.width / 2, 1000);
+            else ctx.fillText(form.nome, canvas.width / 2, 80);
 
-        // preview
-        setPreviewSrc(canvas.toDataURL("image/jpeg"));
+            // Datas nascimento/falecimento
+            ctx.font = `${fontSizeDetails}px ${_fontName}`;
+            const dataNasc = formatDateBr(form.data_nascimento);
+            const dataFal = formatDateBr(form.data_falecimento);
+            if (form.formato === "vertical") {
+                ctx.fillText(`${dataNasc}`, canvas.width / 2 - 180, 1120);
+                ctx.fillText(`${dataFal}`, canvas.width / 2 + 200, 1120);
+            } else {
+                ctx.fillText(`${dataNasc}`, canvas.width / 2 - 110, 140);
+                ctx.fillText(`${dataFal}`, canvas.width / 2 + 120, 140);
+            }
+
+            // Foto circular
+            if (form.foto_falecido) {
+                const imgURL = URL.createObjectURL(form.foto_falecido);
+                const img = await loadImage(imgURL);
+                const radius = form.formato === "vertical" ? 270 : 130;
+                const x = form.formato === "vertical" ? canvas.width / 2 : 150;
+                const y = form.formato === "vertical" ? 620 : 345;
+
+                const buff = document.createElement("canvas");
+                buff.width = buff.height = radius * 2;
+                const bctx = buff.getContext("2d")!;
+                bctx.save();
+                bctx.beginPath();
+                bctx.arc(radius, radius, radius, 0, Math.PI * 2);
+                bctx.clip();
+                bctx.drawImage(img, 0, 0, radius * 2, radius * 2);
+
+                if (form.foto_preto_branco) {
+                    const id = bctx.getImageData(0, 0, buff.width, buff.height);
+                    const d = id.data;
+                    for (let i = 0; i < d.length; i += 4) {
+                        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+                        d[i] = avg;
+                        d[i + 1] = avg;
+                        d[i + 2] = avg;
+                    }
+                    bctx.putImageData(id, 0, 0);
+                }
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(buff, x - radius, y - radius);
+                ctx.restore();
+            }
+
+            // Nota de pesar (wrap)
+            ctx.textAlign = "center";
+            ctx.font = `${fontSizeNote}px ${_fontName}`;
+            ctx.fillStyle = _fontColor;
+
+            const maxLineWidth = form.formato === "vertical" ? 800 : 400;
+            const lineHeight = 30;
+            const startY = form.formato === "vertical" ? 200 : 270;
+            if (form.nota_pesar) {
+                if (form.formato === "vertical") {
+                    drawWrapText(ctx, form.nota_pesar, canvas.width / 2, startY, maxLineWidth, lineHeight, "center");
+                } else {
+                    drawWrapText(ctx, form.nota_pesar, canvas.width - 50, startY, maxLineWidth, lineHeight, "right");
+                }
+            }
+
+            // Bloco velório / cerimônia
+            ctx.font = `${fontSizeNote}px ${_fontName}`;
+            ctx.fillStyle = _fontColor;
+            const dataCerimonia = formatDateBr(form.data_cerimonia);
+            const fimDataCer = formatDateBr(form.fim_data_cerimonia);
+            const dataSep = formatDateBr(form.data_sepultamento);
+
+            if (form.formato === "vertical") {
+                ctx.textAlign = "left";
+                ctx.fillText(`Horário de Início: ${form.velorio_inicio}`, 110, 1360);
+                ctx.fillText(`Data: ${dataCerimonia}`, 110, 1390);
+                ctx.fillText(`Horário de Término: ${form.velorio_fim}`, 110, 1420);
+                ctx.fillText(`Data: ${fimDataCer}`, 110, 1450);
+                ctx.fillText(`Local: ${form.local_cerimonia}`, 110, 1480);
+
+                ctx.textAlign = "left";
+                ctx.fillText(`Data: ${dataSep}`, canvas.width - 970, 1610);
+                ctx.fillText(`Hora: ${form.hora_sepultamento}`, canvas.width - 970, 1640);
+                ctx.fillText(`Local: ${form.local_sepultamento}`, canvas.width - 970, 1670);
+            } else {
+                ctx.textAlign = "left";
+                ctx.fillText(`Horário de Início: ${form.velorio_inicio}`, 48, 602);
+                ctx.fillText(`Data: ${dataCerimonia}`, 48, 632);
+                ctx.fillText(`Horário de Término: ${form.velorio_fim}`, 48, 662);
+                ctx.fillText(`Data: ${fimDataCer}`, 48, 692);
+                ctx.fillText(`Local: ${form.local_cerimonia}`, 48, 722);
+
+                ctx.textAlign = "right";
+                ctx.fillText(`Data: ${dataSep}`, canvas.width - 50, 602);
+                ctx.fillText(`Hora: ${form.hora_sepultamento}`, canvas.width - 50, 632);
+                ctx.fillText(`Local: ${form.local_sepultamento}`, canvas.width - 50, 662);
+            }
+
+            // Transmissão (rodapé)
+            if (form.transmissao_inicio_data && form.transmissao_inicio_hora) {
+                ctx.textAlign = "center";
+                let baseY = form.formato === "vertical" ? 1750 : 760;
+                ctx.fillText(`Transmissão Online: Informações e senha com familiares`, canvas.width / 2, baseY);
+                baseY += 30;
+                let linha = `Início: ${formatDateBr(form.transmissao_inicio_data)} ${form.transmissao_inicio_hora}`;
+                if (form.transmissao_fim_data && form.transmissao_fim_hora) {
+                    linha += ` | Fim: ${formatDateBr(form.transmissao_fim_data)} ${form.transmissao_fim_hora}`;
+                }
+                ctx.fillText(linha, canvas.width / 2, baseY);
+            }
+
+            setPreviewSrc(canvas.toDataURL("image/jpeg"));
+        } catch (err) {
+            console.error(err);
+            alert("Não foi possível gerar a arte. Verifique os campos e tente novamente.");
+        }
     }
 
     function download() {
@@ -287,8 +311,20 @@ export default function ObituarioPage() {
         a.click();
     }
 
+    // util p/ inputs controlados
+    const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+        setForm((f) => ({ ...f, [k]: v }));
+
     return (
         <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
+            {/* Correção iOS/Android para date/time */}
+            <style>{`
+        input[type="date"], input[type="time"] {
+          -webkit-appearance: auto !important;
+          appearance: auto !important;
+        }
+      `}</style>
+
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Gerar Obituário</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -299,7 +335,7 @@ export default function ObituarioPage() {
             <div className="grid gap-6 lg:grid-cols-2">
                 {/* FORM CARD */}
                 <div className="rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur sm:p-6">
-                    <form ref={formRef} className="space-y-6">
+                    <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
                         {/* STEP 1 */}
                         {step === 0 && (
                             <fieldset className="space-y-4">
@@ -314,15 +350,20 @@ export default function ObituarioPage() {
                                                 <span>Selecionar imagem</span>
                                                 <input
                                                     type="file"
-                                                    name="foto_falecido"
                                                     accept="image/*"
                                                     required
                                                     className="hidden"
+                                                    onChange={(e) => set("foto_falecido", e.target.files?.[0] ?? null)}
                                                 />
                                             </label>
 
                                             <label className="inline-flex items-center gap-2 text-sm">
-                                                <input type="checkbox" name="foto_preto_branco" className="h-4 w-4" />
+                                                <input
+                                                    type="checkbox"
+                                                    className="h-4 w-4"
+                                                    checked={form.foto_preto_branco}
+                                                    onChange={(e) => set("foto_preto_branco", e.target.checked)}
+                                                />
                                                 Preto/Branco
                                             </label>
                                         </div>
@@ -330,16 +371,36 @@ export default function ObituarioPage() {
 
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm">Nome</label>
-                                        <input name="nome" required className="input" placeholder="Nome completo" />
+                                        <input
+                                            className="input"
+                                            placeholder="Nome completo"
+                                            required
+                                            value={form.nome}
+                                            onChange={(e) => set("nome", e.target.value)}
+                                        />
                                     </div>
 
                                     <div>
                                         <label className="mb-1 block text-sm">Data de Nascimento</label>
-                                        <input type="date" name="data_nascimento" required className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            required
+                                            value={form.data_nascimento}
+                                            onChange={(e) => set("data_nascimento", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Data de Falecimento</label>
-                                        <input type="date" name="data_falecimento" required className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            required
+                                            value={form.data_falecimento}
+                                            onChange={(e) => set("data_falecimento", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                 </div>
                             </fieldset>
@@ -353,24 +414,57 @@ export default function ObituarioPage() {
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm">Local da Cerimônia</label>
-                                        <input name="local_cerimonia" required className="input" />
+                                        <input
+                                            className="input"
+                                            required
+                                            value={form.local_cerimonia}
+                                            onChange={(e) => set("local_cerimonia", e.target.value)}
+                                        />
                                     </div>
 
                                     <div>
                                         <label className="mb-1 block text-sm">Início (Data)</label>
-                                        <input type="date" name="data_cerimonia" required className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            required
+                                            value={form.data_cerimonia}
+                                            onChange={(e) => set("data_cerimonia", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Velório - Início</label>
-                                        <input type="time" name="velorio_inicio" required className="input" />
+                                        <input
+                                            type="time"
+                                            className="input"
+                                            required
+                                            value={form.velorio_inicio}
+                                            onChange={(e) => set("velorio_inicio", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Velório - Fim</label>
-                                        <input type="time" name="velorio_fim" required className="input" />
+                                        <input
+                                            type="time"
+                                            className="input"
+                                            required
+                                            value={form.velorio_fim}
+                                            onChange={(e) => set("velorio_fim", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Fim (Data)</label>
-                                        <input type="date" name="fim_data_cerimonia" required className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            required
+                                            value={form.fim_data_cerimonia}
+                                            onChange={(e) => set("fim_data_cerimonia", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                 </div>
                             </fieldset>
@@ -383,15 +477,34 @@ export default function ObituarioPage() {
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div>
                                         <label className="mb-1 block text-sm">Data do Sepultamento</label>
-                                        <input type="date" name="data_sepultamento" required className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            required
+                                            value={form.data_sepultamento}
+                                            onChange={(e) => set("data_sepultamento", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Hora do Sepultamento</label>
-                                        <input type="time" name="hora_sepultamento" required className="input" />
+                                        <input
+                                            type="time"
+                                            className="input"
+                                            required
+                                            value={form.hora_sepultamento}
+                                            onChange={(e) => set("hora_sepultamento", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm">Local do Sepultamento</label>
-                                        <input name="local_sepultamento" required className="input" />
+                                        <input
+                                            className="input"
+                                            required
+                                            value={form.local_sepultamento}
+                                            onChange={(e) => set("local_sepultamento", e.target.value)}
+                                        />
                                     </div>
                                 </div>
                             </fieldset>
@@ -404,25 +517,55 @@ export default function ObituarioPage() {
 
                                 <div>
                                     <label className="mb-1 block text-sm">Nota de Pesar</label>
-                                    <textarea name="nota_pesar" rows={4} required className="input" />
+                                    <textarea
+                                        className="input"
+                                        rows={4}
+                                        required
+                                        value={form.nota_pesar}
+                                        onChange={(e) => set("nota_pesar", e.target.value)}
+                                    />
                                 </div>
 
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div>
                                         <label className="mb-1 block text-sm">Transmissão - Início (Data)</label>
-                                        <input type="date" name="transmissao_inicio_data" className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            value={form.transmissao_inicio_data}
+                                            onChange={(e) => set("transmissao_inicio_data", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Transmissão - Início (Hora)</label>
-                                        <input type="time" name="transmissao_inicio_hora" className="input" />
+                                        <input
+                                            type="time"
+                                            className="input"
+                                            value={form.transmissao_inicio_hora}
+                                            onChange={(e) => set("transmissao_inicio_hora", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Transmissão - Fim (Data)</label>
-                                        <input type="date" name="transmissao_fim_data" className="input" />
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            value={form.transmissao_fim_data}
+                                            onChange={(e) => set("transmissao_fim_data", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-sm">Transmissão - Fim (Hora)</label>
-                                        <input type="time" name="transmissao_fim_hora" className="input" />
+                                        <input
+                                            type="time"
+                                            className="input"
+                                            value={form.transmissao_fim_hora}
+                                            onChange={(e) => set("transmissao_fim_hora", e.target.value)}
+                                            onClick={(e) => (e.currentTarget as any).showPicker?.()}
+                                        />
                                     </div>
                                 </div>
                             </fieldset>
@@ -436,18 +579,22 @@ export default function ObituarioPage() {
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div>
                                         <label className="mb-1 block text-sm">Formato</label>
-                                        <select name="formato" className="input" defaultValue="vertical">
+                                        <select
+                                            className="input"
+                                            value={form.formato}
+                                            onChange={(e) => set("formato", e.target.value as Formato)}
+                                        >
                                             <option value="vertical">Redes Sociais</option>
                                         </select>
                                     </div>
 
                                     <div>
                                         <label className="mb-1 block text-sm">Modelo de Fundo</label>
-                                        <select name="modelo_fundo" className="input" defaultValue="modelo01" onChange={(e) => {
-                                            const v = e.currentTarget.value as ModeloKey;
-                                            const el = document.getElementById("uploadFundoBlock");
-                                            if (el) el.classList.toggle("hidden", v !== "personalizado");
-                                        }}>
+                                        <select
+                                            className="input"
+                                            value={form.modelo_fundo}
+                                            onChange={(e) => set("modelo_fundo", e.target.value as ModeloKey)}
+                                        >
                                             {modelosOptions.map((m) => (
                                                 <option key={m.value} value={m.value}>
                                                     {m.label}
@@ -456,10 +603,17 @@ export default function ObituarioPage() {
                                         </select>
                                     </div>
 
-                                    <div id="uploadFundoBlock" className="sm:col-span-2 hidden">
-                                        <label className="mb-1 block text-sm">Enviar Fundo Personalizado</label>
-                                        <input type="file" name="fundo_personalizado" accept="image/*" className="input" />
-                                    </div>
+                                    {form.modelo_fundo === "personalizado" && (
+                                        <div className="sm:col-span-2">
+                                            <label className="mb-1 block text-sm">Enviar Fundo Personalizado</label>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                className="input"
+                                                onChange={(e) => set("fundo_personalizado", e.target.files?.[0] ?? null)}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </fieldset>
                         )}
@@ -478,7 +632,11 @@ export default function ObituarioPage() {
                                 </button>
 
                                 {!isLast && (
-                                    <button type="button" onClick={handleNext} className="btn btn-primary inline-flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleNext}
+                                        className="btn btn-primary inline-flex items-center gap-2"
+                                    >
                                         Próximo
                                         <IconChevronRight className="size-4" />
                                     </button>
@@ -578,7 +736,7 @@ export default function ObituarioPage() {
                             </label>
 
                             <div className="pt-2">
-                                <button onClick={applySettings} className="btn btn-primary w-full">
+                                <button onClick={() => setSettingsOpen(false)} className="btn btn-primary w-full">
                                     Aplicar Configurações
                                 </button>
                             </div>
@@ -590,7 +748,7 @@ export default function ObituarioPage() {
     );
 }
 
-/* ===== Helpers ===== */
+/* ==================== Helpers ==================== */
 
 function drawWrapText(
     ctx: CanvasRenderingContext2D,
@@ -623,10 +781,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => resolve(img);
-        img.onerror = reject;
+        img.onerror = (e) => reject(e);
         img.src = src;
     });
 }
+
 function fileToDataURL(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
         const r = new FileReader();
