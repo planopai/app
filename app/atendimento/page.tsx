@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 /* ============================================================
    Tipos
@@ -76,8 +76,7 @@ function TextFeedback({
 /* helper de estilo para os botões de sala */
 const salaBtn = (active: boolean) =>
     `w-full rounded-2xl border px-6 py-3 text-base font-semibold transition
-   ${active ? "border-primary bg-primary/5 text-primary shadow-sm"
-        : "border-muted hover:bg-muted/50"}`;
+   ${active ? "border-primary bg-primary/5 text-primary shadow-sm" : "border-muted hover:bg-muted/50"}`;
 
 /* ============================================================
    Página
@@ -88,19 +87,23 @@ export default function AtendimentoPage() {
     const [step, setStep] = useState(0);
 
     // Sala com botões (substitui o <select>)
-    const [salaSelecionada, setSalaSelecionada] = useState<"Sala 01" | "Sala 02" | "Sala 03">("Sala 01");
+    const [salaSelecionada, setSalaSelecionada] =
+        useState<"Sala 01" | "Sala 02" | "Sala 03">("Sala 01");
 
-    // Refs p/ campos
-    const refNome = useRef<HTMLInputElement>(null);
+    // Estado controlado do formulário
+    const [form, setForm] = useState({
+        nome: "",
+        localVelorio: "Memorial Senhor do Bonfim",
+        dataSepultamento: "",
+        horarioSepultamento: "",
+        localSepultamento: "",
+        dataVelorio: "",
+        horarioInicio: "",
+        dataFim: "",
+        horarioTermino: "",
+    });
+    const [fotoFalecido, setFotoFalecido] = useState<File | null>(null);
     const refFoto = useRef<HTMLInputElement>(null);
-    const refLocalVelorio = useRef<HTMLInputElement>(null);
-    const refDataSep = useRef<HTMLInputElement>(null);
-    const refHoraSep = useRef<HTMLInputElement>(null);
-    const refLocalSep = useRef<HTMLInputElement>(null);
-    const refDataVelorio = useRef<HTMLInputElement>(null);
-    const refHoraInicio = useRef<HTMLInputElement>(null);
-    const refDataFim = useRef<HTMLInputElement>(null);
-    const refHoraTermino = useRef<HTMLInputElement>(null);
 
     const [respMsg, setRespMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -114,62 +117,54 @@ export default function AtendimentoPage() {
 
     const limparFormulario = () => {
         setSalaSelecionada("Sala 01");
-        [refNome, refLocalVelorio, refLocalSep].forEach((r) => {
-            if (r.current) r.current.value = "";
+        setForm({
+            nome: "",
+            localVelorio: "Memorial Senhor do Bonfim",
+            dataSepultamento: "",
+            horarioSepultamento: "",
+            localSepultamento: "",
+            dataVelorio: "",
+            horarioInicio: "",
+            dataFim: "",
+            horarioTermino: "",
         });
-        [refDataSep, refDataVelorio, refDataFim].forEach((r) => {
-            if (r.current) r.current.value = "";
-        });
-        [refHoraSep, refHoraInicio, refHoraTermino].forEach((r) => {
-            if (r.current) r.current.value = "";
-        });
+        setFotoFalecido(null);
         if (refFoto.current) refFoto.current.value = "";
     };
 
     const salvarInformacoes = useCallback(async () => {
-        const nome = refNome.current?.value?.trim() || "";
-        const localVelorio = refLocalVelorio.current?.value?.trim() || "";
-        const dataSepultamento = refDataSep.current?.value || "";
-        const horarioSepultamento = refHoraSep.current?.value || "";
-        const localSepultamento = refLocalSep.current?.value?.trim() || "";
-        const dataVelorio = refDataVelorio.current?.value || "";
-        const horarioInicio = refHoraInicio.current?.value || "";
-        const dataFim = refDataFim.current?.value || "";
-        const horarioTermino = refHoraTermino.current?.value || "";
-        const fotoFalecido = refFoto.current?.files?.[0] ?? null;
-
-        // validação mínima — ajuste conforme sua regra
-        if (!nome || !localVelorio || !dataVelorio || !horarioInicio) {
+        // validação mínima
+        if (!form.nome || !form.localVelorio || !form.dataVelorio || !form.horarioInicio) {
             setRespMsg({ text: "Preencha os campos obrigatórios.", ok: false });
             return;
         }
 
-        const formData = new FormData();
-        formData.append("sala", salaSelecionada);
-        formData.append("nome", nome);
-        formData.append("localVelorio", localVelorio);
-        formData.append("dataSepultamento", dataSepultamento);
-        formData.append("horarioSepultamento", horarioSepultamento);
-        formData.append("localSepultamento", localSepultamento);
-        formData.append("dataVelorio", dataVelorio);
-        formData.append("horarioInicio", horarioInicio);
-        formData.append("dataFim", dataFim);
-        formData.append("horarioTermino", horarioTermino);
-        if (fotoFalecido) formData.append("foto_falecido", fotoFalecido);
+        const fd = new FormData();
+        fd.append("sala", salaSelecionada);
+        fd.append("nome", form.nome);
+        fd.append("localVelorio", form.localVelorio);
+        fd.append("dataSepultamento", form.dataSepultamento);
+        fd.append("horarioSepultamento", form.horarioSepultamento);
+        fd.append("localSepultamento", form.localSepultamento);
+        fd.append("dataVelorio", form.dataVelorio);
+        fd.append("horarioInicio", form.horarioInicio);
+        fd.append("dataFim", form.dataFim);
+        fd.append("horarioTermino", form.horarioTermino);
+        if (fotoFalecido) fd.append("foto_falecido", fotoFalecido);
 
         try {
-            // OBS: NÃO definir Content-Type manualmente com FormData
             const res = await fetch("/api/php/salvarDados.php", {
                 method: "POST",
-                body: formData,
+                body: fd,
                 cache: "no-store",
             });
 
-            // tenta ler JSON; se der erro, trata como falha
             let data: any = null;
             try {
                 data = await res.json();
-            } catch { }
+            } catch {
+                // ignora JSON inválido
+            }
 
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setRespMsg({ text: "Atendimento Criado Com Sucesso!", ok: true });
@@ -182,10 +177,10 @@ export default function AtendimentoPage() {
                     ok: false,
                 });
             }
-        } catch (e) {
+        } catch {
             setRespMsg({ text: "Erro ao Criar o Atendimento.", ok: false });
         }
-    }, [salaSelecionada]);
+    }, [form, salaSelecionada, fotoFalecido]);
 
     // ----------------- Tabela / Edição -----------------
     const [linhas, setLinhas] = useState<RegistroSala[]>([]);
@@ -198,7 +193,7 @@ export default function AtendimentoPage() {
             });
             if (!res.ok) throw new Error(res.statusText);
             const data = (await res.json()) as RegistroSala[] | { dados?: RegistroSala[] };
-            const arr = Array.isArray(data) ? data : (data?.dados ?? []);
+            const arr = Array.isArray(data) ? data : data?.dados ?? [];
             setLinhas(arr || []);
             setErrEdicao(null);
         } catch (e: any) {
@@ -316,222 +311,213 @@ export default function AtendimentoPage() {
 
             <div className="mt-4 space-y-0">
                 {/* Step 0 - Escolha da sala (3 botões) */}
-                {step === 0 && (
-                    <section className="step active">
-                        <fieldset className="rounded-2xl border p-4">
-                            <div className="mb-2 text-sm font-semibold">Escolha a Sala</div>
-                            <div className="grid gap-3 sm:grid-cols-3">
-                                {(["Sala 01", "Sala 02", "Sala 03"] as const).map((s) => (
-                                    <button
-                                        key={s}
-                                        type="button"
-                                        className={salaBtn(salaSelecionada === s)}
-                                        onClick={() => setSalaSelecionada(s)}
-                                        aria-pressed={salaSelecionada === s}
-                                    >
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                A senha/definição será aplicada para a sala selecionada.
-                            </p>
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 0}>
+                    <fieldset className="rounded-2xl border p-4">
+                        <div className="mb-2 text-sm font-semibold">Escolha a Sala</div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            {(["Sala 01", "Sala 02", "Sala 03"] as const).map((s) => (
+                                <button
+                                    key={s}
+                                    type="button"
+                                    className={salaBtn(salaSelecionada === s)}
+                                    onClick={() => setSalaSelecionada(s)}
+                                    aria-pressed={salaSelecionada === s}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            A senha/definição será aplicada para a sala selecionada.
+                        </p>
+                    </fieldset>
+                </section>
 
                 {/* Step 1 */}
-                {step === 1 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="nome" className="text-sm font-medium">
-                                Nome Completo:
-                            </label>
-                            <input
-                                type="text"
-                                id="nome"
-                                name="nome"
-                                placeholder="Digite o nome completo"
-                                required
-                                ref={refNome}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 1}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="nome" className="text-sm font-medium">
+                            Nome Completo:
+                        </label>
+                        <input
+                            type="text"
+                            id="nome"
+                            name="nome"
+                            placeholder="Digite o nome completo"
+                            required
+                            value={form.nome}
+                            onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 2 */}
-                {step === 2 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="foto-falecido" className="text-sm font-medium">
-                                Foto do Falecido:
-                            </label>
-                            <input
-                                type="file"
-                                id="foto-falecido"
-                                name="foto_falecido"
-                                accept="image/*"
-                                required
-                                ref={refFoto}
-                                className="w-full rounded-md border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 2}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="foto-falecido" className="text-sm font-medium">
+                            Foto do Falecido:
+                        </label>
+                        <input
+                            ref={refFoto}
+                            type="file"
+                            id="foto-falecido"
+                            name="foto_falecido"
+                            accept="image/*"
+                            onChange={(e) => setFotoFalecido(e.target.files?.[0] ?? null)}
+                            className="w-full rounded-md border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5"
+                        />
+                        {fotoFalecido && (
+                            <div className="text-xs text-muted-foreground">
+                                Arquivo selecionado: <b>{fotoFalecido.name}</b>
+                            </div>
+                        )}
+                    </fieldset>
+                </section>
 
                 {/* Step 3 */}
-                {step === 3 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="local-velorio" className="text-sm font-medium">
-                                Local do Velório:
-                            </label>
-                            <input
-                                type="text"
-                                id="local-velorio"
-                                name="local_velorio"
-                                defaultValue="Memorial Senhor do Bonfim"
-                                required
-                                ref={refLocalVelorio}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 3}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="local-velorio" className="text-sm font-medium">
+                            Local do Velório:
+                        </label>
+                        <input
+                            type="text"
+                            id="local-velorio"
+                            name="local_velorio"
+                            required
+                            value={form.localVelorio}
+                            onChange={(e) => setForm((f) => ({ ...f, localVelorio: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 4 */}
-                {step === 4 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="data-sepultamento" className="text-sm font-medium">
-                                Data do Sepultamento:
-                            </label>
-                            <input
-                                type="date"
-                                id="data-sepultamento"
-                                name="data_sepultamento"
-                                required
-                                ref={refDataSep}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 4}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="data-sepultamento" className="text-sm font-medium">
+                            Data do Sepultamento:
+                        </label>
+                        <input
+                            type="date"
+                            id="data-sepultamento"
+                            name="data_sepultamento"
+                            required
+                            value={form.dataSepultamento}
+                            onChange={(e) => setForm((f) => ({ ...f, dataSepultamento: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 5 */}
-                {step === 5 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="horario-sepultamento" className="text-sm font-medium">
-                                Horário do Sepultamento:
-                            </label>
-                            <input
-                                type="time"
-                                id="horario-sepultamento"
-                                name="horario_sepultamento"
-                                required
-                                ref={refHoraSep}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 5}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="horario-sepultamento" className="text-sm font-medium">
+                            Horário do Sepultamento:
+                        </label>
+                        <input
+                            type="time"
+                            id="horario-sepultamento"
+                            name="horario_sepultamento"
+                            required
+                            value={form.horarioSepultamento}
+                            onChange={(e) => setForm((f) => ({ ...f, horarioSepultamento: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 6 */}
-                {step === 6 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="local-sepultamento" className="text-sm font-medium">
-                                Local do Sepultamento:
-                            </label>
-                            <input
-                                type="text"
-                                id="local-sepultamento"
-                                name="local_sepultamento"
-                                required
-                                ref={refLocalSep}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 6}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="local-sepultamento" className="text-sm font-medium">
+                            Local do Sepultamento:
+                        </label>
+                        <input
+                            type="text"
+                            id="local-sepultamento"
+                            name="local_sepultamento"
+                            required
+                            value={form.localSepultamento}
+                            onChange={(e) => setForm((f) => ({ ...f, localSepultamento: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 7 */}
-                {step === 7 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="data-velorio" className="text-sm font-medium">
-                                Data Início (Velório):
-                            </label>
-                            <input
-                                type="date"
-                                id="data-velorio"
-                                name="data_velorio"
-                                required
-                                ref={refDataVelorio}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 7}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="data-velorio" className="text-sm font-medium">
+                            Data Início (Velório):
+                        </label>
+                        <input
+                            type="date"
+                            id="data-velorio"
+                            name="data_velorio"
+                            required
+                            value={form.dataVelorio}
+                            onChange={(e) => setForm((f) => ({ ...f, dataVelorio: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 8 */}
-                {step === 8 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="horario-inicio" className="text-sm font-medium">
-                                Horário de Início (Velório):
-                            </label>
-                            <input
-                                type="time"
-                                id="horario-inicio"
-                                name="horario_inicio"
-                                required
-                                ref={refHoraInicio}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 8}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="horario-inicio" className="text-sm font-medium">
+                            Horário de Início (Velório):
+                        </label>
+                        <input
+                            type="time"
+                            id="horario-inicio"
+                            name="horario_inicio"
+                            required
+                            value={form.horarioInicio}
+                            onChange={(e) => setForm((f) => ({ ...f, horarioInicio: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 9 */}
-                {step === 9 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="data-fim" className="text-sm font-medium">
-                                Data Fim (Velório):
-                            </label>
-                            <input
-                                type="date"
-                                id="data-fim"
-                                name="data_fim"
-                                required
-                                ref={refDataFim}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 9}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="data-fim" className="text-sm font-medium">
+                            Data Fim (Velório):
+                        </label>
+                        <input
+                            type="date"
+                            id="data-fim"
+                            name="data_fim"
+                            required
+                            value={form.dataFim}
+                            onChange={(e) => setForm((f) => ({ ...f, dataFim: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
 
                 {/* Step 10 */}
-                {step === 10 && (
-                    <section className="step">
-                        <fieldset className="grid gap-2 rounded-2xl border p-4">
-                            <label htmlFor="horario-termino" className="text-sm font-medium">
-                                Horário de Término (Velório):
-                            </label>
-                            <input
-                                type="time"
-                                id="horario-termino"
-                                name="horario_termino"
-                                required
-                                ref={refHoraTermino}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                            />
-                        </fieldset>
-                    </section>
-                )}
+                <section className="step" hidden={step !== 10}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="horario-termino" className="text-sm font-medium">
+                            Horário de Término (Velório):
+                        </label>
+                        <input
+                            type="time"
+                            id="horario-termino"
+                            name="horario_termino"
+                            required
+                            value={form.horarioTermino}
+                            onChange={(e) => setForm((f) => ({ ...f, horarioTermino: e.target.value }))}
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
             </div>
 
             {/* Mensagem de resposta */}
