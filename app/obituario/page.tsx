@@ -33,18 +33,18 @@ const STEPS = [
 const WP = (p: string) => `/api/wp${p}`;
 
 const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
-    modelo01: WP("/wp-content/uploads/2024/10/MM1.png"),
-    modelo02: WP("/wp-content/uploads/2024/10/MM2.png"),
-    modelo03: WP("/wp-content/uploads/2024/10/M3.png"),
-    modelo04: WP("/wp-content/uploads/2024/10/M4.png"),
-    modelo05: WP("/wp-content/uploads/2024/10/F1.png"),
-    modelo06: WP("/wp-content/uploads/2024/10/F2.png"),
-    modelo07: WP("/wp-content/uploads/2024/10/F3.png"),
-    modelo08: WP("/wp-content/uploads/2024/10/F4.png"),
-    modelo09: WP("/wp-content/uploads/2024/10/I1.png"),
-    modelo010: WP("/wp-content/uploads/2024/10/I2.png"),
-    modelo011: WP("/wp-content/uploads/2024/10/I3.png"),
-    modelo012: WP("/wp-content/uploads/2024/10/I4.png"),
+    modelo01: WP("/images/MM1.png"),
+    modelo02: WP("/images/MM2.png"),
+    modelo03: WP("/images/M3.png"),
+    modelo04: WP("/images/M4.png"),
+    modelo05: WP("/images/F1.png"),
+    modelo06: WP("/images/F2.png"),
+    modelo07: WP("/images/F3.png"),
+    modelo08: WP("/images/F4.png"),
+    modelo09: WP("/images/I1.png"),
+    modelo010: WP("/images/I2.png"),
+    modelo011: WP("/images/I3.png"),
+    modelo012: WP("/images/I4.png"),
 };
 
 /* ==================== Utils (datas/horas) ==================== */
