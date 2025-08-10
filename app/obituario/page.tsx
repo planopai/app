@@ -63,7 +63,7 @@ const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
     modelo012: asSrc(I04),
 };
 
-/* ==================== Utils (datas/horas) ==================== */
+// ==================== Utils (datas/horas) ====================
 function onlyDigits(s: string) { return s.replace(/\D+/g, ""); }
 function maskDateBR(v: string) {
     const d = onlyDigits(v).slice(0, 8);
@@ -92,11 +92,11 @@ function brToISO(br: string) {
 }
 function normalizeDateToBR(input: string) {
     if (!input) return "";
-    if (/\d{4}-\d{2}-\d{2}/.test(input)) return isoToBR(input);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return isoToBR(input);
     return maskDateBR(input);
 }
 
-/* ==================== Inputs com digitação + picker ==================== */
+// ==================== Inputs com digitação + picker ====================
 function SmartDateInput({
     label,
     valueBR,
@@ -112,6 +112,7 @@ function SmartDateInput({
 }) {
     const id = React.useId();
     const hiddenId = `${id}-native`;
+    const iso = brToISO(valueBR);
     return (
         <div>
             <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
@@ -136,11 +137,12 @@ function SmartDateInput({
                 >
                     <IconCalendar className="size-4" />
                 </button>
+                {/* só joga valor válido no input nativo */}
                 <input
                     id={hiddenId}
                     type="date"
                     className="sr-only"
-                    value={brToISO(valueBR)}
+                    value={iso || ""}
                     onChange={(e) => onChange(isoToBR(e.target.value))}
                 />
             </div>
@@ -163,6 +165,9 @@ function SmartTimeInput({
 }) {
     const id = React.useId();
     const hiddenId = `${id}-native`;
+    const masked = maskTime(value);
+    // evita erro "17:0" no input time
+    const nativeValue = masked.length === 5 ? masked : "";
     return (
         <div>
             <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
@@ -174,7 +179,7 @@ function SmartTimeInput({
                     autoComplete="off"
                     className="input w-full"
                     placeholder={placeholder}
-                    value={value}
+                    value={masked}
                     onChange={(e) => onChange(maskTime(e.target.value))}
                     required={required}
                 />
@@ -191,7 +196,7 @@ function SmartTimeInput({
                     id={hiddenId}
                     type="time"
                     className="sr-only"
-                    value={value}
+                    value={nativeValue}
                     onChange={(e) => onChange(e.target.value)}
                 />
             </div>
@@ -199,7 +204,7 @@ function SmartTimeInput({
     );
 }
 
-/* ==================== Página ==================== */
+// ==================== Página ====================
 export default function ObituarioPage() {
     const [step, setStep] = React.useState(0);
     const stepsTotal = STEPS.length;
@@ -252,26 +257,6 @@ export default function ObituarioPage() {
     // salva prefs
     React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontName", fontName); }, [fontName]);
     React.useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("fontColor", fontColor); }, [fontColor]);
-
-    const modelosOptions = React.useMemo(
-        () =>
-        ([
-            { value: "modelo01", label: "Masculino Rede Social 01" },
-            { value: "modelo02", label: "Masculino Rede Social 02" },
-            { value: "modelo03", label: "Masculino Rede Social 03" },
-            { value: "modelo04", label: "Masculino Rede Social 04" },
-            { value: "modelo05", label: "Feminino Rede Social 01" },
-            { value: "modelo06", label: "Feminino Rede Social 02" },
-            { value: "modelo07", label: "Feminino Rede Social 03" },
-            { value: "modelo08", label: "Feminino Rede Social 04" },
-            { value: "modelo09", label: "Infantil Rede Social 01" },
-            { value: "modelo010", label: "Infantil Rede Social 02" },
-            { value: "modelo011", label: "Infantil Rede Social 03" },
-            { value: "modelo012", label: "Infantil Rede Social 04" },
-            { value: "personalizado", label: "Enviar Modelo" },
-        ] as { value: ModeloKey; label: string }[]),
-        [],
-    );
 
     const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
         setForm((f) => ({ ...f, [k]: v }));
@@ -456,7 +441,7 @@ export default function ObituarioPage() {
         a.click();
     }
 
-    /* ==================== UI ==================== */
+    // ==================== UI ====================
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             {/* estilos rápidos */}
@@ -889,7 +874,7 @@ export default function ObituarioPage() {
     );
 }
 
-/* ==================== Helpers ==================== */
+// ==================== Helpers ====================
 function drawWrapText(
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -922,7 +907,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
         // Define crossOrigin somente se for URL absoluta e de outro domínio
         const isAbsolute = /^https?:\/\//i.test(src);
-        if (isAbsolute && !src.startsWith(location.origin)) {
+        if (isAbsolute && typeof location !== "undefined" && !src.startsWith(location.origin)) {
             img.crossOrigin = "anonymous";
         }
 
