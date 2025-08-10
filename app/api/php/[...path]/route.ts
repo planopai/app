@@ -1,91 +1,55 @@
-// src/app/api/php/[...path]/route.ts
-import { NextRequest, NextResponse } from "next/server";
+// app/api/php/[...path]/route.ts
+import type { NextRequest } from "next/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+const TARGET_BASE = "https://planoassistencialintegrado.com.br"; // PHP está AQUI
+export const dynamic = "force-dynamic"; // evita cache do Next
 
-const PHP_ORIGIN = process.env.PHP_ORIGIN || "https://planoassistencialintegrado.com.br";
-
-function buildTargetUrl(req: NextRequest, pathParam: string[]) {
-    const path = (pathParam ?? []).join("/");
-    const qs = req.nextUrl.search || "";
-    return `${PHP_ORIGIN}/${path}${qs}`;
+function buildTargetUrl(req: NextRequest, pathSegs?: string[]) {
+    const path = pathSegs && pathSegs.length ? "/" + pathSegs.join("/") : "";
+    const url = new URL(TARGET_BASE + path);
+    // repassa os query params
+    req.nextUrl.searchParams.forEach((v, k) => url.searchParams.set(k, v));
+    return url.toString();
 }
 
-function pickForwardHeaders(req: NextRequest) {
-    const out = new Headers();
-    const h = req.headers;
+async function handler(req: NextRequest, ctx: { params: { path?: string[] } }) {
+    const target = buildTargetUrl(req, ctx.params.path);
 
-    // Encaminhe o mínimo necessário
-    for (const k of ["content-type", "authorization", "cookie", "x-requested-with", "referer"]) {
-        const v = h.get(k);
-        if (v) out.set(k, v);
-    }
+    // Monte headers sem colocar undefined
+    const fwd = new Headers();
+    fwd.set("X-Requested-With", "XMLHttpRequest");
+    const ct = req.headers.get("content-type");
+    if (ct) fwd.set("Content-Type", ct);
+    const cookie = req.headers.get("cookie");
+    if (cookie) fwd.set("cookie", cookie);
+    const auth = req.headers.get("authorization");
+    if (auth) fwd.set("authorization", auth);
 
-    // **IMPORTANTE**: peça ao upstream para NÃO comprimir
-    out.set("accept-encoding", "identity");
-
-    // Identificação opcional
-    out.set("x-proxy-from", "pai.app");
-    return out;
-}
-
-function applyUpstreamHeaders(upstream: Response, res: NextResponse) {
-    upstream.headers.forEach((value, key) => {
-        const k = key.toLowerCase();
-
-        // Não repasse headers que quebram a resposta no proxy
-        if (k === "content-encoding") return;   // <- evita o ERR_CONTENT_DECODING_FAILED
-        if (k === "content-length") return;     // body pode ter mudado
-        if (k === "transfer-encoding") return;
-        if (k === "connection") return;
-
-        if (k === "set-cookie") res.headers.append("set-cookie", value);
-        else res.headers.set(key, value);
-    });
-
-    // Garanta um Content-Type se o upstream não mandou
-    if (!res.headers.get("content-type")) {
-        const ct = upstream.headers.get("content-type") || "application/octet-stream";
-        res.headers.set("content-type", ct);
-    }
-}
-
-async function proxy(method: string, req: NextRequest, ctx: { params: { path: string[] } }) {
-    const targetUrl = buildTargetUrl(req, ctx.params.path);
-    const headers = pickForwardHeaders(req);
-
-    let body: BodyInit | undefined = undefined;
-    if (!["GET", "HEAD"].includes(method)) {
-        const ab = await req.arrayBuffer();
-        body = ab.byteLength ? Buffer.from(ab) : undefined;
-
-        // NUNCA envie content-length manual aqui; deixe o fetch calcular
-        headers.delete("content-length");
-    }
-
-    const upstream = await fetch(targetUrl, {
-        method,
-        headers,
-        body,
+    const isBodyless = req.method === "GET" || req.method === "HEAD";
+    const init: RequestInit = {
+        method: req.method,
+        headers: fwd,
+        body: isBodyless ? undefined : await req.arrayBuffer(),
+        // estes dois campos não fazem diferença no fetch do servidor do Next,
+        // mas deixo por clareza
         redirect: "manual",
-        // Garantir que nada de cache atrapalhe
-        cache: "no-store",
-    });
+    };
 
-    const res = new NextResponse(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-    });
+    const resp = await fetch(target, init);
 
-    applyUpstreamHeaders(upstream, res);
-    return res;
+    // Copie headers da resposta, mas remova os que quebram no proxy
+    const h = new Headers(resp.headers);
+    h.delete("content-encoding");
+    h.delete("transfer-encoding");
+    // Opcional: permitir uso desse endpoint via browser sem CORS
+    h.set("Access-Control-Allow-Origin", "*");
+
+    return new Response(resp.body, { status: resp.status, headers: h });
 }
 
-export const GET = (req: NextRequest, ctx: any) => proxy("GET", req, ctx);
-export const POST = (req: NextRequest, ctx: any) => proxy("POST", req, ctx);
-export const PUT = (req: NextRequest, ctx: any) => proxy("PUT", req, ctx);
-export const PATCH = (req: NextRequest, ctx: any) => proxy("PATCH", req, ctx);
-export const DELETE = (req: NextRequest, ctx: any) => proxy("DELETE", req, ctx);
-export const OPTIONS = async () => NextResponse.json({}, { status: 204 });
+export const GET = handler;
+export const POST = handler;
+export const PUT = handler;
+export const PATCH = handler;
+export const DELETE = handler;
+export const OPTIONS = handler;
