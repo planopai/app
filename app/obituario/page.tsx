@@ -12,8 +12,23 @@ import {
     IconClock,
     IconX,
 } from "@tabler/icons-react";
+import type { StaticImageData } from "next/image";
 
-/* ==================== Tipos & Constantes ==================== */
+// ===== Imports de imagens locais (app/images) =====
+import M01 from "@/app/images/MM1.png";
+import M02 from "@/app/images/MM2.png";
+import M03 from "@/app/images/M3.png";
+import M04 from "@/app/images/M4.png";
+import F01 from "@/app/images/F1.png";
+import F02 from "@/app/images/F2.png";
+import F03 from "@/app/images/F3.png";
+import F04 from "@/app/images/F4.png";
+import I01 from "@/app/images/I1.png";
+import I02 from "@/app/images/I2.png";
+import I03 from "@/app/images/I3.png";
+import I04 from "@/app/images/I4.png";
+
+// ==================== Tipos & Constantes ====================
 type Formato = "vertical";
 type ModeloKey =
     | "modelo01" | "modelo02" | "modelo03" | "modelo04"
@@ -29,22 +44,23 @@ const STEPS = [
     "Finalização",
 ] as const;
 
-// helper para montar URL do proxy do WP
-const WP = (p: string) => `/api/wp${p}`;
+// helper p/ extrair .src (Next transforma import de imagem em StaticImageData)
+const asSrc = (img: StaticImageData | string) =>
+    typeof img === "string" ? img : img.src;
 
 const MODELOS: Record<Exclude<ModeloKey, "personalizado">, string> = {
-    modelo01: WP("/images/MM1.png"),
-    modelo02: WP("/images/MM2.png"),
-    modelo03: WP("/images/M3.png"),
-    modelo04: WP("/images/M4.png"),
-    modelo05: WP("/images/F1.png"),
-    modelo06: WP("/images/F2.png"),
-    modelo07: WP("/images/F3.png"),
-    modelo08: WP("/images/F4.png"),
-    modelo09: WP("/images/I1.png"),
-    modelo010: WP("/images/I2.png"),
-    modelo011: WP("/images/I3.png"),
-    modelo012: WP("/images/I4.png"),
+    modelo01: asSrc(M01),
+    modelo02: asSrc(M02),
+    modelo03: asSrc(M03),
+    modelo04: asSrc(M04),
+    modelo05: asSrc(F01),
+    modelo06: asSrc(F02),
+    modelo07: asSrc(F03),
+    modelo08: asSrc(F04),
+    modelo09: asSrc(I01),
+    modelo010: asSrc(I02),
+    modelo011: asSrc(I03),
+    modelo012: asSrc(I04),
 };
 
 /* ==================== Utils (datas/horas) ==================== */
