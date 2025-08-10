@@ -77,8 +77,8 @@ function sanitize(txt?: string) {
 }
 
 // ===== Endpoints PHP (use um proxy /api/php/... se estiver em outro domínio)
-const LISTAR_FALECIDOS = "/historico_sepultamentos.php?listar_falecidos=1";
-const LOG_POR_ID = (id: string) => `/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
+const LISTAR_FALECIDOS = "https://planoassistencialintegrado.com.br/historico_sepultamentos.php?listar_falecidos=1";
+const LOG_POR_ID = (id: string) => `https://planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
 // ===== Página
 export default function HistoricoSepultamentosPage() {

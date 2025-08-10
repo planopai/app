@@ -27,19 +27,19 @@ const FALLBACK_IMG = "https://via.placeholder.com/100";
 
 // Endpoints por sala (ajuste se usar /api/php/...)
 const fetchMap: Record<Room, string> = {
-    1: "/fetchMessages.php",
-    2: "/fetchMessages2.php",
-    3: "/fetchMessages3.php",
+    1: "https://planoassistencialintegrado.com.br/fetchMessages.php",
+    2: "https://planoassistencialintegrado.com.br/fetchMessages2.php",
+    3: "https://planoassistencialintegrado.com.br/fetchMessages3.php",
 };
 const approveMap: Record<Room, (id: number) => string> = {
-    1: (id) => `/approveMessage.php?id=${id}`,
-    2: (id) => `/approveMessage2.php?id=${id}`,
-    3: (id) => `/approveMessage3.php?id=${id}`,
+    1: (id) => `https://planoassistencialintegrado.com.br/approveMessage.php?id=${id}`,
+    2: (id) => `https://planoassistencialintegrado.com.br/approveMessage2.php?id=${id}`,
+    3: (id) => `https://planoassistencialintegrado.com.br/approveMessage3.php?id=${id}`,
 };
 const deleteMap: Record<Room, (id: number, type: "received" | "approved") => string> = {
-    1: (id, t) => `/deleteMessage.php?id=${id}&type=${t}`,
-    2: (id, t) => `/deleteMessage2.php?id=${id}&type=${t}`,
-    3: (id, t) => `/deleteMessage3.php?id=${id}&type=${t}`,
+    1: (id, t) => `https://planoassistencialintegrado.com.br/deleteMessage.php?id=${id}&type=${t}`,
+    2: (id, t) => `https://planoassistencialintegrado.com.br/deleteMessage2.php?id=${id}&type=${t}`,
+    3: (id, t) => `https://planoassistencialintegrado.com.br/deleteMessage3.php?id=${id}&type=${t}`,
 };
 
 // Botão outline bonito

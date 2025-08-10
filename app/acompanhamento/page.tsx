@@ -251,7 +251,7 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Fetch helpers -------------------- */
     const fetchRegistros = useCallback(() => {
-        fetch("https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=" + Date.now(), {
+        fetch("https://planoassistencialintegrado.com.br/informativo.php" + Date.now(), {
             cache: "no-store",
             headers: {
                 Pragma: "no-cache",

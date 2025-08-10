@@ -15,7 +15,7 @@ import {
 
 type SalaKey = "sala_01" | "sala_02" | "sala_03";
 
-const ADMIN_ENDPOINT = "/admin.php"; // ou "/api/php/admin" se usar proxy
+const ADMIN_ENDPOINT = "https://planoassistencialintegrado.com.br/admin.php"; // ou "/api/php/admin" se usar proxy
 
 // botões outline
 const btnPrimaryOutline =

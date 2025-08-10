@@ -105,7 +105,7 @@ export default function QuadroAtendimentoPage() {
     // dados
     useEffect(() => {
         const load = () =>
-            fetch(`/informativo.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
+            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .then((j) => setRegistros(Array.isArray(j) ? j : []))
                 .catch(() => setRegistros([]));
@@ -117,7 +117,7 @@ export default function QuadroAtendimentoPage() {
     // avisos
     useEffect(() => {
         const load = () =>
-            fetch(`/avisos.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
+            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .then((j) => setAvisos(Array.isArray(j) ? j : []))
                 .catch(() => setAvisos([]));

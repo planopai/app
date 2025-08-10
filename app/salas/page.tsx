@@ -12,7 +12,7 @@ import {
 
 type SalaKey = "sala_01" | "sala_02" | "sala_03";
 
-const GET_SENHA_ENDPOINT = "/get_senha.php"; // se precisar proxy, troque por /api/php/get_senha
+const GET_SENHA_ENDPOINT = "https://planoassistencialintegrado.com.br/get_senha.php"; // se precisar proxy, troque por /api/php/get_senha
 
 const btnOutline =
     "inline-flex items-center justify-center rounded-md border px-4 py-2 text-base font-semibold " +
