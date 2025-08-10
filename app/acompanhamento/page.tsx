@@ -251,7 +251,7 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Fetch helpers -------------------- */
     const fetchRegistros = useCallback(() => {
-        fetch("https://planoassistencialintegrado.com.br/informativo.php" + Date.now(), {
+        fetch("https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=" + Date.now(), {
             cache: "no-store",
             headers: {
                 Pragma: "no-cache",
@@ -274,7 +274,7 @@ export default function AcompanhamentoPage() {
 
     const enviarRegistroPHP = useCallback((data: any) => {
         const body = { ...data, local: data.local || "" };
-        return fetch("https://planoassistencialintegrado.com.br/informativo.php", {
+        return fetch("https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
