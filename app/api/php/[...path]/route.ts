@@ -27,7 +27,7 @@ function pickForwardHeaders(req: NextRequest) {
     out.set("accept-encoding", "identity");
 
     // Identificação opcional
-    out.set("x-proxy-from", "pai.app");
+    out.set("x-proxy-from", "pai");
     return out;
 }
 
