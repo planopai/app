@@ -266,7 +266,7 @@ export default function AcompanhamentoPage() {
     }, []);
 
     const fetchAvisos = useCallback(() => {
-        fetch("/api/php/informativo.php?listar=1&_nocache=" + Date.now(), { credentials: "include" })
+        fetch("/api/php/avisos.php?listar=1&_nocache=" + Date.now(), { credentials: "include" })
             .then((r) => r.json())
             .then((json) => setAvisos(Array.isArray(json) ? json : []))
             .catch(() => setAvisos([]));
