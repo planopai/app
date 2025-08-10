@@ -83,7 +83,8 @@ function sanitize(txt?: string) {
 
 /* ========================== Endpoints (proxy) ========================= */
 const LISTAR_FALECIDOS = "/api/php/historico_sepultamentos.php?listar_falecidos=1";
-const LOG_POR_ID = (id: string) => `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
+const LOG_POR_ID = (id: string) =>
+    `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
 /* =============================== Página =============================== */
 export default function HistoricoSepultamentosPage() {
@@ -112,6 +113,8 @@ export default function HistoricoSepultamentosPage() {
     const [selecionado, setSelecionado] = useState<FalecidoItem | null>(null);
     const [log, setLog] = useState<LogItem[]>([]);
     const [loadingLog, setLoadingLog] = useState(false);
+
+    const [gerandoPdf, setGerandoPdf] = useState(false);
 
     // Carrega html2pdf (CDN)
     const html2pdfLoadedRef = useRef(false);
@@ -178,7 +181,9 @@ export default function HistoricoSepultamentosPage() {
         setLog([]);
         setLoadingLog(true);
         try {
-            const res = await fetch(`${LOG_POR_ID(item.sepultamento_id)}&_nocache=${Date.now()}`, { cache: "no-store" });
+            const res = await fetch(`${LOG_POR_ID(item.sepultamento_id)}&_nocache=${Date.now()}`, {
+                cache: "no-store",
+            });
             const json = await res.json();
             let arr: LogItem[] = [];
             if (json && json.sucesso && json.dados) arr = json.dados;
@@ -191,8 +196,8 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Exportar PDF (forma encadeada — mais estável)
-    const exportarPdf = useCallback(() => {
+    // Exportar PDF robusto com spinner
+    const exportarPdf = useCallback(async () => {
         if (!selecionado) return;
         const anyWin = window as any;
         const lib = anyWin.html2pdf;
@@ -203,7 +208,15 @@ export default function HistoricoSepultamentosPage() {
         const exportNode = document.getElementById("logAreaExport");
         if (!exportNode) return;
 
+        setGerandoPdf(true);
+
+        // wrapper invisível no DOM
         const wrapper = document.createElement("div");
+        wrapper.style.position = "fixed";
+        wrapper.style.left = "-99999px";
+        wrapper.style.top = "0";
+        wrapper.style.opacity = "0";
+        wrapper.style.pointerEvents = "none";
         wrapper.style.fontFamily = "'Nunito', sans-serif";
         wrapper.style.fontSize = "1.01rem";
         wrapper.style.padding = "20px 8px 18px 8px";
@@ -218,20 +231,42 @@ export default function HistoricoSepultamentosPage() {
         clone.style.background = "#fff";
         clone.querySelectorAll<HTMLElement>(".log-entry").forEach((e) => (e.style.background = "#fff"));
         wrapper.appendChild(clone);
+        document.body.appendChild(wrapper);
 
-        lib()
-            .set({
-                margin: [18, 16, 38, 16],
-                filename: `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, "_")}.pdf`,
-                image: { type: "jpeg", quality: 0.97 },
-                html2canvas: { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0 },
-                jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                pagebreak: { mode: ["avoid-all", "css", "legacy"] },
-            })
-            .from(wrapper)
-            .save();
+        try {
+            // dá um frame pro layout assentar
+            await new Promise((r) => requestAnimationFrame(() => r(null)));
+
+            await lib()
+                .set({
+                    margin: [18, 16, 38, 16],
+                    filename: `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, "_")}.pdf`,
+                    image: { type: "jpeg", quality: 0.97 },
+                    html2canvas: {
+                        scale: Math.min(window.devicePixelRatio || 2, 2),
+                        useCORS: true,
+                        allowTaint: true,
+                        backgroundColor: "#fff",
+                        imageTimeout: 10000,
+                        logging: false,
+                        scrollY: 0,
+                    },
+                    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                    pagebreak: { mode: ["css"] },
+                })
+                .from(wrapper)
+                .save();
+        } catch (err) {
+            console.error("Falha ao gerar PDF:", err);
+            alert("Não consegui gerar o PDF agora. Veja o console para detalhes.");
+        } finally {
+            try {
+                wrapper.remove();
+            } catch { }
+            setGerandoPdf(false);
+        }
     }, [selecionado]);
 
     /* ================================ UI ================================ */
@@ -380,12 +415,24 @@ export default function HistoricoSepultamentosPage() {
                         <button
                             type="button"
                             onClick={exportarPdf}
-                            disabled={!selecionado || log.length === 0}
+                            disabled={!selecionado || log.length === 0 || gerandoPdf}
                             className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold border-primary text-primary hover:bg-primary/5 disabled:opacity-50"
                             title="Baixar PDF"
                         >
-                            <IconDownload className="size-5" />
-                            Baixar PDF
+                            {gerandoPdf ? (
+                                <>
+                                    <svg className="size-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                    </svg>
+                                    Gerando…
+                                </>
+                            ) : (
+                                <>
+                                    <IconDownload className="size-5" />
+                                    Baixar PDF
+                                </>
+                            )}
                         </button>
                     </div>
 
@@ -422,12 +469,10 @@ export default function HistoricoSepultamentosPage() {
                                                 // 1) Ocultar COMPLETAMENTE o JSON cru de materiais
                                                 if (key === "materiais_json") continue;
 
-                                                // 2) Mostrar normalmente os dois campos de quantidade (se existirem)
+                                                // 2) Mostrar apenas as quantidades (se existirem)
                                                 if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
                                                     const nome =
-                                                        key === "materiais_cadeiras_qtd"
-                                                            ? "Materiais Cadeiras Qtd"
-                                                            : "Materiais Bebedouros Qtd";
+                                                        key === "materiais_cadeiras_qtd" ? "Materiais Cadeiras Qtd" : "Materiais Bebedouros Qtd";
                                                     const val = obj[key];
                                                     if (val != null && String(val).trim() !== "") {
                                                         partes.push(
@@ -439,7 +484,7 @@ export default function HistoricoSepultamentosPage() {
                                                     continue;
                                                 }
 
-                                                // 3) Demais campos: segue o comportamento anterior
+                                                // 3) Demais campos usuais
                                                 if (key === "id" || key === "acao") continue;
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
@@ -458,20 +503,18 @@ export default function HistoricoSepultamentosPage() {
                                             if (partes.length) detalhesHtml = `<div class="mt-2">${partes.join("")}</div>`;
                                         }
                                     } catch {
-                                        // Se por acaso vier uma string simples, não transformar JSON cru
+                                        // Se vier string simples:
                                         let detalhesRaw = String(raw || "");
-                                        // substitui códigos de fase por nomes legíveis
+                                        // traduz códigos de fase pra nomes:
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
                                             const regEx = new RegExp(cod, "g");
                                             detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                                         });
-
-                                        // ⚠️ Evita exibir o JSON de materiais caso ele venha como texto solto
+                                        // evita exibir JSON de materiais como texto
                                         if (/^\s*\{/.test(detalhesRaw) && /materiais_json/i.test(detalhesRaw)) {
-                                            detalhesRaw = ""; // limpa
+                                            detalhesRaw = "";
                                         }
-
                                         if (detalhesRaw.trim()) {
                                             detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
                                         }
