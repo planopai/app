@@ -17,16 +17,12 @@ type SalaKey = "sala_01" | "sala_02" | "sala_03";
 
 const ADMIN_ENDPOINT = "/api/php/admin.php"; // ou "/api/php/admin" se usar proxy
 
-// botões outline
+// único estilo (primary outline) — usado em TODOS os botões
 const btnPrimaryOutline =
-    "inline-flex items-center justify-center rounded-lg border px-4 py-2 text-base font-semibold " +
-    "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50";
+    "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-base font-semibold " +
+    "border border-primary text-primary hover:bg-primary/10 active:bg-primary/20 " +
+    "disabled:opacity-60 disabled:pointer-events-none";
 
-const btnSecondaryOutline =
-    "inline-flex items-center justify-center rounded-lg border px-4 py-2 text-base font-semibold " +
-    "border-secondary text-secondary hover:bg-secondary/10 active:bg-secondary/20 disabled:opacity-50";
-
-// botão de sala (ativo x inativo)
 function RoomButton({
     label,
     active,
@@ -140,9 +136,10 @@ export default function SegurancaPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {/* Gerar Aleatória — agora com primary outline */}
                     <button
                         onClick={gerarAleatoria}
-                        className={btnSecondaryOutline + " gap-2"}
+                        className={btnPrimaryOutline}
                         title="Gerar senha aleatória"
                     >
                         <IconKey className="size-4" />
@@ -206,7 +203,7 @@ export default function SegurancaPage() {
                         </button>
                     </div>
 
-                    {/* força */}
+                    {/* Força */}
                     <div className="mt-3 max-w-md">
                         <div className="flex h-2 overflow-hidden rounded-full bg-muted">
                             <div className={`${strength >= 1 ? "bg-amber-400" : "bg-transparent"}`} style={{ width: "33.33%" }} />
@@ -219,16 +216,18 @@ export default function SegurancaPage() {
                         </div>
                     </div>
 
-                    {/* ações */}
+                    {/* Ações */}
                     <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                        {/* Resetar — agora primary outline */}
                         <button
                             onClick={resetarSenha}
                             disabled={loading === "reset"}
-                            className={btnSecondaryOutline + " min-w-[180px] gap-2"}
+                            className={btnPrimaryOutline + " min-w-[180px]"}
+                            aria-busy={loading === "reset"}
                         >
                             {loading === "reset" ? (
                                 <>
-                                    <svg className="size-4 animate-spin" viewBox="0 0 24 24">
+                                    <svg className="size-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                                     </svg>
@@ -242,14 +241,16 @@ export default function SegurancaPage() {
                             )}
                         </button>
 
+                        {/* Atualizar — mantém primary outline para consistência */}
                         <button
                             onClick={atualizarSenha}
                             disabled={loading === "update"}
-                            className={btnPrimaryOutline + " min-w-[180px] gap-2"}
+                            className={btnPrimaryOutline + " min-w-[180px]"}
+                            aria-busy={loading === "update"}
                         >
                             {loading === "update" ? (
                                 <>
-                                    <svg className="size-4 animate-spin" viewBox="0 0 24 24">
+                                    <svg className="size-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                                     </svg>
@@ -264,7 +265,7 @@ export default function SegurancaPage() {
                         </button>
                     </div>
 
-                    {/* alertas */}
+                    {/* Alertas */}
                     {msg && (
                         <div
                             className={`mt-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${msg.type === "success"
@@ -285,9 +286,7 @@ export default function SegurancaPage() {
             </div>
 
             <div className="mt-4 text-xs text-muted-foreground">
-                <p>
-                    • Se o PHP estiver em outro domínio, use um proxy em <b>/api/php/admin</b> para evitar CORS.
-                </p>
+                <p>• Se o PHP estiver em outro domínio, use um proxy em <b>/api/php/admin</b> para evitar CORS.</p>
                 <p>• Em produção, prefira HTTPS para todas as chamadas.</p>
             </div>
         </div>
