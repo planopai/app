@@ -468,7 +468,7 @@ export default function AcompanhamentoPage() {
             setAvisoMsg({ text: "Digite um aviso para enviar!", ok: false });
             return;
         }
-        const res = await fetch("https://planoassistencialintegrado.com.br/avisos.php", {
+        const res = await fetch("/api/php/avisos.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mensagem: val }),
@@ -486,7 +486,7 @@ export default function AcompanhamentoPage() {
 
     const editarAviso = useCallback(
         async (id: number | string, mensagem: string) => {
-            const res = await fetch("https://planoassistencialintegrado.com.br/avisos.php", {
+            const res = await fetch("/api/php/avisos.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id, mensagem }),
@@ -505,7 +505,7 @@ export default function AcompanhamentoPage() {
     const excluirAviso = useCallback(
         async (id: number | string) => {
             if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
-            const res = await fetch("https://planoassistencialintegrado.com.br/avisos.php", {
+            const res = await fetch("/api/php/avisos.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id, excluir: true }),
@@ -523,7 +523,7 @@ export default function AcompanhamentoPage() {
 
     const finalizarAviso = useCallback(
         async (id: number | string) => {
-            const res = await fetch("https://planoassistencialintegrado.com.br/avisos.php", {
+            const res = await fetch("/api/php/avisos.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id, finalizar: true }),

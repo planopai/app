@@ -129,7 +129,7 @@ export default function AtendimentoPage() {
         if (fotoFalecido) formData.append("foto_falecido", fotoFalecido);
 
         try {
-            const res = await fetch("https://planoassistencialintegrado.com.br/salvarDados.php", { method: "POST", body: formData });
+            const res = await fetch("/api/php/salvarDados.php", { method: "POST", body: formData });
             const data = await res.json();
             if (data?.success) {
                 setRespMsg({ text: "Atendimento Criado Com Sucesso!", ok: true });
@@ -148,7 +148,7 @@ export default function AtendimentoPage() {
 
     const carregarDados = useCallback(async () => {
         try {
-            const res = await fetch("https://planoassistencialintegrado.com.br/salaControle.php?action=listar&_=" + Date.now());
+            const res = await fetch("/api/php/salaControle.php?action=listar&_=" + Date.now());
             if (!res.ok) throw new Error(res.statusText);
             const data = (await res.json()) as RegistroSala[];
             setLinhas(Array.isArray(data) ? data : []);
@@ -166,7 +166,7 @@ export default function AtendimentoPage() {
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
-            const res = await fetch(`https://planoassistencialintegrado.com.br/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`);
+            const res = await fetch(`/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`);
             if (!res.ok) throw new Error(res.statusText);
             const data = await res.json();
             setEdit({
@@ -200,7 +200,7 @@ export default function AtendimentoPage() {
                 horario_sepultamento: edit.horario_sepultamento,
                 local_sepultamento: edit.local_sepultamento,
             };
-            const res = await fetch("https://planoassistencialintegrado.com.br/salaControle.php?action=editar", {
+            const res = await fetch("/api/php/salaControle.php?action=editar", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
@@ -233,7 +233,7 @@ export default function AtendimentoPage() {
     const confirmarExclusao = useCallback(async () => {
         if (delId == null) return;
         try {
-            const res = await fetch(`https://planoassistencialintegrado.com.br/salaControle.php?action=excluir&id=${delId}&_=${Date.now()}`, {
+            const res = await fetch(`/api/php/salaControle.php?action=excluir&id=${delId}&_=${Date.now()}`, {
                 method: "DELETE",
                 cache: "no-store",
             });

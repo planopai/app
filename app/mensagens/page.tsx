@@ -32,14 +32,14 @@ const fetchMap: Record<Room, string> = {
     3: "https://planoassistencialintegrado.com.br/fetchMessages3.php",
 };
 const approveMap: Record<Room, (id: number) => string> = {
-    1: (id) => `https://planoassistencialintegrado.com.br/approveMessage.php?id=${id}`,
-    2: (id) => `https://planoassistencialintegrado.com.br/approveMessage2.php?id=${id}`,
-    3: (id) => `https://planoassistencialintegrado.com.br/approveMessage3.php?id=${id}`,
+    1: (id) => `/api/php/approveMessage.php?id=${id}`,
+    2: (id) => `/api/php/approveMessage2.php?id=${id}`,
+    3: (id) => `/api/php/approveMessage3.php?id=${id}`,
 };
 const deleteMap: Record<Room, (id: number, type: "received" | "approved") => string> = {
-    1: (id, t) => `https://planoassistencialintegrado.com.br/deleteMessage.php?id=${id}&type=${t}`,
-    2: (id, t) => `https://planoassistencialintegrado.com.br/deleteMessage2.php?id=${id}&type=${t}`,
-    3: (id, t) => `https://planoassistencialintegrado.com.br/deleteMessage3.php?id=${id}&type=${t}`,
+    1: (id, t) => `/api/php/deleteMessage.php?id=${id}&type=${t}`,
+    2: (id, t) => `/api/php/deleteMessage2.php?id=${id}&type=${t}`,
+    3: (id, t) => `/api/php/deleteMessage3.php?id=${id}&type=${t}`,
 };
 
 // Botão outline bonito
