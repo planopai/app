@@ -1,55 +1,55 @@
-// app/api/php/[...path]/route.ts
+// app/api/php/[...path]/route.ts  (ou src/app/...)
 import type { NextRequest } from "next/server";
 
-const TARGET_BASE = "https://planoassistencialintegrado.com.br"; // PHP está AQUI
-export const dynamic = "force-dynamic"; // evita cache do Next
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-function buildTargetUrl(req: NextRequest, pathSegs?: string[]) {
-    const path = pathSegs && pathSegs.length ? "/" + pathSegs.join("/") : "";
-    const url = new URL(TARGET_BASE + path);
-    // repassa os query params
-    req.nextUrl.searchParams.forEach((v, k) => url.searchParams.set(k, v));
-    return url.toString();
-}
+const TARGET_BASE = "https://planoassistencialintegrado.com.br";
 
-async function handler(req: NextRequest, ctx: { params: { path?: string[] } }) {
-    const target = buildTargetUrl(req, ctx.params.path);
+async function handler(
+    req: NextRequest,
+    { params }: { params: { path?: string[] } }
+) {
+    const targetPath = "/" + (params.path?.join("/") ?? "");
+    const url = new URL(TARGET_BASE + targetPath);
+    // replica querystring
+    for (const [k, v] of req.nextUrl.searchParams) url.searchParams.set(k, v);
 
-    // Monte headers sem colocar undefined
-    const fwd = new Headers();
-    fwd.set("X-Requested-With", "XMLHttpRequest");
+    // monta headers sem undefined
+    const headers = new Headers();
     const ct = req.headers.get("content-type");
-    if (ct) fwd.set("Content-Type", ct);
+    if (ct) headers.set("Content-Type", ct);
+    headers.set("X-Requested-With", "XMLHttpRequest");
     const cookie = req.headers.get("cookie");
-    if (cookie) fwd.set("cookie", cookie);
-    const auth = req.headers.get("authorization");
-    if (auth) fwd.set("authorization", auth);
+    if (cookie) headers.set("cookie", cookie);
 
-    const isBodyless = req.method === "GET" || req.method === "HEAD";
     const init: RequestInit = {
         method: req.method,
-        headers: fwd,
-        body: isBodyless ? undefined : await req.arrayBuffer(),
-        // estes dois campos não fazem diferença no fetch do servidor do Next,
-        // mas deixo por clareza
+        headers,
+        body:
+            req.method === "GET" || req.method === "HEAD"
+                ? undefined
+                : await req.arrayBuffer(),
         redirect: "manual",
     };
 
-    const resp = await fetch(target, init);
+    const resp = await fetch(url.toString(), init);
 
-    // Copie headers da resposta, mas remova os que quebram no proxy
-    const h = new Headers(resp.headers);
-    h.delete("content-encoding");
-    h.delete("transfer-encoding");
-    // Opcional: permitir uso desse endpoint via browser sem CORS
-    h.set("Access-Control-Allow-Origin", "*");
+    // ajusta headers de saída (evita ERR_CONTENT_DECODING_FAILED)
+    const out = new Headers(resp.headers);
+    out.delete("content-encoding");
+    out.delete("content-length");
+    out.set("Cache-Control", "no-store");
 
-    return new Response(resp.body, { status: resp.status, headers: h });
+    return new Response(resp.body, { status: resp.status, headers: out });
 }
 
-export const GET = handler;
-export const POST = handler;
-export const PUT = handler;
-export const PATCH = handler;
-export const DELETE = handler;
-export const OPTIONS = handler;
+export {
+    handler as GET,
+    handler as POST,
+    handler as PUT,
+    handler as PATCH,
+    handler as DELETE,
+    handler as OPTIONS,
+};
