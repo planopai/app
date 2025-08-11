@@ -2,7 +2,7 @@
 export default function Head() {
     return (
         <>
-            {/* exemplos — substitua pelos nomes/medias que o gerador imprimiu */}
+            {/* substitua pelos arquivos/tamanhos que você gerou */}
             <link
                 rel="apple-touch-startup-image"
                 href="/splash/apple-splash-1170-2532.png"
@@ -13,7 +13,7 @@ export default function Head() {
                 href="/splash/apple-splash-1290-2796.png"
                 media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
             />
-            {/* ...cole aqui TODAS as linhas que o pwa-asset-generator gerou */}
+            {/* ...adicione todas as linhas para cada resolução */}
         </>
     );
 }

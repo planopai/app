@@ -8,28 +8,38 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import RootClient from "@/components/root-client"; // ⬅️ wrapper cliente
+import RootClient from "@/components/root-client"; // ⬅️ wrapper cliente (instalação PWA, etc.)
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
+
+  // PWA
   themeColor: "#059de0",
   manifest: "/manifest.webmanifest",
+
+  // Ícones (inclui 16/32 p/ barra do navegador)
   icons: {
     icon: [
       { url: "/favicon.ico" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
     other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
   },
+
+  // iOS (instalável como app)
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "App Plano PAI 2.0",
   },
+
+  // Tela cheia e safe areas
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
 };
 
@@ -57,8 +67,8 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
+            {/* AppShell decide quando mostrar/esconder o sidebar/header */}
             <RootClient>
-              {/* AppShell decide quando mostrar/esconder o sidebar/header */}
               <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
             </RootClient>
           </ActiveThemeProvider>
