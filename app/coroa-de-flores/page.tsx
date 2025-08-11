@@ -142,32 +142,26 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | unde
     return undefined;
 }
 
-/** monta o texto do WhatsApp com quebras de linha e labels em negrito */
+/** monta o texto com UMA linha em branco entre cada informação */
 function buildWhatsAppText(order: WcOrderFull) {
-    // pedido (nomes dos itens)
     const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
     const pedidoNome = itens.join(", ");
 
-    // origem
     let origem =
         findMetaValue(order.meta_data, ["origem", "source"]) ||
         findMetaValue(order.line_items?.flatMap((li) => li.meta_data || []), ["origem", "source"]) ||
         (order.shipping?.address_1?.toLowerCase().includes("memorial") ? "Memorial" : "Loja Online");
 
-    // cliente
     const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim();
     const phone = onlyDigits(order.billing?.phone);
     const valor = formatCurrency(order.total, order.currency || "BRL");
 
-    // local de entrega
     const localEntrega = [order.shipping?.address_1, order.shipping?.address_2]
         .filter(Boolean)
         .join(" - ");
 
-    // falecido(a)
     const falecido = order.shipping?.first_name || "";
 
-    // frase da coroa – procura em vários lugares/chaves
     const frase =
         findMetaValue(order.meta_data, [
             "frase_para_a_faixa",
@@ -182,32 +176,71 @@ function buildWhatsAppText(order: WcOrderFull) {
         ) ||
         "";
 
-    // mensagem final (com labels em negrito usando *asteriscos*)
-    const linhas = [
-        `*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`,
-        `*Origem:* ${origem || "Loja Online"}`,
-        `*Cliente:* ${cliente || "—"}`,
-        `*Telefone:* ${phone || "—"}`,
-        `*Valor:* ${valor}`,
-        "",
-        `*Local de Entrega:* ${localEntrega || "—"}`,
-        "",
-        `*Falecido(a):* ${falecido || "—"}`,
-        "",
-        `*Frase da Coroa:* ${frase || "—"}`,
-        "",
-        `*Comprovante de pagamento:*`,
-    ];
+    // cada informação seguida de uma linha em branco:
+    const linhas: string[] = [];
+    const push = (s: string) => {
+        linhas.push(s);
+        linhas.push(""); // linha em branco
+    };
+
+    push(`*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`);
+    push(`*Origem:* ${origem || "Loja Online"}`);
+    push(`*Cliente:* ${cliente || "—"}`);
+    push(`*Telefone:* ${phone || "—"}`);
+    push(`*Valor:* ${valor}`);
+    push(`*Local de Entrega:* ${localEntrega || "—"}`);
+    push(`*Falecido(a):* ${falecido || "—"}`);
+    push(`*Frase da Coroa:* ${frase || "—"}`);
+    push(`*Comprovante de pagamento:*`);
+
     return linhas.join("\n");
 }
 
-/** abre o whatsapp web/app com o texto e (opcional) número destino */
-function openWhatsApp(text: string, toPhone?: string) {
-    const base = "https://wa.me";
-    const enc = encodeURIComponent(text);
+/** compartilhamento inteligente:
+ * - iOS/Android modernos → Web Share API (abre a folha de compartilhamento, você escolhe WhatsApp)
+ * - senão → tenta WhatsApp scheme/wa.me
+ * - último recurso → copia para Clipboard e abre WhatsApp
+ */
+async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     const phone = onlyDigits(toPhone);
-    const url = phone ? `${base}/${phone}?text=${enc}` : `${base}/?text=${enc}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+
+    // 1) Preferir Web Share (mostra as "ferramentas" e o usuário escolhe WhatsApp)
+    if (typeof navigator !== "undefined" && (navigator as any).share) {
+        try {
+            await (navigator as any).share({ text });
+            return;
+        } catch {
+            // usuário cancelou ou share não disponível → cai para fallback
+        }
+    }
+
+    // 2) Tentar abrir o app: whatsapp://send?text=...
+    const encoded = encodeURIComponent(text);
+    const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(
+        (typeof navigator !== "undefined" && navigator.userAgent) || ""
+    );
+    const deep =
+        phone && isMobile
+            ? `whatsapp://send?phone=${phone}&text=${encoded}`
+            : `whatsapp://send?text=${encoded}`;
+
+    const opened = window.open(deep, "_blank");
+    if (opened) return;
+
+    // 3) Fallback Web/desktop: WhatsApp Web
+    const webUrl = phone
+        ? `https://wa.me/${phone}?text=${encoded}`
+        : `https://web.whatsapp.com/send?text=${encoded}`;
+    const openedWeb = window.open(webUrl, "_blank", "noopener,noreferrer");
+    if (openedWeb) return;
+
+    // 4) Último recurso: copiar e abrir WhatsApp "cru"
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch {
+        /* ignore */
+    }
+    window.open(phone ? `https://wa.me/${phone}` : `https://web.whatsapp.com/`, "_blank");
 }
 
 /* =========================
@@ -243,7 +276,7 @@ export default function Page() {
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
 
-    // número opcional da equipe (env ou localStorage)
+    // número opcional da equipe
     const teamEnv = process.env.NEXT_PUBLIC_WPP_EQUIPE;
     const teamFromStorage =
         typeof window !== "undefined" ? localStorage.getItem("wpp_team") || "" : "";
@@ -333,18 +366,21 @@ export default function Page() {
         }
     }
 
-    /** carrega o pedido completo, monta o texto e abre o WhatsApp (sem destinatário) */
-    async function notifyWhatsApp(orderId: number, to?: string) {
+    /** carrega o pedido completo, monta o texto e compartilha/abre WhatsApp */
+    async function notifyWhatsApp(orderId: number, forcePhone?: string) {
         try {
             const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "no-store" });
             if (!res.ok) throw new Error(`Falha ao carregar o pedido #${orderId}`);
             const full: WcOrderFull = await res.json();
             const text = buildWhatsAppText(full);
-            openWhatsApp(text, to);
+            await shareOrOpenWhatsApp(text, forcePhone);
         } catch (e: any) {
             alert(e?.message || "Não foi possível abrir o WhatsApp.");
         }
     }
+
+    const canNotifyRow = (o: WcOrder) => o.status === "completed";
+    const canNotifyDetail = detail?.status === "completed";
 
     return (
         <div className="flex h-full flex-col">
@@ -475,6 +511,10 @@ export default function Page() {
                                 {orders.map((o) => {
                                     const cliente =
                                         `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                                    const disabled = !canNotifyRow(o);
+                                    const reason = disabled
+                                        ? "Só é possível notificar pedidos Concluídos."
+                                        : "Enviar via WhatsApp";
                                     return (
                                         <tr key={o.id} className="border-t">
                                             <td className="px-3 py-2">{o.number || o.id}</td>
@@ -503,26 +543,30 @@ export default function Page() {
                                                         Ver
                                                     </button>
 
-                                                    {/* Notificar: abre WhatsApp sem destinatário (você escolhe o contato/grupo) */}
+                                                    {/* Notificar: escolher contato (share/wa.me) */}
                                                     <button
-                                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
                                                         onClick={() => notifyWhatsApp(o.id)}
-                                                        title="Notificar (WhatsApp)"
+                                                        title={reason}
+                                                        disabled={disabled}
                                                     >
                                                         <IconSend className="size-4" />
                                                         Notificar
                                                     </button>
 
-                                                    {/* Notificar equipe: usa número fixo, se existir */}
+                                                    {/* Notificar equipe: usa um número fixo SE existir,
+                              ainda assim só para concluídos */}
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
                                                         onClick={() => notifyWhatsApp(o.id, wppTeam)}
-                                                        disabled={!wppTeam}
                                                         title={
-                                                            wppTeam
-                                                                ? `Enviar para equipe (${wppTeam})`
-                                                                : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
+                                                            disabled
+                                                                ? reason
+                                                                : wppTeam
+                                                                    ? `Enviar para equipe (${wppTeam})`
+                                                                    : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
                                                         }
+                                                        disabled={disabled || !wppTeam}
                                                     >
                                                         <IconBell className="size-4" />
                                                         Notificar equipe
@@ -718,23 +762,32 @@ export default function Page() {
 
                                 {/* Ações rápidas */}
                                 <div className="flex flex-wrap gap-2">
-                                    {/* WhatsApp sem destinatário */}
+                                    {/* WhatsApp (escolher contato) – só se concluído */}
                                     <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                        onClick={() => notifyWhatsApp(detail.id)}
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                                        onClick={() => detail && notifyWhatsApp(detail.id)}
+                                        disabled={!canNotifyDetail}
+                                        title={
+                                            canNotifyDetail
+                                                ? "Compartilhar mensagem e escolher o WhatsApp"
+                                                : "Só é possível notificar pedidos Concluídos."
+                                        }
                                     >
                                         <IconSend className="size-4" />
                                         Notificar (WhatsApp)
                                     </button>
-                                    {/* WhatsApp para equipe fixa */}
+
+                                    {/* WhatsApp equipe fixa – também só se concluído */}
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                                        onClick={() => notifyWhatsApp(detail.id, wppTeam)}
-                                        disabled={!wppTeam}
+                                        onClick={() => detail && notifyWhatsApp(detail.id, wppTeam)}
+                                        disabled={!canNotifyDetail || !wppTeam}
                                         title={
-                                            wppTeam
-                                                ? `Enviar para equipe (${wppTeam})`
-                                                : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
+                                            !canNotifyDetail
+                                                ? "Só é possível notificar pedidos Concluídos."
+                                                : wppTeam
+                                                    ? `Enviar para equipe (${wppTeam})`
+                                                    : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
                                         }
                                     >
                                         <IconBell className="size-4" />
