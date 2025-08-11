@@ -26,7 +26,7 @@ type ApiResponse = {
 
 const FALLBACK_IMG = "https://via.placeholder.com/100";
 
-// sempre use o proxy local para manter cookies e evitar CORS
+// Sempre passe pelos proxies para evitar CORS e manter cookies
 const fetchMap: Record<Room, string> = {
     1: "/api/php/fetchMessages.php",
     2: "/api/php/fetchMessages2.php",
@@ -43,7 +43,7 @@ const deleteMap: Record<Room, (id: number, type: "received" | "approved") => str
     3: (id, t) => `/api/php/deleteMessage3.php?id=${id}&type=${t}`,
 };
 
-// resolve caminho da imagem (prioriza proxy) e lida com relativo
+// Resolve caminho da imagem (prioriza proxy) e lida com relativo
 function resolveImageSrc(src?: string | null): string {
     if (!src) return FALLBACK_IMG;
     let s = src.trim();
@@ -121,19 +121,15 @@ export default function MensagensPage() {
     const [approved, setApproved] = useState<MessageItem[]>([]);
     const [error, setError] = useState<string | null>(null);
 
-    // carrega html2pdf da CDN
+    // Carrega jsPDF (UMD) — sem html2canvas
     useEffect(() => {
-        const KEY = "__html2pdf_loaded__";
+        const KEY = "__jspdf_loaded__";
         if ((window as any)[KEY]) return;
         const script = document.createElement("script");
-        script.src =
-            "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
         script.async = true;
         script.onload = () => ((window as any)[KEY] = true);
         document.body.appendChild(script);
-        return () => {
-            // não removo para evitar recarregar várias vezes ao navegar
-        };
     }, []);
 
     const fetchUrl = useMemo(() => `${fetchMap[room]}?cb=${Date.now()}`, [room]);
@@ -186,130 +182,105 @@ export default function MensagensPage() {
         loadMessages();
     }, [loadMessages]);
 
-    // ------- Exportar PDF das mensagens aprovadas (organizado) -------
+    // util: baixa imagem e converte para dataURL (para addImage)
+    async function toDataURL(url: string): Promise<string> {
+        try {
+            const resp = await fetch(url, { credentials: "include" });
+            if (!resp.ok) throw new Error("img fetch fail");
+            const blob = await resp.blob();
+            return await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(String(fr.result));
+                fr.onerror = reject;
+                fr.readAsDataURL(blob);
+            });
+        } catch {
+            return FALLBACK_IMG;
+        }
+    }
+
+    // ------- Exportar PDF das mensagens aprovadas (jsPDF puro) -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
             return;
         }
-        const win: any = window as any;
-        const lib = win.html2pdf;
-        if (!lib) {
+
+        const w: any = window as any;
+        const jspdf = w.jspdf;
+        if (!jspdf || !jspdf.jsPDF) {
             alert("Ferramenta de PDF ainda carregando. Tente novamente em alguns segundos.");
             return;
         }
+        const { jsPDF } = jspdf;
 
-        // container isolado, sem classes do app (evita OKLCH / variáveis)
-        const wrapper = document.createElement("div");
-        wrapper.setAttribute(
-            "style",
-            [
-                "position:fixed",
-                "left:-10000px",
-                "top:0",
-                "width:800px",
-                "background:#ffffff",
-                "color:#111111",
-                "font-family:Arial, Helvetica, sans-serif",
-                "font-size:14px",
-                "line-height:1.4",
-                "padding:16px",
-            ].join(";")
-        );
+        // Config A4
+        const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+        const pageW = doc.internal.pageSize.getWidth();  // 210
+        const pageH = doc.internal.pageSize.getHeight(); // 297
+        const marginL = 12;
+        const marginR = 12;
+        const contentW = pageW - marginL - marginR;
 
-        // título
-        const h1 = document.createElement("h1");
-        h1.textContent = `Mensagens Aprovadas — Sala 0${room}`;
-        h1.setAttribute(
-            "style",
-            "margin:0 0 8px 0;font-size:20px;font-weight:700;text-align:center;color:#111111;"
-        );
-        wrapper.appendChild(h1);
+        let y = 18;
 
-        // subtítulo (data/hora)
-        const p = document.createElement("div");
-        p.textContent = new Date().toLocaleString("pt-BR");
-        p.setAttribute(
-            "style",
-            "text-align:center;margin:0 0 16px 0;color:#444444;font-size:12px;"
-        );
-        wrapper.appendChild(p);
+        // Título
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.text(`Mensagens Aprovadas — Sala 0${room}`, pageW / 2, y, { align: "center" });
+        y += 7;
 
-        // lista de mensagens
-        const list = document.createElement("div");
-        list.setAttribute("style", "display:flex;flex-direction:column;gap:10px;");
-        wrapper.appendChild(list);
+        // Data
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(new Date().toLocaleString("pt-BR"), pageW / 2, y, { align: "center" });
+        y += 10;
+
+        // Cada mensagem: imagem (24x24mm) + texto
+        const gap = 4;
+        const imgSize = 24; // mm
+        const textX = marginL + imgSize + gap;
+        const textW = contentW - imgSize - gap;
 
         for (const m of approved) {
-            const card = document.createElement("div");
-            card.setAttribute(
-                "style",
-                [
-                    "border:1px solid #dddddd",
-                    "border-radius:8px",
-                    "padding:10px",
-                    "display:flex",
-                    "gap:10px",
-                    "page-break-inside:avoid",
-                    "background:#ffffff",
-                ].join(";")
-            );
+            // quebra de página se necessário
+            const blockMinHeight = Math.max(imgSize, 14); // aprox. altura mínima
+            if (y + blockMinHeight + 10 > pageH) {
+                doc.addPage();
+                y = 18;
+            }
 
-            // imagem (opcional)
-            const img = document.createElement("img");
-            img.setAttribute("alt", m.name || "imagem");
-            img.setAttribute("crossorigin", "anonymous");
-            const src = resolveImageSrc(m.image);
-            img.setAttribute("src", src);
-            img.setAttribute(
-                "style",
-                "width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e5e5e5;background:#fafafa;flex:0 0 auto;"
-            );
-            card.appendChild(img);
+            // card borda leve
+            doc.setDrawColor(220);
+            doc.setLineWidth(0.2);
+            doc.roundedRect(marginL, y, contentW, blockMinHeight + 6, 2, 2);
 
-            // texto
-            const block = document.createElement("div");
-            block.setAttribute("style", "flex:1 1 auto;min-width:0;");
-
-            const title = document.createElement("div");
-            title.textContent = m.name || "";
-            title.setAttribute("style", "font-weight:700;font-size:14px;color:#111111;margin-bottom:4px;");
-            block.appendChild(title);
-
-            const body = document.createElement("div");
-            body.textContent = m.text || "";
-            body.setAttribute(
-                "style",
-                "white-space:pre-wrap;word-break:break-word;color:#222222;font-size:13px;"
-            );
-            block.appendChild(body);
-
-            card.appendChild(block);
-            list.appendChild(card);
-        }
-
-        document.body.appendChild(wrapper);
-
-        try {
-            await lib()
-                .set({
-                    margin: [12, 10, 16, 10],
-                    filename: `mensagens_aprovadas_sala0${room}.pdf`,
-                    image: { type: "jpeg", quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollY: 0 },
-                    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                    pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-                })
-                .from(wrapper)
-                .save();
-        } catch (err) {
-            console.error("Falha ao gerar PDF:", err);
-            alert("Falha ao gerar PDF. Veja o console para detalhes.");
-        } finally {
+            // imagem
+            const imgUrl = resolveImageSrc(m.image);
             try {
-                document.body.removeChild(wrapper);
-            } catch { }
+                const dataUrl = await toDataURL(imgUrl);
+                doc.addImage(dataUrl, "JPEG", marginL + 2, y + 3, imgSize, imgSize, undefined, "FAST");
+            } catch {
+                // ignora se falhar
+            }
+
+            // nome
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.text(m.name || "", textX, y + 8, { baseline: "top" });
+
+            // texto (quebra automática)
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(11);
+            const lines = doc.splitTextToSize(m.text || "", textW);
+            // altura estimada do texto (aprox 5mm por linha para fonte 11)
+            const textH = Math.max(imgSize, lines.length * 5);
+            doc.text(lines, textX, y + 14);
+
+            y += textH + 10;
         }
+
+        doc.save(`mensagens_aprovadas_sala0${room}.pdf`);
     }, [approved, room]);
 
     return (
