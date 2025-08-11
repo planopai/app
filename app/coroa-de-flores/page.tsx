@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-    IconBell,
     IconCheck,
     IconChevronLeft,
     IconChevronRight,
@@ -240,11 +239,6 @@ export default function Page() {
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
 
-    // número opcional da equipe
-    const teamEnv = process.env.NEXT_PUBLIC_WPP_EQUIPE;
-    const teamFromStorage = typeof window !== "undefined" ? localStorage.getItem("wpp_team") || "" : "";
-    const wppTeam = onlyDigits(teamEnv || teamFromStorage || "");
-
     async function fetchOrders() {
         setLoading(true);
         setError(null);
@@ -295,18 +289,23 @@ export default function Page() {
             const data: WcOrderFull = await res.json();
             setDetail(data);
 
-            // tenta buscar imagem do primeiro item
-            const pid = data.line_items?.[0]?.product_id;
-            if (pid) {
+            // tenta buscar imagem do primeiro item (via /api/wc/products/:id) ou meta_data
+            const firstItem = data.line_items?.[0];
+            let img: string | undefined =
+                (firstItem?.meta_data || [])
+                    .map((m) => String(m.value || ""))
+                    .find((v) => /^https?:\/\/.+\.(png|jpe?g|webp|gif)$/i.test(v));
+
+            if (!img && firstItem?.product_id) {
                 try {
-                    const pr = await fetch(`/api/wc/products/${pid}`, { cache: "no-store" });
+                    const pr = await fetch(`/api/wc/products/${firstItem.product_id}`, { cache: "no-store" });
                     if (pr.ok) {
                         const prod = await pr.json();
-                        const src: string | undefined = prod?.images?.[0]?.src;
-                        if (src) setDetailImage(src);
+                        img = prod?.images?.[0]?.src;
                     }
                 } catch { }
             }
+            if (img) setDetailImage(img);
         } catch (e: any) {
             setDetail({
                 id,
@@ -343,13 +342,13 @@ export default function Page() {
         }
     }
 
-    async function notifyWhatsApp(orderId: number, forcePhone?: string) {
+    async function notifyWhatsApp(orderId: number) {
         try {
             const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "no-store" });
             if (!res.ok) throw new Error(`Falha ao carregar o pedido #${orderId}`);
             const full: WcOrderFull = await res.json();
             const text = buildWhatsAppText(full);
-            await shareOrOpenWhatsApp(text, forcePhone);
+            await shareOrOpenWhatsApp(text);
         } catch (e: any) {
             alert(e?.message || "Não foi possível abrir o WhatsApp.");
         }
@@ -398,7 +397,6 @@ export default function Page() {
 
                 <div>
                     <label className="mb-1 block text-xs font-medium">Status</label>
-                    {/* sem ícone sobre o select para não cobrir no iOS */}
                     <select
                         className="w-full rounded-md border bg-background py-2 px-2 text-sm outline-none"
                         value={status}
@@ -593,22 +591,6 @@ export default function Page() {
                                                         <IconSend className="size-4" />
                                                         Notificar
                                                     </button>
-
-                                                    <button
-                                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                                                        onClick={() => notifyWhatsApp(o.id, wppTeam)}
-                                                        title={
-                                                            disabled
-                                                                ? reason
-                                                                : wppTeam
-                                                                    ? `Enviar para equipe (${wppTeam})`
-                                                                    : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
-                                                        }
-                                                        disabled={disabled || !wppTeam}
-                                                    >
-                                                        <IconBell className="size-4" />
-                                                        Notificar equipe
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -684,14 +666,20 @@ export default function Page() {
                                 {/* Imagem do item (se disponível) */}
                                 {detailImage && (
                                     <div className="overflow-hidden rounded-lg border">
-                                        <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
+                                        <img
+                                            src={detailImage}
+                                            alt={detail.line_items?.[0]?.name || "Produto"}
+                                            className="w-full object-cover"
+                                        />
                                     </div>
                                 )}
 
                                 {/* Bloco com o texto no formato pedido */}
                                 <div className="rounded-lg border p-3 text-sm leading-6">
                                     <div>
-                                        <b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}
+                                        <b>Pedido:</b>{" "}
+                                        {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") ||
+                                            `#${detail.number || detail.id}`}
                                     </div>
                                     <div>
                                         <b>Origem:</b> Loja On-line
@@ -729,13 +717,13 @@ export default function Page() {
                                     </div>
                                 </div>
 
-                                {/* Status + ações rápidas */}
+                                {/* Status + ações rápidas — sem vazamento lateral */}
                                 <div className="rounded-lg border p-3">
-                                    <div className="mb-2 flex items-center justify-between">
-                                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(detail.status)}`}>
+                                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <span className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(detail.status)}`}>
                                             {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
                                         </span>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex flex-wrap gap-2">
                                             {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
                                                 <button
                                                     key={s}
@@ -751,47 +739,26 @@ export default function Page() {
                                     </div>
 
                                     <div className="text-sm text-muted-foreground">
-                                        Criado em {formatDate(detail.date_created)} — Total <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
+                                        Criado em {formatDate(detail.date_created)} — Total{" "}
+                                        <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
                                     </div>
                                 </div>
 
-                                {/* Ações WhatsApp */}
+                                {/* Ação WhatsApp única */}
                                 <div className="flex flex-wrap gap-2">
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
                                         onClick={() => detail && notifyWhatsApp(detail.id)}
                                         disabled={!canNotifyDetail}
-                                        title={canNotifyDetail ? "Compartilhar mensagem e escolher o WhatsApp" : "Só é possível notificar pedidos Concluídos."}
+                                        title={
+                                            canNotifyDetail
+                                                ? "Compartilhar mensagem e escolher o WhatsApp"
+                                                : "Só é possível notificar pedidos Concluídos."
+                                        }
                                     >
                                         <IconSend className="size-4" />
                                         Notificar (WhatsApp)
                                     </button>
-
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                                        onClick={() => detail && notifyWhatsApp(detail.id, wppTeam)}
-                                        disabled={!canNotifyDetail || !wppTeam}
-                                        title={
-                                            !canNotifyDetail
-                                                ? "Só é possível notificar pedidos Concluídos."
-                                                : wppTeam
-                                                    ? `Enviar para equipe (${wppTeam})`
-                                                    : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
-                                        }
-                                    >
-                                        <IconBell className="size-4" />
-                                        Notificar equipe
-                                    </button>
-
-                                    <a
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                        href={`/api/wc/orders/${detail.id}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
-                                        <IconEye className="size-4" />
-                                        Ver JSON bruto
-                                    </a>
                                 </div>
                             </div>
                         )}
