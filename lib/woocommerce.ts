@@ -1,6 +1,4 @@
-// lib/woocommerce.ts
 import WooCommerceRestApi, { IWooCommerceRestApiOptions } from "@woocommerce/woocommerce-rest-api";
-
 export function getWC() {
     const url = process.env.WC_URL?.replace(/\/+$/, "");
     const consumerKey = process.env.WC_CONSUMER_KEY;
