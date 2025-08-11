@@ -26,7 +26,7 @@ type ApiResponse = {
 
 const FALLBACK_IMG = "https://via.placeholder.com/100";
 
-// Sempre passe pelos proxies para evitar CORS e manter cookies
+// Proxies (evitam CORS e mantêm cookies)
 const fetchMap: Record<Room, string> = {
     1: "/api/php/fetchMessages.php",
     2: "/api/php/fetchMessages2.php",
@@ -177,7 +177,7 @@ export default function MensagensPage() {
         loadMessages();
     }, [loadMessages]);
 
-    // helper: fetch -> base64
+    // fetch -> base64
     async function toDataURL(url: string): Promise<string> {
         try {
             const resp = await fetch(url, { credentials: "include" });
@@ -194,39 +194,47 @@ export default function MensagensPage() {
         }
     }
 
-    // ===== Fonte Nunito no jsPDF =====
-    const nunitoLoadedRef = useRef(false);
-    async function ensureNunito(doc: any) {
-        if (nunitoLoadedRef.current) return;
-        // TTFs via jsDelivr (@fontsource)
-        const regularUrl =
-            "https://cdn.jsdelivr.net/npm/@fontsource/nunito@5.0.8/files/nunito-latin-400-normal.ttf";
-        const boldUrl =
-            "https://cdn.jsdelivr.net/npm/@fontsource/nunito@5.0.8/files/nunito-latin-700-normal.ttf";
+    // ===== Nunito no jsPDF (com fallback para Helvetica) =====
+    const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
 
-        async function fetchTTF(u: string) {
-            const r = await fetch(u);
-            const b = await r.arrayBuffer();
-            // arrayBuffer -> base64
-            let binary = "";
-            const bytes = new Uint8Array(b);
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
-            return btoa(binary);
+    async function ensureNunito(doc: any): Promise<boolean> {
+        if (nunitoStateRef.current === "ok") return true;
+        if (nunitoStateRef.current === "fail") return false;
+
+        try {
+            // TTFs oficiais via jsDelivr (mirror do Google Fonts)
+            const regularUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
+            const boldUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
+
+            async function fetchTTF(u: string) {
+                const r = await fetch(u);
+                if (!r.ok) throw new Error("Fonte não encontrada");
+                const b = await r.arrayBuffer();
+                let binary = "";
+                const bytes = new Uint8Array(b);
+                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                return btoa(binary);
+            }
+
+            const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
+
+            doc.addFileToVFS("Nunito-Regular.ttf", regB64);
+            doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
+
+            doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
+            doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
+
+            nunitoStateRef.current = "ok";
+            return true;
+        } catch {
+            nunitoStateRef.current = "fail";
+            return false;
         }
-
-        const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-
-        doc.addFileToVFS("Nunito-Regular.ttf", regB64);
-        doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
-
-        doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
-        doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
-
-        nunitoLoadedRef.current = true;
     }
 
-    // ------- Exportar PDF: jsPDF + Nunito + margens internas melhores -------
+    // ------- Exportar PDF: Nunito (se disponível), espaçamentos e margens melhores -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
@@ -242,65 +250,63 @@ export default function MensagensPage() {
         const { jsPDF } = jspdf;
 
         const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-        // Garante Nunito
-        await ensureNunito(doc);
+        const hasNunito = await ensureNunito(doc);
 
-        const pageW = doc.internal.pageSize.getWidth();  // 210
-        const pageH = doc.internal.pageSize.getHeight(); // 297
+        // Dimensões
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
 
-        // Margens externas mais generosas
+        // Margens externas e padding interno do card
         const marginL = 14;
         const marginR = 14;
         const contentW = pageW - marginL - marginR;
 
-        // Estilo base
-        doc.setFont("Nunito", "normal");
+        const cardPadX = 6;
+        const cardPadY = 6;
+        const gap = 6; // espaço entre NOME e corpo
+        const imgSize = 24;
+
+        // Fontes
+        const titleFont = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"] as const;
+        const normalFont = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"] as const;
+
         let y = 22;
 
         // Título
-        doc.setFont("Nunito", "bold");
+        doc.setFont(titleFont[0], titleFont[1]);
         doc.setFontSize(18);
         doc.text(`Mensagens Aprovadas — Sala 0${room}`, pageW / 2, y, { align: "center" });
         y += 8;
 
         // Data
-        doc.setFont("Nunito", "normal");
+        doc.setFont(normalFont[0], normalFont[1]);
         doc.setFontSize(11);
         doc.text(new Date().toLocaleString("pt-BR"), pageW / 2, y, { align: "center" });
         y += 12;
 
-        // Layout do card
-        const cardPadX = 6; // padding interno horizontal
-        const cardPadY = 6; // padding interno vertical
-        const gap = 6;      // gap entre nome e texto (maior que antes)
-        const imgSize = 24; // mm
-
         for (const m of approved) {
-            // Título (nome) + corpo (texto) ocuparão:
-            // - imagem à esquerda com padding
-            // - nome (bold) com espaçamento maior do corpo
             const innerX = marginL + cardPadX;
             const imgX = innerX;
             const imgY = y + cardPadY;
-            const textX = innerX + imgSize + 6; // 6mm depois da imagem
-            const textMaxW = contentW - (textX - marginL) - cardPadX; // respeita padding direito
+            const textX = innerX + imgSize + 6;
+            const textMaxW = contentW - (textX - marginL) - cardPadX;
 
-            // Calcular linhas de texto
-            doc.setFont("Nunito", "bold");
+            // Nome
+            doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(12);
             const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
             const nameH = nameLines.length * 5;
 
-            doc.setFont("Nunito", "normal");
+            // Corpo
+            doc.setFont(normalFont[0], normalFont[1]);
             doc.setFontSize(11);
             const bodyLines = doc.splitTextToSize(m.text || "", textMaxW);
             const bodyH = Math.max(0, bodyLines.length * 5);
 
-            // Altura do bloco (imagem x textos) + paddings
             const contentHeight = Math.max(imgSize, nameH + gap + bodyH);
             const cardH = contentHeight + cardPadY * 2;
 
-            // quebra de página
+            // Quebra de página
             if (y + cardH + 6 > pageH) {
                 doc.addPage();
                 y = 22;
@@ -316,21 +322,21 @@ export default function MensagensPage() {
                 const imgUrl = resolveImageSrc(m.image);
                 const dataUrl = await toDataURL(imgUrl);
                 doc.addImage(dataUrl, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
-            } catch { /* ignore */ }
+            } catch {
+                // ignora
+            }
 
-            // Nome (com boa distância do corpo)
-            doc.setFont("Nunito", "bold");
+            // Nome
+            doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(12);
-            doc.text(nameLines, textX, imgY + 2); // 2mm de respiro do topo
-            const bodyStartY = imgY + nameH + gap;
+            doc.text(nameLines, textX, imgY + 2);
 
-            // Corpo
-            doc.setFont("Nunito", "normal");
+            // Corpo (mais afastado do nome)
+            doc.setFont(normalFont[0], normalFont[1]);
             doc.setFontSize(11);
-            doc.text(bodyLines, textX, bodyStartY);
+            doc.text(bodyLines, textX, imgY + nameH + gap);
 
-            // Avança
-            y += cardH + 10; // espaço entre cards
+            y += cardH + 10;
         }
 
         doc.save(`mensagens_aprovadas_sala0${room}.pdf`);
