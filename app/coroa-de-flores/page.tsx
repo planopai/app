@@ -128,7 +128,6 @@ function onlyDigits(s?: string) {
     return (s || "").replace(/\D+/g, "");
 }
 
-/** procura um meta em diferentes variações de chave (case-insensitive) */
 function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | undefined {
     if (!metas?.length) return undefined;
     const lower = keys.map((k) => k.toLowerCase());
@@ -147,10 +146,8 @@ function buildWhatsAppText(order: WcOrderFull) {
     const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
     const pedidoNome = itens.join(", ");
 
-    let origem =
-        findMetaValue(order.meta_data, ["origem", "source"]) ||
-        findMetaValue(order.line_items?.flatMap((li) => li.meta_data || []), ["origem", "source"]) ||
-        (order.shipping?.address_1?.toLowerCase().includes("memorial") ? "Memorial" : "Loja Online");
+    // Origem: sempre "Loja On-line"
+    const origem = "Loja On-line";
 
     const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim();
     const phone = onlyDigits(order.billing?.phone);
@@ -184,7 +181,7 @@ function buildWhatsAppText(order: WcOrderFull) {
     };
 
     push(`*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`);
-    push(`*Origem:* ${origem || "Loja Online"}`);
+    push(`*Origem:* ${origem}`);
     push(`*Cliente:* ${cliente || "—"}`);
     push(`*Telefone:* ${phone || "—"}`);
     push(`*Valor:* ${valor}`);
@@ -196,25 +193,21 @@ function buildWhatsAppText(order: WcOrderFull) {
     return linhas.join("\n");
 }
 
-/** compartilhamento inteligente:
- * - iOS/Android modernos → Web Share API (abre a folha de compartilhamento, você escolhe WhatsApp)
- * - senão → tenta WhatsApp scheme/wa.me
- * - último recurso → copia para Clipboard e abre WhatsApp
- */
+/** compartilhamento inteligente (mostra a folha de compartilhamento quando possível) */
 async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     const phone = onlyDigits(toPhone);
 
-    // 1) Preferir Web Share (mostra as "ferramentas" e o usuário escolhe WhatsApp)
+    // 1) Web Share API
     if (typeof navigator !== "undefined" && (navigator as any).share) {
         try {
             await (navigator as any).share({ text });
             return;
         } catch {
-            // usuário cancelou ou share não disponível → cai para fallback
+            // cancelado → continua
         }
     }
 
-    // 2) Tentar abrir o app: whatsapp://send?text=...
+    // 2) Tentar deep link do app WhatsApp
     const encoded = encodeURIComponent(text);
     const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(
         (typeof navigator !== "undefined" && navigator.userAgent) || ""
@@ -227,14 +220,14 @@ async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     const opened = window.open(deep, "_blank");
     if (opened) return;
 
-    // 3) Fallback Web/desktop: WhatsApp Web
+    // 3) Fallback web/desktop
     const webUrl = phone
         ? `https://wa.me/${phone}?text=${encoded}`
         : `https://web.whatsapp.com/send?text=${encoded}`;
     const openedWeb = window.open(webUrl, "_blank", "noopener,noreferrer");
     if (openedWeb) return;
 
-    // 4) Último recurso: copiar e abrir WhatsApp "cru"
+    // 4) Último recurso: copiar e abrir WhatsApp “cru”
     try {
         await navigator.clipboard.writeText(text);
     } catch {
@@ -543,7 +536,7 @@ export default function Page() {
                                                         Ver
                                                     </button>
 
-                                                    {/* Notificar: escolher contato (share/wa.me) */}
+                                                    {/* Notificar (share/WhatsApp) – apenas concluídos */}
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
                                                         onClick={() => notifyWhatsApp(o.id)}
@@ -554,8 +547,7 @@ export default function Page() {
                                                         Notificar
                                                     </button>
 
-                                                    {/* Notificar equipe: usa um número fixo SE existir,
-                              ainda assim só para concluídos */}
+                                                    {/* Notificar equipe (número fixo) – apenas concluídos */}
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
                                                         onClick={() => notifyWhatsApp(o.id, wppTeam)}
@@ -633,18 +625,12 @@ export default function Page() {
             {/* Drawer de Detalhes */}
             {open && (
                 <div className="fixed inset-0 z-50">
-                    <div
-                        className="absolute inset-0 bg-black/40"
-                        onClick={() => setOpen(false)}
-                        aria-hidden
-                    />
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} aria-hidden />
                     <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-auto bg-white shadow-xl">
                         <div className="flex items-center justify-between border-b px-4 py-3">
                             <div>
                                 <div className="text-sm text-muted-foreground">Pedido</div>
-                                <div className="text-lg font-semibold">
-                                    #{detail?.number || detail?.id || "—"}
-                                </div>
+                                <div className="text-lg font-semibold">#{detail?.number || detail?.id || "—"}</div>
                             </div>
                             <button
                                 className="rounded-md p-2 hover:bg-muted"
@@ -667,8 +653,7 @@ export default function Page() {
                                                 detail.status
                                             )}`}
                                         >
-                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ??
-                                                detail.status}
+                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
                                         </span>
                                         <div className="flex items-center gap-2">
                                             {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
@@ -708,8 +693,7 @@ export default function Page() {
                                             <div>{detail.shipping?.address_1}</div>
                                             <div>{detail.shipping?.address_2}</div>
                                             <div>
-                                                {detail.shipping?.city} {detail.shipping?.state}{" "}
-                                                {detail.shipping?.postcode}
+                                                {detail.shipping?.city} {detail.shipping?.state} {detail.shipping?.postcode}
                                             </div>
                                         </div>
                                     </div>
