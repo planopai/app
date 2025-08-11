@@ -93,6 +93,7 @@ function normalizeHHMM(v: string) {
 }
 
 /* ==================== Inputs com digitação + picker ==================== */
+/** Campo de DATA com “card” de borda leve ao redor */
 function SmartDateInput({
     label,
     valueBR,
@@ -112,14 +113,14 @@ function SmartDateInput({
 
     return (
         <div>
-            <label htmlFor={id} className="mb-1 block text-sm">{label}</label>
-            <div className="relative flex items-center gap-2">
+            <label htmlFor={id} className="field-label">{label}</label>
+            <div className="field field-ctrl relative flex items-center">
                 <input
                     id={id}
                     type="text"
                     inputMode="numeric"
                     autoComplete="off"
-                    className="input w-full"
+                    className="field-input w-full"
                     placeholder={placeholder}
                     value={valueBR}
                     onChange={(e) => onChange(maskDateBR(e.target.value))}
@@ -147,6 +148,7 @@ function SmartDateInput({
     );
 }
 
+/** Campo de HORA (mantido com estilo padrão) */
 function SmartTimeInput({
     label,
     value,
@@ -198,6 +200,38 @@ function SmartTimeInput({
             </div>
         </div>
     );
+}
+
+/* ========= Carregamento dinâmico de fontes para o Canvas ========= */
+async function ensureFontLoaded(font: string) {
+    try {
+        const webFonts: Record<string, string> = {
+            Nunito:
+                "https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap",
+            Roboto:
+                "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap",
+        };
+        // injeta link do Google Fonts se necessário
+        if (webFonts[font]) {
+            const attr = `data-font-${font.replace(/\s+/g, "-")}`;
+            if (!document.querySelector(`link[${attr}]`)) {
+                const link = document.createElement("link");
+                link.rel = "stylesheet";
+                link.href = webFonts[font];
+                link.setAttribute(attr, "true");
+                document.head.appendChild(link);
+            }
+        }
+        // tenta carregar pesos comuns
+        await Promise.all([
+            document.fonts.load(`400 16px "${font}"`),
+            document.fonts.load(`600 16px "${font}"`),
+            document.fonts.load(`700 16px "${font}"`),
+        ]);
+        await document.fonts.ready;
+    } catch {
+        // se der algo errado, o canvas usará fallback do sistema
+    }
 }
 
 /* ==================== Página ==================== */
@@ -283,6 +317,9 @@ export default function ObituarioPage() {
         try {
             setPreviewSrc("");
 
+            // garante que a FONTE escolhida esteja carregada antes de desenhar
+            await ensureFontLoaded(fontName || "Nunito");
+
             // escolhe fundo
             let bgUrl = MODELOS["modelo01"];
             if (form.modelo_fundo === "personalizado") {
@@ -320,11 +357,11 @@ export default function ObituarioPage() {
             // Nome
             ctx.fillStyle = _fontColor;
             ctx.textAlign = "center";
-            ctx.font = `${fontSizeName}px ${_fontName}`;
+            ctx.font = `${fontSizeName}px "${_fontName}"`; // aspas garantem nomes com espaços
             ctx.fillText(form.nome, canvas.width / 2, form.formato === "vertical" ? 1000 : 80);
 
             // Datas Nasc/Fal
-            ctx.font = `${fontSizeDetails}px ${_fontName}`;
+            ctx.font = `${fontSizeDetails}px "${_fontName}"`;
             if (form.formato === "vertical") {
                 ctx.fillText(`${normalizeDateToBR(form.data_nascimento)}`, canvas.width / 2 - 180, 1120);
                 ctx.fillText(`${normalizeDateToBR(form.data_falecimento)}`, canvas.width / 2 + 200, 1120);
@@ -372,7 +409,7 @@ export default function ObituarioPage() {
 
             // Nota de pesar
             ctx.textAlign = "center";
-            ctx.font = `${fontSizeNote}px ${_fontName}`;
+            ctx.font = `${fontSizeNote}px "${_fontName}"`;
             ctx.fillStyle = _fontColor;
 
             const maxLineWidth = form.formato === "vertical" ? 800 : 400;
@@ -384,7 +421,7 @@ export default function ObituarioPage() {
             }
 
             // Bloco velório / cerimônia
-            ctx.font = `${fontSizeNote}px ${_fontName}`;
+            ctx.font = `${fontSizeNote}px "${_fontName}"`;
             ctx.fillStyle = _fontColor;
             const dataCerimonia = normalizeDateToBR(form.data_cerimonia);
             const fimDataCer = normalizeDateToBR(form.fim_data_cerimonia);
@@ -472,6 +509,32 @@ export default function ObituarioPage() {
         .stepper > * { scroll-snap-align: start; flex: 0 0 auto; }
         .step-label { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         @media (min-width: 640px) { .step-label { max-width: 180px; } }
+
+        /* ======== Destaque sutil para Nome e Datas (borda leve) ======== */
+        .field { 
+          border: 1px solid hsl(var(--border, 214 32% 91%));
+          background: hsl(var(--card, 0 0% 100%));
+          border-radius: .75rem;
+          padding: .35rem .5rem;
+          transition: box-shadow .2s ease, border-color .2s ease;
+        }
+        .field:focus-within {
+          box-shadow: 0 0 0 4px rgba(59,130,246,.18);
+          border-color: rgb(59,130,246);
+        }
+        .field-input {
+          border: none !important;
+          background: transparent;
+          outline: none;
+          width: 100%;
+          padding: .45rem .25rem;
+        }
+        .field-label {
+          display: block;
+          margin-bottom: .25rem;
+          font-size: .85rem;
+          color: hsl(var(--muted-foreground, 215 20% 65%));
+        }
       `}</style>
 
             {/* Header + progress */}
@@ -556,17 +619,21 @@ export default function ObituarioPage() {
                                         </div>
                                     </div>
 
+                                    {/* NOME com borda leve */}
                                     <div className="sm:col-span-2">
-                                        <label className="mb-1 block text-sm">Nome</label>
-                                        <input
-                                            className="input"
-                                            placeholder="Nome completo"
-                                            required
-                                            value={form.nome}
-                                            onChange={(e) => set("nome", e.target.value)}
-                                        />
+                                        <label className="field-label">Nome</label>
+                                        <div className="field">
+                                            <input
+                                                className="field-input"
+                                                placeholder="Nome completo"
+                                                required
+                                                value={form.nome}
+                                                onChange={(e) => set("nome", e.target.value)}
+                                            />
+                                        </div>
                                     </div>
 
+                                    {/* DATAS com borda leve */}
                                     <SmartDateInput
                                         label="Data de Nascimento"
                                         valueBR={form.data_nascimento}
@@ -610,6 +677,7 @@ export default function ObituarioPage() {
                                         />
                                     </div>
 
+                                    {/* DATAS/Saídas com borda leve nas DATAS */}
                                     <SmartDateInput
                                         label="Início (Data)"
                                         valueBR={form.data_cerimonia}
