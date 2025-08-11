@@ -445,7 +445,7 @@ export default function MensagensPage() {
 
                 {approved.length === 0 ? (
                     <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                        Nenhuma mensagem aprovada nesta sala.
+                        Não há mensagem aprovada nesta sala.
                     </div>
                 ) : (
                     <div className="grid gap-3 sm:grid-cols-2">
