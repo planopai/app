@@ -7,6 +7,7 @@ import {
     IconTrash,
     IconRefresh,
     IconDoor,
+    IconDownload,
 } from "@tabler/icons-react";
 
 type Room = 1 | 2 | 3;
@@ -25,7 +26,7 @@ type ApiResponse = {
 
 const FALLBACK_IMG = "https://via.placeholder.com/100";
 
-// use sempre o proxy local para manter cookies e evitar CORS
+// sempre use o proxy local para manter cookies e evitar CORS
 const fetchMap: Record<Room, string> = {
     1: "/api/php/fetchMessages.php",
     2: "/api/php/fetchMessages2.php",
@@ -42,21 +43,16 @@ const deleteMap: Record<Room, (id: number, type: "received" | "approved") => str
     3: (id, t) => `/api/php/deleteMessage3.php?id=${id}&type=${t}`,
 };
 
-// transforma qualquer caminho em um src válido (prioriza o proxy)
+// resolve caminho da imagem (prioriza proxy) e lida com relativo
 function resolveImageSrc(src?: string | null): string {
     if (!src) return FALLBACK_IMG;
     let s = src.trim();
     if (!s) return FALLBACK_IMG;
-
-    // já é data/blob ou http(s)? retorna como está
     if (/^(data:|blob:|https?:\/\/)/i.test(s)) return s;
-
-    // remove ./ ou / iniciais e manda pelo proxy
     s = s.replace(/^\.?\//, "");
     return `/api/php/${s}`;
 }
 
-// Botão outline bonito
 const btn =
     "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold " +
     "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50";
@@ -125,6 +121,21 @@ export default function MensagensPage() {
     const [approved, setApproved] = useState<MessageItem[]>([]);
     const [error, setError] = useState<string | null>(null);
 
+    // carrega html2pdf da CDN
+    useEffect(() => {
+        const KEY = "__html2pdf_loaded__";
+        if ((window as any)[KEY]) return;
+        const script = document.createElement("script");
+        script.src =
+            "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+        script.async = true;
+        script.onload = () => ((window as any)[KEY] = true);
+        document.body.appendChild(script);
+        return () => {
+            // não removo para evitar recarregar várias vezes ao navegar
+        };
+    }, []);
+
     const fetchUrl = useMemo(() => `${fetchMap[room]}?cb=${Date.now()}`, [room]);
     const approveUrl = useCallback((id: number) => approveMap[room](id), [room]);
     const deleteUrl = useCallback(
@@ -138,7 +149,7 @@ export default function MensagensPage() {
             setError(null);
             const res = await fetch(fetchUrl, {
                 cache: "no-store",
-                credentials: "include", // garante cookies na chamada ao proxy
+                credentials: "include",
             });
             if (!res.ok) throw new Error("Falha ao carregar mensagens.");
             const data: ApiResponse = await res.json();
@@ -174,6 +185,132 @@ export default function MensagensPage() {
     useEffect(() => {
         loadMessages();
     }, [loadMessages]);
+
+    // ------- Exportar PDF das mensagens aprovadas (organizado) -------
+    const exportApprovedPdf = useCallback(async () => {
+        if (approved.length === 0) {
+            alert("Não há mensagens aprovadas para exportar.");
+            return;
+        }
+        const win: any = window as any;
+        const lib = win.html2pdf;
+        if (!lib) {
+            alert("Ferramenta de PDF ainda carregando. Tente novamente em alguns segundos.");
+            return;
+        }
+
+        // container isolado, sem classes do app (evita OKLCH / variáveis)
+        const wrapper = document.createElement("div");
+        wrapper.setAttribute(
+            "style",
+            [
+                "position:fixed",
+                "left:-10000px",
+                "top:0",
+                "width:800px",
+                "background:#ffffff",
+                "color:#111111",
+                "font-family:Arial, Helvetica, sans-serif",
+                "font-size:14px",
+                "line-height:1.4",
+                "padding:16px",
+            ].join(";")
+        );
+
+        // título
+        const h1 = document.createElement("h1");
+        h1.textContent = `Mensagens Aprovadas — Sala 0${room}`;
+        h1.setAttribute(
+            "style",
+            "margin:0 0 8px 0;font-size:20px;font-weight:700;text-align:center;color:#111111;"
+        );
+        wrapper.appendChild(h1);
+
+        // subtítulo (data/hora)
+        const p = document.createElement("div");
+        p.textContent = new Date().toLocaleString("pt-BR");
+        p.setAttribute(
+            "style",
+            "text-align:center;margin:0 0 16px 0;color:#444444;font-size:12px;"
+        );
+        wrapper.appendChild(p);
+
+        // lista de mensagens
+        const list = document.createElement("div");
+        list.setAttribute("style", "display:flex;flex-direction:column;gap:10px;");
+        wrapper.appendChild(list);
+
+        for (const m of approved) {
+            const card = document.createElement("div");
+            card.setAttribute(
+                "style",
+                [
+                    "border:1px solid #dddddd",
+                    "border-radius:8px",
+                    "padding:10px",
+                    "display:flex",
+                    "gap:10px",
+                    "page-break-inside:avoid",
+                    "background:#ffffff",
+                ].join(";")
+            );
+
+            // imagem (opcional)
+            const img = document.createElement("img");
+            img.setAttribute("alt", m.name || "imagem");
+            img.setAttribute("crossorigin", "anonymous");
+            const src = resolveImageSrc(m.image);
+            img.setAttribute("src", src);
+            img.setAttribute(
+                "style",
+                "width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e5e5e5;background:#fafafa;flex:0 0 auto;"
+            );
+            card.appendChild(img);
+
+            // texto
+            const block = document.createElement("div");
+            block.setAttribute("style", "flex:1 1 auto;min-width:0;");
+
+            const title = document.createElement("div");
+            title.textContent = m.name || "";
+            title.setAttribute("style", "font-weight:700;font-size:14px;color:#111111;margin-bottom:4px;");
+            block.appendChild(title);
+
+            const body = document.createElement("div");
+            body.textContent = m.text || "";
+            body.setAttribute(
+                "style",
+                "white-space:pre-wrap;word-break:break-word;color:#222222;font-size:13px;"
+            );
+            block.appendChild(body);
+
+            card.appendChild(block);
+            list.appendChild(card);
+        }
+
+        document.body.appendChild(wrapper);
+
+        try {
+            await lib()
+                .set({
+                    margin: [12, 10, 16, 10],
+                    filename: `mensagens_aprovadas_sala0${room}.pdf`,
+                    image: { type: "jpeg", quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollY: 0 },
+                    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                    pagebreak: { mode: ["css", "legacy", "avoid-all"] },
+                })
+                .from(wrapper)
+                .save();
+        } catch (err) {
+            console.error("Falha ao gerar PDF:", err);
+            alert("Falha ao gerar PDF. Veja o console para detalhes.");
+        } finally {
+            try {
+                document.body.removeChild(wrapper);
+            } catch { }
+        }
+    }, [approved, room]);
 
     return (
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
@@ -235,7 +372,7 @@ export default function MensagensPage() {
                                     <>
                                         <button
                                             onClick={() => approveMessage(m.id)}
-                                            className="btn border gap-2 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                            className={`${btn} hover:bg-green-50 dark:hover:bg-green-900/20`}
                                             title="Aprovar"
                                         >
                                             <IconCheck className="size-4 text-green-600" />
@@ -243,7 +380,7 @@ export default function MensagensPage() {
                                         </button>
                                         <button
                                             onClick={() => deleteMessage(m.id, "received")}
-                                            className="btn border gap-2 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
                                             title="Excluir"
                                         >
                                             <IconTrash className="size-4 text-red-600" />
@@ -259,9 +396,21 @@ export default function MensagensPage() {
 
             {/* Aprovadas */}
             <section>
-                <div className="mb-3 flex items-center gap-2">
-                    <IconMessageCircle2 className="size-5 text-muted-foreground" />
-                    <h2 className="text-lg font-semibold">Mensagens Aprovadas</h2>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                        <IconMessageCircle2 className="size-5 text-muted-foreground" />
+                        <h2 className="text-lg font-semibold">Mensagens Aprovadas</h2>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={exportApprovedPdf}
+                        disabled={approved.length === 0}
+                        className={btn}
+                        title="Exportar PDF"
+                    >
+                        <IconDownload className="size-4" />
+                        Exportar PDF
+                    </button>
                 </div>
 
                 {approved.length === 0 ? (
@@ -277,7 +426,7 @@ export default function MensagensPage() {
                                 actions={
                                     <button
                                         onClick={() => deleteMessage(m.id, "approved")}
-                                        className="btn border gap-2 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                        className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
                                         title="Excluir"
                                     >
                                         <IconTrash className="size-4 text-red-600" />
