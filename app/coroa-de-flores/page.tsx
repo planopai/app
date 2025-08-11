@@ -60,7 +60,7 @@ type WcOrderFull = WcOrder & {
         variation_id?: number;
         sku?: string;
         meta_data?: Meta[];
-        image?: { id: number | string; src: string }; // 👈 imagem já vem no pedido
+        image?: { id: number | string; src: string }; // imagem do item (quando a API manda)
     }>;
     shipping_lines?: Array<{
         id: number;
@@ -131,6 +131,7 @@ function onlyDigits(s?: string) {
     return (s || "").replace(/\D+/g, "");
 }
 
+/** pega o primeiro valor de meta que combine com alguma chave */
 function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | undefined {
     if (!metas?.length) return undefined;
     const lower = keys.map((k) => k.toLowerCase());
@@ -144,13 +145,62 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | unde
     return undefined;
 }
 
+/** tenta extrair uma URL de imagem de qualquer meta (valor ou objeto serializado) */
+function findImageUrlInMetas(metas?: Meta[]): string | null {
+    if (!metas?.length) return null;
+    const re = /(https?:\/\/[^\s"'<>\)]+?\.(?:png|jpe?g|webp|gif))(?:\?[^\s"'<>]*)?/i;
+    for (const m of metas) {
+        const k = (m.key || "").toLowerCase();
+        const shouldPrefer =
+            k.includes("receipt") || k.includes("recibo") || k.includes("comprovante");
+        const str =
+            typeof m.value === "string" ? m.value : JSON.stringify(m.value || "");
+        const match = str.match(re);
+        if (match && (shouldPrefer || true)) return match[1];
+    }
+    return null;
+}
+
+/** tenta resolver uma URL de recibo a partir de um "file name" salvo em meta (ex.: _receipt_file_name) */
+async function guessReceiptUrlFromName(
+    fileName: string,
+    orderCreatedISO?: string
+): Promise<string | null> {
+    try {
+        const base = window.location.origin;
+        const dt = orderCreatedISO ? new Date(orderCreatedISO) : new Date();
+        const year = dt.getFullYear();
+        const month = String(dt.getMonth() + 1).padStart(2, "0");
+
+        const exts = ["png", "jpg", "jpeg", "webp"];
+        const candidates: string[] = [];
+
+        for (const ext of exts) {
+            candidates.push(`${base}/wp-content/uploads/${year}/${month}/${fileName}.${ext}`);
+            candidates.push(`${base}/wp-content/uploads/receipts/${fileName}.${ext}`);
+            candidates.push(`${base}/wp-content/uploads/${fileName}.${ext}`);
+        }
+
+        for (const url of candidates) {
+            try {
+                const r = await fetch(url, { method: "HEAD" });
+                if (r.ok) return url;
+            } catch {
+                /* ignore and try next */
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return null;
+}
+
 /** texto do WhatsApp com linha em branco entre blocos (Origem sempre Loja On-line) */
 function buildWhatsAppText(order: WcOrderFull) {
     const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
     const pedidoNome = itens.join(", ");
 
-    const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""
-        }`.trim();
+    const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim();
     const phone = onlyDigits(order.billing?.phone);
     const valor = formatCurrency(order.total, order.currency || "BRL");
 
@@ -261,6 +311,7 @@ export default function Page() {
     const [detail, setDetail] = React.useState<WcOrderFull | null>(null);
     const [detailLoading, setDetailLoading] = React.useState(false);
     const [detailImage, setDetailImage] = React.useState<string | null>(null);
+    const [receiptImage, setReceiptImage] = React.useState<string | null>(null);
 
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
@@ -307,6 +358,7 @@ export default function Page() {
     async function openDetail(id: number) {
         setDetail(null);
         setDetailImage(null);
+        setReceiptImage(null);
         setOpen(true);
         setDetailLoading(true);
         try {
@@ -315,14 +367,11 @@ export default function Page() {
             const data: WcOrderFull = await res.json();
             setDetail(data);
 
-            // 1) tenta usar a imagem que já vem no pedido (line_items[].image.src)
-            const fromOrder =
-                data.line_items?.find((li) => li.image?.src)?.image?.src || null;
-
+            // — Foto do item (preferir a que já vem no pedido)
+            const fromOrder = data.line_items?.find((li) => li.image?.src)?.image?.src || null;
             if (fromOrder) {
                 setDetailImage(fromOrder);
             } else {
-                // 2) fallback opcional: buscar imagem no produto/variação
                 const pid = data.line_items?.[0]?.product_id;
                 const vid = data.line_items?.[0]?.variation_id;
                 if (pid) {
@@ -341,6 +390,23 @@ export default function Page() {
                     }
                 }
             }
+
+            // — Imagem do recibo/comprovante
+            // 1) tenta achar uma URL direta nos metas
+            let receipt =
+                findImageUrlInMetas(data.meta_data) ||
+                findImageUrlInMetas(data.line_items?.flatMap((li) => li.meta_data || []));
+
+            // 2) se tiver somente o nome do arquivo (_receipt_file_name), tenta construir caminhos comuns
+            if (!receipt) {
+                const name =
+                    findMetaValue(data.meta_data, ["_receipt_file_name", "receipt", "recibo", "comprovante"]) ||
+                    undefined;
+                if (name) {
+                    receipt = await guessReceiptUrlFromName(name, data.date_created);
+                }
+            }
+            if (receipt) setReceiptImage(receipt);
         } catch (e: any) {
             setDetail({
                 id,
@@ -497,8 +563,7 @@ export default function Page() {
                 <div className="space-y-3">
                     {orders.map((o) => {
                         const cliente =
-                            `${o.billing?.first_name || ""} ${o.billing?.last_name || ""
-                                }`.trim() || "—";
+                            `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                         const disabled = !canNotifyRow(o);
                         return (
                             <div key={o.id} className="rounded-lg border bg-card p-3">
@@ -621,8 +686,8 @@ export default function Page() {
 
                                 {orders.map((o) => {
                                     const cliente =
-                                        `${o.billing?.first_name || ""} ${o.billing?.last_name || ""
-                                            }`.trim() || "—";
+                                        `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() ||
+                                        "—";
                                     const disabled = !canNotifyRow(o);
                                     const reason = disabled
                                         ? "Só é possível notificar pedidos Concluídos."
@@ -641,8 +706,8 @@ export default function Page() {
                                                         o.status
                                                     )}`}
                                                 >
-                                                    {STATUS_OPTIONS.find((s) => s.value === o.status)
-                                                        ?.label ?? o.status}
+                                                    {STATUS_OPTIONS.find((s) => s.value === o.status)?.label ??
+                                                        o.status}
                                                 </span>
                                             </td>
                                             <td className="px-3 py-2">
@@ -823,6 +888,22 @@ export default function Page() {
                                     </div>
                                 </div>
 
+                                {/* Comprovante de pagamento (se houver) */}
+                                {receiptImage && (
+                                    <div className="rounded-lg border">
+                                        <div className="border-b px-3 py-2 text-sm font-medium">
+                                            Comprovante de pagamento
+                                        </div>
+                                        <a href={receiptImage} target="_blank" rel="noreferrer" className="block">
+                                            <img
+                                                src={receiptImage}
+                                                alt="Comprovante de pagamento"
+                                                className="w-full object-contain"
+                                            />
+                                        </a>
+                                    </div>
+                                )}
+
                                 {/* Status + ações rápidas — sem vazamento lateral */}
                                 <div className="rounded-lg border p-3">
                                     <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -831,8 +912,8 @@ export default function Page() {
                                                 detail.status
                                             )}`}
                                         >
-                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)
-                                                ?.label ?? detail.status}
+                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ??
+                                                detail.status}
                                         </span>
                                         <div className="flex flex-wrap gap-2">
                                             {(["processing", "completed", "cancelled", "on-hold"] as const).map(
