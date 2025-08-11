@@ -1,13 +1,21 @@
+/* === Tailwind base & animações === */
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Fonte Nunito via Google Fonts */
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap");
+
+/* Variant util p/ dark */
 @custom-variant dark (&:is(.dark *));
 
+/* Mapeia tokens do Tailwind Theme para nossas CSS vars */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -16,11 +24,13 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -37,106 +47,170 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* =========================================================================
+   Paleta BRAND
+   - Primária: #059de0  (azul)
+   - Profunda: #22334f  (azul escuro)
+   ========================================================================= */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.147 0.004 49.25);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.147 0.004 49.25);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.147 0.004 49.25);
-  --primary: oklch(0.216 0.006 56.043);
-  --primary-foreground: oklch(0.985 0.001 106.423);
-  --secondary: oklch(0.97 0.001 106.424);
-  --secondary-foreground: oklch(0.216 0.006 56.043);
-  --muted: oklch(0.97 0.001 106.424);
-  --muted-foreground: oklch(0.553 0.013 58.071);
-  --accent: oklch(0.97 0.001 106.424);
-  --accent-foreground: oklch(0.216 0.006 56.043);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.923 0.003 48.717);
-  --input: oklch(0.923 0.003 48.717);
-  --ring: oklch(0.709 0.01 56.259);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0.001 106.423);
-  --sidebar-foreground: oklch(0.147 0.004 49.25);
-  --sidebar-primary: oklch(0.216 0.006 56.043);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
-  --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.709 0.01 56.259);
+
+  /* Fonte padrão do app */
+  --font-sans: "Nunito", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Base (modo claro) */
+  --background: #ffffff;
+  --foreground: #22334f;
+
+  --card: #ffffff;
+  --card-foreground: #22334f;
+
+  --popover: #ffffff;
+  --popover-foreground: #22334f;
+
+  /* Brand */
+  --primary: #059de0;
+  --primary-foreground: #ffffff;
+
+  /* Secundária (azul profundo) */
+  --secondary: #22334f;
+  --secondary-foreground: #ffffff;
+
+  /* Estados / UI */
+  --muted: #f5f8fc;
+  /* cinza-azulado claro */
+  --muted-foreground: #6b7a90;
+  /* texto em superfícies muted */
+
+  --accent: #e8f6ff;
+  /* realce sutil claro */
+  --accent-foreground: #22334f;
+
+  --destructive: #ef4444;
+  /* vermelho 500 */
+  --border: #d6dee8;
+  /* borda cinza-azulada */
+  --input: #d6dee8;
+  --ring: #059de0;
+
+  /* Paleta p/ gráficos */
+  --chart-1: #059de0;
+  /* brand */
+  --chart-2: #22c55e;
+  /* green 500 */
+  --chart-3: #f59e0b;
+  /* amber 500 */
+  --chart-4: #8b5cf6;
+  /* violet 500 */
+  --chart-5: #ef4444;
+  /* red 500 */
+
+  /* Sidebar (claro) */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #22334f;
+  --sidebar-primary: #059de0;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f6fb;
+  --sidebar-accent-foreground: #22334f;
+  --sidebar-border: #d6dee8;
+  --sidebar-ring: #059de0;
+
+  /* Ajustes diversos */
+  --header-height: 64px;
 }
 
+/* ========================== Dark Mode ========================== */
 .dark {
-  --background: oklch(0.147 0.004 49.25);
-  --foreground: oklch(0.985 0.001 106.423);
-  --card: oklch(0.216 0.006 56.043);
-  --card-foreground: oklch(0.985 0.001 106.423);
-  --popover: oklch(0.216 0.006 56.043);
-  --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.923 0.003 48.717);
-  --primary-foreground: oklch(0.216 0.006 56.043);
-  --secondary: oklch(0.268 0.007 34.298);
-  --secondary-foreground: oklch(0.985 0.001 106.423);
-  --muted: oklch(0.268 0.007 34.298);
-  --muted-foreground: oklch(0.709 0.01 56.259);
-  --accent: oklch(0.268 0.007 34.298);
-  --accent-foreground: oklch(0.985 0.001 106.423);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.553 0.013 58.071);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.216 0.006 56.043);
-  --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.268 0.007 34.298);
-  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.553 0.013 58.071);
+  --background: #0f172a;
+  /* slate-900 */
+  --foreground: #e7ecf5;
+  /* texto claro */
+
+  --card: #131c2e;
+  /* painel */
+  --card-foreground: #e7ecf5;
+
+  --popover: #131c2e;
+  --popover-foreground: #e7ecf5;
+
+  --primary: #059de0;
+  --primary-foreground: #ffffff;
+
+  --secondary: #22334f;
+  --secondary-foreground: #ffffff;
+
+  --muted: #1b2841;
+  --muted-foreground: #a3b1c6;
+
+  --accent: #0b2036;
+  --accent-foreground: #e7ecf5;
+
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #059de0;
+
+  --chart-1: #4cc3f1;
+  /* versões mais claras no dark */
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #fb7185;
+
+  --sidebar: #111a2b;
+  --sidebar-foreground: #e7ecf5;
+  --sidebar-primary: #059de0;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0f1a2b;
+  --sidebar-accent-foreground: #e7ecf5;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #059de0;
 }
 
+/* ============================ Base Layer ============================ */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
+  html,
+  body {
+    font-family: var(--font-sans);
+  }
+
   body {
     @apply bg-background text-foreground;
   }
 }
 
+/* Ajustes gerais */
 body {
   @apply overscroll-none bg-transparent;
 }
 
+/* ============================ Escalas/Spacings ============================ */
 :root {
-  --font-sans: var(--font-inter);
-  --header-height: calc(var(--spacing) * 12 + 1px);
+  --header-height: calc(var(--spacing, 0.25rem) * 12 + 1px);
 }
 
+/* Tema com leve “compressão” em telas grandes (opcional) */
 .theme-scaled {
   @media (min-width: 1024px) {
     --radius: 0.6rem;
     --text-lg: 1.05rem;
-    --text-base: 0.85rem;
-    --text-sm: 0.8rem;
-    --spacing: 0.222222rem;
+    --text-base: 0.9rem;
+    --text-sm: 0.82rem;
+    --spacing: 0.22rem;
   }
 
   [data-slot="card"] {
@@ -145,63 +219,66 @@ body {
 
   [data-slot="select-trigger"],
   [data-slot="toggle-group-item"] {
-    --spacing: 0.222222rem;
+    --spacing: 0.22rem;
   }
 }
 
+/* ============================ Temas auxiliares (opcionais) ============================ */
+/* Mantidos para compatibilidade; já herdam as cores brand do :root */
 .theme-default,
 .theme-default-scaled {
-  --primary: var(--color-neutral-600);
-  --primary-foreground: var(--color-neutral-50);
+  --primary: var(--primary);
+  --primary-foreground: var(--primary-foreground);
 
   @variant dark {
-    --primary: var(--color-neutral-500);
-    --primary-foreground: var(--color-neutral-50);
+    --primary: var(--primary);
+    --primary-foreground: var(--primary-foreground);
   }
 }
 
 .theme-blue,
 .theme-blue-scaled {
-  --primary: var(--color-blue-600);
-  --primary-foreground: var(--color-blue-50);
+  --primary: var(--primary);
+  --primary-foreground: var(--primary-foreground);
 
   @variant dark {
-    --primary: var(--color-blue-500);
-    --primary-foreground: var(--color-blue-50);
+    --primary: var(--primary);
+    --primary-foreground: var(--primary-foreground);
   }
 }
 
 .theme-green,
 .theme-green-scaled {
-  --primary: var(--color-lime-600);
-  --primary-foreground: var(--color-lime-50);
+  --primary: #22c55e;
+  --primary-foreground: #052e16;
 
   @variant dark {
-    --primary: var(--color-lime-600);
-    --primary-foreground: var(--color-lime-50);
+    --primary: #34d399;
+    --primary-foreground: #052e16;
   }
 }
 
 .theme-amber,
 .theme-amber-scaled {
-  --primary: var(--color-amber-600);
-  --primary-foreground: var(--color-amber-50);
+  --primary: #f59e0b;
+  --primary-foreground: #3b2f06;
 
   @variant dark {
-    --primary: var(--color-amber-500);
-    --primary-foreground: var(--color-amber-50);
+    --primary: #fbbf24;
+    --primary-foreground: #3b2f06;
   }
 }
 
+/* Modo mono (se precisar) */
 .theme-mono,
 .theme-mono-scaled {
   --font-sans: var(--font-mono);
-  --primary: var(--color-neutral-600);
-  --primary-foreground: var(--color-neutral-50);
+  --primary: #6b7280;
+  --primary-foreground: #f9fafb;
 
   @variant dark {
-    --primary: var(--color-neutral-500);
-    --primary-foreground: var(--color-neutral-50);
+    --primary: #9ca3af;
+    --primary-foreground: #111827;
   }
 
   .rounded-xs,
@@ -226,4 +303,3 @@ body {
     @apply !rounded-none !shadow-none;
   }
 }
-
