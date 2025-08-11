@@ -25,11 +25,11 @@ type ApiResponse = {
 
 const FALLBACK_IMG = "https://via.placeholder.com/100";
 
-// Endpoints por sala (ajuste se usar /api/php/...)
+// use sempre o proxy local para manter cookies e evitar CORS
 const fetchMap: Record<Room, string> = {
-    1: "https://planoassistencialintegrado.com.br/fetchMessages.php",
-    2: "https://planoassistencialintegrado.com.br/fetchMessages2.php",
-    3: "https://planoassistencialintegrado.com.br/fetchMessages3.php",
+    1: "/api/php/fetchMessages.php",
+    2: "/api/php/fetchMessages2.php",
+    3: "/api/php/fetchMessages3.php",
 };
 const approveMap: Record<Room, (id: number) => string> = {
     1: (id) => `/api/php/approveMessage.php?id=${id}`,
@@ -41,6 +41,20 @@ const deleteMap: Record<Room, (id: number, type: "received" | "approved") => str
     2: (id, t) => `/api/php/deleteMessage2.php?id=${id}&type=${t}`,
     3: (id, t) => `/api/php/deleteMessage3.php?id=${id}&type=${t}`,
 };
+
+// transforma qualquer caminho em um src válido (prioriza o proxy)
+function resolveImageSrc(src?: string | null): string {
+    if (!src) return FALLBACK_IMG;
+    let s = src.trim();
+    if (!s) return FALLBACK_IMG;
+
+    // já é data/blob ou http(s)? retorna como está
+    if (/^(data:|blob:|https?:\/\/)/i.test(s)) return s;
+
+    // remove ./ ou / iniciais e manda pelo proxy
+    s = s.replace(/^\.?\//, "");
+    return `/api/php/${s}`;
+}
 
 // Botão outline bonito
 const btn =
@@ -79,12 +93,19 @@ function MessageCard({
     item: MessageItem;
     actions?: React.ReactNode;
 }) {
+    const src = resolveImageSrc(item.image);
+
     return (
         <div className="flex items-start gap-3 rounded-xl border bg-card/70 p-3 shadow-sm sm:p-4">
             <img
-                src={item.image || FALLBACK_IMG}
+                src={src}
                 alt={item.name}
                 className="size-16 rounded-md border object-cover sm:size-20"
+                loading="lazy"
+                onError={(e) => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    if (img.src !== FALLBACK_IMG) img.src = FALLBACK_IMG;
+                }}
             />
             <div className="min-w-0 flex-1">
                 <div className="truncate text-base font-semibold">{item.name}</div>
@@ -115,7 +136,10 @@ export default function MensagensPage() {
         try {
             setLoading(true);
             setError(null);
-            const res = await fetch(fetchUrl, { cache: "no-store" });
+            const res = await fetch(fetchUrl, {
+                cache: "no-store",
+                credentials: "include", // garante cookies na chamada ao proxy
+            });
             if (!res.ok) throw new Error("Falha ao carregar mensagens.");
             const data: ApiResponse = await res.json();
             setReceived(data.receivedMessages || []);
@@ -131,7 +155,7 @@ export default function MensagensPage() {
 
     const approveMessage = async (id: number) => {
         try {
-            await fetch(approveUrl(id), { method: "POST" });
+            await fetch(approveUrl(id), { method: "POST", credentials: "include" });
             await loadMessages();
         } catch {
             alert("Erro ao aprovar a mensagem.");
@@ -140,7 +164,7 @@ export default function MensagensPage() {
 
     const deleteMessage = async (id: number, type: "received" | "approved") => {
         try {
-            await fetch(deleteUrl(id, type), { method: "POST" });
+            await fetch(deleteUrl(id, type), { method: "POST", credentials: "include" });
             await loadMessages();
         } catch {
             alert("Erro ao excluir a mensagem.");
@@ -153,7 +177,7 @@ export default function MensagensPage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
-            {/* Topbar: título à esquerda, ações à direita */}
+            {/* Topbar */}
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                     <h1 className="text-2xl font-bold leading-tight">Filtro de Mensagens Recebidas</h1>
@@ -169,7 +193,7 @@ export default function MensagensPage() {
                 </div>
             </div>
 
-            {/* Card com botões de sala */}
+            {/* Salas */}
             <div className="mb-5 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <RoomButton label="Sala 01" active={room === 1} onClick={() => setRoom(1)} />
