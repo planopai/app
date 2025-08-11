@@ -14,6 +14,9 @@ import {
     IconX,
 } from "@tabler/icons-react";
 
+/* =========================
+   Tipos (mínimos necessários)
+   ========================= */
 type WcOrder = {
     id: number;
     status:
@@ -36,6 +39,8 @@ type WcOrder = {
         phone?: string;
     };
     shipping?: {
+        first_name?: string; // ← usamos para “Falecido(a)”
+        last_name?: string;
         address_1?: string;
         address_2?: string;
         city?: string;
@@ -44,7 +49,10 @@ type WcOrder = {
     };
 };
 
+type Meta = { key: string; value: any };
+
 type WcOrderFull = WcOrder & {
+    meta_data?: Meta[];
     line_items?: Array<{
         id: number;
         name: string;
@@ -52,7 +60,7 @@ type WcOrderFull = WcOrder & {
         total: string;
         price?: string;
         sku?: string;
-        meta_data?: Array<{ key: string; value: string }>;
+        meta_data?: Meta[];
     }>;
     shipping_lines?: Array<{
         id: number;
@@ -66,6 +74,9 @@ type OrdersResponse = {
     meta: { page: number; per_page: number; total: number; totalPages: number };
 };
 
+/* =========================
+   Utilitários
+   ========================= */
 const STATUS_OPTIONS: Array<{ value: WcOrder["status"] | "all"; label: string }> = [
     { value: "all", label: "Todos" },
     { value: "pending", label: "Pendente" },
@@ -113,6 +124,95 @@ function clsStatusBadge(s: WcOrder["status"]) {
     }
 }
 
+function onlyDigits(s?: string) {
+    return (s || "").replace(/\D+/g, "");
+}
+
+/** procura um meta em diferentes variações de chave (case-insensitive) */
+function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | undefined {
+    if (!metas?.length) return undefined;
+    const lower = keys.map((k) => k.toLowerCase());
+    for (const m of metas) {
+        const k = String(m.key || "").toLowerCase();
+        if (lower.some((kk) => k.includes(kk))) {
+            const v = typeof m.value === "string" ? m.value : JSON.stringify(m.value);
+            if (v?.trim()) return v;
+        }
+    }
+    return undefined;
+}
+
+/** monta o texto do WhatsApp com quebras de linha e labels em negrito */
+function buildWhatsAppText(order: WcOrderFull) {
+    // pedido (nomes dos itens)
+    const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
+    const pedidoNome = itens.join(", ");
+
+    // origem
+    let origem =
+        findMetaValue(order.meta_data, ["origem", "source"]) ||
+        findMetaValue(order.line_items?.flatMap((li) => li.meta_data || []), ["origem", "source"]) ||
+        (order.shipping?.address_1?.toLowerCase().includes("memorial") ? "Memorial" : "Loja Online");
+
+    // cliente
+    const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim();
+    const phone = onlyDigits(order.billing?.phone);
+    const valor = formatCurrency(order.total, order.currency || "BRL");
+
+    // local de entrega
+    const localEntrega = [order.shipping?.address_1, order.shipping?.address_2]
+        .filter(Boolean)
+        .join(" - ");
+
+    // falecido(a)
+    const falecido = order.shipping?.first_name || "";
+
+    // frase da coroa – procura em vários lugares/chaves
+    const frase =
+        findMetaValue(order.meta_data, [
+            "frase_para_a_faixa",
+            "frase da coroa",
+            "frase da faixa",
+            "faixa",
+            "mensagem",
+        ]) ||
+        findMetaValue(
+            order.line_items?.flatMap((li) => li.meta_data || []),
+            ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]
+        ) ||
+        "";
+
+    // mensagem final (com labels em negrito usando *asteriscos*)
+    const linhas = [
+        `*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`,
+        `*Origem:* ${origem || "Loja Online"}`,
+        `*Cliente:* ${cliente || "—"}`,
+        `*Telefone:* ${phone || "—"}`,
+        `*Valor:* ${valor}`,
+        "",
+        `*Local de Entrega:* ${localEntrega || "—"}`,
+        "",
+        `*Falecido(a):* ${falecido || "—"}`,
+        "",
+        `*Frase da Coroa:* ${frase || "—"}`,
+        "",
+        `*Comprovante de pagamento:*`,
+    ];
+    return linhas.join("\n");
+}
+
+/** abre o whatsapp web/app com o texto e (opcional) número destino */
+function openWhatsApp(text: string, toPhone?: string) {
+    const base = "https://wa.me";
+    const enc = encodeURIComponent(text);
+    const phone = onlyDigits(toPhone);
+    const url = phone ? `${base}/${phone}?text=${enc}` : `${base}/?text=${enc}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/* =========================
+   Página
+   ========================= */
 export const dynamic = "force-dynamic";
 
 export default function Page() {
@@ -143,6 +243,12 @@ export default function Page() {
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
 
+    // número opcional da equipe (env ou localStorage)
+    const teamEnv = process.env.NEXT_PUBLIC_WPP_EQUIPE;
+    const teamFromStorage =
+        typeof window !== "undefined" ? localStorage.getItem("wpp_team") || "" : "";
+    const wppTeam = onlyDigits(teamEnv || teamFromStorage || "");
+
     async function fetchOrders() {
         setLoading(true);
         setError(null);
@@ -154,7 +260,6 @@ export default function Page() {
             if (status !== "all") u.searchParams.set("status", status);
             if (after) u.searchParams.set("after", new Date(after).toISOString());
             if (before) {
-                // incluir dia inteiro até 23:59:59
                 const d = new Date(before);
                 d.setHours(23, 59, 59, 999);
                 u.searchParams.set("before", d.toISOString());
@@ -175,7 +280,7 @@ export default function Page() {
     React.useEffect(() => {
         fetchOrders();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, perPage]); // filtros textuais/datas acionam
+    }, [page, perPage]);
 
     function onSubmitFilters(e: React.FormEvent) {
         e.preventDefault();
@@ -219,7 +324,6 @@ export default function Page() {
                 const msg = await res.text();
                 throw new Error(msg || `Falha ao atualizar status`);
             }
-            // refresh lista e detalhe
             await fetchOrders();
             if (detail?.id === id) await openDetail(id);
         } catch (e: any) {
@@ -229,28 +333,16 @@ export default function Page() {
         }
     }
 
-    async function notifyTeam(order: WcOrder) {
+    /** carrega o pedido completo, monta o texto e abre o WhatsApp (sem destinatário) */
+    async function notifyWhatsApp(orderId: number, to?: string) {
         try {
-            const res = await fetch("/api/push/order", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    orderId: order.id,
-                    number: order.number,
-                    total: order.total,
-                    currency: order.currency,
-                    customer: `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim(),
-                    status: order.status,
-                }),
-            });
-            if (!res.ok) {
-                const txt = await res.text();
-                throw new Error(txt || "Falha ao notificar");
-            }
-            alert("Equipe notificada com sucesso!");
+            const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "no-store" });
+            if (!res.ok) throw new Error(`Falha ao carregar o pedido #${orderId}`);
+            const full: WcOrderFull = await res.json();
+            const text = buildWhatsAppText(full);
+            openWhatsApp(text, to);
         } catch (e: any) {
-            // Caso não exista o endpoint ainda, não quebra a página
-            alert(e?.message || "Não foi possível enviar a notificação (verifique /api/push/order).");
+            alert(e?.message || "Não foi possível abrir o WhatsApp.");
         }
     }
 
@@ -381,15 +473,22 @@ export default function Page() {
                                 )}
 
                                 {orders.map((o) => {
-                                    const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                                    const cliente =
+                                        `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                                     return (
                                         <tr key={o.id} className="border-t">
                                             <td className="px-3 py-2">{o.number || o.id}</td>
                                             <td className="px-3 py-2">{formatDate(o.date_created)}</td>
                                             <td className="px-3 py-2">{cliente}</td>
-                                            <td className="px-3 py-2">{formatCurrency(o.total, o.currency || "BRL")}</td>
                                             <td className="px-3 py-2">
-                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(o.status)}`}>
+                                                {formatCurrency(o.total, o.currency || "BRL")}
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <span
+                                                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(
+                                                        o.status
+                                                    )}`}
+                                                >
                                                     {STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
                                                 </span>
                                             </td>
@@ -404,13 +503,29 @@ export default function Page() {
                                                         Ver
                                                     </button>
 
+                                                    {/* Notificar: abre WhatsApp sem destinatário (você escolhe o contato/grupo) */}
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                                                        onClick={() => notifyTeam(o)}
-                                                        title="Notificar equipe"
+                                                        onClick={() => notifyWhatsApp(o.id)}
+                                                        title="Notificar (WhatsApp)"
+                                                    >
+                                                        <IconSend className="size-4" />
+                                                        Notificar
+                                                    </button>
+
+                                                    {/* Notificar equipe: usa número fixo, se existir */}
+                                                    <button
+                                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                                                        onClick={() => notifyWhatsApp(o.id, wppTeam)}
+                                                        disabled={!wppTeam}
+                                                        title={
+                                                            wppTeam
+                                                                ? `Enviar para equipe (${wppTeam})`
+                                                                : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
+                                                        }
                                                     >
                                                         <IconBell className="size-4" />
-                                                        Notificar
+                                                        Notificar equipe
                                                     </button>
                                                 </div>
                                             </td>
@@ -425,11 +540,7 @@ export default function Page() {
                                 Carregando pedidos…
                             </div>
                         )}
-                        {error && (
-                            <div className="px-3 pb-3 text-sm text-rose-600">
-                                {error}
-                            </div>
-                        )}
+                        {error && <div className="px-3 pb-3 text-sm text-rose-600">{error}</div>}
                     </div>
 
                     {/* Paginação */}
@@ -448,7 +559,9 @@ export default function Page() {
                             </button>
                             <button
                                 className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
+                                onClick={() =>
+                                    setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))
+                                }
                                 disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
                             >
                                 Próxima
@@ -505,8 +618,13 @@ export default function Page() {
                                 {/* Status + ações */}
                                 <div className="rounded-lg border p-3">
                                     <div className="mb-2 flex items-center justify-between">
-                                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(detail.status)}`}>
-                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
+                                        <span
+                                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(
+                                                detail.status
+                                            )}`}
+                                        >
+                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ??
+                                                detail.status}
                                         </span>
                                         <div className="flex items-center gap-2">
                                             {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
@@ -546,7 +664,8 @@ export default function Page() {
                                             <div>{detail.shipping?.address_1}</div>
                                             <div>{detail.shipping?.address_2}</div>
                                             <div>
-                                                {detail.shipping?.city} {detail.shipping?.state} {detail.shipping?.postcode}
+                                                {detail.shipping?.city} {detail.shipping?.state}{" "}
+                                                {detail.shipping?.postcode}
                                             </div>
                                         </div>
                                     </div>
@@ -580,7 +699,9 @@ export default function Page() {
                                                             )}
                                                         </td>
                                                         <td className="px-3 py-2">{li.quantity}</td>
-                                                        <td className="px-3 py-2">{formatCurrency(li.total, detail.currency || "BRL")}</td>
+                                                        <td className="px-3 py-2">
+                                                            {formatCurrency(li.total, detail.currency || "BRL")}
+                                                        </td>
                                                     </tr>
                                                 ))}
                                                 {!detail.line_items?.length && (
@@ -597,15 +718,29 @@ export default function Page() {
 
                                 {/* Ações rápidas */}
                                 <div className="flex flex-wrap gap-2">
+                                    {/* WhatsApp sem destinatário */}
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                        onClick={() =>
-                                            notifyTeam(detail)
-                                        }
+                                        onClick={() => notifyWhatsApp(detail.id)}
                                     >
                                         <IconSend className="size-4" />
+                                        Notificar (WhatsApp)
+                                    </button>
+                                    {/* WhatsApp para equipe fixa */}
+                                    <button
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                                        onClick={() => notifyWhatsApp(detail.id, wppTeam)}
+                                        disabled={!wppTeam}
+                                        title={
+                                            wppTeam
+                                                ? `Enviar para equipe (${wppTeam})`
+                                                : "Defina NEXT_PUBLIC_WPP_EQUIPE ou salve 'wpp_team' no localStorage"
+                                        }
+                                    >
+                                        <IconBell className="size-4" />
                                         Notificar equipe
                                     </button>
+
                                     <a
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
                                         href={`/api/wc/orders/${detail.id}`}
