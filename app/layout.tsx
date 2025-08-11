@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import RootClient from "@/components/root-client"; // ⬅️ wrapper cliente (instalação PWA, etc.)
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
@@ -68,9 +67,7 @@ export default async function RootLayout({
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             {/* AppShell decide quando mostrar/esconder o sidebar/header */}
-            <RootClient>
-              <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
-            </RootClient>
+            <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>
