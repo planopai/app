@@ -10,21 +10,18 @@ export default function PWAInstallPrompt() {
     const [deferred, setDeferred] = React.useState<BeforeInstallPromptEvent | null>(null);
     const [installed, setInstalled] = React.useState(false);
 
-    const isIOS =
-        typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
     const isStandalone =
         typeof window !== "undefined" &&
-        (window.matchMedia("(display-mode: standalone)").matches ||
-            // Safari iOS
-            (window.navigator as any).standalone);
+        (window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone);
 
     React.useEffect(() => {
         if (isStandalone) { setInstalled(true); return; }
 
         const onBIP = (e: Event) => {
-            // Chrome não mostra mais sozinho; guardamos o evento
             e.preventDefault();
             setDeferred(e as BeforeInstallPromptEvent);
+            // debug: console.info("beforeinstallprompt fired");
         };
         const onInstalled = () => setInstalled(true);
 
@@ -38,42 +35,55 @@ export default function PWAInstallPrompt() {
 
     if (installed) return null;
 
-    // iOS não dispara beforeinstallprompt — mostra instrução
+    // iOS não dispara beforeinstallprompt: instrução do Safari
     if (isIOS && !isStandalone) {
         return (
-            <div className="fixed bottom-4 left-0 right-0 z-50 mx-auto w-[min(560px,92%)] rounded-xl border bg-white p-3 shadow-lg">
-                <div className="text-sm">
-                    <b>Instalar app</b>
-                    <p className="mt-1 text-muted-foreground">
-                        No Safari: toque em <span className="rounded border px-1">Compartilhar</span> →
-                        <b> Adicionar à Tela de Início</b>.
-                    </p>
-                </div>
-            </div>
+            <Banner>
+                <b>Instalar app</b>
+                <p className="text-sm text-muted-foreground mt-1">
+                    No Safari: toque em <span className="rounded border px-1">Compartilhar</span> → <b>Adicionar à Tela de Início</b>.
+                </p>
+            </Banner>
         );
     }
 
-    // Em desktop/Android, só aparece se o Chrome emitir o evento
-    if (!deferred) return null;
+    // Chrome/Edge: se o evento não veio, mostre fallback de como instalar
+    if (!deferred) {
+        return (
+            <Banner>
+                <b>Instalar app</b>
+                <p className="text-sm text-muted-foreground mt-1">
+                    No Chrome: clique no ícone <span className="rounded border px-1">Instalar</span> na barra de endereço
+                    (ou menu <span className="rounded border px-1">⋮</span> → <b>Instalar app</b>).
+                </p>
+            </Banner>
+        );
+    }
 
     return (
-        <div className="fixed bottom-4 left-0 right-0 z-50 mx-auto w-[min(560px,92%)] rounded-xl border bg-white p-3 shadow-lg">
-            <div className="flex items-center justify-between gap-3">
-                <div>
-                    <b>Instalar app</b>
-                    <p className="text-sm text-muted-foreground">Use o app em tela cheia e offline.</p>
-                </div>
-                <button
-                    className="rounded-md bg-blue-600 px-3 py-2 text-white"
-                    onClick={async () => {
-                        await deferred.prompt();
-                        await deferred.userChoice; // opcional: lidar com accepted/dismissed
-                        setDeferred(null); // esconde depois do clique
-                    }}
-                >
-                    Instalar
-                </button>
+        <Banner>
+            <div>
+                <b>Instalar app</b>
+                <p className="text-sm text-muted-foreground">Use o app em tela cheia e offline.</p>
             </div>
+            <button
+                className="rounded-md bg-blue-600 px-3 py-2 text-white"
+                onClick={async () => {
+                    await deferred.prompt();
+                    await deferred.userChoice;
+                    setDeferred(null);
+                }}
+            >
+                Instalar
+            </button>
+        </Banner>
+    );
+}
+
+function Banner({ children }: { children: React.ReactNode }) {
+    return (
+        <div className="fixed bottom-4 left-0 right-0 z-50 mx-auto w-[min(560px,92%)] rounded-xl border bg-white p-3 shadow-lg">
+            <div className="flex items-center justify-between gap-3">{children}</div>
         </div>
     );
 }
