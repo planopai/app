@@ -7,7 +7,7 @@ export const revalidate = 0;
 
 const TARGET_BASE = "https://planoassistencialintegrado.com.br";
 
-/** Headers que não devem ser repassados ao upstream */
+/** Headers hop-by-hop que não devem ser repassados ao upstream */
 const HOP_BY_HOP = new Set([
     "connection",
     "keep-alive",
@@ -22,14 +22,15 @@ const HOP_BY_HOP = new Set([
     "host",
 ]);
 
-function buildUpstreamUrl(base: string, parts?: string[], search?: URLSearchParams) {
-    const path = "/" + (parts?.join("/") ?? "");
+function buildUpstreamUrl(base: string, parts: string[], search: URLSearchParams) {
     const url = new URL(base);
-    // Garante concatenação correta de path
-    url.pathname = new URL(path, base).pathname;
-    if (search) {
-        for (const [k, v] of search) url.searchParams.set(k, v);
-    }
+    const path = "/" + parts.join("/");
+    // Garante concatenação correta do path
+    url.pathname = new URL(path, url).pathname;
+
+    // Copia querystring
+    for (const [k, v] of search) url.searchParams.set(k, v);
+
     return url;
 }
 
@@ -39,8 +40,12 @@ function parseCookieHeader(cookieHeader: string | null) {
     cookieHeader.split(/; */).forEach((p) => {
         if (!p) return;
         const [k, ...rest] = p.split("=");
-        const v = rest.join("=") ?? "";
-        map.set(k.trim(), decodeURIComponent(v));
+        const raw = rest.join("=") ?? "";
+        try {
+            map.set(k.trim(), decodeURIComponent(raw));
+        } catch {
+            map.set(k.trim(), raw);
+        }
     });
     return map;
 }
@@ -75,8 +80,10 @@ function buildUpstreamHeaders(req: NextRequest) {
         const key = k.toLowerCase();
         if (!HOP_BY_HOP.has(key)) headers.set(key, v);
     });
+
     // Garante alguns cabeçalhos úteis
     headers.set("x-requested-with", "XMLHttpRequest");
+
     // Content-Type: apenas se existir no request original
     const ct = req.headers.get("content-type");
     if (ct) headers.set("content-type", ct);
@@ -89,14 +96,17 @@ function buildUpstreamHeaders(req: NextRequest) {
     return headers;
 }
 
-async function handler(
+async function proxy(
     req: NextRequest,
-    { params }: { params: { path?: string[] } }
-) {
+    context: { params: { path: string[] } }
+): Promise<Response> {
+    const { params } = context;
+    const parts = Array.isArray(params.path) ? params.path : [];
+
     // Monta URL final do upstream
     const upstreamUrl = buildUpstreamUrl(
         TARGET_BASE,
-        params.path,
+        parts,
         req.nextUrl.searchParams
     );
 
@@ -104,15 +114,16 @@ async function handler(
     const headers = buildUpstreamHeaders(req);
 
     // Só envia body para métodos com corpo
-    const hasBody = !["GET", "HEAD"].includes(req.method.toUpperCase());
+    const method = req.method.toUpperCase();
+    const hasBody = !["GET", "HEAD"].includes(method);
     const body = hasBody ? await req.arrayBuffer() : undefined;
 
     const init: RequestInit = {
-        method: req.method,
+        method,
         headers,
         body,
-        // "follow" lida com redirects do WP (ex.: trailing slash). Para capturar Set-Cookie
-        // em redirects, preferir "manual" e tratar Location, mas para avisos/informativo não é necessário.
+        // "follow" lida com redirects. Para capturar Set-Cookie em redirect,
+        // poderia usar "manual" + tratar Location, mas aqui não é necessário.
         redirect: "follow",
         cache: "no-store",
     };
@@ -129,7 +140,7 @@ async function handler(
     // Política de cache
     out.set("Cache-Control", "no-store");
 
-    // ❗ Opcional: se o upstream devolver um PHPSESSID novo, podemos espelhar em "php_session"
+    // Se o upstream devolver um PHPSESSID novo, espelha em "php_session"
     const setCookie = upstreamResp.headers.get("set-cookie");
     if (setCookie) {
         const m = setCookie.match(/PHPSESSID=([^;]+)/i);
@@ -143,19 +154,32 @@ async function handler(
         }
     }
 
-    // Retorna o corpo tal como veio do upstream
+    // Retorna o corpo tal como veio do upstream (stream)
     return new Response(upstreamResp.body, {
         status: upstreamResp.status,
         headers: out,
     });
 }
 
-export {
-    handler as GET,
-    handler as POST,
-    handler as PUT,
-    handler as PATCH,
-    handler as DELETE,
-    handler as OPTIONS,
-    handler as HEAD,
-};
+// Exporte cada método explicitamente com a assinatura que o Next 15 espera
+export async function GET(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
+export async function POST(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
+export async function PUT(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
+export async function PATCH(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
+export async function DELETE(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
+export async function OPTIONS(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
+export async function HEAD(req: NextRequest, ctx: { params: { path: string[] } }) {
+    return proxy(req, ctx);
+}
