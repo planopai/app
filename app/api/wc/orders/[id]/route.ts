@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getWC } from "@/lib/woocommerce";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
     try {
