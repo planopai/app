@@ -1,2 +1,2 @@
-try { importScripts('/sw.js'); } catch (_) { }
-importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDKWorker.js');
+// Importa o SDK via o seu domínio (proxy)
+importScripts('/_osw');

@@ -1,2 +1,1 @@
-try { importScripts('/sw.js'); } catch (_) { }
-importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDKWorker.js');
+importScripts('/_osw');
