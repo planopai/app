@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
+import PushClient from "@/components/push-client"; // OneSignal v16 (client)
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
@@ -68,6 +69,9 @@ export default async function RootLayout({
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             {/* AppShell decide quando mostrar/esconder o sidebar/header */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
+
+            {/* OneSignal (SDK v16) */}
+            <PushClient />
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>
