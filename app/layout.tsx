@@ -20,8 +20,6 @@ export const metadata: Metadata = {
 
   // PWA
   themeColor: "#059de0",
-  // Se você criou app/manifest.ts, o Next já serve /manifest.webmanifest automaticamente.
-  // Mantemos declarado aqui para garantir a tag <link rel="manifest">.
   manifest: "/manifest.webmanifest",
 
   // Ícones
@@ -35,12 +33,15 @@ export const metadata: Metadata = {
     other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
   },
 
-  // iOS (instalável como app)
+  // iOS (instalável como app, status bar translúcida)
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "App Plano PAI 2.0",
   },
+
+  // Tela cheia sem barras + suporte a safe areas
+  viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
 };
 
 export default async function RootLayout({
