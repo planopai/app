@@ -197,7 +197,32 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Exportar PDF – resolve cores OKLCH -> RGB no clone antes de renderizar
+    // ---------- helper: achatar estilos em RGB p/ html2canvas ----------
+    function flattenColors(root: HTMLElement) {
+        const all: HTMLElement[] = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+        for (const el of all) {
+            const cs = getComputedStyle(el);
+            // cores principais resolvidas em rgb(...)
+            el.style.color = cs.color;
+            el.style.backgroundColor = cs.backgroundColor;
+            // evita gradientes/oklch em background-image
+            el.style.backgroundImage = "none";
+            // bordas resolvidas
+            el.style.borderTopColor = cs.borderTopColor;
+            el.style.borderRightColor = cs.borderRightColor;
+            el.style.borderBottomColor = cs.borderBottomColor;
+            el.style.borderLeftColor = cs.borderLeftColor;
+            // outline
+            el.style.outlineColor = cs.outlineColor;
+            // sombras e filtros podem conter funções não suportadas
+            el.style.boxShadow = "none";
+            el.style.filter = "none";
+            // preferir esquema claro na renderização
+            (el.style as any).colorScheme = "light";
+        }
+    }
+
+    // Exportar PDF – clona, resolve vars/gradientes e gera
     const exportarPdf = useCallback(async () => {
         if (!selecionado) return;
 
@@ -240,53 +265,11 @@ export default function HistoricoSepultamentosPage() {
         wrapper.appendChild(clone);
         document.body.appendChild(wrapper);
 
-        // 2) Converte variáveis de cor para RGB (evita crash do html2canvas com oklch())
-        const COLOR_VARS = [
-            "--background",
-            "--foreground",
-            "--muted",
-            "--muted-foreground",
-            "--card",
-            "--card-foreground",
-            "--border",
-            "--input",
-            "--primary",
-            "--primary-foreground",
-            "--secondary",
-            "--secondary-foreground",
-            "--accent",
-            "--accent-foreground",
-            "--destructive",
-            "--destructive-foreground",
-            "--ring",
-            "--chart-1",
-            "--chart-2",
-            "--chart-3",
-            "--chart-4",
-            "--chart-5",
-        ];
-
+        // 2) Achata TODAS as cores para rgb(...) e remove gradientes/sombras
         try {
-            const probe = document.createElement("div");
-            probe.style.position = "absolute";
-            probe.style.left = "-99999px";
-            document.body.appendChild(probe);
-
-            const convertVarToRGB = (varName: string) => {
-                probe.style.background = `var(${varName})`;
-                const rgb = getComputedStyle(probe).backgroundColor;
-                return rgb && rgb !== "rgba(0, 0, 0, 0)" && rgb !== "transparent" ? rgb : null;
-            };
-
-            for (const v of COLOR_VARS) {
-                const rgb = convertVarToRGB(v);
-                if (rgb) {
-                    wrapper.style.setProperty(v, rgb);
-                }
-            }
-            probe.remove();
+            flattenColors(wrapper);
         } catch (e) {
-            console.warn("Falha ao resolver cores OKLCH -> RGB (seguindo sem conversão):", e);
+            console.warn("Falha ao achatar cores (seguindo mesmo assim):", e);
         }
 
         try {
@@ -308,7 +291,6 @@ export default function HistoricoSepultamentosPage() {
                         imageTimeout: 10000,
                         logging: false,
                         scrollY: 0,
-                        // foreignObjectRendering: true, // último recurso, deixe comentado a menos que precise
                     },
                     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                     pagebreak: { mode: ["css"] },
@@ -511,15 +493,11 @@ export default function HistoricoSepultamentosPage() {
                                             const partes: string[] = [];
 
                                             for (const key in obj) {
-                                                // 1) NÃO mostrar o JSON cru
                                                 if (key === "materiais_json") continue;
 
-                                                // 2) Mostrar somente as quantidades amigáveis
                                                 if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
                                                     const nome =
-                                                        key === "materiais_cadeiras_qtd"
-                                                            ? "Materiais Cadeiras Qtd"
-                                                            : "Materiais Bebedouros Qtd";
+                                                        key === "materiais_cadeiras_qtd" ? "Materiais Cadeiras Qtd" : "Materiais Bebedouros Qtd";
                                                     const val = obj[key];
                                                     if (val != null && String(val).trim() !== "") {
                                                         partes.push(
@@ -531,7 +509,6 @@ export default function HistoricoSepultamentosPage() {
                                                     continue;
                                                 }
 
-                                                // 3) Demais campos (como antes)
                                                 if (key === "id" || key === "acao") continue;
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
@@ -550,7 +527,6 @@ export default function HistoricoSepultamentosPage() {
                                             if (partes.length) detalhesHtml = `<div class="mt-2">${partes.join("")}</div>`;
                                         }
                                     } catch {
-                                        // String simples: não exibe JSON cru se contiver materiais_json
                                         let detalhesRaw = String(raw || "");
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
