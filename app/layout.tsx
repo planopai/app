@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import PushClient from "@/components/push-client"; // OneSignal v16 (client)
+import PWARegister from "@/components/pwa-register"; // registro manual do SW do next-pwa
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
@@ -46,6 +47,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Next 15: cookies() pode ser Promise — use await
   const cookieStore = await cookies();
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = activeThemeValue?.endsWith("-scaled");
@@ -67,6 +69,9 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
+            {/* Registra manualmente o Service Worker do next-pwa (quando em produção) */}
+            <PWARegister />
+
             {/* AppShell decide quando mostrar/esconder o sidebar/header */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
 
