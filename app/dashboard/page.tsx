@@ -3,6 +3,10 @@ import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { DataTable } from "@/components/data-table";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import PushOptIn from "@/components/push-optin";
+// ...
+<PushOptIn />
+
 
 import data from "./data.json";
 
