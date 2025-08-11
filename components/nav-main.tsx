@@ -15,10 +15,12 @@ import {
 
 export function NavMain({
   items,
-  // tamanhos maiores por padrão
-  iconClass = "size-9 lg:size-11 xl:size-12",   // ícones maiores
-  textClass = "text-lg lg:text-xl xl:text-2xl", // títulos maiores
-  itemClass = "gap-3",                           // mais espaço entre ícone e texto
+  // tamanhos (podem ajustar à vontade)
+  iconClass = "size-9 sm:size-10 lg:size-11 xl:size-12",
+  textClass = "text-lg sm:text-xl lg:text-2xl",
+  itemClass = "gap-2.5 sm:gap-3 md:gap-3.5 lg:gap-4",
+  // novo: controla o espaçamento vertical entre os itens do menu
+  menuSpaceClass = "space-y-1.5 sm:space-y-2 md:space-y-2.5 lg:space-y-3 xl:space-y-4",
 }: {
   items: {
     title: string;
@@ -28,13 +30,16 @@ export function NavMain({
   iconClass?: string;
   textClass?: string;
   itemClass?: string;
+  /** Espaçamento vertical entre <SidebarMenuItem>s, responsivo */
+  menuSpaceClass?: string;
 }) {
   const pathname = usePathname();
 
   return (
     <SidebarGroup>
       <SidebarGroupContent>
-        <SidebarMenu>
+        {/* espaçamento vertical responsivo entre os itens */}
+        <SidebarMenu className={menuSpaceClass}>
           {items.map((item) => {
             const active =
               pathname === item.url ||
@@ -49,7 +54,8 @@ export function NavMain({
                   tooltip={item.title}
                   className={clsx(
                     itemClass,
-                    "py-3", // um pouco mais de altura para acomodar os tamanhos
+                    // altura/padding aumenta conforme a tela
+                    "py-2 sm:py-2.5 md:py-3 lg:py-3.5 xl:py-4",
                     active && "bg-muted font-semibold"
                   )}
                 >
