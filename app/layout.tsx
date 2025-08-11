@@ -9,9 +9,9 @@ import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 
 export const metadata: Metadata = {
-  title: "Orcish Dashboard",
+  title: "App Plano PAI 2.0",
   description:
-    "A fully responsive analytics dashboard featuring dynamic charts, interactive tables, a collapsible sidebar, and a light/dark mode theme switcher.",
+    "Aplicação WEB Plano PAI 2.0",
 };
 
 export default async function RootLayout({
