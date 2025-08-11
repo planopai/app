@@ -7,7 +7,6 @@ import {
     IconChevronLeft,
     IconChevronRight,
     IconEye,
-    IconFilter,
     IconRefresh,
     IconSearch,
     IconSend,
@@ -15,18 +14,11 @@ import {
 } from "@tabler/icons-react";
 
 /* =========================
-   Tipos (mínimos necessários)
+   Tipos
    ========================= */
 type WcOrder = {
     id: number;
-    status:
-    | "pending"
-    | "processing"
-    | "on-hold"
-    | "completed"
-    | "cancelled"
-    | "refunded"
-    | "failed";
+    status: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
     date_created: string; // ISO
     number: string;
     currency: string;
@@ -39,7 +31,7 @@ type WcOrder = {
         phone?: string;
     };
     shipping?: {
-        first_name?: string; // ← usamos para “Falecido(a)”
+        first_name?: string; // Falecido(a)
         last_name?: string;
         address_1?: string;
         address_2?: string;
@@ -58,7 +50,7 @@ type WcOrderFull = WcOrder & {
         name: string;
         quantity: number;
         total: string;
-        price?: string;
+        product_id?: number;
         sku?: string;
         meta_data?: Meta[];
     }>;
@@ -75,7 +67,7 @@ type OrdersResponse = {
 };
 
 /* =========================
-   Utilitários
+   Utils
    ========================= */
 const STATUS_OPTIONS: Array<{ value: WcOrder["status"] | "all"; label: string }> = [
     { value: "all", label: "Todos" },
@@ -141,47 +133,37 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | unde
     return undefined;
 }
 
-/** monta o texto com UMA linha em branco entre cada informação */
+/** texto do WhatsApp com linha em branco entre blocos (Origem sempre Loja On-line) */
 function buildWhatsAppText(order: WcOrderFull) {
     const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
     const pedidoNome = itens.join(", ");
-
-    // Origem: sempre "Loja On-line"
-    const origem = "Loja On-line";
 
     const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim();
     const phone = onlyDigits(order.billing?.phone);
     const valor = formatCurrency(order.total, order.currency || "BRL");
 
-    const localEntrega = [order.shipping?.address_1, order.shipping?.address_2]
-        .filter(Boolean)
-        .join(" - ");
-
+    const localEntrega = [order.shipping?.address_1, order.shipping?.address_2].filter(Boolean).join(" - ");
     const falecido = order.shipping?.first_name || "";
 
     const frase =
-        findMetaValue(order.meta_data, [
+        findMetaValue(order.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
+        findMetaValue(order.line_items?.flatMap((li) => li.meta_data || []), [
             "frase_para_a_faixa",
             "frase da coroa",
             "frase da faixa",
             "faixa",
             "mensagem",
         ]) ||
-        findMetaValue(
-            order.line_items?.flatMap((li) => li.meta_data || []),
-            ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]
-        ) ||
         "";
 
-    // cada informação seguida de uma linha em branco:
     const linhas: string[] = [];
     const push = (s: string) => {
         linhas.push(s);
-        linhas.push(""); // linha em branco
+        linhas.push("");
     };
 
     push(`*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`);
-    push(`*Origem:* ${origem}`);
+    push(`*Origem:* Loja On-line`);
     push(`*Cliente:* ${cliente || "—"}`);
     push(`*Telefone:* ${phone || "—"}`);
     push(`*Valor:* ${valor}`);
@@ -193,46 +175,34 @@ function buildWhatsAppText(order: WcOrderFull) {
     return linhas.join("\n");
 }
 
-/** compartilhamento inteligente (mostra a folha de compartilhamento quando possível) */
+/** compartilhar/abrir WhatsApp */
 async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     const phone = onlyDigits(toPhone);
 
-    // 1) Web Share API
     if (typeof navigator !== "undefined" && (navigator as any).share) {
         try {
             await (navigator as any).share({ text });
             return;
         } catch {
-            // cancelado → continua
+            /* continue */
         }
     }
 
-    // 2) Tentar deep link do app WhatsApp
     const encoded = encodeURIComponent(text);
     const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(
         (typeof navigator !== "undefined" && navigator.userAgent) || ""
     );
-    const deep =
-        phone && isMobile
-            ? `whatsapp://send?phone=${phone}&text=${encoded}`
-            : `whatsapp://send?text=${encoded}`;
-
+    const deep = phone && isMobile ? `whatsapp://send?phone=${phone}&text=${encoded}` : `whatsapp://send?text=${encoded}`;
     const opened = window.open(deep, "_blank");
     if (opened) return;
 
-    // 3) Fallback web/desktop
-    const webUrl = phone
-        ? `https://wa.me/${phone}?text=${encoded}`
-        : `https://web.whatsapp.com/send?text=${encoded}`;
+    const webUrl = phone ? `https://wa.me/${phone}?text=${encoded}` : `https://web.whatsapp.com/send?text=${encoded}`;
     const openedWeb = window.open(webUrl, "_blank", "noopener,noreferrer");
     if (openedWeb) return;
 
-    // 4) Último recurso: copiar e abrir WhatsApp “cru”
     try {
         await navigator.clipboard.writeText(text);
-    } catch {
-        /* ignore */
-    }
+    } catch { }
     window.open(phone ? `https://wa.me/${phone}` : `https://web.whatsapp.com/`, "_blank");
 }
 
@@ -245,8 +215,8 @@ export default function Page() {
     // filtros/estado
     const [q, setQ] = React.useState("");
     const [status, setStatus] = React.useState<"all" | WcOrder["status"]>("all");
-    const [after, setAfter] = React.useState<string>(""); // yyyy-mm-dd
-    const [before, setBefore] = React.useState<string>(""); // yyyy-mm-dd
+    const [after, setAfter] = React.useState<string>("");
+    const [before, setBefore] = React.useState<string>("");
 
     const [page, setPage] = React.useState(1);
     const [perPage, setPerPage] = React.useState(20);
@@ -265,14 +235,14 @@ export default function Page() {
     const [open, setOpen] = React.useState(false);
     const [detail, setDetail] = React.useState<WcOrderFull | null>(null);
     const [detailLoading, setDetailLoading] = React.useState(false);
+    const [detailImage, setDetailImage] = React.useState<string | null>(null);
 
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
 
     // número opcional da equipe
     const teamEnv = process.env.NEXT_PUBLIC_WPP_EQUIPE;
-    const teamFromStorage =
-        typeof window !== "undefined" ? localStorage.getItem("wpp_team") || "" : "";
+    const teamFromStorage = typeof window !== "undefined" ? localStorage.getItem("wpp_team") || "" : "";
     const wppTeam = onlyDigits(teamEnv || teamFromStorage || "");
 
     async function fetchOrders() {
@@ -316,6 +286,7 @@ export default function Page() {
 
     async function openDetail(id: number) {
         setDetail(null);
+        setDetailImage(null);
         setOpen(true);
         setDetailLoading(true);
         try {
@@ -323,6 +294,19 @@ export default function Page() {
             if (!res.ok) throw new Error(`Falha ao carregar pedido #${id}`);
             const data: WcOrderFull = await res.json();
             setDetail(data);
+
+            // tenta buscar imagem do primeiro item
+            const pid = data.line_items?.[0]?.product_id;
+            if (pid) {
+                try {
+                    const pr = await fetch(`/api/wc/products/${pid}`, { cache: "no-store" });
+                    if (pr.ok) {
+                        const prod = await pr.json();
+                        const src: string | undefined = prod?.images?.[0]?.src;
+                        if (src) setDetailImage(src);
+                    }
+                } catch { }
+            }
         } catch (e: any) {
             setDetail({
                 id,
@@ -359,7 +343,6 @@ export default function Page() {
         }
     }
 
-    /** carrega o pedido completo, monta o texto e compartilha/abre WhatsApp */
     async function notifyWhatsApp(orderId: number, forcePhone?: string) {
         try {
             const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "no-store" });
@@ -375,15 +358,14 @@ export default function Page() {
     const canNotifyRow = (o: WcOrder) => o.status === "completed";
     const canNotifyDetail = detail?.status === "completed";
 
+    /* ===== Render ===== */
     return (
         <div className="flex h-full flex-col">
             {/* Cabeçalho local */}
             <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-6">
                 <div>
                     <h1 className="text-xl font-semibold">Pedidos — Coroas de Flores</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.
-                    </p>
+                    <p className="text-sm text-muted-foreground">Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.</p>
                 </div>
                 <button
                     className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
@@ -416,20 +398,18 @@ export default function Page() {
 
                 <div>
                     <label className="mb-1 block text-xs font-medium">Status</label>
-                    <div className="relative">
-                        <IconFilter className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                        <select
-                            className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                            value={status}
-                            onChange={(e) => setStatus(e.target.value as any)}
-                        >
-                            {STATUS_OPTIONS.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                    {o.label}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                    {/* sem ícone sobre o select para não cobrir no iOS */}
+                    <select
+                        className="w-full rounded-md border bg-background py-2 px-2 text-sm outline-none"
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value as any)}
+                    >
+                        {STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                                {o.label}
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
                 <div>
@@ -477,8 +457,85 @@ export default function Page() {
                 </div>
             </form>
 
-            {/* Tabela */}
-            <div className="flex-1 overflow-auto px-4 pb-6 lg:px-6">
+            {/* Lista MOBILE (cards) */}
+            <div className="px-4 pb-6 lg:px-6 md:hidden">
+                <div className="space-y-3">
+                    {orders.map((o) => {
+                        const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                        const disabled = !canNotifyRow(o);
+                        return (
+                            <div key={o.id} className="rounded-lg border bg-card p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="text-xs text-muted-foreground">
+                                        Nº <b>{o.number || o.id}</b> • {formatDate(o.date_created)}
+                                    </div>
+                                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${clsStatusBadge(o.status)}`}>
+                                        {STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
+                                    </span>
+                                </div>
+
+                                <div className="mt-2 text-sm">
+                                    <div className="font-medium leading-tight">{cliente}</div>
+                                    <div className="text-muted-foreground mt-1">{formatCurrency(o.total, o.currency || "BRL")}</div>
+                                </div>
+
+                                <div className="mt-3 flex items-center gap-2">
+                                    <button
+                                        className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-muted"
+                                        onClick={() => openDetail(o.id)}
+                                        title="Ver detalhes"
+                                    >
+                                        <IconEye className="size-4" />
+                                        Ver
+                                    </button>
+                                    <button
+                                        className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-50"
+                                        onClick={() => notifyWhatsApp(o.id)}
+                                        disabled={disabled}
+                                        title={disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp"}
+                                    >
+                                        <IconSend className="size-4" />
+                                        Notificar
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {!loading && orders.length === 0 && (
+                        <div className="text-center text-sm text-muted-foreground">Nenhum pedido encontrado.</div>
+                    )}
+                    {loading && <div className="text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
+                    {error && <div className="text-rose-600 text-sm">{error}</div>}
+                </div>
+
+                {/* paginação (mobile) */}
+                <div className="mt-4 flex items-center justify-between gap-3">
+                    <div className="text-xs text-muted-foreground">
+                        Página {meta.page} de {meta.totalPages}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={page <= 1 || loading}
+                        >
+                            <IconChevronLeft className="size-4" />
+                            Anterior
+                        </button>
+                        <button
+                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                            onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
+                            disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
+                        >
+                            Próxima
+                            <IconChevronRight className="size-4" />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Tabela DESKTOP */}
+            <div className="hidden md:block flex-1 overflow-auto px-4 pb-6 lg:px-6">
                 <div className="overflow-hidden rounded-lg border bg-card">
                     <div className="relative overflow-x-auto">
                         <table className="min-w-full text-sm">
@@ -502,26 +559,17 @@ export default function Page() {
                                 )}
 
                                 {orders.map((o) => {
-                                    const cliente =
-                                        `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                                    const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                                     const disabled = !canNotifyRow(o);
-                                    const reason = disabled
-                                        ? "Só é possível notificar pedidos Concluídos."
-                                        : "Enviar via WhatsApp";
+                                    const reason = disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp";
                                     return (
                                         <tr key={o.id} className="border-t">
                                             <td className="px-3 py-2">{o.number || o.id}</td>
                                             <td className="px-3 py-2">{formatDate(o.date_created)}</td>
                                             <td className="px-3 py-2">{cliente}</td>
+                                            <td className="px-3 py-2">{formatCurrency(o.total, o.currency || "BRL")}</td>
                                             <td className="px-3 py-2">
-                                                {formatCurrency(o.total, o.currency || "BRL")}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <span
-                                                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(
-                                                        o.status
-                                                    )}`}
-                                                >
+                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(o.status)}`}>
                                                     {STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
                                                 </span>
                                             </td>
@@ -536,7 +584,6 @@ export default function Page() {
                                                         Ver
                                                     </button>
 
-                                                    {/* Notificar (share/WhatsApp) – apenas concluídos */}
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
                                                         onClick={() => notifyWhatsApp(o.id)}
@@ -547,7 +594,6 @@ export default function Page() {
                                                         Notificar
                                                     </button>
 
-                                                    {/* Notificar equipe (número fixo) – apenas concluídos */}
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
                                                         onClick={() => notifyWhatsApp(o.id, wppTeam)}
@@ -571,15 +617,11 @@ export default function Page() {
                             </tbody>
                         </table>
 
-                        {loading && (
-                            <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-                                Carregando pedidos…
-                            </div>
-                        )}
+                        {loading && <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">Carregando pedidos…</div>}
                         {error && <div className="px-3 pb-3 text-sm text-rose-600">{error}</div>}
                     </div>
 
-                    {/* Paginação */}
+                    {/* Paginação (desktop) */}
                     <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
                         <div className="text-xs text-muted-foreground">
                             Página {meta.page} de {meta.totalPages} — {meta.total} pedidos
@@ -595,9 +637,7 @@ export default function Page() {
                             </button>
                             <button
                                 className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                onClick={() =>
-                                    setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))
-                                }
+                                onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
                                 disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
                             >
                                 Próxima
@@ -622,21 +662,17 @@ export default function Page() {
                 </div>
             </div>
 
-            {/* Drawer de Detalhes */}
+            {/* Detalhe: tela cheia no mobile / drawer no desktop */}
             {open && (
                 <div className="fixed inset-0 z-50">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} aria-hidden />
-                    <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-auto bg-white shadow-xl">
+                    <div className="absolute right-0 top-0 h-full w-full md:max-w-xl overflow-auto bg-white shadow-xl">
                         <div className="flex items-center justify-between border-b px-4 py-3">
                             <div>
                                 <div className="text-sm text-muted-foreground">Pedido</div>
                                 <div className="text-lg font-semibold">#{detail?.number || detail?.id || "—"}</div>
                             </div>
-                            <button
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setOpen(false)}
-                                aria-label="Fechar"
-                            >
+                            <button className="rounded-md p-2 hover:bg-muted" onClick={() => setOpen(false)} aria-label="Fechar">
                                 <IconX className="size-5" />
                             </button>
                         </div>
@@ -645,14 +681,58 @@ export default function Page() {
                             <div className="p-4 text-sm text-muted-foreground">Carregando…</div>
                         ) : (
                             <div className="space-y-4 p-4">
-                                {/* Status + ações */}
+                                {/* Imagem do item (se disponível) */}
+                                {detailImage && (
+                                    <div className="overflow-hidden rounded-lg border">
+                                        <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
+                                    </div>
+                                )}
+
+                                {/* Bloco com o texto no formato pedido */}
+                                <div className="rounded-lg border p-3 text-sm leading-6">
+                                    <div>
+                                        <b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}
+                                    </div>
+                                    <div>
+                                        <b>Origem:</b> Loja On-line
+                                    </div>
+                                    <div>
+                                        <b>Cliente:</b> {(detail.billing?.first_name || "") + " " + (detail.billing?.last_name || "")}
+                                    </div>
+                                    <div>
+                                        <b>Telefone:</b> {detail.billing?.phone || "—"}
+                                    </div>
+                                    <div>
+                                        <b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}
+                                    </div>
+                                    <div>
+                                        <b>Local de Entrega:</b>{" "}
+                                        {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}
+                                    </div>
+                                    <div>
+                                        <b>Falecido(a):</b> {detail.shipping?.first_name || "—"}
+                                    </div>
+                                    <div>
+                                        <b>Frase da Coroa:</b>{" "}
+                                        {findMetaValue(detail.meta_data, [
+                                            "frase_para_a_faixa",
+                                            "frase da coroa",
+                                            "frase da faixa",
+                                            "faixa",
+                                            "mensagem",
+                                        ]) ||
+                                            findMetaValue(
+                                                detail.line_items?.flatMap((li) => li.meta_data || []),
+                                                ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]
+                                            ) ||
+                                            "—"}
+                                    </div>
+                                </div>
+
+                                {/* Status + ações rápidas */}
                                 <div className="rounded-lg border p-3">
                                     <div className="mb-2 flex items-center justify-between">
-                                        <span
-                                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(
-                                                detail.status
-                                            )}`}
-                                        >
+                                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(detail.status)}`}>
                                             {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
                                         </span>
                                         <div className="flex items-center gap-2">
@@ -669,99 +749,24 @@ export default function Page() {
                                             ))}
                                         </div>
                                     </div>
+
                                     <div className="text-sm text-muted-foreground">
-                                        Criado em {formatDate(detail.date_created)} — Total{" "}
-                                        <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
+                                        Criado em {formatDate(detail.date_created)} — Total <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
                                     </div>
                                 </div>
 
-                                {/* Cliente */}
-                                <div className="grid gap-3 md:grid-cols-2">
-                                    <div className="rounded-lg border p-3">
-                                        <div className="mb-2 text-sm font-medium">Cliente</div>
-                                        <div className="text-sm">
-                                            <div>
-                                                {detail.billing?.first_name} {detail.billing?.last_name}
-                                            </div>
-                                            <div className="text-muted-foreground">{detail.billing?.email}</div>
-                                            <div className="text-muted-foreground">{detail.billing?.phone}</div>
-                                        </div>
-                                    </div>
-                                    <div className="rounded-lg border p-3">
-                                        <div className="mb-2 text-sm font-medium">Entrega</div>
-                                        <div className="text-sm text-muted-foreground">
-                                            <div>{detail.shipping?.address_1}</div>
-                                            <div>{detail.shipping?.address_2}</div>
-                                            <div>
-                                                {detail.shipping?.city} {detail.shipping?.state} {detail.shipping?.postcode}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Itens */}
-                                <div className="rounded-lg border">
-                                    <div className="border-b px-3 py-2 text-sm font-medium">Itens</div>
-                                    <div className="overflow-x-auto">
-                                        <table className="min-w-full text-sm">
-                                            <thead className="bg-muted/50">
-                                                <tr>
-                                                    <th className="px-3 py-2 text-left font-medium">Produto</th>
-                                                    <th className="px-3 py-2 text-left font-medium">Qtd</th>
-                                                    <th className="px-3 py-2 text-left font-medium">Total</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {detail.line_items?.map((li) => (
-                                                    <tr key={li.id} className="border-t">
-                                                        <td className="px-3 py-2">
-                                                            <div className="font-medium">{li.name}</div>
-                                                            {!!li.meta_data?.length && (
-                                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                                    {li.meta_data.map((m, i) => (
-                                                                        <div key={i}>
-                                                                            <b>{m.key}:</b> {String(m.value)}
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-3 py-2">{li.quantity}</td>
-                                                        <td className="px-3 py-2">
-                                                            {formatCurrency(li.total, detail.currency || "BRL")}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                {!detail.line_items?.length && (
-                                                    <tr>
-                                                        <td className="px-3 py-4 text-sm text-muted-foreground" colSpan={3}>
-                                                            Nenhum item.
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                {/* Ações rápidas */}
+                                {/* Ações WhatsApp */}
                                 <div className="flex flex-wrap gap-2">
-                                    {/* WhatsApp (escolher contato) – só se concluído */}
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
                                         onClick={() => detail && notifyWhatsApp(detail.id)}
                                         disabled={!canNotifyDetail}
-                                        title={
-                                            canNotifyDetail
-                                                ? "Compartilhar mensagem e escolher o WhatsApp"
-                                                : "Só é possível notificar pedidos Concluídos."
-                                        }
+                                        title={canNotifyDetail ? "Compartilhar mensagem e escolher o WhatsApp" : "Só é possível notificar pedidos Concluídos."}
                                     >
                                         <IconSend className="size-4" />
                                         Notificar (WhatsApp)
                                     </button>
 
-                                    {/* WhatsApp equipe fixa – também só se concluído */}
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
                                         onClick={() => detail && notifyWhatsApp(detail.id, wppTeam)}
