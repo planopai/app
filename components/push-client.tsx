@@ -1,7 +1,7 @@
 "use client";
 import Script from "next/script";
 
-const appId = "c4fc4716 - c163 - 461d-b8a0 - 50fefd32836b"; // defina no .env
+const appId = "c4fc4716-c163-461d-b8a0-50fefd32836b"; // defina no .env
 
 export default function PushClient() {
     return (
