@@ -15,12 +15,14 @@ import {
 
 export function NavMain({
   items,
-  // tamanhos (podem ajustar à vontade)
+  // ícones permanecem grandes (pode ajustar se quiser)
   iconClass = "size-9 sm:size-10 lg:size-11 xl:size-12",
-  textClass = "text-lg sm:text-xl lg:text-2xl",
-  itemClass = "gap-2.5 sm:gap-3 md:gap-3.5 lg:gap-4",
-  // novo: controla o espaçamento vertical entre os itens do menu
-  menuSpaceClass = "space-y-1.5 sm:space-y-2 md:space-y-2.5 lg:space-y-3 xl:space-y-4",
+  // títulos menores
+  textClass = "text-sm sm:text-base lg:text-lg",
+  // mais espaço entre ícone e texto
+  itemClass = "gap-3 sm:gap-3.5 md:gap-4 lg:gap-5",
+  // MUITO mais espaço vertical entre os itens
+  menuSpaceClass = "space-y-3 sm:space-y-4 md:space-y-5 lg:space-y-6 xl:space-y-7",
 }: {
   items: {
     title: string;
@@ -30,7 +32,6 @@ export function NavMain({
   iconClass?: string;
   textClass?: string;
   itemClass?: string;
-  /** Espaçamento vertical entre <SidebarMenuItem>s, responsivo */
   menuSpaceClass?: string;
 }) {
   const pathname = usePathname();
@@ -54,8 +55,8 @@ export function NavMain({
                   tooltip={item.title}
                   className={clsx(
                     itemClass,
-                    // altura/padding aumenta conforme a tela
-                    "py-2 sm:py-2.5 md:py-3 lg:py-3.5 xl:py-4",
+                    // mais altura para não “colar” visualmente
+                    "py-3 sm:py-3.5 md:py-4 lg:py-5 xl:py-6",
                     active && "bg-muted font-semibold"
                   )}
                 >
@@ -63,7 +64,7 @@ export function NavMain({
                     {IconComp ? (
                       <IconComp className={clsx("shrink-0", iconClass)} />
                     ) : null}
-                    <span className={clsx("leading-tight", textClass)}>
+                    <span className={clsx("leading-snug", textClass)}>
                       {item.title}
                     </span>
                   </Link>
