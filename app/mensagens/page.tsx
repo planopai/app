@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     IconMessageCircle2,
     IconCheck,
@@ -43,7 +43,6 @@ const deleteMap: Record<Room, (id: number, type: "received" | "approved") => str
     3: (id, t) => `/api/php/deleteMessage3.php?id=${id}&type=${t}`,
 };
 
-// Resolve caminho da imagem (prioriza proxy) e lida com relativo
 function resolveImageSrc(src?: string | null): string {
     if (!src) return FALLBACK_IMG;
     let s = src.trim();
@@ -90,7 +89,6 @@ function MessageCard({
     actions?: React.ReactNode;
 }) {
     const src = resolveImageSrc(item.image);
-
     return (
         <div className="flex items-start gap-3 rounded-xl border bg-card/70 p-3 shadow-sm sm:p-4">
             <img
@@ -121,7 +119,7 @@ export default function MensagensPage() {
     const [approved, setApproved] = useState<MessageItem[]>([]);
     const [error, setError] = useState<string | null>(null);
 
-    // Carrega jsPDF (UMD) — sem html2canvas
+    // Carrega jsPDF (UMD)
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
         if ((window as any)[KEY]) return;
@@ -143,10 +141,7 @@ export default function MensagensPage() {
         try {
             setLoading(true);
             setError(null);
-            const res = await fetch(fetchUrl, {
-                cache: "no-store",
-                credentials: "include",
-            });
+            const res = await fetch(fetchUrl, { cache: "no-store", credentials: "include" });
             if (!res.ok) throw new Error("Falha ao carregar mensagens.");
             const data: ApiResponse = await res.json();
             setReceived(data.receivedMessages || []);
@@ -182,7 +177,7 @@ export default function MensagensPage() {
         loadMessages();
     }, [loadMessages]);
 
-    // util: baixa imagem e converte para dataURL (para addImage)
+    // helper: fetch -> base64
     async function toDataURL(url: string): Promise<string> {
         try {
             const resp = await fetch(url, { credentials: "include" });
@@ -199,7 +194,39 @@ export default function MensagensPage() {
         }
     }
 
-    // ------- Exportar PDF das mensagens aprovadas (jsPDF puro) -------
+    // ===== Fonte Nunito no jsPDF =====
+    const nunitoLoadedRef = useRef(false);
+    async function ensureNunito(doc: any) {
+        if (nunitoLoadedRef.current) return;
+        // TTFs via jsDelivr (@fontsource)
+        const regularUrl =
+            "https://cdn.jsdelivr.net/npm/@fontsource/nunito@5.0.8/files/nunito-latin-400-normal.ttf";
+        const boldUrl =
+            "https://cdn.jsdelivr.net/npm/@fontsource/nunito@5.0.8/files/nunito-latin-700-normal.ttf";
+
+        async function fetchTTF(u: string) {
+            const r = await fetch(u);
+            const b = await r.arrayBuffer();
+            // arrayBuffer -> base64
+            let binary = "";
+            const bytes = new Uint8Array(b);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary);
+        }
+
+        const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
+
+        doc.addFileToVFS("Nunito-Regular.ttf", regB64);
+        doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
+
+        doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
+        doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
+
+        nunitoLoadedRef.current = true;
+    }
+
+    // ------- Exportar PDF: jsPDF + Nunito + margens internas melhores -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
@@ -214,70 +241,96 @@ export default function MensagensPage() {
         }
         const { jsPDF } = jspdf;
 
-        // Config A4
         const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+        // Garante Nunito
+        await ensureNunito(doc);
+
         const pageW = doc.internal.pageSize.getWidth();  // 210
         const pageH = doc.internal.pageSize.getHeight(); // 297
-        const marginL = 12;
-        const marginR = 12;
+
+        // Margens externas mais generosas
+        const marginL = 14;
+        const marginR = 14;
         const contentW = pageW - marginL - marginR;
 
-        let y = 18;
+        // Estilo base
+        doc.setFont("Nunito", "normal");
+        let y = 22;
 
         // Título
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(16);
+        doc.setFont("Nunito", "bold");
+        doc.setFontSize(18);
         doc.text(`Mensagens Aprovadas — Sala 0${room}`, pageW / 2, y, { align: "center" });
-        y += 7;
+        y += 8;
 
         // Data
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
+        doc.setFont("Nunito", "normal");
+        doc.setFontSize(11);
         doc.text(new Date().toLocaleString("pt-BR"), pageW / 2, y, { align: "center" });
-        y += 10;
+        y += 12;
 
-        // Cada mensagem: imagem (24x24mm) + texto
-        const gap = 4;
+        // Layout do card
+        const cardPadX = 6; // padding interno horizontal
+        const cardPadY = 6; // padding interno vertical
+        const gap = 6;      // gap entre nome e texto (maior que antes)
         const imgSize = 24; // mm
-        const textX = marginL + imgSize + gap;
-        const textW = contentW - imgSize - gap;
 
         for (const m of approved) {
-            // quebra de página se necessário
-            const blockMinHeight = Math.max(imgSize, 14); // aprox. altura mínima
-            if (y + blockMinHeight + 10 > pageH) {
-                doc.addPage();
-                y = 18;
-            }
+            // Título (nome) + corpo (texto) ocuparão:
+            // - imagem à esquerda com padding
+            // - nome (bold) com espaçamento maior do corpo
+            const innerX = marginL + cardPadX;
+            const imgX = innerX;
+            const imgY = y + cardPadY;
+            const textX = innerX + imgSize + 6; // 6mm depois da imagem
+            const textMaxW = contentW - (textX - marginL) - cardPadX; // respeita padding direito
 
-            // card borda leve
-            doc.setDrawColor(220);
-            doc.setLineWidth(0.2);
-            doc.roundedRect(marginL, y, contentW, blockMinHeight + 6, 2, 2);
-
-            // imagem
-            const imgUrl = resolveImageSrc(m.image);
-            try {
-                const dataUrl = await toDataURL(imgUrl);
-                doc.addImage(dataUrl, "JPEG", marginL + 2, y + 3, imgSize, imgSize, undefined, "FAST");
-            } catch {
-                // ignora se falhar
-            }
-
-            // nome
-            doc.setFont("helvetica", "bold");
+            // Calcular linhas de texto
+            doc.setFont("Nunito", "bold");
             doc.setFontSize(12);
-            doc.text(m.name || "", textX, y + 8, { baseline: "top" });
+            const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
+            const nameH = nameLines.length * 5;
 
-            // texto (quebra automática)
-            doc.setFont("helvetica", "normal");
+            doc.setFont("Nunito", "normal");
             doc.setFontSize(11);
-            const lines = doc.splitTextToSize(m.text || "", textW);
-            // altura estimada do texto (aprox 5mm por linha para fonte 11)
-            const textH = Math.max(imgSize, lines.length * 5);
-            doc.text(lines, textX, y + 14);
+            const bodyLines = doc.splitTextToSize(m.text || "", textMaxW);
+            const bodyH = Math.max(0, bodyLines.length * 5);
 
-            y += textH + 10;
+            // Altura do bloco (imagem x textos) + paddings
+            const contentHeight = Math.max(imgSize, nameH + gap + bodyH);
+            const cardH = contentHeight + cardPadY * 2;
+
+            // quebra de página
+            if (y + cardH + 6 > pageH) {
+                doc.addPage();
+                y = 22;
+            }
+
+            // Card
+            doc.setDrawColor(210);
+            doc.setLineWidth(0.25);
+            doc.roundedRect(marginL, y, contentW, cardH, 3, 3);
+
+            // Imagem
+            try {
+                const imgUrl = resolveImageSrc(m.image);
+                const dataUrl = await toDataURL(imgUrl);
+                doc.addImage(dataUrl, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
+            } catch { /* ignore */ }
+
+            // Nome (com boa distância do corpo)
+            doc.setFont("Nunito", "bold");
+            doc.setFontSize(12);
+            doc.text(nameLines, textX, imgY + 2); // 2mm de respiro do topo
+            const bodyStartY = imgY + nameH + gap;
+
+            // Corpo
+            doc.setFont("Nunito", "normal");
+            doc.setFontSize(11);
+            doc.text(bodyLines, textX, bodyStartY);
+
+            // Avança
+            y += cardH + 10; // espaço entre cards
         }
 
         doc.save(`mensagens_aprovadas_sala0${room}.pdf`);
