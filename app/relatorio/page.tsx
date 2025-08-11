@@ -81,6 +81,10 @@ function sanitize(txt?: string) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
 }
+function capitalize(s?: string) {
+    if (!s) return "";
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 /* ========================== Endpoints (proxy) ========================= */
 const LISTAR_FALECIDOS = "/api/php/historico_sepultamentos.php?listar_falecidos=1";
@@ -117,20 +121,15 @@ export default function HistoricoSepultamentosPage() {
 
     const [gerandoPdf, setGerandoPdf] = useState(false);
 
-    // Carrega html2pdf (CDN)
-    const html2pdfLoadedRef = useRef(false);
+    // Carrega jsPDF (UMD)
     useEffect(() => {
-        if (html2pdfLoadedRef.current) return;
+        const KEY = "__jspdf_loaded__";
+        if ((window as any)[KEY]) return;
         const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
         script.async = true;
-        script.onload = () => (html2pdfLoadedRef.current = true);
+        script.onload = () => ((window as any)[KEY] = true);
         document.body.appendChild(script);
-        return () => {
-            try {
-                document.body.removeChild(script);
-            } catch { }
-        };
     }, []);
 
     // Carregar lista de falecidos
@@ -197,134 +196,238 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Exportar PDF – resolve cores OKLCH -> RGB no clone antes de renderizar
-    const exportarPdf = useCallback(async () => {
-        if (!selecionado) return;
+    // ===== Nunito no jsPDF (com fallback) =====
+    const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
+    async function ensureNunito(doc: any): Promise<boolean> {
+        if (nunitoStateRef.current === "ok") return true;
+        if (nunitoStateRef.current === "fail") return false;
+        try {
+            const regularUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
+            const boldUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
 
-        const anyWin = window as any;
-        const lib = anyWin.html2pdf;
-        if (!lib) {
-            alert("Ferramenta de PDF ainda carregando. Tente novamente em alguns segundos.");
-            return;
+            async function fetchTTF(u: string) {
+                const r = await fetch(u);
+                if (!r.ok) throw new Error("Fonte não encontrada");
+                const b = await r.arrayBuffer();
+                let binary = "";
+                const bytes = new Uint8Array(b);
+                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                return btoa(binary);
+            }
+
+            const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
+            doc.addFileToVFS("Nunito-Regular.ttf", regB64);
+            doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
+            doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
+            doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
+
+            nunitoStateRef.current = "ok";
+            return true;
+        } catch {
+            nunitoStateRef.current = "fail";
+            return false;
         }
+    }
 
-        const exportNode = document.getElementById("logAreaExport");
-        if (!exportNode) return;
+    // Exportar PDF (jsPDF puro)
+    const exportarPdf = useCallback(async () => {
+        if (!selecionado || log.length === 0) return;
 
         setGerandoPdf(true);
-
-        // 1) Wrapper invisível com fundo branco
-        const wrapper = document.createElement("div");
-        Object.assign(wrapper.style, {
-            position: "fixed",
-            left: "-99999px",
-            top: "0",
-            opacity: "0",
-            pointerEvents: "none",
-            fontFamily: "'Nunito', sans-serif",
-            fontSize: "1.01rem",
-            padding: "20px 8px 18px 8px",
-            maxWidth: "680px",
-            background: "#fff",
-        } as CSSStyleDeclaration);
-
-        wrapper.innerHTML = `<h2 style="text-align:center;margin-top:0;font-size:1.32em;font-weight:900;">
-      Histórico dos Sepultamentos<br/>
-      <span style="font-size:.91em;font-weight:700;color:#059cdf">${sanitize(selecionado.falecido)}</span>
-    </h2>`;
-
-        const clone = exportNode.cloneNode(true) as HTMLElement;
-        clone.style.boxShadow = "none";
-        clone.style.background = "#fff";
-        clone.querySelectorAll<HTMLElement>(".log-entry").forEach((e) => (e.style.background = "#fff"));
-        wrapper.appendChild(clone);
-        document.body.appendChild(wrapper);
-
-        // 2) Converte variáveis de cor para RGB (evita crash do html2canvas com oklch())
-        const COLOR_VARS = [
-            "--background",
-            "--foreground",
-            "--muted",
-            "--muted-foreground",
-            "--card",
-            "--card-foreground",
-            "--border",
-            "--input",
-            "--primary",
-            "--primary-foreground",
-            "--secondary",
-            "--secondary-foreground",
-            "--accent",
-            "--accent-foreground",
-            "--destructive",
-            "--destructive-foreground",
-            "--ring",
-            "--chart-1",
-            "--chart-2",
-            "--chart-3",
-            "--chart-4",
-            "--chart-5",
-        ];
-
         try {
-            const probe = document.createElement("div");
-            probe.style.position = "absolute";
-            probe.style.left = "-99999px";
-            document.body.appendChild(probe);
+            const w: any = window as any;
+            const jspdf = w.jspdf;
+            if (!jspdf || !jspdf.jsPDF) {
+                alert("Ferramenta de PDF ainda carregando. Tente novamente em alguns segundos.");
+                setGerandoPdf(false);
+                return;
+            }
+            const { jsPDF } = jspdf;
+            const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+            const hasNunito = await ensureNunito(doc);
 
-            const convertVarToRGB = (varName: string) => {
-                probe.style.background = `var(${varName})`;
-                const rgb = getComputedStyle(probe).backgroundColor;
-                return rgb && rgb !== "rgba(0, 0, 0, 0)" && rgb !== "transparent" ? rgb : null;
+            // dimensões
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            const marginL = 14;
+            const marginR = 14;
+            const contentW = pageW - marginL - marginR;
+
+            // fontes
+            const titleFont = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"] as const;
+            const normalFont = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"] as const;
+
+            let y = 22;
+
+            // Título
+            doc.setFont(titleFont[0], titleFont[1]);
+            doc.setFontSize(18);
+            doc.text("Histórico dos Sepultamentos", pageW / 2, y, { align: "center" });
+            y += 8;
+
+            // Nome do falecido
+            doc.setFont(titleFont[0], titleFont[1]);
+            doc.setFontSize(13);
+            doc.text((selecionado.falecido || "").toString(), pageW / 2, y, { align: "center" });
+            y += 12;
+
+            // Card layout
+            const cardPadX = 6;
+            const cardPadY = 6;
+            const lineGap = 3; // espaço entre linhas
+
+            const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
+                doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
+                doc.setFontSize(size);
+                if (Array.isArray(text)) doc.text(text, x, yy);
+                else doc.text(text, x, yy);
             };
 
-            for (const v of COLOR_VARS) {
-                const rgb = convertVarToRGB(v);
-                if (rgb) {
-                    wrapper.style.setProperty(v, rgb);
+            for (const ent of log) {
+                // Monta as linhas de conteúdo
+
+                // 1) Data/hora
+                const dataLine = formataDataHora(ent.datahora) || "";
+
+                // 2) Ação + status
+                const acao = capitalize(ent.acao || "");
+                const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
+                const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
+
+                // 3) Usuário
+                const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
+
+                // 4) Detalhes (sem materiais_json; com quantidades amigáveis)
+                const detalhesLines: string[] = [];
+                const raw = ent.detalhes;
+
+                try {
+                    const obj =
+                        raw && typeof raw === "string"
+                            ? (JSON.parse(raw) as Record<string, any>)
+                            : (raw as Record<string, any>);
+
+                    if (obj && typeof obj === "object") {
+                        for (const key in obj) {
+                            if (key === "materiais_json" || key === "id" || key === "acao") continue;
+
+                            if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
+                                const nome =
+                                    key === "materiais_cadeiras_qtd" ? "Materiais Cadeiras Qtd" : "Materiais Bebedouros Qtd";
+                                const v = obj[key];
+                                if (v != null && String(v).trim() !== "") {
+                                    detalhesLines.push(`• ${nome}: ${String(v)}`);
+                                }
+                                continue;
+                            }
+
+                            let v = obj[key];
+                            if (v == null || String(v).trim() === "") continue;
+                            let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+                            v = String(v);
+                            if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
+
+                            detalhesLines.push(`• ${nome}: ${v}`);
+                        }
+                    }
+                } catch {
+                    let detalhesRaw = String(raw || "");
+                    Object.keys(FASES_NOMES).forEach((cod) => {
+                        const faseNome = FASES_NOMES[cod];
+                        const regEx = new RegExp(cod, "g");
+                        detalhesRaw = detalhesRaw.replace(regEx, faseNome);
+                    });
+                    if (!(/^\s*\{/.test(detalhesRaw) && /materiais_json/i.test(detalhesRaw))) {
+                        if (detalhesRaw.trim()) detalhesLines.push(`• ${detalhesRaw.trim()}`);
+                    }
                 }
+
+                // Quebra em largura disponível
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(9);
+                const dataWrapped = doc.splitTextToSize(dataLine, contentW - cardPadX * 2);
+
+                doc.setFont(titleFont[0], titleFont[1]);
+                doc.setFontSize(12);
+                const acaoWrapped = doc.splitTextToSize(acaoFull, contentW - cardPadX * 2);
+
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(10);
+                const usuarioWrapped = doc.splitTextToSize(usuarioLine, contentW - cardPadX * 2);
+
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(11);
+                const detalhesWrapped = detalhesLines.flatMap((l) =>
+                    doc.splitTextToSize(l, contentW - cardPadX * 2)
+                );
+
+                // Alturas
+                const hData = dataWrapped.length ? 4 + (dataWrapped.length - 1) * 4 : 0;
+                const hAcao = acaoWrapped.length * 5;
+                const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 5 : 0;
+                const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
+
+                const innerHeight =
+                    (hData ? hData + lineGap : 0) +
+                    hAcao +
+                    (hUsuario ? lineGap + hUsuario : 0) +
+                    (hDetalhes ? lineGap + hDetalhes : 0);
+
+                const cardH = innerHeight + cardPadY * 2;
+
+                // Quebra de página
+                if (y + cardH + 8 > pageH) {
+                    doc.addPage();
+                    y = 22;
+                }
+
+                // Card
+                doc.setDrawColor(210);
+                doc.setLineWidth(0.25);
+                doc.roundedRect(marginL, y, contentW, cardH, 3, 3);
+
+                let yy = y + cardPadY;
+
+                // Data
+                if (dataWrapped.length) {
+                    writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
+                    yy += hData + lineGap;
+                }
+
+                // Ação + status
+                writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
+                yy += hAcao;
+
+                // Usuário
+                if (usuarioWrapped.length) {
+                    yy += lineGap;
+                    writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
+                    yy += hUsuario;
+                }
+
+                // Detalhes
+                if (detalhesWrapped.length) {
+                    yy += lineGap;
+                    writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
+                    yy += hDetalhes;
+                }
+
+                y += cardH + 8;
             }
-            probe.remove();
-        } catch (e) {
-            console.warn("Falha ao resolver cores OKLCH -> RGB (seguindo sem conversão):", e);
-        }
 
-        try {
-            // dá um frame pro layout assentar
-            await new Promise((r) => requestAnimationFrame(() => r(null)));
-
-            await lib()
-                .set({
-                    margin: [18, 16, 38, 16],
-                    filename: `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
-                        .toLowerCase()
-                        .replace(/[^a-z0-9]+/g, "_")}.pdf`,
-                    image: { type: "jpeg", quality: 0.97 },
-                    html2canvas: {
-                        scale: Math.min(window.devicePixelRatio || 2, 2),
-                        useCORS: true,
-                        allowTaint: true,
-                        backgroundColor: "#fff",
-                        imageTimeout: 10000,
-                        logging: false,
-                        scrollY: 0,
-                        // foreignObjectRendering: true, // último recurso, deixe comentado a menos que precise
-                    },
-                    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                    pagebreak: { mode: ["css"] },
-                })
-                .from(wrapper)
-                .save();
+            const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")}.pdf`;
+            doc.save(filename);
         } catch (err) {
             console.error("Falha ao gerar PDF:", err);
             alert("Não consegui gerar o PDF agora. Veja o console para detalhes.");
         } finally {
-            try {
-                wrapper.remove();
-            } catch { }
             setGerandoPdf(false);
         }
-    }, [selecionado]);
+    }, [selecionado, log]);
 
     /* ================================ UI ================================ */
     return (
@@ -422,7 +525,9 @@ export default function HistoricoSepultamentosPage() {
                                         <button
                                             type="button"
                                             onClick={() => selecionarRegistro(item)}
-                                            className={`group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition hover:bg-muted/40 ${selecionado?.sepultamento_id === item.sepultamento_id ? "border-primary/60 bg-primary/5" : ""
+                                            className={`group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition hover:bg-muted/40 ${selecionado?.sepultamento_id === item.sepultamento_id
+                                                    ? "border-primary/60 bg-primary/5"
+                                                    : ""
                                                 }`}
                                         >
                                             <span className="font-medium">{item.falecido}</span>
@@ -497,7 +602,7 @@ export default function HistoricoSepultamentosPage() {
                         ) : (
                             <div className="space-y-3">
                                 {log.map((ent, i) => {
-                                    // ------- Monta chips de detalhes (esconde JSON cru de materiais) --------
+                                    // ------- chips HTML só para visualização em tela --------
                                     let detalhesHtml = "";
                                     const raw = ent.detalhes;
 
@@ -511,10 +616,8 @@ export default function HistoricoSepultamentosPage() {
                                             const partes: string[] = [];
 
                                             for (const key in obj) {
-                                                // 1) NÃO mostrar o JSON cru
                                                 if (key === "materiais_json") continue;
 
-                                                // 2) Mostrar somente as quantidades amigáveis
                                                 if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
                                                     const nome =
                                                         key === "materiais_cadeiras_qtd"
@@ -531,7 +634,6 @@ export default function HistoricoSepultamentosPage() {
                                                     continue;
                                                 }
 
-                                                // 3) Demais campos (como antes)
                                                 if (key === "id" || key === "acao") continue;
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
@@ -550,7 +652,6 @@ export default function HistoricoSepultamentosPage() {
                                             if (partes.length) detalhesHtml = `<div class="mt-2">${partes.join("")}</div>`;
                                         }
                                     } catch {
-                                        // String simples: não exibe JSON cru se contiver materiais_json
                                         let detalhesRaw = String(raw || "");
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
@@ -577,7 +678,7 @@ export default function HistoricoSepultamentosPage() {
                             <div class="flex-1">
                               <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
                               <div class="text-sm">
-                                ${ent.acao ? sanitize(ent.acao[0].toUpperCase() + ent.acao.slice(1)) : ""}
+                                ${ent.acao ? sanitize(capitalize(ent.acao)) : ""}
                                 ${ent.status_novo
                                                         ? ` <span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">${sanitize(
                                                             traduzirFase(ent.status_novo)
