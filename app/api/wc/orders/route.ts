@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { getWC } from "@/lib/woocommerce";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
     try {
-        const wc = getWC(); // lança se faltar env
+        const wc = getWC();
         const { searchParams } = new URL(req.url);
         const page = Number(searchParams.get("page") || 1);
         const per_page = Math.min(Number(searchParams.get("per_page") || 20), 100);
@@ -30,15 +31,7 @@ export async function GET(req: Request) {
         const data = err?.response?.data;
         console.error("WC orders error:", status, data || err?.message);
         return NextResponse.json(
-            {
-                error: true,
-                status,
-                message:
-                    data?.message ||
-                    err?.message ||
-                    "Falha ao consultar WooCommerce.",
-                details: data || null,
-            },
+            { error: true, status, message: data?.message || err?.message || "Falha ao consultar WooCommerce.", details: data || null },
             { status }
         );
     }

@@ -1,8 +1,7 @@
-// lib/woocommerce.ts
 import WooCommerceRestApi, { IWooCommerceRestApiOptions } from "@woocommerce/woocommerce-rest-api";
 
 export function getWC() {
-    const url = process.env.WC_URL?.replace(/\/+$/, ""); // sem barra no fim
+    const url = process.env.WC_URL?.replace(/\/+$/, ""); // remove barra final
     const consumerKey = process.env.WC_CONSUMER_KEY;
     const consumerSecret = process.env.WC_CONSUMER_SECRET;
 
@@ -18,9 +17,7 @@ export function getWC() {
         consumerKey,
         consumerSecret,
         version: "wc/v3",
-        // muitos hosts não passam o Authorization para o PHP
-        // TEMP: usa autenticação por query string (seguro sob HTTPS)
-        ...({ queryStringAuth: true } as any),
+        ...({ queryStringAuth: true } as any), // evita bloqueio do header Authorization
     };
 
     return new WooCommerceRestApi(opts);
