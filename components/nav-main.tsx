@@ -15,14 +15,12 @@ import {
 
 export function NavMain({
   items,
-  // ícones mantidos grandes
   iconClass = "size-9 sm:size-10 lg:size-11 xl:size-12",
-  // títulos um pouco maiores que antes
   textClass = "text-base sm:text-lg lg:text-xl",
-  // um pouco menos de espaço entre ícone e texto
-  itemClass = "gap-2.5 sm:gap-3 md:gap-3.5 lg:gap-4",
-  // itens mais próximos (mas ainda com respiro), responsivo
-  menuSpaceClass = "space-y-2.5 sm:space-y-3 md:space-y-4 lg:space-y-5 xl:space-y-6",
+  // menos espaço entre ícone e texto
+  itemClass = "gap-2 sm:gap-2.5 md:gap-3 lg:gap-3.5",
+  // itens mais próximos (ainda com respiro), responsivo
+  menuSpaceClass = "space-y-2 sm:space-y-2.5 md:space-y-3 lg:space-y-3.5 xl:space-y-4",
 }: {
   items: {
     title: string;
@@ -39,7 +37,6 @@ export function NavMain({
   return (
     <SidebarGroup>
       <SidebarGroupContent>
-        {/* espaçamento vertical responsivo entre os itens */}
         <SidebarMenu className={menuSpaceClass}>
           {items.map((item) => {
             const active =
@@ -55,8 +52,8 @@ export function NavMain({
                   tooltip={item.title}
                   className={clsx(
                     itemClass,
-                    // padding vertical levemente menor para “juntar” um pouco
-                    "py-2.5 sm:py-3 md:py-3.5 lg:py-4 xl:py-5",
+                    // padding vertical um pouco menor
+                    "py-2 sm:py-2.5 md:py-3 lg:py-3.5 xl:py-4",
                     active && "bg-muted font-semibold"
                   )}
                 >
