@@ -15,14 +15,14 @@ import {
 
 export function NavMain({
   items,
-  // ícones permanecem grandes (pode ajustar se quiser)
+  // ícones mantidos grandes
   iconClass = "size-9 sm:size-10 lg:size-11 xl:size-12",
-  // títulos menores
-  textClass = "text-sm sm:text-base lg:text-lg",
-  // mais espaço entre ícone e texto
-  itemClass = "gap-3 sm:gap-3.5 md:gap-4 lg:gap-5",
-  // MUITO mais espaço vertical entre os itens
-  menuSpaceClass = "space-y-3 sm:space-y-4 md:space-y-5 lg:space-y-6 xl:space-y-7",
+  // títulos um pouco maiores que antes
+  textClass = "text-base sm:text-lg lg:text-xl",
+  // um pouco menos de espaço entre ícone e texto
+  itemClass = "gap-2.5 sm:gap-3 md:gap-3.5 lg:gap-4",
+  // itens mais próximos (mas ainda com respiro), responsivo
+  menuSpaceClass = "space-y-2.5 sm:space-y-3 md:space-y-4 lg:space-y-5 xl:space-y-6",
 }: {
   items: {
     title: string;
@@ -55,8 +55,8 @@ export function NavMain({
                   tooltip={item.title}
                   className={clsx(
                     itemClass,
-                    // mais altura para não “colar” visualmente
-                    "py-3 sm:py-3.5 md:py-4 lg:py-5 xl:py-6",
+                    // padding vertical levemente menor para “juntar” um pouco
+                    "py-2.5 sm:py-3 md:py-3.5 lg:py-4 xl:py-5",
                     active && "bg-muted font-semibold"
                   )}
                 >
@@ -64,7 +64,7 @@ export function NavMain({
                     {IconComp ? (
                       <IconComp className={clsx("shrink-0", iconClass)} />
                     ) : null}
-                    <span className={clsx("leading-snug", textClass)}>
+                    <span className={clsx("leading-tight", textClass)}>
                       {item.title}
                     </span>
                   </Link>
