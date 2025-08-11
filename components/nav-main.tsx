@@ -15,9 +15,10 @@ import {
 
 export function NavMain({
   items,
-  iconClass = "size-7 lg:size-8",     // <— ajuste aqui o tamanho padrão dos ícones
-  textClass = "text-sm lg:text-base",   // <— ajuste aqui o tamanho padrão dos títulos
-  itemClass = "gap-2",                   // espaçamento entre ícone/texto
+  // tamanhos maiores por padrão
+  iconClass = "size-9 lg:size-11 xl:size-12",   // ícones maiores
+  textClass = "text-lg lg:text-xl xl:text-2xl", // títulos maiores
+  itemClass = "gap-3",                           // mais espaço entre ícone e texto
 }: {
   items: {
     title: string;
@@ -39,7 +40,7 @@ export function NavMain({
               pathname === item.url ||
               (item.url !== "/" && pathname?.startsWith(item.url + "/"));
 
-            const Icon = item.icon;
+            const IconComp = item.icon;
 
             return (
               <SidebarMenuItem key={item.url}>
@@ -48,12 +49,17 @@ export function NavMain({
                   tooltip={item.title}
                   className={clsx(
                     itemClass,
-                    active && "bg-muted font-medium"
+                    "py-3", // um pouco mais de altura para acomodar os tamanhos
+                    active && "bg-muted font-semibold"
                   )}
                 >
                   <Link href={item.url} aria-current={active ? "page" : undefined}>
-                    {Icon ? <Icon className={clsx("shrink-0", iconClass)} /> : null}
-                    <span className={textClass}>{item.title}</span>
+                    {IconComp ? (
+                      <IconComp className={clsx("shrink-0", iconClass)} />
+                    ) : null}
+                    <span className={clsx("leading-tight", textClass)}>
+                      {item.title}
+                    </span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
