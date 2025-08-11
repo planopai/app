@@ -175,7 +175,7 @@ export default function Page() {
     React.useEffect(() => {
         fetchOrders();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, perPage]); // filtros textuais/datas acionam no submit
+    }, [page, perPage]); // filtros textuais/datas acionam
 
     function onSubmitFilters(e: React.FormEvent) {
         e.preventDefault();
