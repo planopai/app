@@ -1,28 +1,23 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import dynamic from "next/dynamic";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
-
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 
+// ⬇️ importa o banner sem SSR
+const PWAInstallPrompt = dynamic(() => import("@/components/pwa-install"), { ssr: false });
+
 export const metadata: Metadata = {
-  // Título padrão e template por página
-  title: {
-    default: "App Plano PAI 2.0",
-    template: "%s | App Plano PAI 2.0",
-  },
+  title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
-
-  // PWA
   themeColor: "#059de0",
   manifest: "/manifest.webmanifest",
-
-  // Ícones
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -32,22 +27,11 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
     other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
   },
-
-  // iOS (instalável como app, status bar translúcida)
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "App Plano PAI 2.0",
-  },
-
-  // Tela cheia sem barras + suporte a safe areas
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "App Plano PAI 2.0" },
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
 };
 
-export default async function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
-  // Next 15: cookies() pode ser Promise — use await
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = activeThemeValue?.endsWith("-scaled");
@@ -61,16 +45,11 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-          enableColorScheme
-        >
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange enableColorScheme>
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* AppShell decide quando mostrar/esconder o sidebar/header */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
+            {/* Banner/CTA para instalar */}
+            <PWAInstallPrompt />
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>

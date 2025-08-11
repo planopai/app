@@ -1,6 +1,5 @@
-// components/pwa-install.tsx
 "use client";
-import React from "react";
+import * as React from "react";
 
 type BeforeInstallPromptEvent = Event & {
     prompt: () => Promise<void>;
@@ -11,16 +10,20 @@ export default function PWAInstallPrompt() {
     const [deferred, setDeferred] = React.useState<BeforeInstallPromptEvent | null>(null);
     const [installed, setInstalled] = React.useState(false);
 
-    const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isIOS =
+        typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
     const isStandalone =
         typeof window !== "undefined" &&
-        (window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone);
+        (window.matchMedia("(display-mode: standalone)").matches ||
+            // Safari iOS
+            (window.navigator as any).standalone);
 
     React.useEffect(() => {
         if (isStandalone) { setInstalled(true); return; }
 
         const onBIP = (e: Event) => {
-            e.preventDefault(); // não deixa o Chrome mostrar o mini-infobar
+            // Chrome não mostra mais sozinho; guardamos o evento
+            e.preventDefault();
             setDeferred(e as BeforeInstallPromptEvent);
         };
         const onInstalled = () => setInstalled(true);
@@ -33,10 +36,9 @@ export default function PWAInstallPrompt() {
         };
     }, [isStandalone]);
 
-    // Se já está instalado, não mostra nada
     if (installed) return null;
 
-    // iOS não dispara beforeinstallprompt: mostra instrução
+    // iOS não dispara beforeinstallprompt — mostra instrução
     if (isIOS && !isStandalone) {
         return (
             <div className="fixed bottom-4 left-0 right-0 z-50 mx-auto w-[min(560px,92%)] rounded-xl border bg-white p-3 shadow-lg">
@@ -51,6 +53,7 @@ export default function PWAInstallPrompt() {
         );
     }
 
+    // Em desktop/Android, só aparece se o Chrome emitir o evento
     if (!deferred) return null;
 
     return (
@@ -64,8 +67,8 @@ export default function PWAInstallPrompt() {
                     className="rounded-md bg-blue-600 px-3 py-2 text-white"
                     onClick={async () => {
                         await deferred.prompt();
-                        await deferred.userChoice; // { outcome }
-                        setDeferred(null); // some o banner depois
+                        await deferred.userChoice; // opcional: lidar com accepted/dismissed
+                        setDeferred(null); // esconde depois do clique
                     }}
                 >
                     Instalar
