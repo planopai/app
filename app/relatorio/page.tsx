@@ -9,6 +9,7 @@ import {
     IconChevronLeft,
     IconChevronRight,
     IconListDetails,
+    IconLoader2,
 } from "@tabler/icons-react";
 
 /* ================================ Tipos ================================ */
@@ -196,31 +197,37 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Exportar PDF robusto com spinner
+    // Exportar PDF – resolve cores OKLCH -> RGB no clone antes de renderizar
     const exportarPdf = useCallback(async () => {
         if (!selecionado) return;
+
         const anyWin = window as any;
         const lib = anyWin.html2pdf;
         if (!lib) {
             alert("Ferramenta de PDF ainda carregando. Tente novamente em alguns segundos.");
             return;
         }
+
         const exportNode = document.getElementById("logAreaExport");
         if (!exportNode) return;
 
         setGerandoPdf(true);
 
-        // wrapper invisível no DOM
+        // 1) Wrapper invisível com fundo branco
         const wrapper = document.createElement("div");
-        wrapper.style.position = "fixed";
-        wrapper.style.left = "-99999px";
-        wrapper.style.top = "0";
-        wrapper.style.opacity = "0";
-        wrapper.style.pointerEvents = "none";
-        wrapper.style.fontFamily = "'Nunito', sans-serif";
-        wrapper.style.fontSize = "1.01rem";
-        wrapper.style.padding = "20px 8px 18px 8px";
-        wrapper.style.maxWidth = "680px";
+        Object.assign(wrapper.style, {
+            position: "fixed",
+            left: "-99999px",
+            top: "0",
+            opacity: "0",
+            pointerEvents: "none",
+            fontFamily: "'Nunito', sans-serif",
+            fontSize: "1.01rem",
+            padding: "20px 8px 18px 8px",
+            maxWidth: "680px",
+            background: "#fff",
+        } as CSSStyleDeclaration);
+
         wrapper.innerHTML = `<h2 style="text-align:center;margin-top:0;font-size:1.32em;font-weight:900;">
       Histórico dos Sepultamentos<br/>
       <span style="font-size:.91em;font-weight:700;color:#059cdf">${sanitize(selecionado.falecido)}</span>
@@ -232,6 +239,55 @@ export default function HistoricoSepultamentosPage() {
         clone.querySelectorAll<HTMLElement>(".log-entry").forEach((e) => (e.style.background = "#fff"));
         wrapper.appendChild(clone);
         document.body.appendChild(wrapper);
+
+        // 2) Converte variáveis de cor para RGB (evita crash do html2canvas com oklch())
+        const COLOR_VARS = [
+            "--background",
+            "--foreground",
+            "--muted",
+            "--muted-foreground",
+            "--card",
+            "--card-foreground",
+            "--border",
+            "--input",
+            "--primary",
+            "--primary-foreground",
+            "--secondary",
+            "--secondary-foreground",
+            "--accent",
+            "--accent-foreground",
+            "--destructive",
+            "--destructive-foreground",
+            "--ring",
+            "--chart-1",
+            "--chart-2",
+            "--chart-3",
+            "--chart-4",
+            "--chart-5",
+        ];
+
+        try {
+            const probe = document.createElement("div");
+            probe.style.position = "absolute";
+            probe.style.left = "-99999px";
+            document.body.appendChild(probe);
+
+            const convertVarToRGB = (varName: string) => {
+                probe.style.background = `var(${varName})`;
+                const rgb = getComputedStyle(probe).backgroundColor;
+                return rgb && rgb !== "rgba(0, 0, 0, 0)" && rgb !== "transparent" ? rgb : null;
+            };
+
+            for (const v of COLOR_VARS) {
+                const rgb = convertVarToRGB(v);
+                if (rgb) {
+                    wrapper.style.setProperty(v, rgb);
+                }
+            }
+            probe.remove();
+        } catch (e) {
+            console.warn("Falha ao resolver cores OKLCH -> RGB (seguindo sem conversão):", e);
+        }
 
         try {
             // dá um frame pro layout assentar
@@ -252,6 +308,7 @@ export default function HistoricoSepultamentosPage() {
                         imageTimeout: 10000,
                         logging: false,
                         scrollY: 0,
+                        // foreignObjectRendering: true, // último recurso, deixe comentado a menos que precise
                     },
                     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                     pagebreak: { mode: ["css"] },
@@ -419,20 +476,8 @@ export default function HistoricoSepultamentosPage() {
                             className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold border-primary text-primary hover:bg-primary/5 disabled:opacity-50"
                             title="Baixar PDF"
                         >
-                            {gerandoPdf ? (
-                                <>
-                                    <svg className="size-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                                    </svg>
-                                    Gerando…
-                                </>
-                            ) : (
-                                <>
-                                    <IconDownload className="size-5" />
-                                    Baixar PDF
-                                </>
-                            )}
+                            {gerandoPdf ? <IconLoader2 className="size-5 animate-spin" /> : <IconDownload className="size-5" />}
+                            {gerandoPdf ? "Gerando…" : "Baixar PDF"}
                         </button>
                     </div>
 
@@ -452,7 +497,7 @@ export default function HistoricoSepultamentosPage() {
                         ) : (
                             <div className="space-y-3">
                                 {log.map((ent, i) => {
-                                    // ------- Monta chips de detalhes --------
+                                    // ------- Monta chips de detalhes (esconde JSON cru de materiais) --------
                                     let detalhesHtml = "";
                                     const raw = ent.detalhes;
 
@@ -466,13 +511,15 @@ export default function HistoricoSepultamentosPage() {
                                             const partes: string[] = [];
 
                                             for (const key in obj) {
-                                                // 1) Ocultar COMPLETAMENTE o JSON cru de materiais
+                                                // 1) NÃO mostrar o JSON cru
                                                 if (key === "materiais_json") continue;
 
-                                                // 2) Mostrar apenas as quantidades (se existirem)
+                                                // 2) Mostrar somente as quantidades amigáveis
                                                 if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
                                                     const nome =
-                                                        key === "materiais_cadeiras_qtd" ? "Materiais Cadeiras Qtd" : "Materiais Bebedouros Qtd";
+                                                        key === "materiais_cadeiras_qtd"
+                                                            ? "Materiais Cadeiras Qtd"
+                                                            : "Materiais Bebedouros Qtd";
                                                     const val = obj[key];
                                                     if (val != null && String(val).trim() !== "") {
                                                         partes.push(
@@ -484,7 +531,7 @@ export default function HistoricoSepultamentosPage() {
                                                     continue;
                                                 }
 
-                                                // 3) Demais campos usuais
+                                                // 3) Demais campos (como antes)
                                                 if (key === "id" || key === "acao") continue;
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
@@ -503,15 +550,13 @@ export default function HistoricoSepultamentosPage() {
                                             if (partes.length) detalhesHtml = `<div class="mt-2">${partes.join("")}</div>`;
                                         }
                                     } catch {
-                                        // Se vier string simples:
+                                        // String simples: não exibe JSON cru se contiver materiais_json
                                         let detalhesRaw = String(raw || "");
-                                        // traduz códigos de fase pra nomes:
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
                                             const regEx = new RegExp(cod, "g");
                                             detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                                         });
-                                        // evita exibir JSON de materiais como texto
                                         if (/^\s*\{/.test(detalhesRaw) && /materiais_json/i.test(detalhesRaw)) {
                                             detalhesRaw = "";
                                         }
