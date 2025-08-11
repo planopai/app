@@ -10,6 +10,8 @@ import {
     IconSearch,
     IconSend,
     IconX,
+    IconCopy,
+    IconPhoto,
 } from "@tabler/icons-react";
 
 /* =========================
@@ -60,7 +62,7 @@ type WcOrderFull = WcOrder & {
         variation_id?: number;
         sku?: string;
         meta_data?: Meta[];
-        image?: { id: number | string; src: string }; // 👈 imagem já vem no pedido
+        image?: { id: number | string; src: string }; // 👈 imagem já pode vir no pedido
     }>;
     shipping_lines?: Array<{
         id: number;
@@ -195,7 +197,7 @@ function buildWhatsAppText(order: WcOrderFull) {
     return linhas.join("\n");
 }
 
-/** compartilhar/abrir WhatsApp */
+/** compartilhar/abrir WhatsApp (texto) */
 async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     const phone = onlyDigits(toPhone);
 
@@ -231,6 +233,42 @@ async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     window.open(phone ? `https://wa.me/${phone}` : `https://web.whatsapp.com/`, "_blank");
 }
 
+/** compartilhar imagem (melhor esforço) */
+async function shareImageUrl(imageUrl: string) {
+    if (!imageUrl) return;
+
+    // 1) Tenta Web Share com arquivo (precisa CORS no domínio da imagem)
+    try {
+        const resp = await fetch(imageUrl, { mode: "cors" });
+        if (resp.ok) {
+            const blob = await resp.blob();
+            const ext = (blob.type && blob.type.split("/")[1]) || "jpg";
+            const file = new File([blob], `produto.${ext}`, { type: blob.type || "image/jpeg" });
+            const navAny = navigator as any;
+            if (navAny.canShare?.({ files: [file] }) && navAny.share) {
+                await navAny.share({ files: [file] });
+                return;
+            }
+        }
+    } catch {
+        // segue pros fallbacks
+    }
+
+    // 2) Tenta compartilhar a URL (nem todo app aceita)
+    try {
+        const navAny = navigator as any;
+        if (navAny.share) {
+            await navAny.share({ url: imageUrl });
+            return;
+        }
+    } catch {
+        // segue pro fallback final
+    }
+
+    // 3) Abre em nova aba pra usuário usar o share do navegador/app
+    window.open(imageUrl, "_blank", "noopener,noreferrer");
+}
+
 /* =========================
    Página
    ========================= */
@@ -261,6 +299,9 @@ export default function Page() {
     const [detail, setDetail] = React.useState<WcOrderFull | null>(null);
     const [detailLoading, setDetailLoading] = React.useState(false);
     const [detailImage, setDetailImage] = React.useState<string | null>(null);
+
+    // feedback de cópia
+    const [copied, setCopied] = React.useState(false);
 
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
@@ -307,6 +348,7 @@ export default function Page() {
     async function openDetail(id: number) {
         setDetail(null);
         setDetailImage(null);
+        setCopied(false);
         setOpen(true);
         setDetailLoading(true);
         try {
@@ -315,14 +357,13 @@ export default function Page() {
             const data: WcOrderFull = await res.json();
             setDetail(data);
 
-            // 1) tenta usar a imagem que já vem no pedido (line_items[].image.src)
-            const fromOrder =
-                data.line_items?.find((li) => li.image?.src)?.image?.src || null;
+            // 1) imagem que já vem no pedido (line_items[].image.src)
+            const fromOrder = data.line_items?.find((li) => li.image?.src)?.image?.src || null;
 
             if (fromOrder) {
                 setDetailImage(fromOrder);
             } else {
-                // 2) fallback opcional: buscar imagem no produto/variação
+                // 2) fallback: buscar imagem no produto/variação
                 const pid = data.line_items?.[0]?.product_id;
                 const vid = data.line_items?.[0]?.variation_id;
                 if (pid) {
@@ -387,6 +428,26 @@ export default function Page() {
         } catch (e: any) {
             alert(e?.message || "Não foi possível abrir o WhatsApp.");
         }
+    }
+
+    async function copyDetailToClipboard() {
+        try {
+            if (!detail) return;
+            const text = buildWhatsAppText(detail);
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch {
+            alert("Não foi possível copiar o texto.");
+        }
+    }
+
+    async function shareDetailPhoto() {
+        if (!detailImage) {
+            alert("Este pedido não tem imagem de produto disponível.");
+            return;
+        }
+        await shareImageUrl(detailImage);
     }
 
     const canNotifyRow = (o: WcOrder) => o.status === "completed";
@@ -823,7 +884,7 @@ export default function Page() {
                                     </div>
                                 </div>
 
-                                {/* Status + ações rápidas — sem vazamento lateral */}
+                                {/* Status + ações rápidas */}
                                 <div className="rounded-lg border p-3">
                                     <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                         <span
@@ -857,8 +918,34 @@ export default function Page() {
                                     </div>
                                 </div>
 
-                                {/* Ação WhatsApp única */}
+                                {/* Ações */}
                                 <div className="flex flex-wrap gap-2">
+                                    {/* Copiar Pedido */}
+                                    <button
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                        onClick={copyDetailToClipboard}
+                                        title="Copiar texto do pedido"
+                                    >
+                                        <IconCopy className="size-4" />
+                                        {copied ? "Copiado!" : "Copiar Pedido"}
+                                    </button>
+
+                                    {/* Compartilhar Foto */}
+                                    <button
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                                        onClick={shareDetailPhoto}
+                                        disabled={!detailImage}
+                                        title={
+                                            detailImage
+                                                ? "Abrir compartilhamento com a foto do produto"
+                                                : "Este pedido não tem imagem de produto"
+                                        }
+                                    >
+                                        <IconPhoto className="size-4" />
+                                        Compartilhar Foto
+                                    </button>
+
+                                    {/* Notificar (WhatsApp) */}
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
                                         onClick={() => detail && notifyWhatsApp(detail.id)}
