@@ -191,6 +191,26 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Paleta do sistema para controles nativos no dark */
+  .dark {
+    color-scheme: dark;
+  }
+
+  /* Seleção de texto e caret coerentes */
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+
+  :where(input, textarea) {
+    caret-color: var(--primary);
+  }
+
+  /* Placeholders visíveis no dark */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--muted-foreground);
+  }
 }
 
 /* Ajustes gerais */
@@ -220,6 +240,99 @@ body {
   [data-slot="select-trigger"],
   [data-slot="toggle-group-item"] {
     --spacing: 0.22rem;
+  }
+}
+
+/* ============================ Patches de superfície (Modais/Popovers) ============================ */
+@layer components {
+
+  /* Toda superfície “flutuante” deve usar tokens popover */
+  [role="dialog"],
+  .DialogContent,
+  .SheetContent,
+  .PopoverContent,
+  .DropdownMenuContent,
+  .SelectContent,
+  .ContextMenuContent,
+  .Modal,
+  .ModalContent {
+    background-color: var(--popover) !important;
+    color: var(--popover-foreground) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow:
+      0 10px 30px rgba(0, 0, 0, .22),
+      0 4px 10px rgba(0, 0, 0, .12) !important;
+  }
+
+  /* Overlays */
+  .DialogOverlay,
+  .SheetOverlay,
+  .PopoverOverlay,
+  [data-radix-overlay],
+  .ModalOverlay {
+    background: rgba(0, 0, 0, .6) !important;
+    backdrop-filter: blur(2px);
+  }
+
+  /* Inputs coerentes com o tema */
+  input,
+  select,
+  textarea {
+    background-color: var(--card);
+    color: var(--foreground);
+    border-color: var(--input);
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: 2px solid color-mix(in oklab, var(--ring) 60%, transparent);
+    outline-offset: 2px;
+    border-color: var(--ring);
+  }
+
+  /* Botões básicos */
+  .btn-primary {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  .btn-primary:disabled {
+    opacity: .6;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+  }
+}
+
+/* ============================ Correções defensivas ============================ */
+@layer utilities {
+
+  /* Se algum componente veio hardcoded com bg branco, adapta no dark. */
+  .dark .bg-white,
+  .dark [style*="background-color: #fff"],
+  .dark [style*="background-color:#fff"],
+  .dark [style*="background: white"],
+  .dark [style*="background:white"] {
+    background-color: var(--card) !important;
+    color: var(--card-foreground) !important;
+  }
+
+  /* E se o texto veio forçado escuro, clareia no dark. */
+  .dark .text-black,
+  .dark .text-slate-900,
+  .dark .text-gray-900 {
+    color: var(--card-foreground) !important;
+  }
+
+  /* Bordas forçadas claras no dark */
+  .dark .border-gray-200,
+  .dark .border-slate-200 {
+    border-color: var(--border) !important;
   }
 }
 
