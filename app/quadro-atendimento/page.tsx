@@ -10,9 +10,20 @@ type Registro = {
     falecido?: string;
     local_velorio?: string;
     hora_fim_velorio?: string;
+    hora_inicio_velorio?: string;
     agente?: string;
     status?: string;
-    // o backend envia outros campos também:
+    religiao?: string;
+    contato?: string;
+    convenio?: string;
+    observacao?: string;
+    urna?: string;
+    roupa?: string;
+    assistencia?: string;
+    tanato?: string;
+    local?: string;
+    local_sepultamento?: string;
+    // o backend pode enviar outros campos:
     [key: string]: any;
 };
 
@@ -131,7 +142,7 @@ const timeOr = (t?: string) => {
 };
 
 /* =========================
-   Labels & ordem no modal
+   Labels (usadas na grade tradicional se precisar)
    ========================= */
 const FIELD_LABELS: Record<string, string> = {
     falecido: "Falecido",
@@ -154,27 +165,6 @@ const FIELD_LABELS: Record<string, string> = {
     agente: "Agente",
     status: "Status",
 };
-
-const FIELD_ORDER = [
-    "falecido",
-    "contato",
-    "religiao",
-    "convenio",
-    "observacao",
-    "urna",
-    "roupa",
-    "assistencia",
-    "tanato",
-    "local",
-    "local_velorio",
-    "local_sepultamento",
-    "data",
-    "data_inicio_velorio",
-    "data_fim_velorio",
-    "hora_inicio_velorio",
-    "hora_fim_velorio",
-    "agente",
-];
 
 /* monta texto para copiar (com linha em branco entre itens)
    e cabeçalho ATENDIMENTO <CONVÊNIO> */
@@ -310,7 +300,6 @@ export default function QuadroAtendimentoPage() {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            // fallback
             const ta = document.createElement("textarea");
             ta.value = text;
             ta.style.position = "fixed";
@@ -512,7 +501,7 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* ===== Modal de Detalhes (com botão Copiar) ===== */}
+            {/* ===== Modal de Detalhes (visual com tópicos) ===== */}
             {open && detail && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6"
@@ -534,36 +523,30 @@ export default function QuadroAtendimentoPage() {
               max-h-[80vh] overflow-y-auto overscroll-contain
             "
                     >
-                        {/* header compacto e sticky */}
-                        <div
-                            className="
-                sticky top-0 z-[1] flex items-start justify-between gap-3
-                border-b bg-card/95 backdrop-blur
-                px-3 py-2 sm:px-4 sm:py-3
-              "
-                        >
-                            <div className="min-w-0">
-                                <div className="text-[12px] text-muted-foreground leading-tight">
-                                    Detalhes do atendimento
+                        {/* header */}
+                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[12px] text-muted-foreground leading-tight">
+                                        Detalhes do atendimento
+                                    </div>
+                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
+                                        {shown(detail.falecido)}
+                                    </h3>
+                                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
+                                        <span className="text-muted-foreground">
+                                            Data: <b>{dateOr(detail.data)}</b>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            • Agente: <b>{shown(detail.agente)}</b>
+                                        </span>
+                                    </div>
                                 </div>
-                                <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
-                                    {shown(detail.falecido)}
-                                </h3>
-                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                    <span className="text-muted-foreground">
-                                        Data: <b>{dateOr(detail.data)}</b>
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                        • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                        • Agente: <b>{shown(detail.agente)}</b>
-                                    </span>
-                                </div>
-                            </div>
 
-                            <div className="flex shrink-0 items-center gap-2">
-                                {detail.status && (
+                                <div className="flex shrink-0 items-center gap-2">
                                     <span
                                         className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(
                                             detail.status
@@ -572,77 +555,131 @@ export default function QuadroAtendimentoPage() {
                                     >
                                         {capStatus(detail.status)}
                                     </span>
-                                )}
-                                <button
-                                    onClick={async () => {
-                                        await handleCopy();
-                                    }}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Copiar"
-                                    title="Copiar informações"
+                                    <span className="hidden sm:inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                        ATENDIMENTO {shown(detail.convenio, "A DEFINIR").toUpperCase()}
+                                    </span>
+                                    <button
+                                        onClick={handleCopy}
+                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                        aria-label="Copiar"
+                                        title="Copiar informações"
+                                    >
+                                        {copied ? "Copiado!" : "Copiar"}
+                                    </button>
+                                    <button
+                                        onClick={closeDetail}
+                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                        aria-label="Fechar"
+                                    >
+                                        Fechar
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* badges no mobile */}
+                            <div className="mt-2 flex gap-2 sm:hidden">
+                                <span
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
+                                        detail.status
+                                    )}`}
                                 >
-                                    {copied ? "Copiado!" : "Copiar"}
-                                </button>
-                                <button
-                                    onClick={closeDetail}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Fechar"
-                                >
-                                    Fechar
-                                </button>
+                                    {capStatus(detail.status)}
+                                </span>
+                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                    ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
+                                </span>
                             </div>
                         </div>
 
-                        {/* conteúdo */}
-                        <div className="px-3 py-3 sm:px-4 sm:py-4">
-                            {/* status (aparece no mobile aqui) */}
-                            {detail.status && (
-                                <div className="mb-3 sm:hidden">
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
-                                            detail.status
-                                        )}`}
-                                    >
-                                        {capStatus(detail.status)}
-                                    </span>
+                        {/* conteúdo com TÓPICOS */}
+                        <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
+                            {/* INFORMAÇÕES GERAIS */}
+                            <Topic title="INFORMAÇÕES GERAIS">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
+                                    <Field label="Falecido" value={shown(detail.falecido)} />
+                                    <Field label="Religião" value={shown(detail.religiao)} />
+                                    <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
+                                    <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
                                 </div>
-                            )}
+                            </Topic>
 
-                            {/* chips em 2 colunas no mobile / 3 no desktop */}
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                {FIELD_ORDER.filter((k) => detail[k])
-                                    .concat(
-                                        Object.keys(detail).filter(
-                                            (k) =>
-                                                !FIELD_ORDER.includes(k) &&
-                                                !["status", "falecido"].includes(k) &&
-                                                typeof detail[k] !== "object" &&
-                                                String(detail[k] ?? "").trim() !== ""
-                                        )
-                                    )
-                                    .map((key) => {
-                                        const label = FIELD_LABELS[key] || key.replace(/_/g, " ");
-                                        let value = String(detail[key] ?? "");
-                                        if (key.startsWith("data")) value = dateOr(value);
-                                        else if (key.startsWith("hora")) value = timeOr(value);
-                                        else value = shown(value);
-                                        return (
-                                            <div
-                                                key={key}
-                                                className="
-                          rounded-lg border bg-background
-                          px-3 py-2 text-[13px] sm:text-[15px]
-                        "
-                                            >
-                                                <b>{label}:</b>{" "}
-                                                <span className="text-foreground">{value}</span>
-                                            </div>
-                                        );
-                                    })}
-                            </div>
+                            {/* ITENS */}
+                            <Topic title="ITENS">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
+                                    <Field label="Urna" value={shown(detail.urna)} />
+                                    <Field label="Roupa" value={shown(detail.roupa)} />
+                                    <Field label="Assistência" value={shown(detail.assistencia)} />
+                                    <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+                                    <Field
+                                        label="Materiais"
+                                        value={
+                                            shown(
+                                                (detail.materiais ?? detail.material ?? "") as string,
+                                                "a definir"
+                                            )
+                                        }
+                                        className="sm:col-span-2"
+                                    />
+                                </div>
+                            </Topic>
 
-                            {/* etapas */}
-                            <div className="mt-4 rounded-xl border bg-background p-3">
+                            {/* VELÓRIO */}
+                            <Topic title="VELÓRIO">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
+                                    <Field
+                                        label="Local Velório"
+                                        value={shown(detail.local_velorio)}
+                                        className="sm:col-span-1"
+                                    />
+                                    <Field
+                                        label="Data Início Velório"
+                                        value={dateOr(detail.data_inicio_velorio)}
+                                    />
+                                    <Field
+                                        label="Data Fim Velório"
+                                        value={dateOr(detail.data_fim_velorio)}
+                                    />
+                                </div>
+                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
+                                    <Field
+                                        label="Início Velório"
+                                        value={timeOr(detail.hora_inicio_velorio)}
+                                    />
+                                    <Field
+                                        label="Fim Velório"
+                                        value={timeOr(detail.hora_fim_velorio)}
+                                    />
+                                </div>
+                            </Topic>
+
+                            {/* SEPULTAMENTO */}
+                            <Topic title="SEPULTAMENTO">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
+                                    <Field
+                                        label="Local"
+                                        value={shown(detail.local_sepultamento || detail.local)}
+                                    />
+                                    <Field
+                                        label="Data Fim Velório"
+                                        value={dateOr(detail.data_fim_velorio)}
+                                    />
+                                    <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
+                                </div>
+                            </Topic>
+
+                            {/* OBSERVAÇÃO */}
+                            <Topic title="OBSERVAÇÃO">
+                                <div className="grid grid-cols-1 gap-2">
+                                    <Field
+                                        label="Observação"
+                                        value={shown(detail.observacao)}
+                                        className="sm:col-span-2"
+                                    />
+                                </div>
+                            </Topic>
+
+                            {/* ETAPAS */}
+                            <div className="rounded-xl border bg-background p-3">
                                 <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
                                     Etapas preenchidas
                                 </div>
@@ -652,6 +689,44 @@ export default function QuadroAtendimentoPage() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+/* ===== Componentes auxiliares do modal ===== */
+
+function Topic({
+    title,
+    children,
+}: {
+    title: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <section className="rounded-xl border bg-background p-3 sm:p-4">
+            <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
+                {title}
+            </h4>
+            {children}
+        </section>
+    );
+}
+
+function Field({
+    label,
+    value,
+    className = "",
+}: {
+    label: string;
+    value: string;
+    className?: string;
+}) {
+    return (
+        <div className={`flex items-baseline gap-2 ${className}`}>
+            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
+                {label}:
+            </span>
+            <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
         </div>
     );
 }
