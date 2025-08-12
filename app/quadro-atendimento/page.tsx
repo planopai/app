@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+/* =========================
+   Tipos
+   ========================= */
 type Registro = {
     data?: string;
     falecido?: string;
@@ -9,11 +12,15 @@ type Registro = {
     hora_fim_velorio?: string;
     agente?: string;
     status?: string;
+    // o backend costuma enviar muitos outros campos:
     [key: string]: any;
 };
 
 type Aviso = { usuario?: string; mensagem?: string };
 
+/* =========================
+   Regras de etapas & helpers
+   ========================= */
 const etapasCampos: (string | string[])[][] = [
     ["falecido", "contato", "religiao", "convenio"],
     ["urna", "roupa", "assistencia", "tanato"],
@@ -24,7 +31,7 @@ const etapasCampos: (string | string[])[][] = [
 function etapasPreenchidas(registro: Registro) {
     return etapasCampos.map((campos) =>
         campos.every((k) => {
-            if (Array.isArray(k))
+            if (Array.isArray(k)) {
                 return k.some(
                     (key) =>
                         registro[key] &&
@@ -33,6 +40,7 @@ function etapasPreenchidas(registro: Registro) {
                             String(registro[key]).toLowerCase()
                         )
                 );
+            }
             return (
                 registro[k] &&
                 String(registro[k]).trim() &&
@@ -46,42 +54,126 @@ function etapasPreenchidas(registro: Registro) {
 
 function capStatus(s?: string) {
     switch (s) {
-        case "fase01": return "Removendo";
-        case "fase02": return "Aguardando Procedimento";
-        case "fase03": return "Preparando";
-        case "fase04": return "Aguardando Ornamentação";
-        case "fase05": return "Ornamentando";
-        case "fase06": return "Corpo Pronto";
-        case "fase07": return "Transportando P/ Velório";
-        case "fase08": return "Velando";
-        case "fase09": return "Transportando P/ Sepultamento";
-        case "fase10": return "Sepultamento Concluído";
-        default: return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+        case "fase01":
+            return "Removendo";
+        case "fase02":
+            return "Aguardando Procedimento";
+        case "fase03":
+            return "Preparando";
+        case "fase04":
+            return "Aguardando Ornamentação";
+        case "fase05":
+            return "Ornamentando";
+        case "fase06":
+            return "Corpo Pronto";
+        case "fase07":
+            return "Transportando P/ Velório";
+        case "fase08":
+            return "Velando";
+        case "fase09":
+            return "Transportando P/ Sepultamento";
+        case "fase10":
+            return "Sepultamento Concluído";
+        default:
+            return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
     }
 }
 
 function badgeClass(s?: string) {
     switch ((s || "").toLowerCase()) {
-        case "removendo": return "bg-amber-500";
-        case "velando": return "bg-violet-600";
-        case "preparando": return "bg-blue-600";
-        case "sepultando": return "bg-orange-600";
-        case "concluido": return "bg-green-600";
-        default: return "bg-neutral-500";
+        case "removendo":
+            return "bg-amber-500";
+        case "velando":
+            return "bg-violet-600";
+        case "preparando":
+            return "bg-blue-600";
+        case "sepultando":
+            return "bg-orange-600";
+        case "concluido":
+            return "bg-green-600";
+        default:
+            return "bg-neutral-500";
     }
 }
 
 const sanitize = (t?: string) =>
-    t ? t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : "";
+    t
+        ? t
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+        : "";
 
 const formatDateBr = (d?: string) =>
-    !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
+    !d
+        ? ""
+        : d.split("-").length === 3
+            ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
+            : d;
 
+const formatTime = (hhmm?: string) =>
+    (hhmm || "").length >= 5 ? (hhmm || "").slice(0, 5) : hhmm || "";
+
+/* =========================
+   Mapa de labels p/ modal
+   ========================= */
+const FIELD_LABELS: Record<string, string> = {
+    falecido: "Falecido",
+    contato: "Contato",
+    religiao: "Religião",
+    convenio: "Convênio",
+    observacao: "Observação",
+    urna: "Urna",
+    roupa: "Roupa",
+    assistencia: "Assistência",
+    tanato: "Tanato",
+    local: "Local",
+    local_velorio: "Local Velório",
+    local_sepultamento: "Local Sepultamento",
+    data: "Data",
+    data_inicio_velorio: "Data Início Velório",
+    data_fim_velorio: "Data Fim Velório",
+    hora_inicio_velorio: "Hora Início Velório",
+    hora_fim_velorio: "Hora Fim Velório",
+    agente: "Agente",
+    status: "Status",
+};
+
+/* Ordem preferencial de exibição no modal */
+const FIELD_ORDER = [
+    "falecido",
+    "contato",
+    "religiao",
+    "convenio",
+    "observacao",
+    "urna",
+    "roupa",
+    "assistencia",
+    "tanato",
+    "local",
+    "local_velorio",
+    "local_sepultamento",
+    "data",
+    "data_inicio_velorio",
+    "data_fim_velorio",
+    "hora_inicio_velorio",
+    "hora_fim_velorio",
+    "agente",
+];
+
+/* =========================
+   Página
+   ========================= */
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [avisos, setAvisos] = useState<Aviso[]>([]);
+
+    // modal
+    const [open, setOpen] = useState(false);
+    const [detail, setDetail] = useState<Registro | null>(null);
 
     // relógio
     useEffect(() => {
@@ -91,7 +183,15 @@ export default function QuadroAtendimentoPage() {
             const m = now.getMinutes().toString().padStart(2, "0");
             const s = now.getSeconds().toString().padStart(2, "0");
             setClockTime(`${h}:${m}:${s}`);
-            const dias = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+            const dias = [
+                "Domingo",
+                "Segunda-feira",
+                "Terça-feira",
+                "Quarta-feira",
+                "Quinta-feira",
+                "Sexta-feira",
+                "Sábado",
+            ];
             const dd = now.getDate().toString().padStart(2, "0");
             const mm = (now.getMonth() + 1).toString().padStart(2, "0");
             const yyyy = now.getFullYear();
@@ -105,7 +205,10 @@ export default function QuadroAtendimentoPage() {
     // dados
     useEffect(() => {
         const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
+            fetch(
+                `https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`,
+                { cache: "no-store" }
+            )
                 .then((r) => r.json())
                 .then((j) => setRegistros(Array.isArray(j) ? j : []))
                 .catch(() => setRegistros([]));
@@ -117,7 +220,10 @@ export default function QuadroAtendimentoPage() {
     // avisos
     useEffect(() => {
         const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
+            fetch(
+                `https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`,
+                { cache: "no-store" }
+            )
                 .then((r) => r.json())
                 .then((j) => setAvisos(Array.isArray(j) ? j : []))
                 .catch(() => setAvisos([]));
@@ -126,20 +232,47 @@ export default function QuadroAtendimentoPage() {
         return () => clearInterval(id);
     }, []);
 
-    const ativos = registros.filter(
-        (r) =>
-            String(r.status).toLowerCase() !== "concluido" &&
-            String(r.status).toLowerCase() !== "fase10" &&
-            capStatus(r.status).toLowerCase() !== "sepultamento concluído"
+    // abrir/fechar modal
+    function showDetail(r: Registro) {
+        setDetail(r);
+        setOpen(true);
+        // bloqueia scroll do body
+        document.body.style.overflow = "hidden";
+    }
+    function closeDetail() {
+        setOpen(false);
+        setDetail(null);
+        document.body.style.overflow = "";
+    }
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") closeDetail();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    const ativos = useMemo(
+        () =>
+            registros.filter(
+                (r) =>
+                    String(r.status).toLowerCase() !== "concluido" &&
+                    String(r.status).toLowerCase() !== "fase10" &&
+                    capStatus(r.status).toLowerCase() !== "sepultamento concluído"
+            ),
+        [registros]
     );
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
             {/* Header/clock */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
+                <h1 className="text-2xl font-bold tracking-tight">
+                    Quadro de Atendimentos
+                </h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
+                    Atualizado em tempo real —{" "}
+                    <span className="font-medium">{clockTime}</span> • {clockDate}
                 </p>
             </div>
 
@@ -161,7 +294,10 @@ export default function QuadroAtendimentoPage() {
                         <tbody className="divide-y">
                             {ativos.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                                    <td
+                                        colSpan={7}
+                                        className="px-4 py-6 text-center text-muted-foreground"
+                                    >
                                         Nenhum atendimento encontrado.
                                     </td>
                                 </tr>
@@ -171,9 +307,17 @@ export default function QuadroAtendimentoPage() {
                                     return (
                                         <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
                                             <td>{formatDateBr(r.data)}</td>
-                                            <td className="font-semibold">{sanitize(r.falecido)}</td>
+                                            <td>
+                                                <button
+                                                    className="font-semibold underline-offset-2 hover:underline"
+                                                    onClick={() => showDetail(r)}
+                                                    title="Ver detalhes"
+                                                >
+                                                    {sanitize(r.falecido)}
+                                                </button>
+                                            </td>
                                             <td>{sanitize(r.local_velorio)}</td>
-                                            <td>{(r.hora_fim_velorio || "").slice(0, 5)}</td>
+                                            <td>{formatTime(r.hora_fim_velorio)}</td>
                                             <td>{sanitize(r.agente)}</td>
                                             <td>
                                                 <span
@@ -188,9 +332,13 @@ export default function QuadroAtendimentoPage() {
                                                 <div className="flex items-center gap-3">
                                                     {["D", "I", "V", "S"].map((label, k) => (
                                                         <div key={k} className="flex items-center gap-1.5">
-                                                            <span className="text-[11px] text-muted-foreground">{label}</span>
+                                                            <span className="text-[11px] text-muted-foreground">
+                                                                {label}
+                                                            </span>
                                                             <span
-                                                                className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k] ? "bg-green-500 border-green-600" : "bg-transparent"
+                                                                className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k]
+                                                                        ? "bg-green-500 border-green-600"
+                                                                        : "bg-transparent"
                                                                     }`}
                                                             />
                                                         </div>
@@ -216,9 +364,18 @@ export default function QuadroAtendimentoPage() {
                     ativos.map((r, i) => {
                         const preenchidas = etapasPreenchidas(r);
                         return (
-                            <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                            <div
+                                key={i}
+                                className="rounded-xl border bg-card/60 p-4 shadow-sm"
+                            >
                                 <div className="flex items-start justify-between gap-3">
-                                    <div className="text-base font-semibold">{sanitize(r.falecido)}</div>
+                                    <button
+                                        className="text-left text-base font-semibold underline-offset-2 hover:underline"
+                                        onClick={() => showDetail(r)}
+                                        title="Ver detalhes"
+                                    >
+                                        {sanitize(r.falecido)}
+                                    </button>
                                     <span
                                         className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white ${badgeClass(
                                             r.status
@@ -229,18 +386,34 @@ export default function QuadroAtendimentoPage() {
                                 </div>
 
                                 <div className="mt-3 space-y-1.5 text-sm">
-                                    <div><span className="text-muted-foreground">Data:</span> {formatDateBr(r.data)}</div>
-                                    <div><span className="text-muted-foreground">Hora:</span> {(r.hora_fim_velorio || "").slice(0, 5)}</div>
-                                    <div><span className="text-muted-foreground">Agente:</span> {sanitize(r.agente)}</div>
-                                    <div><span className="text-muted-foreground">Local:</span> {sanitize(r.local_velorio)}</div>
+                                    <div>
+                                        <span className="text-muted-foreground">Data:</span>{" "}
+                                        {formatDateBr(r.data)}
+                                    </div>
+                                    <div>
+                                        <span className="text-muted-foreground">Hora:</span>{" "}
+                                        {formatTime(r.hora_fim_velorio)}
+                                    </div>
+                                    <div>
+                                        <span className="text-muted-foreground">Agente:</span>{" "}
+                                        {sanitize(r.agente)}
+                                    </div>
+                                    <div>
+                                        <span className="text-muted-foreground">Local:</span>{" "}
+                                        {sanitize(r.local_velorio)}
+                                    </div>
                                     <div className="pt-1">
                                         <span className="text-muted-foreground">Etapas:</span>
                                         <div className="mt-1 flex items-center gap-3">
                                             {["D", "I", "V", "S"].map((label, k) => (
                                                 <div key={k} className="flex items-center gap-1.5">
-                                                    <span className="text-[11px] text-muted-foreground">{label}</span>
+                                                    <span className="text-[11px] text-muted-foreground">
+                                                        {label}
+                                                    </span>
                                                     <span
-                                                        className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k] ? "bg-green-500 border-green-600" : "bg-transparent"
+                                                        className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k]
+                                                                ? "bg-green-500 border-green-600"
+                                                                : "bg-transparent"
                                                             }`}
                                                     />
                                                 </div>
@@ -257,7 +430,9 @@ export default function QuadroAtendimentoPage() {
             {/* Avisos */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                    Mensagens importantes do sistema
+                </p>
                 <div className="mt-4 space-y-2">
                     {avisos.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
@@ -271,6 +446,131 @@ export default function QuadroAtendimentoPage() {
                     )}
                 </div>
             </div>
+
+            {/* ===== Modal de Detalhes ===== */}
+            {open && detail && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+                    aria-modal
+                    role="dialog"
+                >
+                    {/* overlay */}
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={closeDetail}
+                        aria-hidden
+                    />
+
+                    {/* conteúdo */}
+                    <div className="relative z-10 w-full max-w-4xl rounded-2xl border bg-card p-4 sm:p-6 shadow-2xl">
+                        {/* header */}
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <div className="text-sm text-muted-foreground leading-tight">
+                                    Detalhes do atendimento
+                                </div>
+                                <h3 className="text-xl font-bold leading-tight">
+                                    {sanitize(detail.falecido) || "—"}
+                                </h3>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                                    {detail.data && (
+                                        <span className="text-muted-foreground">
+                                            Data: <b>{formatDateBr(detail.data)}</b>
+                                        </span>
+                                    )}
+                                    {detail.hora_fim_velorio && (
+                                        <span className="text-muted-foreground">
+                                            • Hora: <b>{formatTime(detail.hora_fim_velorio)}</b>
+                                        </span>
+                                    )}
+                                    {detail.agente && (
+                                        <span className="text-muted-foreground">
+                                            • Agente: <b>{sanitize(detail.agente)}</b>
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {detail.status && (
+                                    <span
+                                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(
+                                            detail.status
+                                        )}`}
+                                        title="Status"
+                                    >
+                                        {capStatus(detail.status)}
+                                    </span>
+                                )}
+                                <button
+                                    onClick={closeDetail}
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                    aria-label="Fechar"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* chips / pílulas */}
+                        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {FIELD_ORDER.filter((k) => detail[k])
+                                .concat(
+                                    Object.keys(detail).filter(
+                                        (k) =>
+                                            !FIELD_ORDER.includes(k) &&
+                                            !["status", "falecido"].includes(k) &&
+                                            typeof detail[k] !== "object" &&
+                                            String(detail[k] ?? "").trim() !== ""
+                                    )
+                                )
+                                .map((key) => {
+                                    const label = FIELD_LABELS[key] || key.replace(/_/g, " ");
+                                    let value = String(detail[key] ?? "");
+                                    if (key.startsWith("data")) value = formatDateBr(value);
+                                    if (key.startsWith("hora")) value = formatTime(value);
+                                    return (
+                                        <div
+                                            key={key}
+                                            className="rounded-lg border bg-background px-3 py-2 text-[15px]"
+                                        >
+                                            <b>{label}:</b>{" "}
+                                            <span className="text-foreground">{sanitize(value)}</span>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+
+                        {/* etapas */}
+                        <div className="mt-5 rounded-xl border bg-background p-3">
+                            <div className="text-sm text-muted-foreground mb-2">
+                                Etapas preenchidas
+                            </div>
+                            <EtapasRow registro={detail} />
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* Linha de etapas usada no modal */
+function EtapasRow({ registro }: { registro: Registro }) {
+    const preenchidas = etapasPreenchidas(registro);
+    return (
+        <div className="flex items-center gap-5">
+            {["D", "I", "V", "S"].map((label, k) => (
+                <div key={k} className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span
+                        className={`h-4 w-4 rounded-full border ${preenchidas[k]
+                                ? "bg-green-500 border-green-600"
+                                : "bg-transparent"
+                            }`}
+                    />
+                </div>
+            ))}
         </div>
     );
 }
