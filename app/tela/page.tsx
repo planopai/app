@@ -287,7 +287,7 @@ export default function PainelTV() {
                         <div className="hidden sm:block" />
                         <div className="flex items-center justify-center">
                             {/* troque o src pela sua logo */}
-                            <img src="/logo.svg" alt="PAI - Plano Assistencial Integrado" className="h-10 w-auto sm:h-12" />
+                            <img src="/logo.png" alt="PAI - Plano Assistencial Integrado" className="h-10 w-auto sm:h-12" />
                         </div>
                         <div className="text-right leading-tight">
                             <div className="text-xl font-extrabold tracking-wide sm:text-3xl">{clockTime}</div>
