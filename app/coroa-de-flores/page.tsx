@@ -143,9 +143,10 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | unde
     return undefined;
 }
 
-/** Texto com quebras de linha "fortes" e linha em branco entre blocos */
+/** monta texto com CRLF, linha em branco usando ZWSP e SEM espaços à esquerda */
 function buildWhatsAppText(order: WcOrderFull) {
-    const NL = "\r\n"; // força quebra em vários apps (iOS/Android/Web)
+    const NL = "\r\n";
+    const ZWSP = "\u200B"; // zero-width space (deixa a “linha em branco” sem recuo)
     const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
     const pedidoNome = itens.join(", ");
 
@@ -166,24 +167,26 @@ function buildWhatsAppText(order: WcOrderFull) {
         ]) ||
         "";
 
-    const linhas: string[] = [];
-    const push = (s: string) => {
-        linhas.push(s);
-        linhas.push(""); // linha em branco
-    };
+    const rawLines = [
+        `*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`,
+        `*Origem:* Loja On-line`,
+        `*Cliente:* ${cliente || "—"}`,
+        `*Telefone:* ${phone || "—"}`,
+        `*Valor:* ${valor}`,
+        `*Local de Entrega:* ${localEntrega || "—"}`,
+        `*Falecido(a):* ${falecido || "—"}`,
+        `*Frase da Coroa:* ${frase || "—"}`,
+        `*Comprovante de pagamento:*`,
+    ];
 
-    push(`*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`);
-    push(`*Origem:* Loja On-line`);
-    push(`*Cliente:* ${cliente || "—"}`);
-    push(`*Telefone:* ${phone || "—"}`);
-    push(`*Valor:* ${valor}`);
-    push(`*Local de Entrega:* ${localEntrega || "—"}`);
-    push(`*Falecido(a):* ${falecido || "—"}`);
-    push(`*Frase da Coroa:* ${frase || "—"}`);
-    push(`*Comprovante de pagamento:*`);
+    // trimStart em cada linha e insere uma “linha em branco invisível” entre elas
+    const out: string[] = [];
+    rawLines.forEach((l, i) => {
+        out.push(l.trimStart());
+        if (i < rawLines.length - 1) out.push(ZWSP);
+    });
 
-    // usa CRLF entre todas as linhas
-    return linhas.join(NL);
+    return out.join(NL);
 }
 
 /** compartilhar/abrir WhatsApp (texto) */
@@ -203,8 +206,7 @@ async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(
         (typeof navigator !== "undefined" && navigator.userAgent) || ""
     );
-    const deep =
-        phone && isMobile ? `whatsapp://send?phone=${phone}&text=${encoded}` : `whatsapp://send?text=${encoded}`;
+    const deep = phone && isMobile ? `whatsapp://send?phone=${phone}&text=${encoded}` : `whatsapp://send?text=${encoded}`;
     const opened = window.open(deep, "_blank");
     if (opened) return;
 
@@ -218,7 +220,7 @@ async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
     window.open(phone ? `https://wa.me/${phone}` : `https://web.whatsapp.com/`, "_blank");
 }
 
-/** Converte um Blob de imagem (PNG com transparência, etc.) em JPEG com fundo branco */
+/** Converte Blob com transparência para JPEG com fundo branco */
 async function convertToJpegWithWhiteBg(blob: Blob): Promise<Blob> {
     const imgUrl = URL.createObjectURL(blob);
     try {
@@ -242,23 +244,17 @@ async function convertToJpegWithWhiteBg(blob: Blob): Promise<Blob> {
     }
 }
 
-/** Compartilhar imagem (tenta baixar, compor em fundo branco e compartilhar como arquivo) */
+/** Compartilha imagem (tenta arquivo → URL → abrir aba) */
 async function shareImageUrl(imageUrl: string) {
     if (!imageUrl) return;
 
-    // 1) Web Share com arquivo (necessita CORS permitido na URL)
     try {
         const resp = await fetch(imageUrl, { mode: "cors", cache: "no-store" });
         if (resp.ok) {
             let blob = await resp.blob();
-            // Se for PNG com transparência, convertemos para JPEG com fundo branco
             try {
-                if (blob.type === "image/png") {
-                    blob = await convertToJpegWithWhiteBg(blob);
-                }
-            } catch {
-                // se der algo errado, segue com o blob original
-            }
+                if (blob.type === "image/png") blob = await convertToJpegWithWhiteBg(blob);
+            } catch { }
             const file = new File([blob], `produto.${blob.type.includes("jpeg") ? "jpg" : "png"}`, {
                 type: blob.type || "image/jpeg",
             });
@@ -268,11 +264,8 @@ async function shareImageUrl(imageUrl: string) {
                 return;
             }
         }
-    } catch {
-        // segue para fallback
-    }
+    } catch { }
 
-    // 2) Compartilhar a URL (se o app aceitar)
     try {
         const navAny = navigator as any;
         if (navAny.share) {
@@ -281,7 +274,6 @@ async function shareImageUrl(imageUrl: string) {
         }
     } catch { }
 
-    // 3) Último recurso: abrir em nova aba
     window.open(imageUrl, "_blank", "noopener,noreferrer");
 }
 
@@ -373,12 +365,10 @@ export default function Page() {
             const data: WcOrderFull = await res.json();
             setDetail(data);
 
-            // 1) imagem que já vem no pedido
             const fromOrder = data.line_items?.find((li) => li.image?.src)?.image?.src || null;
             if (fromOrder) {
                 setDetailImage(fromOrder);
             } else {
-                // 2) fallback: produto/variação
                 const pid = data.line_items?.[0]?.product_id;
                 const vid = data.line_items?.[0]?.variation_id;
                 if (pid) {
@@ -783,12 +773,7 @@ export default function Page() {
                                 {/* Imagem do item */}
                                 {detailImage && (
                                     <div className="overflow-hidden rounded-lg border bg-white">
-                                        {/* bg-white ajuda a simular o fundo já aqui */}
-                                        <img
-                                            src={detailImage}
-                                            alt={detail.line_items?.[0]?.name || "Produto"}
-                                            className="w-full object-cover"
-                                        />
+                                        <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
                                     </div>
                                 )}
 
