@@ -152,7 +152,7 @@ export default function HomePage() {
                                 <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Acesse Atendimento, Salas, Segurança e Mensagens.
+                                Velório Online, Paineis, Compartilhamento e Mensagens.
                             </p>
                         </div>
                     </div>
@@ -181,7 +181,7 @@ export default function HomePage() {
                 ))}
             </section>
 
-            {/* Dicas rápidas / Ajuda */}
+            {/* Dicas Rapidas Para Ajudar */}
             <section className="mt-6 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur">
                 <h4 className="mb-1 text-sm font-semibold">Dicas rápidas</h4>
                 <ul className="text-sm text-muted-foreground">
