@@ -161,6 +161,25 @@ const FIELD_ORDER = [
     "agente",
 ];
 
+/* monta texto para copiar */
+function buildClipboardText(r: Registro) {
+    const v = (k: string) => String(r?.[k] ?? "").trim();
+    const lines = [
+        `*Convênio:* ${v("convenio") || "—"}`,
+        `*Falecido:* ${v("falecido") || "—"}`,
+        `*Contato:* ${v("contato") || "—"}`,
+        `*Religião:* ${v("religiao") || "—"}`,
+        `*Urna:* ${v("urna") || "—"}`,
+        `*Roupa:* ${v("roupa") || "—"}`,
+        `*Assistência:* ${v("assistencia") || "—"}`,
+        `*Tanato:* ${v("tanato") || "—"}`,
+        `*Local do Velório:* ${v("local_velorio") || "—"}`,
+        `*Agente:* ${v("agente") || "—"}`,
+        `*Observação:* ${v("observacao") || "—"}`,
+    ];
+    return lines.join("\n");
+}
+
 /* =========================
    Página
    ========================= */
@@ -173,6 +192,7 @@ export default function QuadroAtendimentoPage() {
     // modal
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
+    const [copied, setCopied] = useState(false);
 
     // relógio
     useEffect(() => {
@@ -235,11 +255,12 @@ export default function QuadroAtendimentoPage() {
     function showDetail(r: Registro) {
         setDetail(r);
         setOpen(true);
-        // não travamos o body no mobile
+        setCopied(false);
     }
     function closeDetail() {
         setOpen(false);
         setDetail(null);
+        setCopied(false);
     }
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -259,6 +280,33 @@ export default function QuadroAtendimentoPage() {
             ),
         [registros]
     );
+
+    // copiar para clipboard
+    async function handleCopy() {
+        if (!detail) return;
+        const text = buildClipboardText(detail);
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // fallback
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand("copy");
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            } finally {
+                document.body.removeChild(ta);
+            }
+        }
+    }
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
@@ -444,7 +492,7 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* ===== Modal de Detalhes (otimizado p/ mobile) ===== */}
+            {/* ===== Modal de Detalhes (com botão Copiar) ===== */}
             {open && detail && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6"
@@ -512,6 +560,14 @@ export default function QuadroAtendimentoPage() {
                                     </span>
                                 )}
                                 <button
+                                    onClick={handleCopy}
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                    aria-label="Copiar"
+                                    title="Copiar informações"
+                                >
+                                    {copied ? "Copiado!" : "Copiar"}
+                                </button>
+                                <button
                                     onClick={closeDetail}
                                     className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                                     aria-label="Fechar"
@@ -521,7 +577,7 @@ export default function QuadroAtendimentoPage() {
                             </div>
                         </div>
 
-                        {/* conteúdo compacto */}
+                        {/* conteúdo */}
                         <div className="px-3 py-3 sm:px-4 sm:py-4">
                             {/* status (aparece no mobile aqui) */}
                             {detail.status && (
