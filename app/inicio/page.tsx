@@ -17,8 +17,8 @@ import {
     IconChevronRight,
 } from "@tabler/icons-react";
 
-// Ajuste as rotas abaixo para bater com as suas páginas reais
-const shortcuts = [
+/** atalhos “soltos” (tiramos Salas, Segurança, Atendimento e Mensagens daqui) */
+const shortcutsTop = [
     {
         title: "Quadro de Atendimento",
         href: "/quadro-atendimento",
@@ -30,6 +30,15 @@ const shortcuts = [
         href: "/acompanhamento",
         desc: "Linha do tempo e progresso das etapas.",
         icon: IconTimeline,
+    },
+];
+
+const memorialChildren = [
+    {
+        title: "Atendimento",
+        href: "/atendimento",
+        desc: "Registre e atualize informações do atendimento.",
+        icon: IconHeadset,
     },
     {
         title: "Salas",
@@ -44,22 +53,19 @@ const shortcuts = [
         icon: IconShieldLock,
     },
     {
-        title: "Atendimento",
-        href: "/atendimento",
-        desc: "Registre e atualize informações do atendimento.",
-        icon: IconHeadset,
+        title: "Mensagens",
+        href: "/mensagens",
+        desc: "Aprove, exclua e organize mensagens.",
+        icon: IconMessage2,
     },
+];
+
+const shortcutsBottom = [
     {
         title: "Obituário",
         href: "/obituario",
         desc: "Crie e exporte peças para redes sociais.",
         icon: IconFileText,
-    },
-    {
-        title: "Mensagens",
-        href: "/mensagens",
-        desc: "Aprove, exclua e organize mensagens.",
-        icon: IconMessage2,
     },
     {
         title: "Leads",
@@ -82,9 +88,11 @@ const shortcuts = [
 ];
 
 export default function HomePage() {
-    // Relógio simples no topo (opcional, combina com o restante do sistema)
+    // relógio no topo
     const [now, setNow] = useState<string>("");
     const [dateStr, setDateStr] = useState<string>("");
+    // controle do grupo Memorial
+    const [memorialOpen, setMemorialOpen] = useState(false);
 
     useEffect(() => {
         const tick = () => {
@@ -135,7 +143,80 @@ export default function HomePage() {
 
             {/* Grade de atalhos */}
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {shortcuts.map(({ title, href, desc, icon: Icon }) => (
+                {/* Top (Início) */}
+                {shortcutsTop.map(({ title, href, desc, icon: Icon }) => (
+                    <Link
+                        key={href}
+                        href={href}
+                        className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+                    >
+                        <div className="flex items-start gap-3">
+                            <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
+                                <Icon className="size-6 text-primary" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h3 className="text-base font-semibold leading-tight">{title}</h3>
+                                    <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
+                                </div>
+                                <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+                            </div>
+                        </div>
+                    </Link>
+                ))}
+
+                {/* Botão Memorial (expande os 4 subitens) */}
+                <button
+                    type="button"
+                    onClick={() => setMemorialOpen((v) => !v)}
+                    className="group rounded-2xl border bg-card/60 p-4 text-left shadow-sm backdrop-blur transition hover:bg-primary/5"
+                >
+                    <div className="flex items-start gap-3">
+                        <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
+                            <IconBuildingSkyscraper className="size-6 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                                <h3 className="text-base font-semibold leading-tight">Memorial</h3>
+                                <IconChevronRight
+                                    className={`size-4 opacity-60 transition ${memorialOpen ? "rotate-90" : ""}`}
+                                />
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                Acesso rápido a Atendimento, Salas, Segurança e Mensagens.
+                            </p>
+                        </div>
+                    </div>
+                </button>
+
+                {/* Sub-atalhos do Memorial */}
+                {memorialOpen && (
+                    <div className="col-span-full grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {memorialChildren.map(({ title, href, desc, icon: Icon }) => (
+                            <Link
+                                key={href}
+                                href={href}
+                                className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
+                                        <Icon className="size-6 text-primary" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <h3 className="text-base font-semibold leading-tight">{title}</h3>
+                                            <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
+                                        </div>
+                                        <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                )}
+
+                {/* Demais itens */}
+                {shortcutsBottom.map(({ title, href, desc, icon: Icon }) => (
                     <Link
                         key={href}
                         href={href}
@@ -162,7 +243,8 @@ export default function HomePage() {
                 <h4 className="mb-1 text-sm font-semibold">Dicas rápidas</h4>
                 <ul className="text-sm text-muted-foreground">
                     <li className="mb-1">
-                        • Caso seu backend esteja em outro domínio, use um proxy (ex.: <b>/api/php/…</b>) para evitar CORS.
+                        • Caso seu backend esteja em outro domínio, use um proxy (ex.: <b>/api/php/…</b>) para
+                        evitar CORS.
                     </li>
                     <li>• Em produção, prefira <b>HTTPS</b> para todas as chamadas.</li>
                 </ul>
