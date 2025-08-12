@@ -6,11 +6,12 @@ import {
   IconHome,
   IconDeviceDesktop,
   IconUsers,
-  IconDoor,
   IconBook,
+  IconUsersGroup,
   IconLeaf,
   IconFileText,
   IconHelp,
+  IconBuildingSkyscraper,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -27,26 +28,26 @@ import {
 
 const data = {
   user: { name: "shadcn", email: "m@example.com", avatar: "/avatars/shadcn.jpg" },
-  // IMPORTANTE: NavMain espera uma lista PLANA { title, url, icon? }
+  // Lista PLANA para compatibilidade com o NavMain atual (sem subitens)
   navMain: [
     { title: "Início", url: "/", icon: IconHome },
     { title: "Quadro de Atendimento", url: "/quadro-atendimento", icon: IconDeviceDesktop },
     { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
 
-    // Um único item "Memorial" que leva para a página com os 4 botões
-    { title: "Memorial", url: "/memorial", icon: IconDoor },
+    // Item único "Memorial"
+    { title: "Memorial", url: "/memorial", icon: IconBuildingSkyscraper },
 
     { title: "Obituário", url: "/obituario", icon: IconBook },
-    { title: "Leads", url: "/leads", icon: IconUsers },
+    { title: "Leads", url: "/leads", icon: IconUsersGroup },
     { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
     { title: "Relatório", url: "/relatorio", icon: IconFileText },
-  ],
+  ] as { title: string; url: string; icon?: any }[],
 };
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
-      {/* Cabeçalho: SOMENTE a logo */}
+      {/* Cabeçalho: logo */}
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -67,7 +68,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <NavMain items={data.navMain} />
 
-        {/* Ajuda colada no rodapé, mesmo estilo dos itens */}
+        {/* Ajuda no rodapé visual */}
         <div className="mt-auto px-2">
           <SidebarMenu>
             <SidebarMenuItem>

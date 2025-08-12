@@ -92,7 +92,7 @@ export default function HomePage() {
     const [now, setNow] = useState<string>("");
     const [dateStr, setDateStr] = useState<string>("");
 
-    // grupo Memorial (abre por padrão pra você já ver a mudança)
+    // grupo Memorial (abre por padrão para evidenciar a mudança)
     const [memorialOpen, setMemorialOpen] = useState(true);
 
     useEffect(() => {
@@ -195,7 +195,7 @@ export default function HomePage() {
                     </div>
                 </button>
 
-                {/* Sub-atalhos do Memorial: ocupa toda a linha da grade em qualquer breakpoint */}
+                {/* Sub-atalhos do Memorial: ocupa toda a linha da grade */}
                 {memorialOpen && (
                     <div className="w-full sm:col-span-2 lg:col-span-3 xl:col-span-4">
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
