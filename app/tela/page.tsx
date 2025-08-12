@@ -36,13 +36,17 @@ function etapasPreenchidas(registro: Registro) {
                     (key) =>
                         registro[key] &&
                         String(registro[key]).trim() &&
-                        !["selecionar...", "selecione..."].includes(String(registro[key]).toLowerCase())
+                        !["selecionar...", "selecione..."].includes(
+                            String(registro[key]).toLowerCase()
+                        )
                 );
             }
             return (
                 registro[k] &&
                 String(registro[k]).trim() &&
-                !["selecionar...", "selecione..."].includes(String(registro[k]).toLowerCase())
+                !["selecionar...", "selecione..."].includes(
+                    String(registro[k]).toLowerCase()
+                )
             );
         })
     );
@@ -84,7 +88,8 @@ function statusColor(s?: string) {
     if (k.includes("fase07")) return "bg-cyan-600";
     if (k.includes("fase08") || k.includes("vel")) return "bg-violet-600";
     if (k.includes("fase09") || k.includes("sepult")) return "bg-orange-600";
-    if (k.includes("fase01") || k.includes("fase02") || k.includes("aguard")) return "bg-slate-500";
+    if (k.includes("fase01") || k.includes("fase02") || k.includes("aguard"))
+        return "bg-slate-500";
     return "bg-neutral-500";
 }
 
@@ -98,14 +103,24 @@ const sanitize = (t?: string) =>
         : "";
 
 const formatDateBr = (d?: string) =>
-    !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
+    !d
+        ? ""
+        : d.split("-").length === 3
+            ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
+            : d;
+
+// chaves estáveis para detectar “novos”
+const keyOfRegistro = (r: Registro) =>
+    `${r.data || ""}|${(r.falecido || "").toLowerCase()}|${(r.local_velorio || "").toLowerCase()}`;
+const keyOfAviso = (a: Aviso) =>
+    `${(a.usuario || "").toLowerCase()}|${(a.mensagem || "").toLowerCase()}`;
 
 /* =========================
    Ticker (marquee)
    ========================= */
 function Ticker({ items }: { items: Aviso[] }) {
     const innerRef = useRef<HTMLDivElement>(null);
-    const [duration, setDuration] = useState(16);
+    const [duration, setDuration] = useState(15); // um pouco mais rápido
 
     const text = useMemo(() => {
         if (!items?.length) return "Nenhum aviso no momento.";
@@ -123,7 +138,7 @@ function Ticker({ items }: { items: Aviso[] }) {
         const el = innerRef.current;
         if (!el) return;
         const contentWidth = el.scrollWidth;
-        const speed = 180; // px/seg — um pouquinho mais rápido
+        const speed = 200; // px/s
         const base = Math.max(8, Math.round(contentWidth / speed));
         setDuration(base);
     }, [text]);
@@ -131,10 +146,15 @@ function Ticker({ items }: { items: Aviso[] }) {
     return (
         <div
             className="fixed bottom-0 left-0 right-0 z-40 select-none"
-            style={{ background: "linear-gradient(180deg, rgba(0,0,0,.06), rgba(0,0,0,.06)), #073051" }}
+            style={{
+                background:
+                    "linear-gradient(180deg, rgba(0,0,0,.06), rgba(0,0,0,.06)), #073051",
+            }}
         >
             <div className="mx-auto flex h-14 max-w-[1920px] items-center overflow-hidden px-4 sm:h-16 sm:px-6">
-                <strong className="mr-3 shrink-0 text-white/90 sm:mr-4 sm:text-xl">Avisos:</strong>
+                <strong className="mr-3 shrink-0 text-white/90 sm:mr-4 sm:text-xl">
+                    Avisos:
+                </strong>
                 <div className="relative flex-1 overflow-hidden">
                     <div
                         className="whitespace-nowrap text-white text-[15px] sm:text-lg font-extrabold will-change-transform"
@@ -178,6 +198,34 @@ export default function PainelTV() {
     const [avisos, setAvisos] = useState<Aviso[]>([]);
     const [connErr, setConnErr] = useState<string | null>(null);
 
+    // som
+    const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+        if (typeof window === "undefined") return false;
+        return localStorage.getItem("soundEnabled") === "1";
+    });
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            localStorage.setItem("soundEnabled", soundEnabled ? "1" : "0");
+        }
+    }, [soundEnabled]);
+
+    const audioRegRef = useRef<HTMLAudioElement | null>(null);
+    const audioAvisoRef = useRef<HTMLAudioElement | null>(null);
+    const playAudio = (el: HTMLAudioElement | null) => {
+        if (!soundEnabled || !el) return;
+        try {
+            el.currentTime = 0;
+            el.play().catch(() => { });
+        } catch { }
+    };
+
+    // conjuntos de vistos para detectar novidades
+    const seenReg = useRef<Set<string>>(new Set());
+    const firstRegLoad = useRef(true);
+
+    const seenAviso = useRef<Set<string>>(new Set());
+    const firstAvisoLoad = useRef(true);
+
     // Relógio
     useEffect(() => {
         let raf = 0;
@@ -187,7 +235,15 @@ export default function PainelTV() {
             const m = now.getMinutes().toString().padStart(2, "0");
             const s = now.getSeconds().toString().padStart(2, "0");
             setClockTime(`${h}:${m}:${s}`);
-            const dias = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+            const dias = [
+                "Domingo",
+                "Segunda-feira",
+                "Terça-feira",
+                "Quarta-feira",
+                "Quinta-feira",
+                "Sexta-feira",
+                "Sábado",
+            ];
             const dd = now.getDate().toString().padStart(2, "0");
             const mm = (now.getMonth() + 1).toString().padStart(2, "0");
             const yyyy = now.getFullYear();
@@ -208,7 +264,7 @@ export default function PainelTV() {
         }
     }
 
-    // Registros
+    // Registros (polling)
     useEffect(() => {
         let timer: any;
         let active = true;
@@ -220,7 +276,20 @@ export default function PainelTV() {
             );
             if (!active) return;
             if (Array.isArray(data)) {
+                // detecção de novos
+                const nowKeys = new Set<string>(data.map(keyOfRegistro));
+                let newCount = 0;
+                if (!firstRegLoad.current) {
+                    for (const k of nowKeys) if (!seenReg.current.has(k)) newCount++;
+                }
                 setRegistros(data);
+                // atualiza conjunto visto
+                seenReg.current = nowKeys;
+                // toca áudio
+                if (!firstRegLoad.current && newCount > 0) {
+                    playAudio(audioRegRef.current); // /sounds/novo-registro.mp3
+                }
+                firstRegLoad.current = false;
                 setConnErr(null);
             } else {
                 setConnErr("Erro na conexão.");
@@ -235,7 +304,7 @@ export default function PainelTV() {
         };
     }, []);
 
-    // Avisos
+    // Avisos (polling)
     useEffect(() => {
         let timer: any;
         let active = true;
@@ -246,8 +315,21 @@ export default function PainelTV() {
                 ctrl.signal
             );
             if (!active) return;
-            setAvisos(Array.isArray(data) ? data : []);
-            timer = setTimeout(run, 15000);
+            const arr = Array.isArray(data) ? data : [];
+            // detecção de novos
+            const nowKeys = new Set<string>(arr.map(keyOfAviso));
+            let newCount = 0;
+            if (!firstAvisoLoad.current) {
+                for (const k of nowKeys) if (!seenAviso.current.has(k)) newCount++;
+            }
+            setAvisos(arr);
+            seenAviso.current = nowKeys;
+            if (!firstAvisoLoad.current && newCount > 0) {
+                playAudio(audioAvisoRef.current); // /sounds/novo-aviso.mp3
+            }
+            firstAvisoLoad.current = false;
+
+            timer = setTimeout(run, 12000);
             return () => ctrl.abort();
         };
         run();
@@ -286,28 +368,51 @@ export default function PainelTV() {
                     <div className="mx-auto grid h-20 w-full max-w-[1920px] grid-cols-3 items-center px-4 sm:h-24 sm:px-8">
                         <div className="hidden sm:block" />
                         <div className="flex items-center justify-center">
-                            {/* troque o src pela sua logo */}
-                            <img src="/logo.png" alt="PAI - Plano Assistencial Integrado" className="h-10 w-auto sm:h-12" />
+                            {/* Coloque sua logo em /public/logo.png */}
+                            <img
+                                src="/logo.png"
+                                alt="PAI - Plano Assistencial Integrado"
+                                className="h-10 w-auto sm:h-12"
+                            />
                         </div>
                         <div className="text-right leading-tight">
-                            <div className="text-xl font-extrabold tracking-wide sm:text-3xl">{clockTime}</div>
-                            <div className="text-sm font-semibold opacity-95 sm:text-base">{clockDate}</div>
+                            <div className="text-xl font-extrabold tracking-wide sm:text-3xl">
+                                {clockTime}
+                            </div>
+                            <div className="text-sm font-semibold opacity-95 sm:text-base">
+                                {clockDate}
+                            </div>
                         </div>
                     </div>
                 </header>
+
+                {/* Botão para habilitar som (política de autoplay) */}
+                {!soundEnabled && (
+                    <button
+                        onClick={() => setSoundEnabled(true)}
+                        className="fixed bottom-20 right-4 z-50 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg hover:brightness-110"
+                    >
+                        Ativar som
+                    </button>
+                )}
 
                 {/* Conteúdo */}
                 <main className="mx-auto w-full max-w-[1400px] px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
                     <section className="rounded-3xl bg-white text-[#1b2a41] shadow-2xl ring-1 ring-black/5">
                         <div className="px-5 pb-5 pt-6 sm:px-8 sm:pt-8">
-                            <h2 className="text-center text-2xl font-extrabold tracking-tight sm:text-4xl">Quadro de Atendimentos</h2>
+                            <h2 className="text-center text-2xl font-extrabold tracking-tight sm:text-4xl">
+                                Quadro de Atendimentos
+                            </h2>
                             <div className="mx-auto mt-2 h-1 w-24 rounded-full bg-[#059de0]/80" />
                         </div>
 
                         {/* Tabela */}
                         <div className="hidden px-4 pb-6 sm:block">
                             <div className="overflow-hidden rounded-2xl">
-                                <table className="min-w-full text-lg" style={{ fontFamily: "'Nunito', system-ui, sans-serif" }}>
+                                <table
+                                    className="min-w-full text-lg"
+                                    style={{ fontFamily: "'Nunito', system-ui, sans-serif" }}
+                                >
                                     <thead>
                                         <tr className="bg-[#1f3554] text-white/95 [&>th]:px-4 [&>th]:py-3 [&>th]:text-left">
                                             <th>Data</th>
@@ -322,13 +427,19 @@ export default function PainelTV() {
                                     <tbody className="bg-white text-[#1b2a41]">
                                         {connErr ? (
                                             <tr>
-                                                <td colSpan={7} className="px-4 py-8 text-center text-[#6b7a90] text-xl">
+                                                <td
+                                                    colSpan={7}
+                                                    className="px-4 py-8 text-center text-[#6b7a90] text-xl"
+                                                >
                                                     {connErr}
                                                 </td>
                                             </tr>
                                         ) : ativos.length === 0 ? (
                                             <tr>
-                                                <td colSpan={7} className="px-4 py-8 text-center text-[#6b7a90] text-xl">
+                                                <td
+                                                    colSpan={7}
+                                                    className="px-4 py-8 text-center text-[#6b7a90] text-xl"
+                                                >
                                                     Nenhum atendimento encontrado.
                                                 </td>
                                             </tr>
@@ -336,12 +447,25 @@ export default function PainelTV() {
                                             ativos.map((r, i) => {
                                                 const preenchidas = etapasPreenchidas(r);
                                                 return (
-                                                    <tr key={i} className="border-b border-black/5 [&>td]:px-4 [&>td]:py-4">
-                                                        <td className="font-semibold">{formatDateBr(r.data)}</td>
-                                                        <td className="font-extrabold">{sanitize(r.falecido)}</td>
-                                                        <td className="font-semibold">{sanitize(r.local_velorio)}</td>
-                                                        <td className="font-semibold">{(r.hora_fim_velorio || "").slice(0, 5)}</td>
-                                                        <td className="font-semibold">{sanitize(r.agente)}</td>
+                                                    <tr
+                                                        key={i}
+                                                        className="border-b border-black/5 [&>td]:px-4 [&>td]:py-4"
+                                                    >
+                                                        <td className="font-semibold">
+                                                            {formatDateBr(r.data)}
+                                                        </td>
+                                                        <td className="font-extrabold">
+                                                            {sanitize(r.falecido)}
+                                                        </td>
+                                                        <td className="font-semibold">
+                                                            {sanitize(r.local_velorio)}
+                                                        </td>
+                                                        <td className="font-semibold">
+                                                            {(r.hora_fim_velorio || "").slice(0, 5)}
+                                                        </td>
+                                                        <td className="font-semibold">
+                                                            {sanitize(r.agente)}
+                                                        </td>
                                                         <td>
                                                             <span
                                                                 className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-extrabold text-white ${statusColor(
@@ -354,8 +478,13 @@ export default function PainelTV() {
                                                         <td>
                                                             <div className="flex items-center gap-4">
                                                                 {["D", "I", "V", "S"].map((label, k) => (
-                                                                    <div key={k} className="flex items-center gap-2">
-                                                                        <span className="text-sm text-[#6b7a90]">{label}</span>
+                                                                    <div
+                                                                        key={k}
+                                                                        className="flex items-center gap-2"
+                                                                    >
+                                                                        <span className="text-sm text-[#6b7a90]">
+                                                                            {label}
+                                                                        </span>
                                                                         <span
                                                                             className={`h-4 w-4 rounded-full border ${preenchidas[k]
                                                                                     ? "bg-emerald-500 border-emerald-600"
@@ -378,7 +507,9 @@ export default function PainelTV() {
                         {/* Cards (mobile) */}
                         <div className="px-4 pb-6 sm:hidden">
                             {connErr ? (
-                                <div className="rounded-xl bg-white p-4 text-center text-[#6b7a90] shadow">{connErr}</div>
+                                <div className="rounded-xl bg-white p-4 text-center text-[#6b7a90] shadow">
+                                    {connErr}
+                                </div>
                             ) : ativos.length === 0 ? (
                                 <div className="rounded-xl bg-white p-4 text-center text-[#6b7a90] shadow">
                                     Nenhum atendimento encontrado.
@@ -388,9 +519,14 @@ export default function PainelTV() {
                                     {ativos.map((r, i) => {
                                         const preenchidas = etapasPreenchidas(r);
                                         return (
-                                            <div key={i} className="rounded-xl bg-white p-4 shadow ring-1 ring-black/5">
+                                            <div
+                                                key={i}
+                                                className="rounded-xl bg-white p-4 shadow ring-1 ring-black/5"
+                                            >
                                                 <div className="flex items-start justify-between gap-3">
-                                                    <div className="text-base font-extrabold text-[#1b2a41]">{sanitize(r.falecido)}</div>
+                                                    <div className="text-base font-extrabold text-[#1b2a41]">
+                                                        {sanitize(r.falecido)}
+                                                    </div>
                                                     <span
                                                         className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-extrabold text-white ${statusColor(
                                                             r.status
@@ -402,23 +538,29 @@ export default function PainelTV() {
 
                                                 <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[15px] text-[#1b2a41]">
                                                     <div>
-                                                        <span className="text-[#6b7a90]">Data:</span> {formatDateBr(r.data)}
+                                                        <span className="text-[#6b7a90]">Data:</span>{" "}
+                                                        {formatDateBr(r.data)}
                                                     </div>
                                                     <div>
-                                                        <span className="text-[#6b7a90]">Hora:</span> {(r.hora_fim_velorio || "").slice(0, 5)}
+                                                        <span className="text-[#6b7a90]">Hora:</span>{" "}
+                                                        {(r.hora_fim_velorio || "").slice(0, 5)}
                                                     </div>
                                                     <div className="col-span-2">
-                                                        <span className="text-[#6b7a90]">Local:</span> {sanitize(r.local_velorio)}
+                                                        <span className="text-[#6b7a90]">Local:</span>{" "}
+                                                        {sanitize(r.local_velorio)}
                                                     </div>
                                                     <div className="col-span-2">
-                                                        <span className="text-[#6b7a90]">Agente:</span> {sanitize(r.agente)}
+                                                        <span className="text-[#6b7a90]">Agente:</span>{" "}
+                                                        {sanitize(r.agente)}
                                                     </div>
                                                     <div className="col-span-2 pt-1">
                                                         <span className="text-[#6b7a90]">Etapas:</span>
                                                         <div className="mt-1 flex items-center gap-3">
                                                             {["D", "I", "V", "S"].map((label, k) => (
                                                                 <div key={k} className="flex items-center gap-1.5">
-                                                                    <span className="text-[11px] text-[#6b7a90]">{label}</span>
+                                                                    <span className="text-[11px] text-[#6b7a90]">
+                                                                        {label}
+                                                                    </span>
                                                                     <span
                                                                         className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k]
                                                                                 ? "bg-emerald-500 border-emerald-600"
@@ -442,12 +584,27 @@ export default function PainelTV() {
                 <Ticker items={avisos} />
             </div>
 
+            {/* Áudios pré-carregados */}
+            <audio
+                id="audio-registro"
+                ref={audioRegRef}
+                src="/sounds/novo-registro.mp3"
+                preload="auto"
+            />
+            <audio
+                id="audio-aviso"
+                ref={audioAvisoRef}
+                src="/sounds/novo-aviso.mp3"
+                preload="auto"
+            />
+
             {/* Nunito aplicada globalmente */}
             <style jsx global>{`
         html,
         body,
         * {
-          font-family: 'Nunito', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif !important;
+          font-family: 'Nunito', system-ui, -apple-system, Segoe UI, Roboto,
+            Helvetica, Arial, sans-serif !important;
         }
       `}</style>
         </>
