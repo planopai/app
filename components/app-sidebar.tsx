@@ -7,10 +7,7 @@ import {
   IconDeviceDesktop,
   IconUsers,
   IconDoor,
-  IconLock,
-  IconUser,
   IconBook,
-  IconMail,
   IconLeaf,
   IconFileText,
   IconHelp,
@@ -30,15 +27,16 @@ import {
 
 const data = {
   user: { name: "shadcn", email: "m@example.com", avatar: "/avatars/shadcn.jpg" },
+  // IMPORTANTE: NavMain espera uma lista PLANA { title, url, icon? }
   navMain: [
     { title: "Início", url: "/", icon: IconHome },
     { title: "Quadro de Atendimento", url: "/quadro-atendimento", icon: IconDeviceDesktop },
     { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
-    { title: "Salas", url: "/salas", icon: IconDoor },
-    { title: "Segurança", url: "/seguranca", icon: IconLock },
-    { title: "Atendimento", url: "/atendimento", icon: IconUser },
+
+    // Um único item "Memorial" que leva para a página com os 4 botões
+    { title: "Memorial", url: "/memorial", icon: IconDoor },
+
     { title: "Obituário", url: "/obituario", icon: IconBook },
-    { title: "Mensagens", url: "/mensagens", icon: IconMail },
     { title: "Leads", url: "/leads", icon: IconUsers },
     { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
     { title: "Relatório", url: "/relatorio", icon: IconFileText },
