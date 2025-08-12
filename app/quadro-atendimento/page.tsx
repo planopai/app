@@ -105,6 +105,12 @@ const sanitize = (t?: string) =>
             .replace(/"/g, "&quot;")
         : "";
 
+/* Fallback elegante para exibição na UI */
+const shown = (v?: string, fallback = "a definir") => {
+    const s = String(v ?? "").trim();
+    return s ? sanitize(s) : fallback;
+};
+
 const formatDateBr = (d?: string) =>
     !d
         ? ""
@@ -114,6 +120,15 @@ const formatDateBr = (d?: string) =>
 
 const formatTime = (hhmm?: string) =>
     (hhmm || "").length >= 5 ? (hhmm || "").slice(0, 5) : hhmm || "";
+
+const dateOr = (d?: string) => {
+    const f = formatDateBr(d);
+    return f ? f : "a definir";
+};
+const timeOr = (t?: string) => {
+    const f = formatTime(t);
+    return f ? f : "a definir";
+};
 
 /* =========================
    Labels & ordem no modal
@@ -161,23 +176,28 @@ const FIELD_ORDER = [
     "agente",
 ];
 
-/* monta texto para copiar */
+/* monta texto para copiar (com linha em branco entre itens)
+   e cabeçalho ATENDIMENTO <CONVÊNIO> */
 function buildClipboardText(r: Registro) {
     const v = (k: string) => String(r?.[k] ?? "").trim();
+
+    const atend = (v("convenio") || "A DEFINIR").toUpperCase();
     const lines = [
-        `*Convênio:* ${v("convenio") || "—"}`,
-        `*Falecido:* ${v("falecido") || "—"}`,
-        `*Contato:* ${v("contato") || "—"}`,
-        `*Religião:* ${v("religiao") || "—"}`,
-        `*Urna:* ${v("urna") || "—"}`,
-        `*Roupa:* ${v("roupa") || "—"}`,
-        `*Assistência:* ${v("assistencia") || "—"}`,
-        `*Tanato:* ${v("tanato") || "—"}`,
-        `*Local do Velório:* ${v("local_velorio") || "—"}`,
-        `*Agente:* ${v("agente") || "—"}`,
-        `*Observação:* ${v("observacao") || "—"}`,
+        `*ATENDIMENTO ${atend}*`,
+        `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
+        `*Contato:* ${v("contato") || "A DEFINIR"}`,
+        `*Religião:* ${v("religiao") || "A DEFINIR"}`,
+        `*Urna:* ${v("urna") || "A DEFINIR"}`,
+        `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
+        `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
+        `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
+        `*Local do Velório:* ${v("local_velorio") || "A DEFINIR"}`,
+        `*Agente:* ${v("agente") || "A DEFINIR"}`,
+        `*Observação:* ${v("observacao") || "A DEFINIR"}`,
     ];
-    return lines.join("\n");
+
+    // linha em branco entre cada informação
+    return lines.join("\n\n");
 }
 
 /* =========================
@@ -351,26 +371,26 @@ export default function QuadroAtendimentoPage() {
                                     const preenchidas = etapasPreenchidas(r);
                                     return (
                                         <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
-                                            <td>{formatDateBr(r.data)}</td>
+                                            <td>{dateOr(r.data)}</td>
                                             <td>
                                                 <button
                                                     className="font-semibold underline-offset-2 hover:underline"
                                                     onClick={() => showDetail(r)}
                                                     title="Ver detalhes"
                                                 >
-                                                    {sanitize(r.falecido)}
+                                                    {shown(r.falecido)}
                                                 </button>
                                             </td>
-                                            <td>{sanitize(r.local_velorio)}</td>
-                                            <td>{formatTime(r.hora_fim_velorio)}</td>
-                                            <td>{sanitize(r.agente)}</td>
+                                            <td>{shown(r.local_velorio)}</td>
+                                            <td>{timeOr(r.hora_fim_velorio)}</td>
+                                            <td>{shown(r.agente)}</td>
                                             <td>
                                                 <span
                                                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
                                                         r.status
                                                     )}`}
                                                 >
-                                                    {capStatus(r.status)}
+                                                    {capStatus(r.status) || "a definir"}
                                                 </span>
                                             </td>
                                             <td>
@@ -419,33 +439,33 @@ export default function QuadroAtendimentoPage() {
                                         onClick={() => showDetail(r)}
                                         title="Ver detalhes"
                                     >
-                                        {sanitize(r.falecido)}
+                                        {shown(r.falecido)}
                                     </button>
                                     <span
                                         className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white ${badgeClass(
                                             r.status
                                         )}`}
                                     >
-                                        {capStatus(r.status)}
+                                        {capStatus(r.status) || "a definir"}
                                     </span>
                                 </div>
 
                                 <div className="mt-3 space-y-1.5 text-sm">
                                     <div>
                                         <span className="text-muted-foreground">Data:</span>{" "}
-                                        {formatDateBr(r.data)}
+                                        {dateOr(r.data)}
                                     </div>
                                     <div>
                                         <span className="text-muted-foreground">Hora:</span>{" "}
-                                        {formatTime(r.hora_fim_velorio)}
+                                        {timeOr(r.hora_fim_velorio)}
                                     </div>
                                     <div>
                                         <span className="text-muted-foreground">Agente:</span>{" "}
-                                        {sanitize(r.agente)}
+                                        {shown(r.agente)}
                                     </div>
                                     <div>
                                         <span className="text-muted-foreground">Local:</span>{" "}
-                                        {sanitize(r.local_velorio)}
+                                        {shown(r.local_velorio)}
                                     </div>
                                     <div className="pt-1">
                                         <span className="text-muted-foreground">Etapas:</span>
@@ -527,24 +547,18 @@ export default function QuadroAtendimentoPage() {
                                     Detalhes do atendimento
                                 </div>
                                 <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
-                                    {sanitize(detail.falecido) || "—"}
+                                    {shown(detail.falecido)}
                                 </h3>
                                 <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                    {detail.data && (
-                                        <span className="text-muted-foreground">
-                                            Data: <b>{formatDateBr(detail.data)}</b>
-                                        </span>
-                                    )}
-                                    {detail.hora_fim_velorio && (
-                                        <span className="text-muted-foreground">
-                                            • Hora: <b>{formatTime(detail.hora_fim_velorio)}</b>
-                                        </span>
-                                    )}
-                                    {detail.agente && (
-                                        <span className="text-muted-foreground">
-                                            • Agente: <b>{sanitize(detail.agente)}</b>
-                                        </span>
-                                    )}
+                                    <span className="text-muted-foreground">
+                                        Data: <b>{dateOr(detail.data)}</b>
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        • Agente: <b>{shown(detail.agente)}</b>
+                                    </span>
                                 </div>
                             </div>
 
@@ -560,7 +574,9 @@ export default function QuadroAtendimentoPage() {
                                     </span>
                                 )}
                                 <button
-                                    onClick={handleCopy}
+                                    onClick={async () => {
+                                        await handleCopy();
+                                    }}
                                     className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                                     aria-label="Copiar"
                                     title="Copiar informações"
@@ -607,8 +623,9 @@ export default function QuadroAtendimentoPage() {
                                     .map((key) => {
                                         const label = FIELD_LABELS[key] || key.replace(/_/g, " ");
                                         let value = String(detail[key] ?? "");
-                                        if (key.startsWith("data")) value = formatDateBr(value);
-                                        if (key.startsWith("hora")) value = formatTime(value);
+                                        if (key.startsWith("data")) value = dateOr(value);
+                                        else if (key.startsWith("hora")) value = timeOr(value);
+                                        else value = shown(value);
                                         return (
                                             <div
                                                 key={key}
@@ -618,7 +635,7 @@ export default function QuadroAtendimentoPage() {
                         "
                                             >
                                                 <b>{label}:</b>{" "}
-                                                <span className="text-foreground">{sanitize(value)}</span>
+                                                <span className="text-foreground">{value}</span>
                                             </div>
                                         );
                                     })}
