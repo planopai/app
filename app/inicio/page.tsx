@@ -17,7 +17,7 @@ import {
     IconChevronRight,
 } from "@tabler/icons-react";
 
-/** atalhos “soltos” (tiramos Salas, Segurança, Atendimento e Mensagens daqui) */
+/** atalhos “soltos” (SEM Atendimento/Salas/Segurança/Mensagens) */
 const shortcutsTop = [
     {
         title: "Quadro de Atendimento",
@@ -91,15 +91,20 @@ export default function HomePage() {
     // relógio no topo
     const [now, setNow] = useState<string>("");
     const [dateStr, setDateStr] = useState<string>("");
-    // controle do grupo Memorial
-    const [memorialOpen, setMemorialOpen] = useState(false);
+
+    // grupo Memorial (abre por padrão pra você já ver a mudança)
+    const [memorialOpen, setMemorialOpen] = useState(true);
 
     useEffect(() => {
         const tick = () => {
             const dt = new Date();
             setNow(
                 dt
-                    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                    .toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                    })
                     .replace(/\./g, ":")
             );
             const days = [
@@ -169,6 +174,7 @@ export default function HomePage() {
                 <button
                     type="button"
                     onClick={() => setMemorialOpen((v) => !v)}
+                    aria-expanded={memorialOpen}
                     className="group rounded-2xl border bg-card/60 p-4 text-left shadow-sm backdrop-blur transition hover:bg-primary/5"
                 >
                     <div className="flex items-start gap-3">
@@ -189,29 +195,31 @@ export default function HomePage() {
                     </div>
                 </button>
 
-                {/* Sub-atalhos do Memorial */}
+                {/* Sub-atalhos do Memorial: ocupa toda a linha da grade em qualquer breakpoint */}
                 {memorialOpen && (
-                    <div className="col-span-full grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        {memorialChildren.map(({ title, href, desc, icon: Icon }) => (
-                            <Link
-                                key={href}
-                                href={href}
-                                className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-                            >
-                                <div className="flex items-start gap-3">
-                                    <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
-                                        <Icon className="size-6 text-primary" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <h3 className="text-base font-semibold leading-tight">{title}</h3>
-                                            <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
+                    <div className="w-full sm:col-span-2 lg:col-span-3 xl:col-span-4">
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            {memorialChildren.map(({ title, href, desc, icon: Icon }) => (
+                                <Link
+                                    key={href}
+                                    href={href}
+                                    className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
+                                            <Icon className="size-6 text-primary" />
                                         </div>
-                                        <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+                                        <div className="flex-1">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <h3 className="text-base font-semibold leading-tight">{title}</h3>
+                                                <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
+                                            </div>
+                                            <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+                                        </div>
                                     </div>
-                                </div>
-                            </Link>
-                        ))}
+                                </Link>
+                            ))}
+                        </div>
                     </div>
                 )}
 
