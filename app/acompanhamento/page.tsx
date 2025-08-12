@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 ----------------------------------------------------------- */
 type Registro = {
     id?: number | string;
-    status?: string; // fase01..fase10
+    status?: string; // fase01..fase11
     falecido?: string;
     agente?: string;
     contato?: string;
@@ -16,7 +16,7 @@ type Registro = {
     urna?: string;
     roupa?: string;
     assistencia?: string; // "Sim" | "Não"
-    tanato?: string;      // "Sim" | "Não"
+    tanato?: string; // "Sim" | "Não"
     local?: string;
     local_velorio?: string;
     data_inicio_velorio?: string;
@@ -53,15 +53,32 @@ const wizardStepTitles = ["Atendimento", "Itens", "Velório 01", "Velório 02"];
 const wizardStepIndexes = [
     [0, 1, 2, 3, 14], // Atendimento
     [4, 5, 6, 7, 14], // Itens
-    [8, 9, 10, 14],   // Velório 01
+    [8, 9, 10, 14], // Velório 01
     [11, 12, 13, 14], // Velório 02
 ];
 
 const steps = [
     { label: "Nome do Falecido(a)", id: "falecido", type: "input", placeholder: "Digite o nome" },
     { label: "Contato", id: "contato", type: "input", placeholder: "Contato/telefone" },
-    { label: "Religião", id: "religiao", type: "select", options: ["", "Evangélico", "Católico", "Espirita", "Ateu", "Outras", "Não Informado"] },
-    { label: "Convênio", id: "convenio", type: "select", options: ["", "Particular", "Prefeitura de Barreiras", "Prefeitura de Angical", "Prefeitura de São Desidério", "Associado(a)"] },
+    {
+        label: "Religião",
+        id: "religiao",
+        type: "select",
+        options: ["", "Evangélico", "Católico", "Espirita", "Ateu", "Outras", "Não Informado"],
+    },
+    {
+        label: "Convênio",
+        id: "convenio",
+        type: "select",
+        options: [
+            "",
+            "Particular",
+            "Prefeitura de Barreiras",
+            "Prefeitura de Angical",
+            "Prefeitura de São Desidério",
+            "Associado(a)",
+        ],
+    },
     { label: "Urna", id: "urna", type: "input", placeholder: "Digite o Modelo Da Urna" },
     {
         label: "Roupa",
@@ -112,9 +129,9 @@ const steps = [
 ] as const;
 
 const obrigatorios = ["falecido", "contato", "convenio", "religiao", "urna"];
-
 const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
 
+// Agora temos 11 fases (a 11ª é o Material Recolhido)
 const fases = [
     "fase01",
     "fase02",
@@ -126,6 +143,7 @@ const fases = [
     "fase08",
     "fase09",
     "fase10",
+    "fase11",
 ] as const;
 
 function capitalizeStatus(s?: string) {
@@ -149,7 +167,9 @@ function capitalizeStatus(s?: string) {
         case "fase09":
             return "Sepultando";
         case "fase10":
-            return "Concluído";
+            return "Sepultamento Concluído";
+        case "fase11":
+            return "Material Recolhido";
         default:
             return "Aguardando";
     }
@@ -167,6 +187,7 @@ function acaoToStatus(acao: string) {
         fase08: "Entrega de Corpo",
         fase09: "Transportando P/ Sepultamento",
         fase10: "Sepultamento Concluído",
+        fase11: "Material Recolhido",
     };
     return map[acao] ?? "fase01";
 }
@@ -204,10 +225,7 @@ function Modal({
                 if (e.target === e.currentTarget) onClose();
             }}
         >
-            <div
-                className="w-full rounded-xl bg-white p-5 shadow-xl outline-none"
-                style={{ maxWidth: maxWidth ?? 720 }}
-            >
+            <div className="w-full rounded-xl bg-white p-5 shadow-xl outline-none" style={{ maxWidth: maxWidth ?? 720 }}>
                 {children}
             </div>
         </div>
@@ -218,19 +236,10 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     return <label className="mb-1 block text-sm font-medium">{children}</label>;
 }
 
-function TextFeedback({
-    kind,
-    children,
-}: {
-    kind: "success" | "error";
-    children?: React.ReactNode;
-}) {
+function TextFeedback({ kind, children }: { kind: "success" | "error"; children?: React.ReactNode }) {
     if (!children) return null;
     return (
-        <div
-            className={`mt-3 rounded-md px-3 py-2 text-sm ${kind === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                }`}
-        >
+        <div className={`mt-3 rounded-md px-3 py-2 text-sm ${kind === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
             {children}
         </div>
     );
@@ -272,6 +281,7 @@ export default function AcompanhamentoPage() {
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoIdx, setAcaoIdx] = useState<number | null>(null);
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
     // Info Etapas
     const [infoOpen, setInfoOpen] = useState(false);
@@ -366,14 +376,11 @@ export default function AcompanhamentoPage() {
     }, []);
 
     /* -------------------- Tabela -------------------- */
-    const registrosVisiveis = useMemo(
-        () => registros.filter((r) => r.status !== "fase10"),
-        [registros]
-    );
+    // agora só some quando chegar em fase11
+    const registrosVisiveis = useMemo(() => registros.filter((r) => r.status !== "fase11"), [registros]);
 
     /* -------------------- Wizard -------------------- */
     const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
-        // tenta json
         if (r.materiais_json) {
             try {
                 const parsed = JSON.parse(String(r.materiais_json));
@@ -388,7 +395,7 @@ export default function AcompanhamentoPage() {
                     },
                 };
             } catch {
-                // cai para os campos achatados
+                // fallback
             }
         }
         return {
@@ -415,17 +422,14 @@ export default function AcompanhamentoPage() {
 
             if (editing && idx !== null && registros[idx]) {
                 const r = registros[idx];
-                // preenche TODOS os campos existentes do registro diretamente
                 const data: Registro = {};
                 steps.forEach((s: any) => {
                     (data as any)[s.id] = (r as any)[s.id] ?? "";
                 });
                 data.id = r.id;
 
-                // materiais
                 const mats = parseMateriaisFromRegistro(r);
                 setMateriais(mats);
-                // também guarda no wizardData
                 (data as any).materiais = mats;
 
                 setWizardData(data);
@@ -462,7 +466,6 @@ export default function AcompanhamentoPage() {
             (next as any)[s.id] = v;
         }
 
-        // garante que materiais atuais fiquem no wizardData
         (next as any).materiais = materiais;
 
         setWizardData(next);
@@ -472,7 +475,6 @@ export default function AcompanhamentoPage() {
     const concluirWizard = useCallback(async () => {
         if (!salvarGrupoWizard()) return;
 
-        // obrigatórios por grupo (se estiver restrito)
         let grupoObrigatorios: string[];
         if (typeof wizardRestrictGroup === "number") {
             const grupo = wizardStepIndexes[wizardRestrictGroup];
@@ -500,82 +502,57 @@ export default function AcompanhamentoPage() {
     }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros, materiais]);
 
     /* -------------------- Ações (status) -------------------- */
-    const abrirPopupAcao = useCallback(
-        (idx: number) => {
-            setAcaoMsg(null);
-            setAcaoIdx(idx);
+    const abrirPopupAcao = useCallback((idx: number) => {
+        setAcaoMsg(null);
+        setAcaoIdx(idx);
+        setAcaoSubmitting(false);
+        setAcaoOpen(true);
+    }, []);
 
-            // agora SEM bloquear fase10 (precisamos mostrar "Material Recolhido")
-            setAcaoOpen(true);
-        },
-        []
-    );
+    const proximaFase = useCallback((r: Registro) => {
+        const atual = r.status || "fase00";
+        let nextIdx = fases.indexOf(atual as any) + 1;
 
-    const proximaFase = useCallback(
-        (r: Registro) => {
-            const atual = r.status || "fase00";
-            // encontra o próximo válido considerando regras
-            let nextIdx = fases.indexOf(atual as any) + 1;
+        const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
+        const skipConservacao = isTanatoNo(r.tanato);
 
-            const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
-            const skipConservacao = isTanatoNo(r.tanato);
-
-            while (nextIdx < fases.length) {
-                const next = fases[nextIdx];
-                if (skipTransportando && next === "fase07") {
-                    nextIdx++;
-                    continue;
-                }
-                if (skipConservacao && (next === "fase03" || next === "fase04")) {
-                    nextIdx++;
-                    continue;
-                }
-                return next;
+        while (nextIdx < fases.length) {
+            const next = fases[nextIdx];
+            if (skipTransportando && next === "fase07") {
+                nextIdx++;
+                continue;
             }
-            return null;
-        },
-        []
-    );
+            if (skipConservacao && (next === "fase03" || next === "fase04")) {
+                nextIdx++;
+                continue;
+            }
+            return next;
+        }
+        return null;
+    }, []);
 
     const registrarAcao = useCallback(
         async (acao: string) => {
+            if (acaoSubmitting) return; // trava duplo clique
             if (acaoIdx == null || !registros[acaoIdx]) return;
             const id = registros[acaoIdx].id;
 
             const ok = window.confirm("Deseja confirmar essa ação?");
             if (!ok) return;
 
+            setAcaoSubmitting(true);
             const json = await enviarRegistroPHP({ acao: "atualizar_status", id, status: acao });
             if (json?.sucesso) {
                 setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
                 fetchRegistros();
-                setTimeout(() => {
-                    setAcaoOpen(false);
-                    if (acao !== "fase10") setTimeout(() => setAcaoOpen(true), 120);
-                }, 600);
+                setTimeout(() => setAcaoOpen(false), 500);
             } else {
+                setAcaoSubmitting(false);
                 setAcaoMsg({ text: "Erro ao atualizar status.", ok: false });
             }
         },
-        [acaoIdx, registros, enviarRegistroPHP, fetchRegistros]
+        [acaoIdx, registros, enviarRegistroPHP, fetchRegistros, acaoSubmitting]
     );
-
-    const registrarMaterialRecolhido = useCallback(async () => {
-        if (acaoIdx == null || !registros[acaoIdx]) return;
-        const id = registros[acaoIdx].id;
-
-        const ok = window.confirm("Confirmar material recolhido?");
-        if (!ok) return;
-
-        const json = await enviarRegistroPHP({ acao: "material_recolhido", id });
-        if (json?.sucesso) {
-            setAcaoMsg({ text: "Material marcado como recolhido.", ok: true });
-            fetchRegistros();
-            setTimeout(() => setAcaoOpen(false), 600);
-        } else {
-            setAcaoMsg({ text: "Erro ao registrar recolhimento.", ok: false });
-        }
-    }, [acaoIdx, registros, enviarRegistroPHP, fetchRegistros]);
 
     /* -------------------- Info Etapas -------------------- */
     const abrirInfoEtapas = useCallback((idx: number) => {
@@ -667,14 +644,9 @@ export default function AcompanhamentoPage() {
             <header className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Cadastre, acompanhe e atualize o status dos atendimentos.
-                    </p>
+                    <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
                 </div>
-                <button
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-                    onClick={() => abrirWizard("novo")}
-                >
+                <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90" onClick={() => abrirWizard("novo")}>
                     Novo Registro
                 </button>
             </header>
@@ -702,9 +674,7 @@ export default function AcompanhamentoPage() {
                         {registrosVisiveis.map((r, idx) => (
                             <tr key={String(r.id ?? idx)} className="border-t">
                                 <td className="px-3 py-2">
-                                    <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-                                        {capitalizeStatus(r.status)}
-                                    </span>
+                                    <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">{capitalizeStatus(r.status)}</span>
                                 </td>
                                 <td className="px-3 py-2">
                                     <div className="flex items-center gap-2">
@@ -713,18 +683,12 @@ export default function AcompanhamentoPage() {
                                 </td>
                                 <td className="px-3 py-2">{r.agente || ""}</td>
                                 <td className="px-3 py-2">
-                                    <button
-                                        className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
-                                        onClick={() => abrirPopupAcao(idx)}
-                                    >
+                                    <button className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted" onClick={() => abrirPopupAcao(idx)}>
                                         Ações
                                     </button>
                                 </td>
                                 <td className="px-3 py-2">
-                                    <button
-                                        className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
-                                        onClick={() => abrirInfoEtapas(idx)}
-                                    >
+                                    <button className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted" onClick={() => abrirInfoEtapas(idx)}>
                                         Info
                                     </button>
                                 </td>
@@ -749,11 +713,7 @@ export default function AcompanhamentoPage() {
                             if (e.key === "Enter") enviarAviso();
                         }}
                     />
-                    <button
-                        type="button"
-                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                        onClick={enviarAviso}
-                    >
+                    <button type="button" className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={enviarAviso}>
                         Enviar
                     </button>
                 </div>
@@ -766,11 +726,7 @@ export default function AcompanhamentoPage() {
                         .map((a) => (
                             <li key={String(a.id)} className="flex flex-wrap items-center gap-2 rounded-lg border p-3">
                                 <span className="rounded bg-muted px-2 py-0.5 text-xs">{a.usuario}</span>
-                                <EditableText
-                                    text={a.mensagem}
-                                    onSave={(t) => editarAviso(a.id, t)}
-                                    className="min-w-[220px] flex-1"
-                                />
+                                <EditableText text={a.mensagem} onSave={(t) => editarAviso(a.id, t)} className="min-w-[220px] flex-1" />
                                 <span className="text-xs opacity-70">{new Date(a.criado_em).toLocaleString()}</span>
                                 <div className="ml-auto flex gap-2">
                                     <button className="rounded-md border px-2 py-1 text-xs" onClick={() => excluirAviso(a.id)}>
@@ -801,7 +757,6 @@ export default function AcompanhamentoPage() {
                             const val = (wizardData as any)[s.id] ?? "";
                             const id = "wizard-" + s.id;
 
-                            // Input/Date/Time
                             if (s.type === "input" || s.type === "date" || s.type === "time") {
                                 return (
                                     <div key={id}>
@@ -809,21 +764,12 @@ export default function AcompanhamentoPage() {
                                             {s.label}
                                             {obrigatorios.includes(s.id) ? " *" : ""}
                                         </FieldLabel>
-                                        <input
-                                            id={id}
-                                            name={s.id}
-                                            type={s.type}
-                                            defaultValue={val}
-                                            placeholder={s.placeholder || ""}
-                                            className="w-full rounded-md border px-3 py-2 text-sm"
-                                        />
+                                        <input id={id} name={s.id} type={s.type} defaultValue={val} placeholder={s.placeholder || ""} className="w-full rounded-md border px-3 py-2 text-sm" />
                                     </div>
                                 );
                             }
 
-                            // Selects
                             if (s.type === "select") {
-                                // Assistência com botão Materiais
                                 if (s.id === "assistencia") {
                                     return (
                                         <div key={id}>
@@ -846,20 +792,14 @@ export default function AcompanhamentoPage() {
                                                     ))}
                                                 </select>
 
-                                                {((assistenciaVal || val) === "Sim") && (
-                                                    <button
-                                                        type="button"
-                                                        className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                                        onClick={() => setMateriaisOpen(true)}
-                                                        title="Selecionar materiais"
-                                                    >
+                                                {(assistenciaVal || val) === "Sim" && (
+                                                    <button type="button" className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => setMateriaisOpen(true)} title="Selecionar materiais">
                                                         Materiais
                                                     </button>
                                                 )}
                                             </div>
 
-                                            {/* Indicação rápida de materiais já selecionados */}
-                                            {((assistenciaVal || val) === "Sim") && (materiais.cadeiras.checked || materiais.bebedouros.checked) && (
+                                            {(assistenciaVal || val) === "Sim" && (materiais.cadeiras.checked || materiais.bebedouros.checked) && (
                                                 <div className="mt-2 text-xs text-muted-foreground">
                                                     Selecionados:&nbsp;
                                                     {materiais.cadeiras.checked && `Cadeiras (${materiais.cadeiras.qtd})`}
@@ -871,7 +811,6 @@ export default function AcompanhamentoPage() {
                                     );
                                 }
 
-                                // Tanatopraxia (controlada para ocultar fases depois)
                                 if (s.id === "tanato") {
                                     return (
                                         <div key={id}>
@@ -879,13 +818,7 @@ export default function AcompanhamentoPage() {
                                                 {s.label}
                                                 {obrigatorios.includes(s.id) ? " *" : ""}
                                             </FieldLabel>
-                                            <select
-                                                id={id}
-                                                name={s.id}
-                                                value={tanatoVal || val}
-                                                onChange={(e) => setTanatoVal(e.target.value)}
-                                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                            >
+                                            <select id={id} name={s.id} value={tanatoVal || val} onChange={(e) => setTanatoVal(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
                                                 {s.options.map((opt: string) => (
                                                     <option key={opt} value={opt}>
                                                         {opt}
@@ -896,19 +829,13 @@ export default function AcompanhamentoPage() {
                                     );
                                 }
 
-                                // demais selects
                                 return (
                                     <div key={id}>
                                         <FieldLabel>
                                             {s.label}
                                             {obrigatorios.includes(s.id) ? " *" : ""}
                                         </FieldLabel>
-                                        <select
-                                            id={id}
-                                            name={s.id}
-                                            defaultValue={val}
-                                            className="w-full rounded-md border px-3 py-2 text-sm"
-                                        >
+                                        <select id={id} name={s.id} defaultValue={val} className="w-full rounded-md border px-3 py-2 text-sm">
                                             {s.options.map((opt: string) => (
                                                 <option key={opt} value={opt}>
                                                     {opt}
@@ -919,19 +846,11 @@ export default function AcompanhamentoPage() {
                                 );
                             }
 
-                            // Datalist
                             if (s.type === "datalist") {
                                 return (
                                     <div key={id}>
                                         <FieldLabel>{s.label}</FieldLabel>
-                                        <input
-                                            id={id}
-                                            name={s.id}
-                                            list={`datalist-${s.id}`}
-                                            defaultValue={val}
-                                            placeholder={s.placeholder || ""}
-                                            className="w-full rounded-md border px-3 py-2 text-sm"
-                                        />
+                                        <input id={id} name={s.id} list={`datalist-${s.id}`} defaultValue={val} placeholder={s.placeholder || ""} className="w-full rounded-md border px-3 py-2 text-sm" />
                                         <datalist id={`datalist-${s.id}`}>
                                             {s.datalist.map((opt: string) => (
                                                 <option key={opt} value={opt} />
@@ -941,17 +860,10 @@ export default function AcompanhamentoPage() {
                                 );
                             }
 
-                            // textarea
                             return (
                                 <div key={id}>
                                     <FieldLabel>{s.label}</FieldLabel>
-                                    <textarea
-                                        id={id}
-                                        name={s.id}
-                                        defaultValue={val}
-                                        placeholder={s.placeholder || ""}
-                                        className="min-h-28 w-full rounded-md border px-3 py-2 text-sm"
-                                    />
+                                    <textarea id={id} name={s.id} defaultValue={val} placeholder={s.placeholder || ""} className="min-h-28 w-full rounded-md border px-3 py-2 text-sm" />
                                 </div>
                             );
                         })}
@@ -960,12 +872,7 @@ export default function AcompanhamentoPage() {
                     {/* Navegação */}
                     <div className="mt-5 flex items-center gap-2">
                         {wizardRestrictGroup == null && (
-                            <button
-                                type="button"
-                                className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-                                disabled={wizardStep <= 0}
-                                onClick={() => setWizardStep((s) => Math.max(0, s - 1))}
-                            >
+                            <button type="button" className="rounded-md border px-3 py-2 text-sm disabled:opacity-50" disabled={wizardStep <= 0} onClick={() => setWizardStep((s) => Math.max(0, s - 1))}>
                                 Voltar
                             </button>
                         )}
@@ -982,19 +889,13 @@ export default function AcompanhamentoPage() {
                             </button>
                         )}
 
-                        <button
-                            type="button"
-                            className="ml-auto rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                            onClick={concluirWizard}
-                        >
+                        <button type="button" className="ml-auto rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={concluirWizard}>
                             {wizardRestrictGroup == null && wizardStep === wizardStepIndexes.length - 1 ? "Concluir" : "Salvar"}
                         </button>
                     </div>
 
                     <div className="mt-2 text-sm opacity-80">
-                        {wizardRestrictGroup != null
-                            ? `Editar: ${wizardStepTitles[wizardStep]}`
-                            : `Etapa ${wizardStep + 1} de ${wizardStepTitles.length}: ${wizardStepTitles[wizardStep]}`}
+                        {wizardRestrictGroup != null ? `Editar: ${wizardStepTitles[wizardStep]}` : `Etapa ${wizardStep + 1} de ${wizardStepTitles.length}: ${wizardStepTitles[wizardStep]}`}
                     </div>
 
                     {wizardMsg && <TextFeedback kind={wizardMsg.ok ? "success" : "error"}>{wizardMsg.text}</TextFeedback>}
@@ -1075,7 +976,6 @@ export default function AcompanhamentoPage() {
                     <button
                         className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                         onClick={() => {
-                            // grava nos dados do wizard
                             setWizardData((d) => ({ ...d, materiais }));
                             setMateriaisOpen(false);
                         }}
@@ -1099,21 +999,19 @@ export default function AcompanhamentoPage() {
                         return fases.map((f) => {
                             if (!r) return null;
 
-                            // esconde fase07 (transportando) quando é sala memorial
                             if (skipTransportando && f === "fase07") return null;
-
-                            // esconde conservação quando tanato = Não
                             if (skipConservacao && (f === "fase03" || f === "fase04")) return null;
 
-                            const habilitar = prox === f && r.status !== "fase10";
+                            const habilitar = prox === f; // somente a próxima fase habilita
                             return (
                                 <button
                                     key={f}
                                     type="button"
-                                    disabled={!habilitar}
+                                    disabled={!habilitar || acaoSubmitting}
                                     onClick={() => registrarAcao(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "opacity-100" : "pointer-events-none opacity-50"
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
+                                    title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
                                 >
                                     {acaoToStatus(f)}
                                 </button>
@@ -1121,19 +1019,6 @@ export default function AcompanhamentoPage() {
                         });
                     })()}
                 </div>
-
-                {/* Após fase10, mostrar "Material Recolhido" */}
-                {acaoIdx != null && registros[acaoIdx]?.status === "fase10" && (
-                    <div className="mt-4">
-                        <button
-                            type="button"
-                            onClick={registrarMaterialRecolhido}
-                            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-                        >
-                            Material Recolhido
-                        </button>
-                    </div>
-                )}
 
                 {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
             </Modal>
@@ -1189,11 +1074,7 @@ function EditableText({
 
     if (!editing) {
         return (
-            <button
-                className={`text-left ${className ?? ""}`}
-                onClick={() => setEditing(true)}
-                title="Clique para editar"
-            >
+            <button className={`text-left ${className ?? ""}`} onClick={() => setEditing(true)} title="Clique para editar">
                 {text}
             </button>
         );
