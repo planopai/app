@@ -116,11 +116,11 @@ const keyOfAviso = (a: Aviso) =>
     `${(a.usuario || "").toLowerCase()}|${(a.mensagem || "").toLowerCase()}`;
 
 /* =========================
-   Ticker (marquee)
+   Ticker (marquee) — mais rápido
    ========================= */
 function Ticker({ items }: { items: Aviso[] }) {
     const innerRef = useRef<HTMLDivElement>(null);
-    const [duration, setDuration] = useState(15); // um pouco mais rápido
+    const [duration, setDuration] = useState(8); // valor inicial (será recalculado)
 
     const text = useMemo(() => {
         if (!items?.length) return "Nenhum aviso no momento.";
@@ -137,9 +137,10 @@ function Ticker({ items }: { items: Aviso[] }) {
     useEffect(() => {
         const el = innerRef.current;
         if (!el) return;
+        // aceleração: ~420 px/s
         const contentWidth = el.scrollWidth;
-        const speed = 200; // px/s
-        const base = Math.max(8, Math.round(contentWidth / speed));
+        const speed = 420; // px/seg
+        const base = Math.max(4, Math.round(contentWidth / speed)); // mínimo 4s
         setDuration(base);
     }, [text]);
 
@@ -163,6 +164,7 @@ function Ticker({ items }: { items: Aviso[] }) {
                     >
                         <span dangerouslySetInnerHTML={{ __html: sanitize(text) }} />
                         <span className="mx-8">•</span>
+                        {/* duplicação para loop contínuo */}
                         <span dangerouslySetInnerHTML={{ __html: sanitize(text) }} />
                     </div>
                 </div>
@@ -211,6 +213,52 @@ export default function PainelTV() {
 
     const audioRegRef = useRef<HTMLAudioElement | null>(null);
     const audioAvisoRef = useRef<HTMLAudioElement | null>(null);
+
+    // “Desbloqueia” áudio na 1ª interação do usuário (além do botão)
+    useEffect(() => {
+        if (soundEnabled) return;
+        const unlock = () => {
+            setSoundEnabled(true);
+            try {
+                audioRegRef.current
+                    ?.play()
+                    .then(() => audioRegRef.current?.pause())
+                    .catch(() => { });
+                audioAvisoRef.current
+                    ?.play()
+                    .then(() => audioAvisoRef.current?.pause())
+                    .catch(() => { });
+            } catch { }
+        };
+        const opts: AddEventListenerOptions = { once: true, passive: true };
+        window.addEventListener("click", unlock, opts);
+        window.addEventListener("touchstart", unlock, opts);
+        window.addEventListener("keydown", unlock, opts);
+        return () => {
+            window.removeEventListener("click", unlock);
+            window.removeEventListener("touchstart", unlock);
+            window.removeEventListener("keydown", unlock);
+        };
+    }, [soundEnabled]);
+
+    // pré-carrega
+    useEffect(() => {
+        audioRegRef.current?.load();
+        audioAvisoRef.current?.load();
+        if (soundEnabled) {
+            try {
+                audioRegRef.current
+                    ?.play()
+                    .then(() => audioRegRef.current?.pause())
+                    .catch(() => { });
+                audioAvisoRef.current
+                    ?.play()
+                    .then(() => audioAvisoRef.current?.pause())
+                    .catch(() => { });
+            } catch { }
+        }
+    }, [soundEnabled]);
+
     const playAudio = (el: HTMLAudioElement | null) => {
         if (!soundEnabled || !el) return;
         try {
@@ -219,14 +267,14 @@ export default function PainelTV() {
         } catch { }
     };
 
-    // conjuntos de vistos para detectar novidades
+    // conjuntos de vistos para detectar novidades (sem depender do render)
     const seenReg = useRef<Set<string>>(new Set());
     const firstRegLoad = useRef(true);
 
     const seenAviso = useRef<Set<string>>(new Set());
     const firstAvisoLoad = useRef(true);
 
-    // Relógio
+    // Relógio (alta frequência usando rAF)
     useEffect(() => {
         let raf = 0;
         const tick = () => {
@@ -264,7 +312,7 @@ export default function PainelTV() {
         }
     }
 
-    // Registros (polling)
+    // Registros (polling mais frequente; toca som IMEDIATAMENTE ao detectar novos)
     useEffect(() => {
         let timer: any;
         let active = true;
@@ -275,26 +323,29 @@ export default function PainelTV() {
                 ctrl.signal
             );
             if (!active) return;
+
             if (Array.isArray(data)) {
-                // detecção de novos
                 const nowKeys = new Set<string>(data.map(keyOfRegistro));
                 let newCount = 0;
                 if (!firstRegLoad.current) {
                     for (const k of nowKeys) if (!seenReg.current.has(k)) newCount++;
                 }
-                setRegistros(data);
-                // atualiza conjunto visto
-                seenReg.current = nowKeys;
-                // toca áudio
+
+                // TOCA ANTES de atualizar estado
                 if (!firstRegLoad.current && newCount > 0) {
                     playAudio(audioRegRef.current); // /sounds/novo-registro.mp3
                 }
+
+                setRegistros(data);
+                seenReg.current = nowKeys;
                 firstRegLoad.current = false;
                 setConnErr(null);
             } else {
                 setConnErr("Erro na conexão.");
             }
-            timer = setTimeout(run, 8000);
+
+            // mais ágil: 4s
+            timer = setTimeout(run, 4000);
             return () => ctrl.abort();
         };
         run();
@@ -304,7 +355,7 @@ export default function PainelTV() {
         };
     }, []);
 
-    // Avisos (polling)
+    // Avisos (polling mais frequente; toca som IMEDIATO ao detectar novos)
     useEffect(() => {
         let timer: any;
         let active = true;
@@ -315,21 +366,24 @@ export default function PainelTV() {
                 ctrl.signal
             );
             if (!active) return;
+
             const arr = Array.isArray(data) ? data : [];
-            // detecção de novos
             const nowKeys = new Set<string>(arr.map(keyOfAviso));
             let newCount = 0;
             if (!firstAvisoLoad.current) {
                 for (const k of nowKeys) if (!seenAviso.current.has(k)) newCount++;
             }
-            setAvisos(arr);
-            seenAviso.current = nowKeys;
+
             if (!firstAvisoLoad.current && newCount > 0) {
                 playAudio(audioAvisoRef.current); // /sounds/novo-aviso.mp3
             }
+
+            setAvisos(arr);
+            seenAviso.current = nowKeys;
             firstAvisoLoad.current = false;
 
-            timer = setTimeout(run, 12000);
+            // mais ágil: 6s
+            timer = setTimeout(run, 6000);
             return () => ctrl.abort();
         };
         run();
@@ -590,12 +644,14 @@ export default function PainelTV() {
                 ref={audioRegRef}
                 src="/sounds/novo-registro.mp3"
                 preload="auto"
+                playsInline
             />
             <audio
                 id="audio-aviso"
                 ref={audioAvisoRef}
                 src="/sounds/novo-aviso.mp3"
                 preload="auto"
+                playsInline
             />
 
             {/* Nunito aplicada globalmente */}
