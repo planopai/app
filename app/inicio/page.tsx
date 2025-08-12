@@ -14,7 +14,6 @@ import {
     IconChevronRight,
 } from "@tabler/icons-react";
 
-/** atalhos “soltos” (SEM Atendimento/Salas/Segurança/Mensagens) */
 const shortcutsTop = [
     {
         title: "Quadro de Atendimento",
@@ -58,36 +57,19 @@ const shortcutsBottom = [
 ];
 
 export default function HomePage() {
-    // relógio no topo
-    const [now, setNow] = useState<string>("");
-    const [dateStr, setDateStr] = useState<string>("");
+    const [now, setNow] = useState("");
+    const [dateStr, setDateStr] = useState("");
 
     useEffect(() => {
         const tick = () => {
             const dt = new Date();
             setNow(
                 dt
-                    .toLocaleTimeString("pt-BR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                    })
+                    .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
                     .replace(/\./g, ":")
             );
-            const days = [
-                "Domingo",
-                "Segunda-feira",
-                "Terça-feira",
-                "Quarta-feira",
-                "Quinta-feira",
-                "Sexta-feira",
-                "Sábado",
-            ];
-            const dow = days[dt.getDay()];
-            const d = String(dt.getDate()).padStart(2, "0");
-            const m = String(dt.getMonth() + 1).padStart(2, "0");
-            const y = dt.getFullYear();
-            setDateStr(`${dow}, ${d}/${m}/${y}`);
+            const days = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+            setDateStr(`${days[dt.getDay()]}, ${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}/${dt.getFullYear()}`);
         };
         tick();
         const t = setInterval(tick, 1000);
@@ -96,7 +78,6 @@ export default function HomePage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-            {/* Cabeçalho */}
             <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <div className="flex items-center gap-2">
@@ -113,15 +94,9 @@ export default function HomePage() {
                 </div>
             </header>
 
-            {/* Grade de atalhos */}
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {/* Top (Início) */}
                 {shortcutsTop.map(({ title, href, desc, icon: Icon }) => (
-                    <Link
-                        key={href}
-                        href={href}
-                        className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-                    >
+                    <Link key={href} href={href} className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
                         <div className="flex items-start gap-3">
                             <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
                                 <Icon className="size-6 text-primary" />
@@ -137,11 +112,8 @@ export default function HomePage() {
                     </Link>
                 ))}
 
-                {/* ÚNICO card do Memorial (linka para /memorial) */}
-                <Link
-                    href="/memorial"
-                    className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-                >
+                {/* Único card para o Memorial */}
+                <Link href="/memorial" className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
                     <div className="flex items-start gap-3">
                         <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
                             <IconBuildingSkyscraper className="size-6 text-primary" />
@@ -152,19 +124,14 @@ export default function HomePage() {
                                 <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Velório Online, Paineis, Compartilhamento e Mensagens.
+                                Acesse Atendimento, Salas, Segurança e Mensagens.
                             </p>
                         </div>
                     </div>
                 </Link>
 
-                {/* Demais itens */}
                 {shortcutsBottom.map(({ title, href, desc, icon: Icon }) => (
-                    <Link
-                        key={href}
-                        href={href}
-                        className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-                    >
+                    <Link key={href} href={href} className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
                         <div className="flex items-start gap-3">
                             <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
                                 <Icon className="size-6 text-primary" />
@@ -181,13 +148,10 @@ export default function HomePage() {
                 ))}
             </section>
 
-            {/* Dicas Rapidas Para Ajudar */}
             <section className="mt-6 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur">
                 <h4 className="mb-1 text-sm font-semibold">Dicas rápidas</h4>
                 <ul className="text-sm text-muted-foreground">
-                    <li className="mb-1">
-                        • Caso seu backend esteja em outro domínio, use um proxy (ex.: <b>/api/php/…</b>) para evitar CORS.
-                    </li>
+                    <li className="mb-1">• Caso seu backend esteja em outro domínio, use um proxy (ex.: <b>/api/php/…</b>) para evitar CORS.</li>
                     <li>• Em produção, prefira <b>HTTPS</b> para todas as chamadas.</li>
                 </ul>
             </section>
