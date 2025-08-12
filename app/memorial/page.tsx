@@ -12,15 +12,15 @@ import {
 
 const items = [
     {
-        title: "Atendimento",
+        title: "Velório Online / Painel",
         href: "/atendimento",
-        desc: "Registre e atualize informações do atendimento.",
+        desc: "Personalize o painel e crie o Velório Online.",
         icon: IconHeadset,
     },
     {
-        title: "Salas",
+        title: "Compartilhamento",
         href: "/salas",
-        desc: "Gerencie as salas e suas configurações.",
+        desc: "Compartilhe o acesso ao Velório Online",
         icon: IconDoor,
     },
     {
