@@ -1,17 +1,15 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import Script from "next/script";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import OneSignalInit from "@/components/OneSignalInit";
 
 export const metadata: Metadata = {
-  title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
+  title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
@@ -38,9 +36,9 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const cookieStore = await cookies();
+  const cookieStore = await cookies(); // ✅ Correção: uso de await
   const activeThemeValue = cookieStore.get("active_theme")?.value;
-  const isScaled = activeThemeValue?.endsWith("-scaled");
+  const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
@@ -59,14 +57,7 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* Inicialização do OneSignal (React) */}
-            <OneSignalInit />
-
-            {/* Estrutura principal */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
-
-            {/* Script opcional para SDK v16 do OneSignal */}
-            <Script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer />
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>
