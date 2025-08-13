@@ -6,10 +6,10 @@ import OneSignal from "react-onesignal";
 export default function OneSignalInit() {
     useEffect(() => {
         (async () => {
-            // bust de cache (em produção troque por uma versão fixa, ex: ?v=1.0.3)
+            // Em produção, troque por uma versão fixa: ?v=1.0.3
             const v = `?v=${Date.now()}`;
 
-            // Desregistra SWs antigos e limpa caches
+            // Limpa SWs/caches antigos para evitar worker preso com URL errada
             if ("serviceWorker" in navigator) {
                 try {
                     const regs = await navigator.serviceWorker.getRegistrations();
@@ -24,44 +24,46 @@ export default function OneSignalInit() {
                 }
             }
 
-            // Diagnóstico (opcional)
             try {
-                const base = document.querySelector("base")?.href;
-                console.log("BASE HREF:", base);
-                console.log("URL abs worker:", new URL("/OneSignalSDKWorker.js", document.baseURI).href);
-                console.log("URL rel worker:", new URL("OneSignalSDKWorker.js", document.baseURI).href);
-            } catch { }
-
-            await OneSignal.init({
-                appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID!,
-                safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_ID!,
-                notifyButton: {
-                    enable: true,
-                    prenotify: true,
-                    showCredit: false,
-                    position: "bottom-right",
-                    text: {
-                        "tip.state.unsubscribed": "Ativar notificações",
-                        "tip.state.subscribed": "Notificações ativadas",
-                        "tip.state.blocked": "Notificações bloqueadas",
-                        "message.prenotify": "Clique para ativar as notificações",
-                        "message.action.subscribing": "Inscrevendo...",
-                        "message.action.subscribed": "Inscrição concluída!",
-                        "message.action.resubscribed": "Inscrito novamente",
-                        "message.action.unsubscribed": "Você não receberá notificações",
-                        "dialog.main.title": "Notificações do site",
-                        "dialog.main.button.subscribe": "ATIVAR",
-                        "dialog.main.button.unsubscribe": "DESATIVAR",
-                        "dialog.blocked.title": "Notificações bloqueadas",
-                        "dialog.blocked.message": "Permita as notificações nas configurações do navegador",
+                await OneSignal.init({
+                    appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID!,
+                    safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_ID!,
+                    notifyButton: {
+                        enable: true,
+                        prenotify: true,
+                        showCredit: false,
+                        position: "bottom-right",
+                        text: {
+                            "tip.state.unsubscribed": "Ativar notificações",
+                            "tip.state.subscribed": "Notificações ativadas",
+                            "tip.state.blocked": "Notificações bloqueadas",
+                            "message.prenotify": "Clique para ativar as notificações",
+                            "message.action.subscribing": "Inscrevendo...",
+                            "message.action.subscribed": "Inscrição concluída!",
+                            "message.action.resubscribed": "Inscrito novamente",
+                            "message.action.unsubscribed": "Você não receberá notificações",
+                            "dialog.main.title": "Notificações do site",
+                            "dialog.main.button.subscribe": "ATIVAR",
+                            "dialog.main.button.unsubscribe": "DESATIVAR",
+                            "dialog.blocked.title": "Notificações bloqueadas",
+                            "dialog.blocked.message": "Permita as notificações nas configurações do navegador",
+                        },
                     },
-                },
-                // >>> use ABSOLUTO pra ignorar <base href> e assetPrefix <<<
-                serviceWorkerPath: `/OneSignalSDKWorker.js${v}`,
-                serviceWorkerUpdaterPath: `/OneSignalSDKUpdaterWorker.js${v}`,
-                serviceWorkerParam: { scope: "/" },
-                allowLocalhostAsSecureOrigin: true,
-            });
+
+                    // *** Sintaxe correta do v16 ***
+                    serviceWorker: {
+                        workerPath: `/OneSignalSDKWorker.js${v}`,
+                        updaterWorkerPath: `/OneSignalSDKUpdaterWorker.js${v}`,
+                        scope: "/",
+                        allowLocalhostAsSecureOrigin: true,
+                    },
+                });
+
+                // Opcional: reduzir ruído de logs
+                OneSignal.Debug.setLogLevel("warn");
+            } catch (e) {
+                console.warn("Falha ao inicializar OneSignal:", e);
+            }
         })();
     }, []);
 
