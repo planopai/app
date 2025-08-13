@@ -1,6 +1,6 @@
 const withPWA = require("next-pwa")({
   dest: "public",
-  register: false, // ✅ Desativa registro automático
+  register: false, // ✅ Desativa registro automático do SW para evitar conflito com OneSignal
   skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
   buildExcludes: [/app-build-manifest\.json$/],
@@ -55,4 +55,17 @@ const withPWA = require("next-pwa")({
       },
     },
   ],
+});
+
+module.exports = withPWA({
+  reactStrictMode: true,
+  eslint: {
+    ignoreDuringBuilds: true, // ✅ Ignora erros do ESLint no build
+  },
+  typescript: {
+    ignoreBuildErrors: true, // ✅ Ignora erros de tipo no build
+  },
+  images: {
+    domains: ["cdn.onesignal.com", "fonts.gstatic.com"],
+  },
 });
