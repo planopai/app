@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest", // ✅ Corrigido para rota do manifesto
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
