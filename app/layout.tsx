@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import PWARegister from "@/components/pwa-register";
+
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
@@ -54,7 +54,7 @@ export default async function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange enableColorScheme>
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             {/* PWA SW (next-pwa) */}
-            <PWARegister />
+            
 
             {/* AppShell */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
