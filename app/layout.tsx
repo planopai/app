@@ -1,6 +1,7 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Script from "next/script";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -8,19 +9,14 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import PWARegister from "@/components/pwa-register";      // registro manual do SW do next-pwa
-import OneSignalGlobal from "@/components/OneSignalGlobal"; // OneSignal v15 (global)
+import PWARegister from "@/components/pwa-register"; // registro manual do SW do next-pwa
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
-
-  // PWA
   themeColor: "#059de0",
   manifest: "/manifest.webmanifest",
-
-  // Ícones (inclui 16/32 p/ barra do navegador)
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -32,22 +28,18 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
     other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
   },
-
-  // iOS (instalável como app)
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "App Plano PAI 2.0",
   },
-
-  // Tela cheia e safe areas
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
 };
 
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Next 15: cookies() pode ser Promise
+  // ✅ cookies() tipado como Promise -> use await
   const cookieStore = await cookies();
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = activeThemeValue?.endsWith("-scaled");
@@ -69,14 +61,33 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* Registra manualmente o Service Worker do next-pwa (quando em produção) */}
+            {/* PWA SW (next-pwa) */}
             <PWARegister />
 
-            {/* AppShell decide quando mostrar/esconder o sidebar/header */}
+            {/* AppShell */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
 
-            {/* OneSignal (SDK v15 via OneSignalGlobal) */}
-            <OneSignalGlobal />
+            {/* OneSignal v16 (escopo /push/) */}
+            <Script
+              src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+              defer
+            />
+            <Script id="onesignal-v16-init" strategy="afterInteractive">
+              {`
+                window.OneSignalDeferred = window.OneSignalDeferred || [];
+                OneSignalDeferred.push(async function(OneSignal) {
+                  OneSignal.SERVICE_WORKER_PARAM        = { scope: '/push/' };
+                  OneSignal.SERVICE_WORKER_PATH         = 'push/OneSignalSDKWorker.js';
+                  OneSignal.SERVICE_WORKER_UPDATER_PATH = 'push/OneSignalSDK.sw.js';
+
+                  await OneSignal.init({
+                    appId: 'c4fc4716-c163-461d-b8a0-50fefd32836b',
+                    safari_web_id: 'web.onesignal.auto.47c70ae7-2660-4f5d-88d3-857f7dfd7254',
+                    notifyButton: { enable: true }
+                  });
+                });
+              `}
+            </Script>
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>
