@@ -22,9 +22,9 @@ const OneSignalInit = () => {
                 promptOptions: {
                     slidedown: {
                         enabled: true,
-                        actionMessage: "Deseja receber notificações importantes?",
-                        acceptButtonText: "Sim!",
-                        cancelButtonText: "Não agora",
+                        actionMessage: "Toque em ATIVAR para garantir o funcinamento do sistema de notificação!",
+                        acceptButtonText: "ATIVAR",
+                        cancelButtonText: "Cancelar",
                     },
                 },
             });
