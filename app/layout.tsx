@@ -5,11 +5,10 @@ import Script from "next/script";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
-
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import PWARegister from "@/components/pwa-register"; // registro manual do SW do next-pwa
+import PWARegister from "@/components/pwa-register";
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
@@ -52,13 +51,7 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-          enableColorScheme
-        >
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange enableColorScheme>
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             {/* PWA SW (next-pwa) */}
             <PWARegister />
@@ -66,22 +59,24 @@ export default async function RootLayout({
             {/* AppShell */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
 
-            {/* OneSignal v16 */}
+            {/* OneSignal v16 - Custom Code + escopo /push/ */}
             <Script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer />
             <Script id="onesignal-v16-init" strategy="afterInteractive">
               {`
                 window.OneSignalDeferred = window.OneSignalDeferred || [];
                 OneSignalDeferred.push(async function(OneSignal) {
-                  // Isola o SW do OneSignal em /push/ para não conflitar com o SW do PWA
-                  OneSignal.SERVICE_WORKER_PARAM        = { scope: '/push/' };
-                  OneSignal.SERVICE_WORKER_PATH         = 'push/OneSignalSDKWorker.js';
-                  OneSignal.SERVICE_WORKER_UPDATER_PATH = 'push/OneSignalSDK.sw.js';
-
                   await OneSignal.init({
-                    appId: '8f845647-2474-4ede-9e74-96f911bf9c88',
-                    safari_web_id: 'web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f',
-                    notifyButton: { enable: true }
+                    appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
+                    safari_web_id: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
+                    notifyButton: { enable: true },
+
+                    // 🔑 ESSENCIAIS p/ não disputar com o SW do PWA:
+                    serviceWorkerPath: "/push/OneSignalSDKWorker.js",
+                    serviceWorkerParam: { scope: "/push/" },
                   });
+
+                  // (opcional) log detalhado p/ debug:
+                  OneSignal.Debug.setLogLevel("trace");
                 });
               `}
             </Script>
