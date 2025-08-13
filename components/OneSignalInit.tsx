@@ -29,8 +29,9 @@ export default function OneSignalInit() {
                         "dialog.blocked.message": "Permita as notificações nas configurações do navegador"
                     }
                 },
-                serviceWorkerParam: { scope: "/onesignal/" },
                 serviceWorkerPath: "onesignal/OneSignalSDKWorker.js",
+                serviceWorkerUpdaterPath: "onesignal/OneSignalSDKUpdaterWorker.js",
+                serviceWorkerParam: { scope: "/onesignal/" },
             });
         })();
     }, []);
