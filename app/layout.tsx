@@ -9,7 +9,6 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 
-
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
   description: "Aplicação WEB Plano PAI 2.0",
@@ -51,15 +50,18 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange enableColorScheme>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+          enableColorScheme
+        >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* PWA SW (next-pwa) */}
-            
-
             {/* AppShell */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
 
-            {/* OneSignal v16 - Custom Code + escopo /push/ */}
+            {/* ✅ OneSignal v16 - Custom Code + escopo raiz */}
             <Script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer />
             <Script id="onesignal-v16-init" strategy="afterInteractive">
               {`
@@ -68,15 +70,34 @@ export default async function RootLayout({
                   await OneSignal.init({
                     appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
                     safari_web_id: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
-                    notifyButton: { enable: true },
-
-                    // 🔑 ESSENCIAIS p/ não disputar com o SW do PWA:
-                    serviceWorkerPath: "/push/OneSignalSDKWorker.js",
-                    serviceWorkerParam: { scope: "/push/" },
+                    notifyButton: {
+                      enable: true,
+                      prenotify: true,
+                      showCredit: false,
+                      position: "bottom-right",
+                      text: {
+                        "tip.state.unsubscribed": "Ativar notificações",
+                        "tip.state.subscribed": "Notificações ativadas",
+                        "tip.state.blocked": "Notificações bloqueadas",
+                        "message.prenotify": "Clique para ativar as notificações",
+                        "message.action.subscribing": "Inscrevendo...",
+                        "message.action.subscribed": "Inscrição concluída!",
+                        "message.action.resubscribed": "Inscrito novamente",
+                        "message.action.unsubscribed": "Você não receberá notificações",
+                        "dialog.main.title": "Notificações do site",
+                        "dialog.main.button.subscribe": "ATIVAR",
+                        "dialog.main.button.unsubscribe": "DESATIVAR",
+                        "dialog.blocked.title": "Notificações bloqueadas",
+                        "dialog.blocked.message": "Permita as notificações nas configurações do navegador"
+                      }
+                    },
+                    serviceWorkerPath: "/OneSignalSDKWorker.js",
+                    serviceWorkerUpdaterPath: "/OneSignalSDKUpdaterWorker.js",
+                    serviceWorkerParam: { scope: "/" },
+                    allowLocalhostAsSecureOrigin: true,
                   });
 
-                  // (opcional) log detalhado p/ debug:
-                  OneSignal.Debug.setLogLevel("trace");
+                  OneSignal.Debug.setLogLevel("warn");
                 });
               `}
             </Script>
