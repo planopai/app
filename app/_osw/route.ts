@@ -15,8 +15,9 @@ export async function GET() {
             status: r.status,
             headers: {
                 "Content-Type": "application/javascript; charset=utf-8",
-                // pode aumentar esse cache se quiser (ex.: max-age=86400)
                 "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+                // 👇 permite escopo fora do path do script
+                "Service-Worker-Allowed": "/push/",
             },
         });
     } catch (e: any) {
