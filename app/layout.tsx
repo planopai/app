@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import PushClient from "@/components/push-client"; // OneSignal v16 (client)
-import PWARegister from "@/components/pwa-register"; // registro manual do SW do next-pwa
+import PWARegister from "@/components/pwa-register";      // registro manual do SW do next-pwa
+import OneSignalGlobal from "@/components/OneSignalGlobal"; // OneSignal v15 (global)
 
 export const metadata: Metadata = {
   title: { default: "App Plano PAI 2.0", template: "%s | App Plano PAI 2.0" },
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Next 15: cookies() pode ser Promise — use await
+  // Next 15: cookies() pode ser Promise
   const cookieStore = await cookies();
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = activeThemeValue?.endsWith("-scaled");
@@ -75,8 +75,8 @@ export default async function RootLayout({
             {/* AppShell decide quando mostrar/esconder o sidebar/header */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
 
-            {/* OneSignal (SDK v16) */}
-            <PushClient />
+            {/* OneSignal (SDK v15 via OneSignalGlobal) */}
+            <OneSignalGlobal />
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>
