@@ -1,11 +1,12 @@
-// components/pwa-register.tsx
 "use client";
 import { useEffect } from "react";
 
 export default function PWARegister() {
     useEffect(() => {
+        if (process.env.NODE_ENV !== "production") return;
         if (!("serviceWorker" in navigator)) return;
-        // registra o sw do next-pwa gerado em /sw.js
+
+        // SW do PWA (next-pwa) com escopo raiz "/"
         navigator.serviceWorker
             .register("/sw.js", { scope: "/" })
             .then((reg) => {
@@ -15,5 +16,6 @@ export default function PWARegister() {
                 console.warn("[PWA] Falha ao registrar SW:", err);
             });
     }, []);
+
     return null;
 }

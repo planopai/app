@@ -1,4 +1,3 @@
-// components/push-optin.tsx
 "use client";
 import * as React from "react";
 
@@ -7,7 +6,17 @@ export default function PushOptIn() {
         typeof Notification !== "undefined" ? Notification.permission : "default"
     );
 
-    if (perm === "granted") return null; // já está ativado
+    React.useEffect(() => {
+        // Mantém o state sincronizado caso a permissão mude fora do botão
+        let t: any;
+        if (typeof Notification !== "undefined") {
+            t = setInterval(() => setPerm(Notification.permission), 1500);
+        }
+        return () => clearInterval(t);
+    }, []);
+
+    if (perm === "granted") return null;
+
     if (perm === "denied") {
         return (
             <p className="text-sm text-muted-foreground">
@@ -20,11 +29,14 @@ export default function PushOptIn() {
         <button
             className="rounded-md bg-blue-600 px-3 py-2 text-white"
             onClick={() => {
-                // OneSignal v16 precisa ser chamado após interação do usuário
+                // v16 exige interação do usuário
                 (window as any).OneSignalDeferred = (window as any).OneSignalDeferred || [];
                 (window as any).OneSignalDeferred.push(async (OneSignal: any) => {
-                    await OneSignal.Notifications.requestPermission();
-                    setPerm(Notification.permission);
+                    try {
+                        await OneSignal.Notifications.requestPermission();
+                    } finally {
+                        if (typeof Notification !== "undefined") setPerm(Notification.permission);
+                    }
                 });
             }}
         >
