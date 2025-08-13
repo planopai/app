@@ -16,67 +16,85 @@ function extractPhpSessId(setCookieHeader: string | null): string | null {
 
 export async function POST(req: NextRequest) {
     try {
-        const { usuario, senha } = await req.json();
+        // aceita JSON { usuario, senha } e também x-www-form-urlencoded
+        let usuario = "";
+        let senha = "";
+
+        const ct = req.headers.get("content-type") || "";
+        if (ct.includes("application/x-www-form-urlencoded")) {
+            const form = await req.formData();
+            usuario = String(form.get("usuario") || "");
+            senha = String(form.get("senha") || "");
+        } else {
+            const body = await req.json().catch(() => ({} as any));
+            usuario = body?.usuario || "";
+            senha = body?.senha || "";
+        }
 
         if (!usuario || !senha) {
             return NextResponse.json(
                 { sucesso: false, error: "Credenciais ausentes." },
-                { status: 400 },
+                { status: 400 }
             );
         }
 
-        // Encaminha credenciais ao PHP
         const resp = await fetch(`${TARGET_BASE}${PHP_LOGIN}`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ usuario, senha }),
             redirect: "manual",
+            // credenciais não são necessárias aqui (server→server),
+            // e set-cookie da origem já é lido via resp.headers.get("set-cookie")
         });
 
-        const text = await resp.text();
-        let data: any = {};
-        try {
-            data = JSON.parse(text);
-        } catch {
-            /* resposta não era JSON, ignora */
+        const raw = await resp.text();
+
+        // log útil em dev
+        if (process.env.NODE_ENV !== "production") {
+            console.log("[auth/php] status:", resp.status);
+            console.log("[auth/php] body:", raw);
+            console.log("[auth/php] set-cookie:", resp.headers.get("set-cookie"));
         }
 
-        const ok = resp.ok && (data?.sucesso === true || data?.success === true);
-        if (!ok) {
-            const msg = data?.msg || data?.error || "Login inválido.";
+        let data: any = {};
+        try {
+            data = JSON.parse(raw);
+        } catch {
+            // mantém data como {}, mas trata como erro abaixo
+        }
+
+        const sucesso = data?.sucesso === true || data?.success === true;
+        if (!resp.ok || !sucesso) {
+            const msg = data?.msg || data?.error || `Login inválido (status ${resp.status})`;
             return NextResponse.json({ sucesso: false, error: msg }, { status: 401 });
         }
 
-        // Lê o PHPSESSID (se enviado) para manter a sessão no seu proxy
         const setCookie = resp.headers.get("set-cookie");
         const phpSess = extractPhpSessId(setCookie) || data?.sessid || "";
-
-        const isProd = process.env.NODE_ENV === "production";
         const nome = data?.nome ?? usuario;
+        const isProd = process.env.NODE_ENV === "production";
 
-        // Resposta
         const res = NextResponse.json({ sucesso: true, nome });
         res.headers.set("Cache-Control", "no-store");
 
-        // Marca login no app (HttpOnly)
+        // Cookies do seu app
         res.cookies.set("pai_auth", "1", {
             httpOnly: true,
-            sameSite: "lax",
-            secure: isProd,
-            path: "/",
-            maxAge: 60 * 60 * 8, // 8h
-        });
-
-        // Cookie legível no client para exibir o nome no header
-        res.cookies.set("pai_name", encodeURIComponent(nome), {
-            httpOnly: false, // precisa ser legível no client
             sameSite: "lax",
             secure: isProd,
             path: "/",
             maxAge: 60 * 60 * 8,
         });
 
-        // Guarda PHPSESSID para chamadas ao WordPress via proxy
+        res.cookies.set("pai_name", encodeURIComponent(nome), {
+            httpOnly: false,
+            sameSite: "lax",
+            secure: isProd,
+            path: "/",
+            maxAge: 60 * 60 * 8,
+        });
+
+        // Sessão PHP guardada no seu domínio (para proxys subsequentes)
         if (phpSess) {
             res.cookies.set("php_session", phpSess, {
                 httpOnly: true,
@@ -88,10 +106,13 @@ export async function POST(req: NextRequest) {
         }
 
         return res;
-    } catch {
+    } catch (e) {
+        if (process.env.NODE_ENV !== "production") {
+            console.error("[auth] erro:", e);
+        }
         return NextResponse.json(
             { sucesso: false, error: "Falha no login." },
-            { status: 500 },
+            { status: 500 }
         );
     }
 }
