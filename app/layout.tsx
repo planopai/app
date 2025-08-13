@@ -91,8 +91,8 @@ export default async function RootLayout({
                         "dialog.blocked.message": "Permita as notificações nas configurações do navegador"
                       }
                     },
-                    serviceWorkerPath: "/OneSignalSDKWorker.js",
-                    serviceWorkerUpdaterPath: "/OneSignalSDKUpdaterWorker.js",
+                    serviceWorkerPath: "/one/OneSignalSDKWorker.js",
+                    serviceWorkerUpdaterPath: "/one/OneSignalSDKUpdaterWorker.js",
                     serviceWorkerParam: { scope: "/" },
                     allowLocalhostAsSecureOrigin: true,
                   });
