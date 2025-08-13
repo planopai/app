@@ -1,26 +1,35 @@
-"use client";
-
 import { useEffect } from "react";
 
-export default function OneSignalInit() {
+declare global {
+    interface Window {
+        OneSignalDeferred: any[];
+    }
+}
+
+const OneSignalInit = () => {
     useEffect(() => {
-        if (typeof window !== "undefined") {
-            // @ts-ignore
-            window.OneSignal = window.OneSignal || [];
-            // @ts-ignore
-            window.OneSignal.push(function () {
-                // @ts-ignore
-                window.OneSignal.init({
-                    appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
-                    safari_web_id: "web.onesignal.auto", // ou seu ID específico para Safari
-                    notifyButton: {
-                        enable: true,
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+
+        window.OneSignalDeferred.push(async function (OneSignal: any) {
+            await OneSignal.init({
+                appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
+                safari_web_id: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
+                notifyButton: {
+                    enable: true,
+                },
+                promptOptions: {
+                    slidedown: {
+                        enabled: true,
+                        actionMessage: "Deseja receber notificações importantes?",
+                        acceptButtonText: "Sim!",
+                        cancelButtonText: "Não agora",
                     },
-                    allowLocalhostAsSecureOrigin: true, // útil para testes locais
-                });
+                },
             });
-        }
+        });
     }, []);
 
     return null;
-}
+};
+
+export default OneSignalInit;
