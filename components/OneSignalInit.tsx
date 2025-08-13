@@ -31,8 +31,8 @@ export default function OneSignalInit() {
                             "dialog.blocked.message": "Permita as notificações nas configurações do navegador"
                         }
                     },
-                    serviceWorkerPath: "https://pai.planoassistencialintegrado.com.br/one/OneSignalSDKWorker.js",
-                    serviceWorkerUpdaterPath: "https://pai.planoassistencialintegrado.com.br/one/OneSignalSDKUpdaterWorker.js",
+                    serviceWorkerPath: "/one/OneSignalSDKWorker.js",
+                    serviceWorkerUpdaterPath: "/one/OneSignalSDKUpdaterWorker.js",
                     serviceWorkerParam: { scope: "/" }, // ✅ escopo raiz
                     allowLocalhostAsSecureOrigin: true, // útil para testes locais
                 });
