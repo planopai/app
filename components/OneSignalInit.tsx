@@ -10,8 +10,14 @@ declare global {
 
 const OneSignalInit = () => {
     useEffect(() => {
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        // Carrega o SDK
+        const script = document.createElement("script");
+        script.src = "https://cdn.onesignal.com/sdks/OneSignalSDK.js";
+        script.async = true;
+        document.head.appendChild(script);
 
+        // Inicializa o OneSignal
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async function (OneSignal: any) {
             await OneSignal.init({
                 appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
@@ -22,7 +28,7 @@ const OneSignalInit = () => {
                 promptOptions: {
                     slidedown: {
                         enabled: true,
-                        actionMessage: "Toque em ATIVAR para garantir o funcinamento do sistema de notificação!",
+                        actionMessage: "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
                         acceptButtonText: "ATIVAR",
                         cancelButtonText: "Cancelar",
                     },
