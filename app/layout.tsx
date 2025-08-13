@@ -39,7 +39,6 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // ✅ cookies() tipado como Promise -> use await
   const cookieStore = await cookies();
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = activeThemeValue?.endsWith("-scaled");
@@ -67,22 +66,20 @@ export default async function RootLayout({
             {/* AppShell */}
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
 
-            {/* OneSignal v16 (escopo /push/) */}
-            <Script
-              src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
-              defer
-            />
+            {/* OneSignal v16 */}
+            <Script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer />
             <Script id="onesignal-v16-init" strategy="afterInteractive">
               {`
                 window.OneSignalDeferred = window.OneSignalDeferred || [];
                 OneSignalDeferred.push(async function(OneSignal) {
+                  // Isola o SW do OneSignal em /push/ para não conflitar com o SW do PWA
                   OneSignal.SERVICE_WORKER_PARAM        = { scope: '/push/' };
                   OneSignal.SERVICE_WORKER_PATH         = 'push/OneSignalSDKWorker.js';
                   OneSignal.SERVICE_WORKER_UPDATER_PATH = 'push/OneSignalSDK.sw.js';
 
                   await OneSignal.init({
-                    appId: 'c4fc4716-c163-461d-b8a0-50fefd32836b',
-                    safari_web_id: 'web.onesignal.auto.47c70ae7-2660-4f5d-88d3-857f7dfd7254',
+                    appId: '8f845647-2474-4ede-9e74-96f911bf9c88',
+                    safari_web_id: 'web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f',
                     notifyButton: { enable: true }
                   });
                 });
