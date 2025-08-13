@@ -18,7 +18,7 @@ const shortcutsTop = [
     {
         title: "Quadro de Atendimento",
         href: "/quadro-atendimento",
-        desc: "Acompanhe o status dos atendimentos em tempo real.",
+        desc: "Status dos atendimentos em tempo real.",
         icon: IconDeviceDesktopAnalytics,
     },
     {
