@@ -31,8 +31,8 @@ export default function OneSignalInit() {
                             "dialog.blocked.message": "Permita as notificações nas configurações do navegador"
                         }
                     },
-                    serviceWorkerPath: "/OneSignalSDKWorker.js",
-                    serviceWorkerUpdaterPath: "/OneSignalSDKUpdaterWorker.js",
+                    serviceWorkerPath: "OneSignalSDKWorker.js",
+                    serviceWorkerUpdaterPath: "OneSignalSDKUpdaterWorker.js",
                     serviceWorkerParam: { scope: "/" }, // ✅ escopo raiz
                     allowLocalhostAsSecureOrigin: true, // útil para testes locais
                 });
