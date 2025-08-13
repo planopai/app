@@ -1,19 +1,21 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Script from "next/script";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
+import OneSignalInit from "@/components/OneSignalInit"; // ✅ Novo componente
 
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
-  manifest: "/manifest", // ✅ Corrigido para rota do manifesto
+  manifest: "/manifest",
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
@@ -46,6 +48,13 @@ export default async function RootLayout({
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        {/* ✅ Script do OneSignal */}
+        <Script
+          src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+          strategy="afterInteractive"
+        />
+      </head>
       <body
         className={cn(
           "bg-background overscroll-none font-sans antialiased",
@@ -53,6 +62,9 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
+        {/* ✅ Inicialização do OneSignal */}
+        <OneSignalInit />
+
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
