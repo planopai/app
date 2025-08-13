@@ -1,12 +1,17 @@
 const withPWA = require("next-pwa")({
   dest: "public",
-  register: false,
+  register: true, // ou false se você registrar manualmente
   skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
-  runtimeCaching: [
-    { urlPattern: ({ url }) => url.pathname.startsWith("/push/"), handler: "NetworkOnly", method: "GET" },
-  ],
   buildExcludes: [/app-build-manifest\.json$/],
+  runtimeCaching: [
+    {
+      urlPattern: ({ url }) => url.pathname.startsWith("/push/"),
+      handler: "NetworkOnly",
+      method: "GET",
+    },
+    // Adicione outras estratégias se quiser
+  ],
 });
 
 module.exports = withPWA({
