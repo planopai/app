@@ -4,8 +4,8 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ONE_SIGNAL_SDK =
-    "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDKWorker.js";
+// ⛳️ use o worker v15 (sem /web/v16/)
+const ONE_SIGNAL_SDK = "https://cdn.onesignal.com/sdks/OneSignalSDKWorker.js";
 
 export async function GET() {
     try {
@@ -16,14 +16,11 @@ export async function GET() {
             headers: {
                 "Content-Type": "application/javascript; charset=utf-8",
                 "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
-                // 👇 permite escopo fora do path do script
-                "Service-Worker-Allowed": "/push/",
+                "Service-Worker-Allowed": "/push/", // mantém o escopo /push/
             },
         });
-    } catch (e: any) {
-        return NextResponse.json(
-            { error: true, message: e?.message || "Falha ao proxy o SDK OneSignal." },
-            { status: 502 }
-        );
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Falha ao proxy o SDK OneSignal.";
+        return NextResponse.json({ error: true, message }, { status: 502 });
     }
 }
