@@ -13,25 +13,42 @@ export default function OneSignalInit() {
     useEffect(() => {
         if (document.querySelector('script[data-onesignal-v16="true"]')) return;
 
-        // 1) Patch: loga e NORMALIZA qualquer tentativa de registrar SW
+        // 1) Patch: loga e NORMALIZA qualquer tentativa de registrar SW (URL e scope)
         (function () {
             const orig = navigator.serviceWorker.register.bind(navigator.serviceWorker);
-            const normalize = (url: any) => {
+
+            const normalizeUrl = (url: any) => {
                 const s = String(url || "");
-                // se vier como "https://push/onesignal/..." (base href errado)
+                // caso venha com host inválido "https://push/..."
                 if (s.startsWith("https://push/") || s.startsWith("http://push/")) {
                     return "/push/onesignal/OneSignalSDKWorker.js";
                 }
-                // se vier sem barra inicial "push/onesignal/..."
+                // caso venha sem barra inicial "push/onesignal/..."
                 if (s.startsWith("push/onesignal/")) {
                     return "/" + s;
                 }
                 return s;
             };
+
+            const normalizeScope = (opts: any) => {
+                const out = { ...(opts || {}) };
+                const wanted = "/push/onesignal/";
+                if (typeof out?.scope === "string") {
+                    // se vier absoluto (https://pai.../push/onesignal/) ou outro valor, força relativo correto
+                    if (!out.scope.startsWith("/push/onesignal/")) {
+                        out.scope = wanted;
+                    }
+                } else {
+                    out.scope = wanted;
+                }
+                return out;
+            };
+
             navigator.serviceWorker.register = function (url: any, opts: any) {
-                const fixed = normalize(url);
-                console.log("[SW register call] original:", url, " -> fixed:", fixed, opts);
-                return orig(fixed, opts);
+                const fixedUrl = normalizeUrl(url);
+                const fixedOpts = normalizeScope(opts);
+                console.log("[SW register call] original:", url, "-> fixed:", fixedUrl, fixedOpts);
+                return orig(fixedUrl, fixedOpts);
             };
         })();
 
@@ -41,7 +58,7 @@ export default function OneSignalInit() {
             const SW_SCOPE = "/push/onesignal/";
             const SW_PATH = "/push/onesignal/OneSignalSDKWorker.js"; // relativo, com barra inicial
 
-            // Workaround: força caminhos/escopo em pontos legados antes do init
+            // Workaround: força caminhos/escopo nos pontos legados antes do init
             (OneSignal as any).SERVICE_WORKER_PARAM = { scope: SW_SCOPE };
             (OneSignal as any).SERVICE_WORKER_PATH = SW_PATH;
             (OneSignal as any).__initOptions = (OneSignal as any).__initOptions || {};
@@ -57,8 +74,7 @@ export default function OneSignalInit() {
 
             await OneSignal.Slidedown.promptPush({
                 force: true,
-                actionMessage:
-                    "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
+                actionMessage: "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
                 acceptButtonText: "ATIVAR",
                 cancelButtonText: "Cancelar",
             });
