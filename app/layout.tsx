@@ -1,21 +1,21 @@
-// app/layout.tsx
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import Script from "next/script";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
-import OneSignalInit from "@/components/OneSignalInit"; // ✅ Novo componente
+import OneSignalInit from "@/components/OneSignalInit";
 
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
-  manifest: "/manifest",
+  // Se você já tem app/manifest.ts, pode REMOVER a linha abaixo.
+  // Se quiser manter, use o caminho correto:
+  // manifest: "/manifest.webmanifest",
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
@@ -25,12 +25,8 @@ export const metadata: Metadata = {
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" }
     ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }
-    ],
-    other: [
-      { rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }
-    ]
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }]
   },
   appleWebApp: {
     capable: true,
@@ -48,13 +44,6 @@ export default async function RootLayout({
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <head>
-        {/* ✅ Script do OneSignal */}
-        <Script
-          src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
-          strategy="afterInteractive"
-        />
-      </head>
       <body
         className={cn(
           "bg-background overscroll-none font-sans antialiased",
@@ -62,16 +51,10 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
-        {/* ✅ Inicialização do OneSignal */}
+        {/* carrega e inicializa o OneSignal UMA vez */}
         <OneSignalInit />
 
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-          enableColorScheme
-        >
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange enableColorScheme>
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
           </ActiveThemeProvider>
