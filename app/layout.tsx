@@ -7,14 +7,13 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
-import RegisterSW from "@/components/RegisterSW"; // ✅ Adicionado
 
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.webmanifest", // ✅ Link automático para o manifest gerado via app/manifest.ts
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
@@ -51,7 +50,6 @@ export default async function RootLayout({
         )}
       >
         <OneSignalInit />
-        <RegisterSW /> {/* ✅ Aqui o SW é registrado */}
 
         <ThemeProvider
           attribute="class"
