@@ -1,12 +1,7 @@
 "use client";
-
 import { useEffect } from "react";
 
-declare global {
-    interface Window {
-        OneSignalDeferred?: any[];
-    }
-}
+declare global { interface Window { OneSignalDeferred?: any[] } }
 
 export default function OneSignalInit() {
     useEffect(() => {
@@ -20,31 +15,28 @@ export default function OneSignalInit() {
                 await OneSignal.init({
                     appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
                     safariWebId: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
-                    // Para testes locais:
-                    allowLocalhostAsSecureOrigin: true,
-                    // Garanta que o SW exista nesses caminhos:
-                    serviceWorkerPath: "/OneSignalSDK.sw.js",
+
+                    // **IMPORTANTE**: paths RELATIVOS no MESMO domínio do app
+                    serviceWorkerPath: "/OneSignalSDKWorker.js",
                     serviceWorkerParam: { scope: "/" },
+
+                    // Útil em dev local; em produção pode deixar ausente:
+                    allowLocalhostAsSecureOrigin: true,
                 });
 
-                // Abre o slidedown (v16) com textos em PT
+                // Prompt v16 (equivalente ao antigo slidedown)
                 await OneSignal.Slidedown.promptPush({
                     force: true,
-                    acceptButtonText: "ATIVAR",
-                    cancelButtonText: "Cancelar",
                     actionMessage:
                         "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
+                    acceptButtonText: "ATIVAR",
+                    cancelButtonText: "Cancelar",
                 });
-
-                // Opcional: botão de inscrição custom
-                // const subscribed = await OneSignal.User.PushSubscription.optedIn;
             });
         };
 
         document.head.appendChild(s);
-        return () => {
-            document.head.removeChild(s);
-        };
+        return () => { document.head.removeChild(s); };
     }, []);
 
     return null;
