@@ -105,7 +105,6 @@ export default function OneSignalInit() {
 
             await OneSignal.init({
                 appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
-                safariWebId: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
                 serviceWorkerPath: SW_PATH,
                 serviceWorkerParam: { scope: SW_SCOPE },
             });
