@@ -2,13 +2,15 @@ const withPWA = require("next-pwa")({
   dest: "public",
   register: false, // ✅ Desativa registro automático do SW para evitar conflito com OneSignal
   skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
-  buildExcludes: [/app-build-manifest\.json$/],
+  disable: process.env.NODE_ENV === "development", // ✅ Evita ativação do PWA em ambiente local
+  buildExcludes: [/app-build-manifest\.json$/], // ✅ Evita incluir arquivos desnecessários no precache
   runtimeCaching: [
     {
       urlPattern: ({ url }) => url.pathname.startsWith("/push/"),
       handler: "NetworkOnly",
-      method: "GET",
+      options: {
+        cacheName: "push-network-only",
+      },
     },
     {
       urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
@@ -17,7 +19,10 @@ const withPWA = require("next-pwa")({
         cacheName: "google-fonts",
         expiration: {
           maxEntries: 10,
-          maxAgeSeconds: 60 * 60 * 24 * 365,
+          maxAgeSeconds: 60 * 60 * 24 * 365, // 1 ano
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
         },
       },
     },
@@ -28,7 +33,10 @@ const withPWA = require("next-pwa")({
         cacheName: "onesignal-cdn",
         expiration: {
           maxEntries: 10,
-          maxAgeSeconds: 60 * 60 * 24 * 30,
+          maxAgeSeconds: 60 * 60 * 24 * 30, // 30 dias
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
         },
       },
     },
@@ -39,7 +47,10 @@ const withPWA = require("next-pwa")({
         cacheName: "images",
         expiration: {
           maxEntries: 50,
-          maxAgeSeconds: 60 * 60 * 24 * 30,
+          maxAgeSeconds: 60 * 60 * 24 * 30, // 30 dias
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
         },
       },
     },
@@ -50,7 +61,10 @@ const withPWA = require("next-pwa")({
         cacheName: "pages",
         expiration: {
           maxEntries: 20,
-          maxAgeSeconds: 60 * 60 * 24 * 7,
+          maxAgeSeconds: 60 * 60 * 24 * 7, // 7 dias
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
         },
       },
     },
