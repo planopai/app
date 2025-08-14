@@ -13,9 +13,7 @@ export const metadata: Metadata = {
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
-  // Se você já tem app/manifest.ts, pode REMOVER a linha abaixo.
-  // Se quiser manter, use o caminho correto:
-  // manifest: "/manifest.webmanifest",
+  manifest: "/manifest.webmanifest", // ✅ Link automático para o manifest gerado via app/manifest.ts
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
@@ -51,10 +49,15 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
-        {/* carrega e inicializa o OneSignal UMA vez */}
         <OneSignalInit />
 
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange enableColorScheme>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+          enableColorScheme
+        >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
           </ActiveThemeProvider>
