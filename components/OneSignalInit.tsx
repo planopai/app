@@ -1,4 +1,3 @@
-// app/components/OneSignalInit.tsx
 "use client";
 
 import { useEffect } from "react";
@@ -24,12 +23,8 @@ async function waitForPlayerId(OneSignal: any, maxTries = 30, delayMs = 500): Pr
 }
 
 async function registerDevice(playerId: string, externalUserId?: string) {
-    // Prefira chamar pelo proxy Next (sem CORS):
     const url = "/api/php/register_device.php";
-    // Se quiser chamar direto o HostGator, use:
-    // const url = "https://planoassistencialintegrado.com.br/register_device.php";
-
-    const usuarioCookie = getCookie("pai_name");           // setado no login (Next)
+    const usuarioCookie = getCookie("pai_name");
     const usuario = usuarioCookie ? decodeURIComponent(usuarioCookie) : "Desconhecido";
 
     try {
@@ -60,11 +55,11 @@ export default function OneSignalInit() {
 
             const normalizeUrl = (url: any) => {
                 const s = String(url || "");
-                if (s.startsWith("https://push/") || s.startsWith("http://push/")) {
+                if (s.includes("OneSignalSDKWorker.js")) {
                     return "/push/onesignal/OneSignalSDKWorker.js";
                 }
-                if (s.startsWith("push/onesignal/")) {
-                    return "/" + s;
+                if (s.includes("OneSignalSDKUpdaterWorker.js")) {
+                    return "/push/onesignal/OneSignalSDKUpdaterWorker.js";
                 }
                 return s;
             };
@@ -72,13 +67,7 @@ export default function OneSignalInit() {
             const normalizeScope = (opts: any) => {
                 const out = { ...(opts || {}) };
                 const wanted = "/push/onesignal/";
-                if (typeof out?.scope === "string") {
-                    if (!out.scope.startsWith("/push/onesignal/")) {
-                        out.scope = wanted;
-                    }
-                } else {
-                    out.scope = wanted;
-                }
+                out.scope = wanted;
                 return out;
             };
 
@@ -95,23 +84,25 @@ export default function OneSignalInit() {
         window.OneSignalDeferred.push(async (OneSignal: any) => {
             const SW_SCOPE = "/push/onesignal/";
             const SW_PATH = "/push/onesignal/OneSignalSDKWorker.js";
+            const SW_UPDATER_PATH = "/push/onesignal/OneSignalSDKUpdaterWorker.js";
 
             // Força caminhos/escopos legados
-            (OneSignal as any).SERVICE_WORKER_PARAM = { scope: SW_SCOPE };
-            (OneSignal as any).SERVICE_WORKER_PATH = SW_PATH;
-            (OneSignal as any).__initOptions = (OneSignal as any).__initOptions || {};
-            (OneSignal as any).__initOptions.serviceWorkerPath = SW_PATH;
-            (OneSignal as any).__initOptions.serviceWorkerParam = { scope: SW_SCOPE };
+            OneSignal.SERVICE_WORKER_PARAM = { scope: SW_SCOPE };
+            OneSignal.SERVICE_WORKER_PATH = SW_PATH;
+            OneSignal.SERVICE_WORKER_UPDATER_PATH = SW_UPDATER_PATH;
+            OneSignal.__initOptions = OneSignal.__initOptions || {};
+            OneSignal.__initOptions.serviceWorkerPath = SW_PATH;
+            OneSignal.__initOptions.serviceWorkerUpdaterPath = SW_UPDATER_PATH;
+            OneSignal.__initOptions.serviceWorkerParam = { scope: SW_SCOPE };
 
             await OneSignal.init({
                 appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
                 serviceWorkerPath: SW_PATH,
+                serviceWorkerUpdaterPath: SW_UPDATER_PATH,
                 serviceWorkerParam: { scope: SW_SCOPE },
             });
 
-            // (Opcional) Faça login no OneSignal com o identificador do seu usuário
-            // Isso cria external_user_id no OneSignal e permite envios por include_external_user_ids
-            const externalId = getCookie("pai_name"); // troque para um ID único, se tiver
+            const externalId = getCookie("pai_name");
             if (externalId) {
                 try {
                     await OneSignal.login(externalId);
@@ -120,7 +111,6 @@ export default function OneSignalInit() {
                 }
             }
 
-            // Prompt para ativar push
             await OneSignal.Slidedown.promptPush({
                 force: true,
                 actionMessage: "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
@@ -128,14 +118,12 @@ export default function OneSignalInit() {
                 cancelButtonText: "Cancelar",
             });
 
-            // Aguarda surgir o player_id
             const playerId = await waitForPlayerId(OneSignal, 40, 500);
             if (!playerId) {
-                console.warn("[OneSignal] player_id não disponível (sem permissão ou init pendente).");
+                console.warn("[OneSignal] player_id não disponível.");
                 return;
             }
 
-            // Registra no seu backend
             await registerDevice(playerId, externalId || undefined);
             console.log("[OneSignal] device registrado:", playerId);
         });
@@ -151,3 +139,4 @@ export default function OneSignalInit() {
 
     return null;
 }
+
