@@ -4,40 +4,48 @@ import { useEffect } from "react";
 
 declare global {
     interface Window {
-        OneSignalDeferred: any[];
+        OneSignalDeferred?: any[];
     }
 }
 
-const OneSignalInit = () => {
+export default function OneSignalInit() {
     useEffect(() => {
-        // Carrega o SDK
-        const script = document.createElement("script");
-        script.src = "https://cdn.onesignal.com/sdks/OneSignalSDK.js";
-        script.async = true;
-        document.head.appendChild(script);
+        const s = document.createElement("script");
+        s.src = "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
+        s.async = true;
 
-        // Inicializa o OneSignal
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        window.OneSignalDeferred.push(async function (OneSignal: any) {
-            await OneSignal.init({
-                appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
-                safari_web_id: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
-                notifyButton: {
-                    enable: true,
-                },
-                promptOptions: {
-                    slidedown: {
-                        enabled: true,
-                        actionMessage: "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
-                        acceptButtonText: "ATIVAR",
-                        cancelButtonText: "Cancelar",
-                    },
-                },
+        s.onload = () => {
+            window.OneSignalDeferred = window.OneSignalDeferred || [];
+            window.OneSignalDeferred.push(async (OneSignal: any) => {
+                await OneSignal.init({
+                    appId: "8f845647-2474-4ede-9e74-96f911bf9c88",
+                    safariWebId: "web.onesignal.auto.6514249a-4cb8-451b-a889-88f5913c9a7f",
+                    // Para testes locais:
+                    allowLocalhostAsSecureOrigin: true,
+                    // Garanta que o SW exista nesses caminhos:
+                    serviceWorkerPath: "/OneSignalSDK.sw.js",
+                    serviceWorkerParam: { scope: "/" },
+                });
+
+                // Abre o slidedown (v16) com textos em PT
+                await OneSignal.Slidedown.promptPush({
+                    force: true,
+                    acceptButtonText: "ATIVAR",
+                    cancelButtonText: "Cancelar",
+                    actionMessage:
+                        "Toque em ATIVAR para garantir o funcionamento do sistema de notificação!",
+                });
+
+                // Opcional: botão de inscrição custom
+                // const subscribed = await OneSignal.User.PushSubscription.optedIn;
             });
-        });
+        };
+
+        document.head.appendChild(s);
+        return () => {
+            document.head.removeChild(s);
+        };
     }, []);
 
     return null;
-};
-
-export default OneSignalInit;
+}
