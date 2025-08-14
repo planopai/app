@@ -10,7 +10,8 @@ const PHP_LOGIN = "/autentica.php";
 
 function extractPhpSessId(setCookieHeader: string | null): string | null {
     if (!setCookieHeader) return null;
-    const m = setCookieHeader.match(/PHPSESSID=([^;]+)/i);
+    // tenta capturar o primeiro PHPSESSID em qualquer posição
+    const m = setCookieHeader.match(/PHPSESSID=([^;,\s]+)/i);
     return m?.[1] || null;
 }
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
             usuario = String(form.get("usuario") || "");
             senha = String(form.get("senha") || "");
         } else {
-            const body = await req.json().catch(() => ({} as any));
+            const body = (await req.json().catch(() => ({}))) as any;
             usuario = body?.usuario || "";
             senha = body?.senha || "";
         }
@@ -38,18 +39,16 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // autentica no PHP do domínio raiz
         const resp = await fetch(`${TARGET_BASE}${PHP_LOGIN}`, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ usuario, senha }),
             redirect: "manual",
-            // credenciais não são necessárias aqui (server→server),
-            // e set-cookie da origem já é lido via resp.headers.get("set-cookie")
         });
 
         const raw = await resp.text();
 
-        // log útil em dev
         if (process.env.NODE_ENV !== "production") {
             console.log("[auth/php] status:", resp.status);
             console.log("[auth/php] body:", raw);
@@ -60,7 +59,7 @@ export async function POST(req: NextRequest) {
         try {
             data = JSON.parse(raw);
         } catch {
-            // mantém data como {}, mas trata como erro abaixo
+            // fica vazio e tratamos abaixo
         }
 
         const sucesso = data?.sucesso === true || data?.success === true;
@@ -69,40 +68,43 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ sucesso: false, error: msg }, { status: 401 });
         }
 
+        // extrai o PHPSESSID retornado pelo PHP (ou pega do JSON, se enviado)
         const setCookie = resp.headers.get("set-cookie");
         const phpSess = extractPhpSessId(setCookie) || data?.sessid || "";
+
         const nome = data?.nome ?? usuario;
         const isProd = process.env.NODE_ENV === "production";
 
         const res = NextResponse.json({ sucesso: true, nome });
         res.headers.set("Cache-Control", "no-store");
 
-        // Cookies do seu app
-        res.cookies.set("pai_auth", "1", {
+        // opções de cookie no domínio RAIZ (.planoassistencialintegrado.com.br)
+        const baseOpts = {
             httpOnly: true,
-            sameSite: "lax",
+            sameSite: "lax" as const,
             secure: isProd,
             path: "/",
-            maxAge: 60 * 60 * 8,
-        });
+            domain: ".planoassistencialintegrado.com.br",
+            maxAge: 60 * 60 * 8, // 8h
+        };
 
+        // sinal de login
+        res.cookies.set("pai_auth", "1", baseOpts);
+
+        // nome legível pelo front (não httpOnly)
         res.cookies.set("pai_name", encodeURIComponent(nome), {
+            ...baseOpts,
             httpOnly: false,
-            sameSite: "lax",
-            secure: isProd,
-            path: "/",
-            maxAge: 60 * 60 * 8,
+        });
+        // alias opcional do usuário
+        res.cookies.set("pai_user", encodeURIComponent(usuario), {
+            ...baseOpts,
+            httpOnly: false,
         });
 
-        // Sessão PHP guardada no seu domínio (para proxys subsequentes)
+        // **propaga o MESMO PHPSESSID** para o domínio raiz
         if (phpSess) {
-            res.cookies.set("php_session", phpSess, {
-                httpOnly: true,
-                sameSite: "lax",
-                secure: isProd,
-                path: "/",
-                maxAge: 60 * 60 * 8,
-            });
+            res.cookies.set("PHPSESSID", phpSess, baseOpts);
         }
 
         return res;
