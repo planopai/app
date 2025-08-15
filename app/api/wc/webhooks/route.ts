@@ -1,37 +1,57 @@
-// app/api/wc/webhook/route.ts
+// app/api/wc/webhooks/route.ts
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/* ========= OneSignal helper ========= */
+/* ========= Helpers ========= */
+function getEnv(name: string, fallback?: string) {
+    const v = process.env[name] ?? fallback;
+    if (!v) throw new Error(`Variável de ambiente ausente: ${name}`);
+    return v;
+}
+
+function safeEqual(a: string, b: string) {
+    const A = Buffer.from(a || "", "utf8");
+    const B = Buffer.from(b || "", "utf8");
+    return A.length === B.length && crypto.timingSafeEqual(A, B);
+}
+
+function verifyHmac(raw: string, signature: string | null) {
+    const secret = process.env.WC_WEBHOOK_SECRET || "";
+    if (!secret || !signature) return false;
+    const expected = crypto.createHmac("sha256", secret).update(raw, "utf8").digest("base64");
+    return safeEqual(signature, expected);
+}
+
+/* ========= OneSignal ========= */
 async function sendOneSignal({
     title,
     body,
-    imageUrl,
+    externalId,
     data,
 }: {
     title: string;
     body: string;
-    imageUrl?: string;
+    externalId?: string;
     data?: Record<string, any>;
 }) {
-    const appId = process.env.ONESIGNAL_APP_ID!;
-    const apiKey = process.env.ONESIGNAL_API_KEY!;
+    // aceita ambos os nomes, já que você usa NEXT_PUBLIC_* e REST_API_KEY
+    const appId = process.env.ONESIGNAL_APP_ID || process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_API_KEY || process.env.ONESIGNAL_REST_API_KEY;
     if (!appId || !apiKey) throw new Error("ONESIGNAL_APP_ID/ONESIGNAL_API_KEY ausentes");
 
     const payload: any = {
         app_id: appId,
-        included_segments: ["All"], // ajuste se quiser segmentar
+        included_segments: ["All"],
         headings: { pt: title, en: title },
         contents: { pt: body, en: body },
         data: data || {},
     };
-    if (imageUrl) {
-        payload.big_picture = imageUrl;              // Android
-        payload.ios_attachments = { img1: imageUrl };// iOS
-    }
+
+    // evita duplicidade entre reenvios do Woo
+    if (externalId) payload.external_id = externalId;
 
     const r = await fetch("https://onesignal.com/api/v1/notifications", {
         method: "POST",
@@ -49,26 +69,6 @@ async function sendOneSignal({
     return r.json();
 }
 
-/* ========= Utils ========= */
-function safeEqual(a: string, b: string) {
-    const A = Buffer.from(a || "", "utf8");
-    const B = Buffer.from(b || "", "utf8");
-    return A.length === B.length && crypto.timingSafeEqual(A, B);
-}
-
-function verifyHmac(raw: string, signature: string | null) {
-    const secret = process.env.WC_WEBHOOK_SECRET || "";
-    if (!secret || !signature) return false;
-    const expected = crypto.createHmac("sha256", secret).update(raw, "utf8").digest("base64");
-    return safeEqual(signature, expected);
-}
-
-function fmtBRL(v: string | number, currency = "BRL") {
-    const num = typeof v === "string" ? Number(v) : v;
-    if (Number.isNaN(num)) return String(v);
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(num);
-}
-
 /* ========= Webhook ========= */
 export async function POST(req: Request) {
     try {
@@ -84,59 +84,41 @@ export async function POST(req: Request) {
         const payload = JSON.parse(raw);
 
         // Normaliza objeto do pedido (Woo pode mandar formatos diferentes)
-        const order =
-            payload?.id
-                ? payload
-                : payload?.data?.object || payload?.order || payload;
+        const order = payload?.id ? payload : (payload?.data?.object || payload?.order || payload);
 
         const status = String(order?.status || "").toLowerCase();
+        const isPaid =
+            status === "processing" ||
+            status === "completed" ||
+            // alguns payloads trazem date_paid quando efetivamente pago
+            Boolean(order?.date_paid || order?.date_paid_gmt);
 
-        // Só dispara quando o pedido estiver pago/concluído.
-        // (Para incluir 'processing', troque por: if (!["completed","processing"].includes(status)) { ... })
-        if (status !== "completed") {
-            return NextResponse.json({ ok: true, skipped: "status_nao_completed", topic, status });
+        if (!isPaid) {
+            return NextResponse.json({ ok: true, skipped: true, reason: "status_nao_pago", topic, status });
         }
 
-        // Monta campos básicos
-        const orderId = order?.id;
-        const orderNumber = order?.number || orderId;
-        const total = order?.total ?? "0";
-        const currency = order?.currency || "BRL";
-        const valorFmt = fmtBRL(total, currency);
-        const cliente = `${order?.billing?.first_name ?? ""} ${order?.billing?.last_name ?? ""}`.trim();
-        const endereco = [order?.shipping?.address_1, order?.shipping?.address_2].filter(Boolean).join(" - ");
-        const falecido = order?.shipping?.first_name ?? "";
+        const orderId = order?.id ?? order?.number ?? "unknown";
+        const title = "ATENÇÃO";
+        const body = "ATENÇÃO: Você tem um novo pedido de Coroa de Flores!";
 
-        // Imagem do primeiro item (se o payload trouxer)
-        let imageUrl: string | undefined;
-        const withImg = (order?.line_items || []).find((li: any) => li?.image?.src);
-        if (withImg?.image?.src) imageUrl = withImg.image.src;
+        // external_id: garante idempotência por pedido pago
+        const externalId = `wc-order-${orderId}-paid`;
 
-        // Mensagem
-        const title = "ATENÇÃO: Novo Pedido!";
-        const body = `Pedido #${orderNumber} — ${cliente || "Cliente"} — ${valorFmt}`;
-
-        // Dados extras (aparecem no payload da notificação)
-        const data = {
-            tipo: "pedido_novo",
-            order_id: orderId,
-            detalhes: {
-                pedido: orderNumber,
+        const onesignal = await sendOneSignal({
+            title,
+            body,
+            externalId,
+            data: {
+                tipo: "pedido_pago",
+                order_id: order?.id ?? null,
+                order_number: order?.number ?? null,
                 status,
-                cliente,
-                valor: valorFmt,
-                falecido: falecido || "",
-                local_entrega: endereco || "—",
-                itens: (order?.line_items || []).map((i: any) => i?.name).filter(Boolean),
             },
-            idem_key: `wc-order-${orderId}-completed`, // ajuda a evitar duplicidade se Woo reenviar
-        };
+        });
 
-        const resp = await sendOneSignal({ title, body, imageUrl, data });
-
-        return NextResponse.json({ ok: true, sent: true, topic, status, onesignal: resp });
+        return NextResponse.json({ ok: true, sent: true, topic, status, onesignal });
     } catch (e: any) {
-        console.error("[wc/webhook] erro:", e?.message || e);
+        console.error("[wc/webhooks] erro:", e?.message || e);
         return NextResponse.json({ ok: false, error: e?.message || "erro" }, { status: 500 });
     }
 }
