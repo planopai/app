@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
   themeColor: "#059de0",
-  manifest: "/manifest.webmanifest", // ✅ Link automático para o manifest gerado via app/manifest.ts
+  manifest: "/manifest.webmanifest",
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
@@ -42,6 +42,19 @@ export default async function RootLayout({
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        {/* PWA Essentials */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#059de0" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#059de0" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="App Plano PAI 2.0" />
+      </head>
       <body
         className={cn(
           "bg-background overscroll-none font-sans antialiased",
