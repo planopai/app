@@ -16,6 +16,7 @@ export function middleware(req: NextRequest) {
         pathname.startsWith("/api/auth") || // login/logout
         pathname.startsWith("/api/php") ||  // seu proxy PHP (libere se precisar antes de logar)
         pathname.startsWith("/api/wp") ||   // seu proxy WP/imagens
+        pathname.startsWith("/api/wc") ||   // seu proxy WP/imagens
         PUBLIC_FILE.test(pathname);
 
     const isAuthed = req.cookies.get("pai_auth")?.value === "1";
