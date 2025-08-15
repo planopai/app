@@ -1,15 +1,26 @@
 {
-    "name": "Meu App",
-    "short_name": "App",
-    "start_url": "/",
+    "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+    "name": "PAI 2.0",
+    "short_name": "PAI",
     "display": "standalone",
+    "start_url": "/",
+    "theme_color": "#059de0",
     "background_color": "#ffffff",
-    "theme_color": "#3367D6",
-    "orientation": "portrait",
+    "id": "?homescreen=1",
     "icons": [
         {
             "src": "/icon-192.png",
             "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/icon-256.png",
+            "sizes": "256x256",
+            "type": "image/png"
+        },
+        {
+            "src": "/icon-384.png",
+            "sizes": "384x384",
             "type": "image/png"
         },
         {
