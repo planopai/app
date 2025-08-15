@@ -3,39 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /* -----------------------------------------------------------
-   Fetch centralizado: inclui cookies e redireciona ao login em 401/440
------------------------------------------------------------ */
-async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-    const res = await fetch(input, {
-        credentials: "include", // garante envio de cookies (PHPSESSID)
-        cache: "no-store",
-        ...init,
-        headers: {
-            "Content-Type": "application/json",
-            ...(init.headers || {}),
-        },
-    });
-
-    if (res.status === 401 || res.status === 440) {
-        const next = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.replace(`/login?next=${next}`);
-        // interrompe o fluxo do chamador
-        return new Promise<never>(() => { });
-    }
-    return res;
-}
-
-async function apiJson<T = any>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-    const r = await apiFetch(input, init);
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-        const msg = (data as any)?.msg || (data as any)?.error || `Erro (${r.status})`;
-        throw new Error(msg);
-    }
-    return data as T;
-}
-
-/* -----------------------------------------------------------
    Tipos
 ----------------------------------------------------------- */
 type Registro = {
@@ -57,10 +24,12 @@ type Registro = {
     hora_inicio_velorio?: string;
     hora_fim_velorio?: string;
     observacao?: string;
+
     // Materiais (opcional)
     materiais_json?: string;
     materiais_cadeiras_qtd?: string | number;
     materiais_bebedouros_qtd?: string | number;
+
     [k: string]: any;
 };
 
@@ -320,13 +289,23 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Fetch helpers -------------------- */
     const fetchRegistros = useCallback(() => {
-        apiJson<Registro[]>(`/api/php/informativo.php?listar=1&_nocache=${Date.now()}`)
+        fetch("/api/php/informativo.php?listar=1&_nocache=" + Date.now(), {
+            cache: "no-store",
+            headers: {
+                Pragma: "no-cache",
+                Expires: "0",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+            },
+            credentials: "include",
+        })
+            .then((r) => r.json())
             .then((json) => setRegistros(Array.isArray(json) ? json : []))
             .catch(() => setRegistros([]));
     }, []);
 
     const fetchAvisos = useCallback(() => {
-        apiJson<Aviso[]>(`/api/php/avisos.php?listar=1&_nocache=${Date.now()}`)
+        fetch("/api/php/avisos.php?listar=1&_nocache=" + Date.now(), { credentials: "include" })
+            .then((r) => r.json())
             .then((json) => setAvisos(Array.isArray(json) ? json : []))
             .catch(() => setAvisos([]));
     }, []);
@@ -355,10 +334,12 @@ export default function AcompanhamentoPage() {
             materiais_bebedouros_qtd,
         };
 
-        return apiJson(`/api/php/informativo.php`, {
+        return fetch("/api/php/informativo.php?listar=1&_nocache=", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-        });
+            credentials: "include",
+        }).then((r) => r.json());
     }, []);
 
     /* -------------------- Ciclos -------------------- */
@@ -442,7 +423,7 @@ export default function AcompanhamentoPage() {
             if (editing && idx !== null && registros[idx]) {
                 const r = registros[idx];
                 const data: Registro = {};
-                (steps as any).forEach((s: any) => {
+                steps.forEach((s: any) => {
                     (data as any)[s.id] = (r as any)[s.id] ?? "";
                 });
                 data.id = r.id;
@@ -456,7 +437,7 @@ export default function AcompanhamentoPage() {
                 setTanatoVal(String((r.tanato ?? "") as string));
             } else {
                 const empty: Registro = {};
-                (steps as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+                steps.forEach((s: any) => ((empty as any)[s.id] = ""));
                 setWizardData(empty);
                 setMateriais({ cadeiras: { checked: false, qtd: 0 }, bebedouros: { checked: false, qtd: 0 } });
                 setAssistenciaVal("");
@@ -473,7 +454,7 @@ export default function AcompanhamentoPage() {
         const next = { ...wizardData };
 
         for (const idx of grupo) {
-            const s = (steps as any)[idx] as any;
+            const s = steps[idx] as any;
             const el = document.getElementById("wizard-" + s.id) as HTMLInputElement | null;
             const v = (el?.value ?? "").trim();
 
@@ -497,7 +478,7 @@ export default function AcompanhamentoPage() {
         let grupoObrigatorios: string[];
         if (typeof wizardRestrictGroup === "number") {
             const grupo = wizardStepIndexes[wizardRestrictGroup];
-            const ids = grupo.map((i) => (steps as any)[i].id);
+            const ids = grupo.map((i) => (steps[i] as any).id);
             grupoObrigatorios = ids.filter((id) => obrigatorios.includes(id));
         } else {
             grupoObrigatorios = obrigatorios;
@@ -510,17 +491,13 @@ export default function AcompanhamentoPage() {
         }
 
         const payload = { ...wizardData, materiais, acao: wizardEditing ? "editar" : "novo" };
-        try {
-            const json = await enviarRegistroPHP(payload);
-            if ((json as any)?.sucesso) {
-                setWizardMsg({ text: "Registro salvo!", ok: true });
-                fetchRegistros();
-                setTimeout(() => setWizardOpen(false), 950);
-            } else {
-                setWizardMsg({ text: (json as any)?.erro || "Erro ao salvar!", ok: false });
-            }
-        } catch (e: any) {
-            setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
+        const json = await enviarRegistroPHP(payload);
+        if (json?.sucesso) {
+            setWizardMsg({ text: "Registro salvo!", ok: true });
+            fetchRegistros();
+            setTimeout(() => setWizardOpen(false), 950);
+        } else {
+            setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
         }
     }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros, materiais]);
 
@@ -564,17 +541,12 @@ export default function AcompanhamentoPage() {
             if (!ok) return;
 
             setAcaoSubmitting(true);
-            try {
-                const json = await enviarRegistroPHP({ acao: "atualizar_status", id, status: acao });
-                if ((json as any)?.sucesso) {
-                    setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
-                    fetchRegistros();
-                    setTimeout(() => setAcaoOpen(false), 500);
-                } else {
-                    setAcaoSubmitting(false);
-                    setAcaoMsg({ text: "Erro ao atualizar status.", ok: false });
-                }
-            } catch (e) {
+            const json = await enviarRegistroPHP({ acao: "atualizar_status", id, status: acao });
+            if (json?.sucesso) {
+                setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
+                fetchRegistros();
+                setTimeout(() => setAcaoOpen(false), 500);
+            } else {
                 setAcaoSubmitting(false);
                 setAcaoMsg({ text: "Erro ao atualizar status.", ok: false });
             }
@@ -595,38 +567,35 @@ export default function AcompanhamentoPage() {
             setAvisoMsg({ text: "Digite um aviso para enviar!", ok: false });
             return;
         }
-        try {
-            const res = await apiJson<any>("/api/php/avisos.php", {
-                method: "POST",
-                body: JSON.stringify({ mensagem: val }),
-            });
-            if (res?.sucesso) {
-                setAvisoMsg({ text: "Aviso adicionado!", ok: true });
-                if (avisoInputRef.current) avisoInputRef.current.value = "";
-                fetchAvisos();
-            } else {
-                setAvisoMsg({ text: (res as any)?.erro || "Erro ao adicionar!", ok: false });
-            }
-        } catch (e: any) {
-            setAvisoMsg({ text: e?.message || "Erro ao adicionar!", ok: false });
+        const res = await fetch("/api/php/avisos.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mensagem: val }),
+            credentials: "include",
+        }).then((r) => r.json());
+
+        if (res?.sucesso) {
+            setAvisoMsg({ text: "Aviso adicionado!", ok: true });
+            if (avisoInputRef.current) avisoInputRef.current.value = "";
+            fetchAvisos();
+        } else {
+            setAvisoMsg({ text: res?.erro || "Erro ao adicionar!", ok: false });
         }
     }, [fetchAvisos]);
 
     const editarAviso = useCallback(
         async (id: number | string, mensagem: string) => {
-            try {
-                const res = await apiJson<any>("/api/php/avisos.php", {
-                    method: "POST",
-                    body: JSON.stringify({ id, mensagem }),
-                });
-                if (res?.sucesso) {
-                    setAvisoMsg({ text: "Aviso atualizado!", ok: true });
-                    fetchAvisos();
-                } else {
-                    setAvisoMsg({ text: (res as any)?.erro || "Erro ao editar!", ok: false });
-                }
-            } catch (e: any) {
-                setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
+            const res = await fetch("/api/php/avisos.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, mensagem }),
+                credentials: "include",
+            }).then((r) => r.json());
+            if (res?.sucesso) {
+                setAvisoMsg({ text: "Aviso atualizado!", ok: true });
+                fetchAvisos();
+            } else {
+                setAvisoMsg({ text: res?.erro || "Erro ao editar!", ok: false });
             }
         },
         [fetchAvisos]
@@ -635,19 +604,17 @@ export default function AcompanhamentoPage() {
     const excluirAviso = useCallback(
         async (id: number | string) => {
             if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
-            try {
-                const res = await apiJson<any>("/api/php/avisos.php", {
-                    method: "POST",
-                    body: JSON.stringify({ id, excluir: true }),
-                });
-                if (res?.sucesso) {
-                    setAvisoMsg({ text: "Aviso excluído!", ok: true });
-                    fetchAvisos();
-                } else {
-                    setAvisoMsg({ text: (res as any)?.erro || "Erro ao excluir!", ok: false });
-                }
-            } catch (e: any) {
-                setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
+            const res = await fetch("/api/php/avisos.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, excluir: true }),
+                credentials: "include",
+            }).then((r) => r.json());
+            if (res?.sucesso) {
+                setAvisoMsg({ text: "Aviso excluído!", ok: true });
+                fetchAvisos();
+            } else {
+                setAvisoMsg({ text: res?.erro || "Erro ao excluir!", ok: false });
             }
         },
         [fetchAvisos]
@@ -655,19 +622,17 @@ export default function AcompanhamentoPage() {
 
     const finalizarAviso = useCallback(
         async (id: number | string) => {
-            try {
-                const res = await apiJson<any>("/api/php/avisos.php", {
-                    method: "POST",
-                    body: JSON.stringify({ id, finalizar: true }),
-                });
-                if (res?.sucesso) {
-                    setAvisoMsg({ text: "Aviso finalizado!", ok: true });
-                    fetchAvisos();
-                } else {
-                    setAvisoMsg({ text: (res as any)?.erro || "Erro ao finalizar!", ok: false });
-                }
-            } catch (e: any) {
-                setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
+            const res = await fetch("/api/php/avisos.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, finalizar: true }),
+                credentials: "include",
+            }).then((r) => r.json());
+            if (res?.sucesso) {
+                setAvisoMsg({ text: "Aviso finalizado!", ok: true });
+                fetchAvisos();
+            } else {
+                setAvisoMsg({ text: res?.erro || "Erro ao finalizar!", ok: false });
             }
         },
         [fetchAvisos]
@@ -788,7 +753,7 @@ export default function AcompanhamentoPage() {
                 >
                     <div className="grid gap-4">
                         {wizardStepIndexes[wizardStep].map((i) => {
-                            const s: any = (steps as any)[i];
+                            const s = steps[i] as any;
                             const val = (wizardData as any)[s.id] ?? "";
                             const id = "wizard-" + s.id;
 
@@ -1044,7 +1009,8 @@ export default function AcompanhamentoPage() {
                                     type="button"
                                     disabled={!habilitar || acaoSubmitting}
                                     onClick={() => registrarAcao(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting ? "hover:bg-muted" : "pointer-events-none opacity-50"}`}
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting ? "hover:bg-muted" : "pointer-events-none opacity-50"
+                                        }`}
                                     title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
                                 >
                                     {acaoToStatus(f)}
