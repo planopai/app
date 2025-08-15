@@ -85,6 +85,8 @@ function capStatus(s?: string) {
             return "Transportando P/ Sepultamento";
         case "fase10":
             return "Sepultamento Concluído";
+        case "fase11":
+            return "Material Recolhido";
         default:
             return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
     }
@@ -285,8 +287,8 @@ export default function QuadroAtendimentoPage() {
             registros.filter(
                 (r) =>
                     String(r.status).toLowerCase() !== "concluido" &&
-                    String(r.status).toLowerCase() !== "fase10" &&
-                    capStatus(r.status).toLowerCase() !== "sepultamento concluído"
+                    String(r.status).toLowerCase() !== "fase11" &&
+                    capStatus(r.status).toLowerCase() !== "material recolhido"
             ),
         [registros]
     );
