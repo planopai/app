@@ -127,29 +127,61 @@ const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - S
 // 11 fases (a 11ª é Material Recolhido)
 const fases = ["fase01", "fase02", "fase03", "fase04", "fase05", "fase06", "fase07", "fase08", "fase09", "fase10", "fase11"] as const;
 
-// --- URL de login (fallback) — será sobrescrita pelo backend quando vier em login_url
-const LOGIN_FALLBACK = "/login";
+/** URL ABSOLUTA DO LOGIN (fix) */
+const LOGIN_ABSOLUTE = "https://pai.planoassistencialintegrado.com.br/login";
+
+/** Evita múltiplos redirecionamentos/alerts (fix) */
+let IS_REDIRECTING = false;
 
 // Redireciona para login exibindo a mensagem
 function redirectToLogin(loginUrl?: string, msg?: string) {
+    if (IS_REDIRECTING) return;
+    IS_REDIRECTING = true;
+
     try {
         if (msg) alert(msg);
     } catch { }
-    window.location.href = loginUrl || LOGIN_FALLBACK;
+
+    const url =
+        (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) ||
+        LOGIN_ABSOLUTE;
+
+    // replace não cria histórico; href como fallback imediato
+    try {
+        window.location.replace(url);
+        setTimeout(() => {
+            // fallback para navegadores que ignorarem o replace
+            if (typeof window !== "undefined" && window.location.href !== url) {
+                window.location.href = url;
+            }
+        }, 50);
+    } catch {
+        window.location.href = url;
+    }
 }
 
 // Helper fetch + tratamento de 401/need_login
 async function jsonWith401(url: string, init?: RequestInit) {
     const resp = await fetch(url, { credentials: "include", ...init });
+
+    // Redireciona imediatamente em 401, mesmo que a resposta não seja JSON
+    if (resp.status === 401) {
+        redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
+        throw new Error("Sessão expirada.");
+    }
+
     let data: any = null;
     try {
         data = await resp.json();
     } catch {
-        // ignore
+        // se não for JSON e não for ok, ainda assim sinaliza erro
+        if (!resp.ok) {
+            throw new Error("Falha na requisição.");
+        }
     }
 
-    // Sessão expirada (backend padronizado)
-    if (resp.status === 401 || data?.need_login) {
+    // Sessão expirada padronizada pelo backend
+    if (data?.need_login) {
         redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
         throw new Error(data?.msg || "Sessão expirada.");
     }
@@ -302,17 +334,22 @@ export default function AcompanhamentoPage() {
     /* -------------------- Fetch helpers -------------------- */
     const fetchRegistros = useCallback(async () => {
         try {
-            // GET pode não estar protegido, mas se estiver, tratamos 401
             const r = await fetch("/api/php/informativo.php?listar=1&_nocache=" + Date.now(), {
                 cache: "no-store",
                 headers: { Pragma: "no-cache", Expires: "0", "Cache-Control": "no-cache, no-store, must-revalidate" },
                 credentials: "include",
             });
 
-            // tenta ler JSON sempre
+            // Redirect imediato em 401, mesmo sem JSON
+            if (r.status === 401) {
+                redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
+                return;
+            }
+
+            // tenta ler JSON (pode não ser JSON)
             const data = await r.json().catch(() => null);
 
-            if (r.status === 401 || data?.need_login) {
+            if (data?.need_login) {
                 redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
                 return;
             }
@@ -326,9 +363,15 @@ export default function AcompanhamentoPage() {
     const fetchAvisos = useCallback(async () => {
         try {
             const r = await fetch("/api/php/avisos.php?listar=1&_nocache=" + Date.now(), { credentials: "include" });
+
+            if (r.status === 401) {
+                redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
+                return;
+            }
+
             const data = await r.json().catch(() => null);
 
-            if (r.status === 401 || data?.need_login) {
+            if (data?.need_login) {
                 redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
                 return;
             }
@@ -356,14 +399,13 @@ export default function AcompanhamentoPage() {
         }
 
         const body = {
-            ...data,
+            ...data, // mantém id em edição
             local: data.local || "",
             materiais_json,
             materiais_cadeiras_qtd,
             materiais_bebedouros_qtd,
         };
 
-        // >>> removido ?listar=1 nos POSTs
         return jsonWith401("/api/php/informativo.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -478,9 +520,9 @@ export default function AcompanhamentoPage() {
         [registros]
     );
 
-    const salvarGrupoWizard = useCallback(() => {
+    const salvarGrupoWizard = useCallback((): Registro | null => {
         const grupo = wizardStepIndexes[wizardStep];
-        const next = { ...wizardData };
+        const next: Registro = { ...wizardData };
 
         for (const idx of grupo) {
             const s = steps[idx] as any;
@@ -490,19 +532,21 @@ export default function AcompanhamentoPage() {
             if (obrigatorios.includes(s.id) && !v) {
                 el?.focus();
                 setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
-                return false;
+                return null;
             }
             (next as any)[s.id] = v;
         }
 
+        if (wizardData.id != null) next.id = wizardData.id;
         (next as any).materiais = materiais;
 
         setWizardData(next);
-        return true;
+        return next;
     }, [wizardData, wizardStep, materiais]);
 
     const concluirWizard = useCallback(async () => {
-        if (!salvarGrupoWizard()) return;
+        const dataAtualizada = salvarGrupoWizard();
+        if (!dataAtualizada) return;
 
         let grupoObrigatorios: string[];
         if (typeof wizardRestrictGroup === "number") {
@@ -513,14 +557,14 @@ export default function AcompanhamentoPage() {
             grupoObrigatorios = obrigatorios;
         }
         for (const id of grupoObrigatorios) {
-            if (!wizardData[id] || String(wizardData[id]).trim() === "") {
+            if (!dataAtualizada[id] || String(dataAtualizada[id]).trim() === "") {
                 setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
                 return;
             }
         }
 
         try {
-            const payload = { ...wizardData, materiais, acao: wizardEditing ? "editar" : "novo" };
+            const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
             const json = await enviarRegistroPHP(payload);
             if (json?.sucesso) {
                 setWizardMsg({ text: "Registro salvo!", ok: true });
@@ -532,7 +576,7 @@ export default function AcompanhamentoPage() {
         } catch (e: any) {
             setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
         }
-    }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros, materiais]);
+    }, [salvarGrupoWizard, wizardRestrictGroup, wizardEditing, enviarRegistroPHP, fetchRegistros]);
 
     /* -------------------- Ações (status) -------------------- */
     const abrirPopupAcao = useCallback((idx: number) => {
@@ -927,7 +971,8 @@ export default function AcompanhamentoPage() {
                                 type="button"
                                 className="rounded-md border px-3 py-2 text-sm"
                                 onClick={() => {
-                                    if (salvarGrupoWizard()) setWizardStep((s) => Math.min(s + 1, wizardStepIndexes.length - 1));
+                                    const ok = salvarGrupoWizard();
+                                    if (ok) setWizardStep((s) => Math.min(s + 1, wizardStepIndexes.length - 1));
                                 }}
                             >
                                 Avançar
