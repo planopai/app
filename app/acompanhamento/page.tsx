@@ -302,14 +302,12 @@ export default function AcompanhamentoPage() {
     /* -------------------- Fetch helpers -------------------- */
     const fetchRegistros = useCallback(async () => {
         try {
-            // GET pode não estar protegido, mas se estiver, tratamos 401
             const r = await fetch("/api/php/informativo.php?listar=1&_nocache=" + Date.now(), {
                 cache: "no-store",
                 headers: { Pragma: "no-cache", Expires: "0", "Cache-Control": "no-cache, no-store, must-revalidate" },
                 credentials: "include",
             });
 
-            // tenta ler JSON sempre
             const data = await r.json().catch(() => null);
 
             if (r.status === 401 || data?.need_login) {
@@ -356,14 +354,13 @@ export default function AcompanhamentoPage() {
         }
 
         const body = {
-            ...data,
+            ...data, // mantém id em edição
             local: data.local || "",
             materiais_json,
             materiais_cadeiras_qtd,
             materiais_bebedouros_qtd,
         };
 
-        // >>> removido ?listar=1 nos POSTs
         return jsonWith401("/api/php/informativo.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -478,9 +475,10 @@ export default function AcompanhamentoPage() {
         [registros]
     );
 
-    const salvarGrupoWizard = useCallback(() => {
+    // >>>>>>> CORRIGIDO: agora retorna Registro | null e preserva o id
+    const salvarGrupoWizard = useCallback((): Registro | null => {
         const grupo = wizardStepIndexes[wizardStep];
-        const next = { ...wizardData };
+        const next: Registro = { ...wizardData };
 
         for (const idx of grupo) {
             const s = steps[idx] as any;
@@ -490,19 +488,25 @@ export default function AcompanhamentoPage() {
             if (obrigatorios.includes(s.id) && !v) {
                 el?.focus();
                 setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
-                return false;
+                return null;
             }
             (next as any)[s.id] = v;
         }
 
+        // preserva id em edição
+        if (wizardData.id != null) next.id = wizardData.id;
+
+        // anexa materiais
         (next as any).materiais = materiais;
 
-        setWizardData(next);
-        return true;
+        setWizardData(next); // pode manter, mas não confiar nele logo em seguida
+        return next;
     }, [wizardData, wizardStep, materiais]);
 
+    // >>>>>>> CORRIGIDO: usa o retorno de salvarGrupoWizard para montar o payload
     const concluirWizard = useCallback(async () => {
-        if (!salvarGrupoWizard()) return;
+        const dataAtualizada = salvarGrupoWizard();
+        if (!dataAtualizada) return;
 
         let grupoObrigatorios: string[];
         if (typeof wizardRestrictGroup === "number") {
@@ -513,14 +517,14 @@ export default function AcompanhamentoPage() {
             grupoObrigatorios = obrigatorios;
         }
         for (const id of grupoObrigatorios) {
-            if (!wizardData[id] || String(wizardData[id]).trim() === "") {
+            if (!dataAtualizada[id] || String(dataAtualizada[id]).trim() === "") {
                 setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
                 return;
             }
         }
 
         try {
-            const payload = { ...wizardData, materiais, acao: wizardEditing ? "editar" : "novo" };
+            const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
             const json = await enviarRegistroPHP(payload);
             if (json?.sucesso) {
                 setWizardMsg({ text: "Registro salvo!", ok: true });
@@ -532,7 +536,7 @@ export default function AcompanhamentoPage() {
         } catch (e: any) {
             setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
         }
-    }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros, materiais]);
+    }, [salvarGrupoWizard, wizardRestrictGroup, wizardEditing, enviarRegistroPHP, fetchRegistros]);
 
     /* -------------------- Ações (status) -------------------- */
     const abrirPopupAcao = useCallback((idx: number) => {
@@ -927,7 +931,8 @@ export default function AcompanhamentoPage() {
                                 type="button"
                                 className="rounded-md border px-3 py-2 text-sm"
                                 onClick={() => {
-                                    if (salvarGrupoWizard()) setWizardStep((s) => Math.min(s + 1, wizardStepIndexes.length - 1));
+                                    const ok = salvarGrupoWizard();
+                                    if (ok) setWizardStep((s) => Math.min(s + 1, wizardStepIndexes.length - 1));
                                 }}
                             >
                                 Avançar
