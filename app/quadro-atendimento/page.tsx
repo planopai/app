@@ -64,6 +64,7 @@ function etapasPreenchidas(registro: Registro) {
     );
 }
 
+/* ---------------- Status badge ---------------- */
 function capStatus(s?: string) {
     switch (s) {
         case "fase01":
@@ -95,15 +96,44 @@ function capStatus(s?: string) {
 
 function badgeClass(s?: string) {
     const x = (s || "").toLowerCase();
-    if (x.includes("remov")) return "bg-amber-500";
-    if (x.includes("veland")) return "bg-violet-600";
-    if (x.includes("prepar")) return "bg-blue-600";
-    if (x.includes("sepult")) return "bg-orange-600";
-    if (x.includes("concl")) return "bg-green-600";
-    if (x.includes("ornament")) return "bg-rose-600";
-    return "bg-neutral-500";
+    if (x === "fase01" || x.includes("remov")) return "bg-amber-600";
+    if (x === "fase02" || x.includes("aguardando procedimento")) return "bg-zinc-600";
+    if (x === "fase03" || x.includes("prepar")) return "bg-blue-600";
+    if (x === "fase04" || x.includes("ornamentaç") || x.includes("ornamenta")) return "bg-fuchsia-600";
+    if (x === "fase05" || x.includes("ornamentando")) return "bg-rose-600";
+    if (x === "fase06" || x.includes("corpo pronto")) return "bg-emerald-600";
+    if (x === "fase07" || x.includes("transportando p/ velório")) return "bg-cyan-600";
+    if (x === "fase08" || x.includes("veland")) return "bg-violet-600";
+    if (x === "fase09" || x.includes("transportando p/ sepultamento")) return "bg-orange-600";
+    if (x === "fase10" || x.includes("conclu")) return "bg-green-700";
+    if (x === "fase11" || x.includes("material recolh")) return "bg-slate-700";
+    return "bg-slate-500";
 }
 
+/* ---------------- Convenio chip ---------------- */
+type ConvenioKind = "Particular" | "Prefeitura" | "Associado" | "a definir";
+function normalizeConvenio(s?: string): ConvenioKind {
+    const v = (s || "").toLowerCase();
+    if (!v) return "a definir";
+    if (v.includes("prefeitura")) return "Prefeitura";
+    if (v.includes("associad")) return "Associado";
+    if (v.includes("particular")) return "Particular";
+    return "a definir";
+}
+function convenioClass(kind: ConvenioKind) {
+    switch (kind) {
+        case "Particular":
+            return "bg-amber-500";
+        case "Prefeitura":
+            return "bg-cyan-600";
+        case "Associado":
+            return "bg-emerald-600";
+        default:
+            return "bg-slate-500";
+    }
+}
+
+/* ---------------- Sanitização + fallback ---------------- */
 const sanitize = (t?: string) =>
     t
         ? t
@@ -118,6 +148,7 @@ const shown = (v?: string, fallback = "a definir") => {
     return s ? sanitize(s) : fallback;
 };
 
+/* Datas/horas → “a definir” para zeros e vazios */
 const formatDateBr = (d?: string) =>
     !d
         ? ""
@@ -125,19 +156,23 @@ const formatDateBr = (d?: string) =>
             ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
             : d;
 
-const formatTime = (hhmm?: string) =>
-    (hhmm || "").length >= 5 ? (hhmm || "").slice(0, 5) : hhmm || "";
+function dateOr(d?: string) {
+    const raw = (d ?? "").trim();
+    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
+    const f = formatDateBr(raw);
+    if (!f || f === "00/00/0000") return "a definir";
+    return f;
+}
 
-const dateOr = (d?: string) => {
-    const f = formatDateBr(d);
-    return f ? f : "a definir";
-};
-const timeOr = (t?: string) => {
-    const f = formatTime(t);
-    return f ? f : "a definir";
-};
+function timeOr(t?: string) {
+    const raw = (t ?? "").trim();
+    if (!raw) return "a definir";
+    const hhmm = raw.slice(0, 5);
+    if (hhmm === "00:00") return "a definir";
+    return hhmm;
+}
 
-/* Cores das bolinhas por etapa (D, I, V, S) */
+/* Dots coloridos por etapa (D, I, V, S) */
 const STAGE_DOT_FILLED = [
     "bg-emerald-500 border-emerald-600", // D
     "bg-sky-500 border-sky-600", // I
@@ -147,30 +182,9 @@ const STAGE_DOT_FILLED = [
 const STAGE_DOT_EMPTY =
     "bg-transparent border-slate-300 dark:border-slate-600";
 
-/* Labels (caso use em algum lugar) */
-const FIELD_LABELS: Record<string, string> = {
-    falecido: "Falecido",
-    contato: "Contato",
-    religiao: "Religião",
-    convenio: "Convênio",
-    observacao: "Observação",
-    urna: "Urna",
-    roupa: "Roupa",
-    assistencia: "Assistência",
-    tanato: "Tanato",
-    local: "Local",
-    local_velorio: "Local Velório",
-    local_sepultamento: "Local Sepultamento",
-    data: "Data",
-    data_inicio_velorio: "Data Início Velório",
-    data_fim_velorio: "Data Fim Velório",
-    hora_inicio_velorio: "Hora Início Velório",
-    hora_fim_velorio: "Hora Fim Velório",
-    agente: "Agente",
-    status: "Status",
-};
-
-/* Texto para copiar (mantido) */
+/* =========================
+   Texto para copiar (mantido)
+   ========================= */
 function buildClipboardText(r: Registro) {
     const v = (k: string) => String(r?.[k] ?? "").trim();
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
@@ -389,7 +403,7 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* Cards (mobile) — layout da segunda imagem */}
+            {/* Cards (mobile) */}
             <div className="sm:hidden space-y-3">
                 {ativos.length === 0 ? (
                     <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
@@ -400,8 +414,10 @@ export default function QuadroAtendimentoPage() {
                         const preenchidas = etapasPreenchidas(r);
                         const dataBR = dateOr(r.data);
                         const hora = timeOr(r.hora_fim_velorio);
-                        const status = capStatus(r.status) || "a definir";
+                        const statusTxt = capStatus(r.status) || "a definir";
+                        const statusBg = badgeClass(r.status);
                         const localSep = shown(r.local_sepultamento || r.local);
+                        const convKind = normalizeConvenio(r.convenio);
                         return (
                             <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
                                 {/* Linha 1: Título + Data (direita) */}
@@ -418,15 +434,24 @@ export default function QuadroAtendimentoPage() {
                                     </div>
                                 </div>
 
-                                {/* Linha 2: Status (chip) + Agente (direita) */}
+                                {/* Linha 2: Chips (Status + Convênio) e Agente à direita */}
                                 <div className="mt-2 flex items-center justify-between gap-3">
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
-                                            r.status
-                                        )}`}
-                                    >
-                                        {status}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span
+                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
+                                        >
+                                            {statusTxt}
+                                        </span>
+                                        <span
+                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
+                                                convKind
+                                            )}`}
+                                            title="Convênio"
+                                        >
+                                            {convKind}
+                                        </span>
+                                    </div>
+
                                     <div className="text-xs">
                                         <span className="text-muted-foreground">Agente:&nbsp;</span>
                                         <b>{shown(r.agente)}</b>
@@ -439,17 +464,14 @@ export default function QuadroAtendimentoPage() {
                                     {shown(r.local_velorio)}
                                 </div>
 
-                                {/* Bloco: Endereço / Sepultamento */}
+                                {/* Bloco: Sepultamento (sem o título "Endereço") */}
                                 <div className="mt-3 rounded-lg border bg-background p-3">
-                                    <div className="text-sm font-semibold text-slate-700">Endereço:</div>
-
-                                    <div className="mt-1 text-sm">
+                                    <div className="text-sm">
                                         <span className="text-muted-foreground">Sepultamento&nbsp;</span>
                                         <b>{localSep}</b>
                                     </div>
-
                                     <div className="mt-1 grid grid-cols-2 text-sm">
-                                        <div className="text-muted-foreground"> {dateOr(r.data_fim_velorio)} </div>
+                                        <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
                                         <div className="text-right">{hora}</div>
                                     </div>
                                 </div>
