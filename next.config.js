@@ -1,19 +1,10 @@
-// next.config.js
 const withPWA = require("next-pwa")({
   dest: "public",
-  register: false, // mantém desativado p/ não conflitar com OneSignal
+  register: false, // ✅ Desativa registro automático do SW para evitar conflito com OneSignal
   skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
-  buildExcludes: [/app-build-manifest\.json$/],
+  disable: process.env.NODE_ENV === "development", // ✅ Evita ativação do PWA em ambiente local
+  buildExcludes: [/app-build-manifest\.json$/], // ✅ Evita incluir arquivos desnecessários no precache
   runtimeCaching: [
-    // ✅ NUNCA cachear a API PHP (precisa levar cookies sempre)
-    {
-      urlPattern: ({ url }) => url.pathname.startsWith("/api/php/"),
-      handler: "NetworkOnly",
-      options: {
-        cacheName: "api-php-network-only",
-      },
-    },
     {
       urlPattern: ({ url }) => url.pathname.startsWith("/push/"),
       handler: "NetworkOnly",
@@ -80,27 +71,15 @@ const withPWA = require("next-pwa")({
   ],
 });
 
-/** @type {import('next').NextConfig} */
 module.exports = withPWA({
   reactStrictMode: true,
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: true, // ✅ Ignora erros do ESLint no build
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: true, // ✅ Ignora erros de tipo no build
   },
   images: {
     domains: ["cdn.onesignal.com", "fonts.gstatic.com"],
-  },
-
-  // ✅ Rewrite: transforma /api/php/* em mesma origem (passa cookie no iOS)
-  async rewrites() {
-    return [
-      {
-        source: "/api/php/:path*",
-        // PHP está na raiz do site principal (HostGator)
-        destination: "https://planoassistencialintegrado.com.br/api/php/:path*",
-      },
-    ];
   },
 });
