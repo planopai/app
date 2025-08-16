@@ -70,14 +70,7 @@ const steps = [
         label: "Convênio",
         id: "convenio",
         type: "select",
-        options: [
-            "",
-            "Particular",
-            "Prefeitura de Barreiras",
-            "Prefeitura de Angical",
-            "Prefeitura de São Desidério",
-            "Associado(a)",
-        ],
+        options: ["", "Particular", "Prefeitura de Barreiras", "Prefeitura de Angical", "Prefeitura de São Desidério", "Associado(a)"],
     },
     { label: "Urna", id: "urna", type: "input", placeholder: "Digite o Modelo Da Urna" },
     {
@@ -131,20 +124,43 @@ const steps = [
 const obrigatorios = ["falecido", "contato", "convenio", "religiao", "urna"];
 const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
 
-// Agora temos 11 fases (a 11ª é o Material Recolhido)
-const fases = [
-    "fase01",
-    "fase02",
-    "fase03",
-    "fase04",
-    "fase05",
-    "fase06",
-    "fase07",
-    "fase08",
-    "fase09",
-    "fase10",
-    "fase11",
-] as const;
+// 11 fases (a 11ª é Material Recolhido)
+const fases = ["fase01", "fase02", "fase03", "fase04", "fase05", "fase06", "fase07", "fase08", "fase09", "fase10", "fase11"] as const;
+
+// --- URL de login (fallback) — será sobrescrita pelo backend quando vier em login_url
+const LOGIN_FALLBACK = "/login";
+
+// Redireciona para login exibindo a mensagem
+function redirectToLogin(loginUrl?: string, msg?: string) {
+    try {
+        if (msg) alert(msg);
+    } catch { }
+    window.location.href = loginUrl || LOGIN_FALLBACK;
+}
+
+// Helper fetch + tratamento de 401/need_login
+async function jsonWith401(url: string, init?: RequestInit) {
+    const resp = await fetch(url, { credentials: "include", ...init });
+    let data: any = null;
+    try {
+        data = await resp.json();
+    } catch {
+        // ignore
+    }
+
+    // Sessão expirada (backend padronizado)
+    if (resp.status === 401 || data?.need_login) {
+        redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
+        throw new Error(data?.msg || "Sessão expirada.");
+    }
+
+    if (!resp.ok || data?.erro) {
+        const msg = data?.msg || "Falha na requisição.";
+        throw new Error(msg);
+    }
+
+    return data;
+}
 
 function capitalizeStatus(s?: string) {
     switch (s) {
@@ -238,11 +254,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 function TextFeedback({ kind, children }: { kind: "success" | "error"; children?: React.ReactNode }) {
     if (!children) return null;
-    return (
-        <div className={`mt-3 rounded-md px-3 py-2 text-sm ${kind === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-            {children}
-        </div>
-    );
+    return <div className={`mt-3 rounded-md px-3 py-2 text-sm ${kind === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{children}</div>;
 }
 
 /* -----------------------------------------------------------
@@ -288,26 +300,43 @@ export default function AcompanhamentoPage() {
     const [infoIdx, setInfoIdx] = useState<number | null>(null);
 
     /* -------------------- Fetch helpers -------------------- */
-    const fetchRegistros = useCallback(() => {
-        fetch("/api/php/informativo.php?listar=1&_nocache=" + Date.now(), {
-            cache: "no-store",
-            headers: {
-                Pragma: "no-cache",
-                Expires: "0",
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-            },
-            credentials: "include",
-        })
-            .then((r) => r.json())
-            .then((json) => setRegistros(Array.isArray(json) ? json : []))
-            .catch(() => setRegistros([]));
+    const fetchRegistros = useCallback(async () => {
+        try {
+            // GET pode não estar protegido, mas se estiver, tratamos 401
+            const r = await fetch("/api/php/informativo.php?listar=1&_nocache=" + Date.now(), {
+                cache: "no-store",
+                headers: { Pragma: "no-cache", Expires: "0", "Cache-Control": "no-cache, no-store, must-revalidate" },
+                credentials: "include",
+            });
+
+            // tenta ler JSON sempre
+            const data = await r.json().catch(() => null);
+
+            if (r.status === 401 || data?.need_login) {
+                redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
+                return;
+            }
+
+            setRegistros(Array.isArray(data) ? data : []);
+        } catch {
+            setRegistros([]);
+        }
     }, []);
 
-    const fetchAvisos = useCallback(() => {
-        fetch("/api/php/avisos.php?listar=1&_nocache=" + Date.now(), { credentials: "include" })
-            .then((r) => r.json())
-            .then((json) => setAvisos(Array.isArray(json) ? json : []))
-            .catch(() => setAvisos([]));
+    const fetchAvisos = useCallback(async () => {
+        try {
+            const r = await fetch("/api/php/avisos.php?listar=1&_nocache=" + Date.now(), { credentials: "include" });
+            const data = await r.json().catch(() => null);
+
+            if (r.status === 401 || data?.need_login) {
+                redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
+                return;
+            }
+
+            setAvisos(Array.isArray(data) ? data : []);
+        } catch {
+            setAvisos([]);
+        }
     }, []);
 
     const enviarRegistroPHP = useCallback((data: any) => {
@@ -334,12 +363,12 @@ export default function AcompanhamentoPage() {
             materiais_bebedouros_qtd,
         };
 
-        return fetch("/api/php/informativo.php?listar=1&_nocache=", {
+        // >>> removido ?listar=1 nos POSTs
+        return jsonWith401("/api/php/informativo.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-            credentials: "include",
-        }).then((r) => r.json());
+        });
     }, []);
 
     /* -------------------- Ciclos -------------------- */
@@ -490,14 +519,18 @@ export default function AcompanhamentoPage() {
             }
         }
 
-        const payload = { ...wizardData, materiais, acao: wizardEditing ? "editar" : "novo" };
-        const json = await enviarRegistroPHP(payload);
-        if (json?.sucesso) {
-            setWizardMsg({ text: "Registro salvo!", ok: true });
-            fetchRegistros();
-            setTimeout(() => setWizardOpen(false), 950);
-        } else {
-            setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
+        try {
+            const payload = { ...wizardData, materiais, acao: wizardEditing ? "editar" : "novo" };
+            const json = await enviarRegistroPHP(payload);
+            if (json?.sucesso) {
+                setWizardMsg({ text: "Registro salvo!", ok: true });
+                fetchRegistros();
+                setTimeout(() => setWizardOpen(false), 950);
+            } else {
+                setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
+            }
+        } catch (e: any) {
+            setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
         }
     }, [salvarGrupoWizard, wizardRestrictGroup, wizardData, wizardEditing, enviarRegistroPHP, fetchRegistros, materiais]);
 
@@ -541,14 +574,19 @@ export default function AcompanhamentoPage() {
             if (!ok) return;
 
             setAcaoSubmitting(true);
-            const json = await enviarRegistroPHP({ acao: "atualizar_status", id, status: acao });
-            if (json?.sucesso) {
-                setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
-                fetchRegistros();
-                setTimeout(() => setAcaoOpen(false), 500);
-            } else {
+            try {
+                const json = await enviarRegistroPHP({ acao: "atualizar_status", id, status: acao });
+                if (json?.sucesso) {
+                    setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
+                    fetchRegistros();
+                    setTimeout(() => setAcaoOpen(false), 500);
+                } else {
+                    setAcaoSubmitting(false);
+                    setAcaoMsg({ text: json?.erro || "Erro ao atualizar status.", ok: false });
+                }
+            } catch (e: any) {
                 setAcaoSubmitting(false);
-                setAcaoMsg({ text: "Erro ao atualizar status.", ok: false });
+                setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
             }
         },
         [acaoIdx, registros, enviarRegistroPHP, fetchRegistros, acaoSubmitting]
@@ -567,35 +605,42 @@ export default function AcompanhamentoPage() {
             setAvisoMsg({ text: "Digite um aviso para enviar!", ok: false });
             return;
         }
-        const res = await fetch("/api/php/avisos.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mensagem: val }),
-            credentials: "include",
-        }).then((r) => r.json());
 
-        if (res?.sucesso) {
-            setAvisoMsg({ text: "Aviso adicionado!", ok: true });
-            if (avisoInputRef.current) avisoInputRef.current.value = "";
-            fetchAvisos();
-        } else {
-            setAvisoMsg({ text: res?.erro || "Erro ao adicionar!", ok: false });
+        try {
+            const res = await jsonWith401("/api/php/avisos.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mensagem: val }),
+            });
+
+            if (res?.sucesso) {
+                setAvisoMsg({ text: "Aviso adicionado!", ok: true });
+                if (avisoInputRef.current) avisoInputRef.current.value = "";
+                fetchAvisos();
+            } else {
+                setAvisoMsg({ text: res?.erro || "Erro ao adicionar!", ok: false });
+            }
+        } catch (e: any) {
+            setAvisoMsg({ text: e?.message || "Erro ao adicionar!", ok: false });
         }
     }, [fetchAvisos]);
 
     const editarAviso = useCallback(
         async (id: number | string, mensagem: string) => {
-            const res = await fetch("/api/php/avisos.php", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, mensagem }),
-                credentials: "include",
-            }).then((r) => r.json());
-            if (res?.sucesso) {
-                setAvisoMsg({ text: "Aviso atualizado!", ok: true });
-                fetchAvisos();
-            } else {
-                setAvisoMsg({ text: res?.erro || "Erro ao editar!", ok: false });
+            try {
+                const res = await jsonWith401("/api/php/avisos.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id, mensagem }),
+                });
+                if (res?.sucesso) {
+                    setAvisoMsg({ text: "Aviso atualizado!", ok: true });
+                    fetchAvisos();
+                } else {
+                    setAvisoMsg({ text: res?.erro || "Erro ao editar!", ok: false });
+                }
+            } catch (e: any) {
+                setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
             }
         },
         [fetchAvisos]
@@ -604,17 +649,20 @@ export default function AcompanhamentoPage() {
     const excluirAviso = useCallback(
         async (id: number | string) => {
             if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
-            const res = await fetch("/api/php/avisos.php", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, excluir: true }),
-                credentials: "include",
-            }).then((r) => r.json());
-            if (res?.sucesso) {
-                setAvisoMsg({ text: "Aviso excluído!", ok: true });
-                fetchAvisos();
-            } else {
-                setAvisoMsg({ text: res?.erro || "Erro ao excluir!", ok: false });
+            try {
+                const res = await jsonWith401("/api/php/avisos.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id, excluir: true }),
+                });
+                if (res?.sucesso) {
+                    setAvisoMsg({ text: "Aviso excluído!", ok: true });
+                    fetchAvisos();
+                } else {
+                    setAvisoMsg({ text: res?.erro || "Erro ao excluir!", ok: false });
+                }
+            } catch (e: any) {
+                setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
             }
         },
         [fetchAvisos]
@@ -622,17 +670,20 @@ export default function AcompanhamentoPage() {
 
     const finalizarAviso = useCallback(
         async (id: number | string) => {
-            const res = await fetch("/api/php/avisos.php", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, finalizar: true }),
-                credentials: "include",
-            }).then((r) => r.json());
-            if (res?.sucesso) {
-                setAvisoMsg({ text: "Aviso finalizado!", ok: true });
-                fetchAvisos();
-            } else {
-                setAvisoMsg({ text: res?.erro || "Erro ao finalizar!", ok: false });
+            try {
+                const res = await jsonWith401("/api/php/avisos.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id, finalizar: true }),
+                });
+                if (res?.sucesso) {
+                    setAvisoMsg({ text: "Aviso finalizado!", ok: true });
+                    fetchAvisos();
+                } else {
+                    setAvisoMsg({ text: res?.erro || "Erro ao finalizar!", ok: false });
+                }
+            } catch (e: any) {
+                setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
             }
         },
         [fetchAvisos]
@@ -778,13 +829,7 @@ export default function AcompanhamentoPage() {
                                                 {obrigatorios.includes(s.id) ? " *" : ""}
                                             </FieldLabel>
                                             <div className="flex items-center gap-2">
-                                                <select
-                                                    id={id}
-                                                    name={s.id}
-                                                    value={assistenciaVal || val}
-                                                    onChange={(e) => setAssistenciaVal(e.target.value)}
-                                                    className="w-full rounded-md border px-3 py-2 text-sm"
-                                                >
+                                                <select id={id} name={s.id} value={assistenciaVal || val} onChange={(e) => setAssistenciaVal(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
                                                     {s.options.map((opt: string) => (
                                                         <option key={opt} value={opt}>
                                                             {opt}
@@ -1009,8 +1054,7 @@ export default function AcompanhamentoPage() {
                                     type="button"
                                     disabled={!habilitar || acaoSubmitting}
                                     onClick={() => registrarAcao(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting ? "hover:bg-muted" : "pointer-events-none opacity-50"
-                                        }`}
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting ? "hover:bg-muted" : "pointer-events-none opacity-50"}`}
                                     title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
                                 >
                                     {acaoToStatus(f)}
