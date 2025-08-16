@@ -124,13 +124,13 @@ const steps = [
 const obrigatorios = ["falecido", "contato", "convenio", "religiao", "urna"];
 const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
 
-// Fases de status
+// 11 fases (a 11ª é Material Recolhido)
 const fases = ["fase01", "fase02", "fase03", "fase04", "fase05", "fase06", "fase07", "fase08", "fase09", "fase10", "fase11"] as const;
 
-/** URL ABSOLUTA DO LOGIN */
+/** URL ABSOLUTA DO LOGIN (fix) */
 const LOGIN_ABSOLUTE = "https://pai.planoassistencialintegrado.com.br/login";
 
-/** Evita múltiplos redirecionamentos/alerts */
+/** Evita múltiplos redirecionamentos/alerts (fix) */
 let IS_REDIRECTING = false;
 
 // Redireciona para login exibindo a mensagem
@@ -142,11 +142,15 @@ function redirectToLogin(loginUrl?: string, msg?: string) {
         if (msg) alert(msg);
     } catch { }
 
-    const url = (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
+    const url =
+        (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) ||
+        LOGIN_ABSOLUTE;
 
+    // replace não cria histórico; href como fallback imediato
     try {
         window.location.replace(url);
         setTimeout(() => {
+            // fallback para navegadores que ignorarem o replace
             if (typeof window !== "undefined" && window.location.href !== url) {
                 window.location.href = url;
             }
@@ -160,7 +164,7 @@ function redirectToLogin(loginUrl?: string, msg?: string) {
 async function jsonWith401(url: string, init?: RequestInit) {
     const resp = await fetch(url, { credentials: "include", ...init });
 
-    // 401 imediato (mesmo sem JSON)
+    // Redireciona imediatamente em 401, mesmo que a resposta não seja JSON
     if (resp.status === 401) {
         redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
         throw new Error("Sessão expirada.");
@@ -170,11 +174,13 @@ async function jsonWith401(url: string, init?: RequestInit) {
     try {
         data = await resp.json();
     } catch {
+        // se não for JSON e não for ok, ainda assim sinaliza erro
         if (!resp.ok) {
             throw new Error("Falha na requisição.");
         }
     }
 
+    // Sessão expirada padronizada pelo backend
     if (data?.need_login) {
         redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
         throw new Error(data?.msg || "Sessão expirada.");
@@ -334,11 +340,13 @@ export default function AcompanhamentoPage() {
                 credentials: "include",
             });
 
+            // Redirect imediato em 401, mesmo sem JSON
             if (r.status === 401) {
                 redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
                 return;
             }
 
+            // tenta ler JSON (pode não ser JSON)
             const data = await r.json().catch(() => null);
 
             if (data?.need_login) {
@@ -439,6 +447,7 @@ export default function AcompanhamentoPage() {
     }, []);
 
     /* -------------------- Tabela -------------------- */
+    // agora só some quando chegar em fase11
     const registrosVisiveis = useMemo(() => registros.filter((r) => r.status !== "fase11"), [registros]);
 
     /* -------------------- Wizard -------------------- */
@@ -633,7 +642,7 @@ export default function AcompanhamentoPage() {
         setInfoOpen(true);
     }, []);
 
-    /* -------------------- Avisos (CRUD simples) -------------------- */
+    /* -------------------- Avisos -------------------- */
     const enviarAviso = useCallback(async () => {
         const val = (avisoInputRef.current?.value ?? "").trim();
         if (!val) {
