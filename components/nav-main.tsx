@@ -15,7 +15,7 @@ import {
 
 export function NavMain({
   items,
-  onItemClick, // ⬅️ callback para fechar ao clicar
+  onItemClick, // callback para fechar ao clicar
   iconClass = "size-9 sm:size-10 lg:size-11 xl:size-12",
   textClass = "text-base sm:text-lg lg:text-lg xl:text-lg",
   itemClass = "gap-2 sm:gap-2.5 md:gap-3 lg:gap-3.5",
@@ -39,6 +39,7 @@ export function NavMain({
   return (
     <SidebarGroup>
       <SidebarGroupContent>
+        {/* linhas + espaçamento sutil entre itens */}
         <SidebarMenu className={clsx(menuSpaceClass, dividerClass)}>
           {items.map((item) => {
             const active =
@@ -61,7 +62,7 @@ export function NavMain({
                   <Link
                     href={item.url}
                     aria-current={active ? "page" : undefined}
-                    onClick={onItemClick} // ⬅️ fecha/encolhe
+                    onClick={onItemClick}
                   >
                     {IconComp ? (
                       <IconComp className={clsx("shrink-0", iconClass)} />

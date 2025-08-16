@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   IconHome,
   IconDeviceDesktop,
@@ -24,7 +25,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar, // ⬅️ vamos usar só setOpen(false)
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 const data = {
@@ -42,15 +43,37 @@ const data = {
 };
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const { setOpen } = useSidebar();
+  // Pega o contexto do sidebar (algumas versões têm métodos diferentes)
+  const sidebar = useSidebar() as any;
+  const pathname = usePathname();
 
-  // Fecha o sidebar ao navegar (ignora Cmd/Ctrl/Middle click)
+  // Função robusta para fechar/encolher independente da versão
+  const collapseOrClose = React.useCallback(() => {
+    // mobile: tenta fechar overlay
+    if (sidebar?.isMobile) {
+      sidebar?.setOpen?.(false);
+      return;
+    }
+    // desktop: tenta colapsar/fechar usando o que existir
+    sidebar?.setState?.("collapsed"); // algumas builds expõem isso
+    sidebar?.toggleSidebar?.();       // outras expõem um toggle
+    sidebar?.setOpen?.(false);        // fallback (fecha/colapsa em várias builds)
+  }, [sidebar]);
+
+  // Fecha/encolhe ao clicar (ignora Cmd/Ctrl/Shift/Middle click)
   const handleNavigate = React.useCallback((e?: React.MouseEvent) => {
     if (e) {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
     }
-    setOpen(false); // funciona para mobile (off-canvas) e desktop (colapsa)
-  }, [setOpen]);
+    collapseOrClose();
+  }, [collapseOrClose]);
+
+  // Fallback: ao mudar de rota, garante que o menu foi fechado/encolhido
+  React.useEffect(() => {
+    if (!pathname) return;
+    collapseOrClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   return (
     <Sidebar collapsible="icon" {...props}>
