@@ -80,8 +80,7 @@ const steps = [
         options: [
             "ROUPA PRÓPRIA",
             "CONJ. MASCULINO - RENASCER",
-            "LA BELLE CINZA - NORMAL",
-            "LA BELLE CINZA - ITALIANO",
+            "LA BELLE CINZA - NORMAL",        
             "CONJ. MASCULINO - RENASCER",
             "CONJ. FEMININO - RENASCER",
             "CONJ. MASCULINO GG",
