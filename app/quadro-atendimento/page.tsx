@@ -23,7 +23,8 @@ type Registro = {
     tanato?: string;
     local?: string;
     local_sepultamento?: string;
-    // o backend pode enviar outros campos:
+    materiais?: string;
+    material?: string;
     [key: string]: any;
 };
 
@@ -93,20 +94,14 @@ function capStatus(s?: string) {
 }
 
 function badgeClass(s?: string) {
-    switch ((s || "").toLowerCase()) {
-        case "removendo":
-            return "bg-amber-500";
-        case "velando":
-            return "bg-violet-600";
-        case "preparando":
-            return "bg-blue-600";
-        case "sepultando":
-            return "bg-orange-600";
-        case "concluido":
-            return "bg-green-600";
-        default:
-            return "bg-neutral-500";
-    }
+    const x = (s || "").toLowerCase();
+    if (x.includes("remov")) return "bg-amber-500";
+    if (x.includes("veland")) return "bg-violet-600";
+    if (x.includes("prepar")) return "bg-blue-600";
+    if (x.includes("sepult")) return "bg-orange-600";
+    if (x.includes("concl")) return "bg-green-600";
+    if (x.includes("ornament")) return "bg-rose-600";
+    return "bg-neutral-500";
 }
 
 const sanitize = (t?: string) =>
@@ -118,7 +113,6 @@ const sanitize = (t?: string) =>
             .replace(/"/g, "&quot;")
         : "";
 
-/* Fallback elegante para exibição na UI */
 const shown = (v?: string, fallback = "a definir") => {
     const s = String(v ?? "").trim();
     return s ? sanitize(s) : fallback;
@@ -143,9 +137,17 @@ const timeOr = (t?: string) => {
     return f ? f : "a definir";
 };
 
-/* =========================
-   Labels (usadas na grade tradicional se precisar)
-   ========================= */
+/* Cores das bolinhas por etapa (D, I, V, S) */
+const STAGE_DOT_FILLED = [
+    "bg-emerald-500 border-emerald-600", // D
+    "bg-sky-500 border-sky-600", // I
+    "bg-violet-500 border-violet-600", // V
+    "bg-amber-500 border-amber-600", // S
+];
+const STAGE_DOT_EMPTY =
+    "bg-transparent border-slate-300 dark:border-slate-600";
+
+/* Labels (caso use em algum lugar) */
 const FIELD_LABELS: Record<string, string> = {
     falecido: "Falecido",
     contato: "Contato",
@@ -168,11 +170,9 @@ const FIELD_LABELS: Record<string, string> = {
     status: "Status",
 };
 
-/* monta texto para copiar (com linha em branco entre itens)
-   e cabeçalho ATENDIMENTO <CONVÊNIO> */
+/* Texto para copiar (mantido) */
 function buildClipboardText(r: Registro) {
     const v = (k: string) => String(r?.[k] ?? "").trim();
-
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
     const lines = [
         `*ATENDIMENTO ${atend}*`,
@@ -187,8 +187,6 @@ function buildClipboardText(r: Registro) {
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
     ];
-
-    // linha em branco entre cada informação
     return lines.join("\n\n");
 }
 
@@ -323,12 +321,10 @@ export default function QuadroAtendimentoPage() {
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
             {/* Header/clock */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <h1 className="text-2xl font-bold tracking-tight">
-                    Quadro de Atendimentos
-                </h1>
+                <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Atualizado em tempo real —{" "}
-                    <span className="font-medium">{clockTime}</span> • {clockDate}
+                    Atualizado em tempo real — <span className="font-medium">{clockTime}</span> •{" "}
+                    {clockDate}
                 </p>
             </div>
 
@@ -350,10 +346,7 @@ export default function QuadroAtendimentoPage() {
                         <tbody className="divide-y">
                             {ativos.length === 0 ? (
                                 <tr>
-                                    <td
-                                        colSpan={7}
-                                        className="px-4 py-6 text-center text-muted-foreground"
-                                    >
+                                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
                                         Nenhum atendimento encontrado.
                                     </td>
                                 </tr>
@@ -385,21 +378,7 @@ export default function QuadroAtendimentoPage() {
                                                 </span>
                                             </td>
                                             <td>
-                                                <div className="flex items-center gap-3">
-                                                    {["D", "I", "V", "S"].map((label, k) => (
-                                                        <div key={k} className="flex items-center gap-1.5">
-                                                            <span className="text-[11px] text-muted-foreground">
-                                                                {label}
-                                                            </span>
-                                                            <span
-                                                                className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k]
-                                                                        ? "bg-green-500 border-green-600"
-                                                                        : "bg-transparent"
-                                                                    }`}
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <EtapasInlineDots filled={preenchidas} />
                                             </td>
                                         </tr>
                                     );
@@ -410,7 +389,7 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* Cards (mobile) */}
+            {/* Cards (mobile) — layout da segunda imagem */}
             <div className="sm:hidden space-y-3">
                 {ativos.length === 0 ? (
                     <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
@@ -419,63 +398,66 @@ export default function QuadroAtendimentoPage() {
                 ) : (
                     ativos.map((r, i) => {
                         const preenchidas = etapasPreenchidas(r);
+                        const dataBR = dateOr(r.data);
+                        const hora = timeOr(r.hora_fim_velorio);
+                        const status = capStatus(r.status) || "a definir";
+                        const localSep = shown(r.local_sepultamento || r.local);
                         return (
-                            <div
-                                key={i}
-                                className="rounded-xl border bg-card/60 p-4 shadow-sm"
-                            >
+                            <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                                {/* Linha 1: Título + Data (direita) */}
                                 <div className="flex items-start justify-between gap-3">
                                     <button
-                                        className="text-left text-base font-semibold underline-offset-2 hover:underline"
+                                        className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
                                         onClick={() => showDetail(r)}
                                         title="Ver detalhes"
                                     >
                                         {shown(r.falecido)}
                                     </button>
+                                    <div className="shrink-0 text-xs text-muted-foreground mt-0.5">
+                                        {dataBR}
+                                    </div>
+                                </div>
+
+                                {/* Linha 2: Status (chip) + Agente (direita) */}
+                                <div className="mt-2 flex items-center justify-between gap-3">
                                     <span
-                                        className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white ${badgeClass(
+                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
                                             r.status
                                         )}`}
                                     >
-                                        {capStatus(r.status) || "a definir"}
+                                        {status}
                                     </span>
+                                    <div className="text-xs">
+                                        <span className="text-muted-foreground">Agente:&nbsp;</span>
+                                        <b>{shown(r.agente)}</b>
+                                    </div>
                                 </div>
 
-                                <div className="mt-3 space-y-1.5 text-sm">
-                                    <div>
-                                        <span className="text-muted-foreground">Data:</span>{" "}
-                                        {dateOr(r.data)}
+                                {/* Linha 3: Local (velório) */}
+                                <div className="mt-2 text-sm">
+                                    <span className="text-muted-foreground">Local:&nbsp;</span>
+                                    {shown(r.local_velorio)}
+                                </div>
+
+                                {/* Bloco: Endereço / Sepultamento */}
+                                <div className="mt-3 rounded-lg border bg-background p-3">
+                                    <div className="text-sm font-semibold text-slate-700">Endereço:</div>
+
+                                    <div className="mt-1 text-sm">
+                                        <span className="text-muted-foreground">Sepultamento&nbsp;</span>
+                                        <b>{localSep}</b>
                                     </div>
-                                    <div>
-                                        <span className="text-muted-foreground">Hora:</span>{" "}
-                                        {timeOr(r.hora_fim_velorio)}
+
+                                    <div className="mt-1 grid grid-cols-2 text-sm">
+                                        <div className="text-muted-foreground"> {dateOr(r.data_fim_velorio)} </div>
+                                        <div className="text-right">{hora}</div>
                                     </div>
-                                    <div>
-                                        <span className="text-muted-foreground">Agente:</span>{" "}
-                                        {shown(r.agente)}
-                                    </div>
-                                    <div>
-                                        <span className="text-muted-foreground">Local:</span>{" "}
-                                        {shown(r.local_velorio)}
-                                    </div>
-                                    <div className="pt-1">
-                                        <span className="text-muted-foreground">Etapas:</span>
-                                        <div className="mt-1 flex items-center gap-3">
-                                            {["D", "I", "V", "S"].map((label, k) => (
-                                                <div key={k} className="flex items-center gap-1.5">
-                                                    <span className="text-[11px] text-muted-foreground">
-                                                        {label}
-                                                    </span>
-                                                    <span
-                                                        className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k]
-                                                                ? "bg-green-500 border-green-600"
-                                                                : "bg-transparent"
-                                                            }`}
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                                </div>
+
+                                {/* Etapas coloridas */}
+                                <div className="mt-3">
+                                    <div className="text-xs text-muted-foreground">Etapas:</div>
+                                    <EtapasInlineDots filled={preenchidas} />
                                 </div>
                             </div>
                         );
@@ -503,7 +485,7 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* ===== Modal de Detalhes (visual com tópicos) ===== */}
+            {/* ===== Modal de Detalhes ===== */}
             {open && detail && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6"
@@ -511,11 +493,7 @@ export default function QuadroAtendimentoPage() {
                     role="dialog"
                 >
                     {/* overlay */}
-                    <div
-                        className="absolute inset-0 bg-black/40"
-                        onClick={closeDetail}
-                        aria-hidden
-                    />
+                    <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
 
                     {/* painel */}
                     <div
@@ -595,7 +573,6 @@ export default function QuadroAtendimentoPage() {
 
                         {/* conteúdo com TÓPICOS */}
                         <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
-                            {/* INFORMAÇÕES GERAIS */}
                             <Topic title="INFORMAÇÕES GERAIS">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Falecido" value={shown(detail.falecido)} />
@@ -605,7 +582,6 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                             </Topic>
 
-                            {/* ITENS */}
                             <Topic title="ITENS">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Urna" value={shown(detail.urna)} />
@@ -614,73 +590,38 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
                                     <Field
                                         label="Materiais"
-                                        value={
-                                            shown(
-                                                (detail.materiais ?? detail.material ?? "") as string,
-                                                "a definir"
-                                            )
-                                        }
+                                        value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")}
                                         className="sm:col-span-2"
                                     />
                                 </div>
                             </Topic>
 
-                            {/* VELÓRIO */}
                             <Topic title="VELÓRIO">
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field
-                                        label="Local Velório"
-                                        value={shown(detail.local_velorio)}
-                                        className="sm:col-span-1"
-                                    />
-                                    <Field
-                                        label="Data Início Velório"
-                                        value={dateOr(detail.data_inicio_velorio)}
-                                    />
-                                    <Field
-                                        label="Data Fim Velório"
-                                        value={dateOr(detail.data_fim_velorio)}
-                                    />
+                                    <Field label="Local Velório" value={shown(detail.local_velorio)} />
+                                    <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
+                                    <Field label="Data Fim Velório" value={dateOr(detail.data_fim_velorio)} />
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field
-                                        label="Início Velório"
-                                        value={timeOr(detail.hora_inicio_velorio)}
-                                    />
-                                    <Field
-                                        label="Fim Velório"
-                                        value={timeOr(detail.hora_fim_velorio)}
-                                    />
+                                    <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
+                                    <Field label="Fim Velório" value={timeOr(detail.hora_fim_velorio)} />
                                 </div>
                             </Topic>
 
-                            {/* SEPULTAMENTO */}
                             <Topic title="SEPULTAMENTO">
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field
-                                        label="Local"
-                                        value={shown(detail.local_sepultamento || detail.local)}
-                                    />
-                                    <Field
-                                        label="Data Fim Velório"
-                                        value={dateOr(detail.data_fim_velorio)}
-                                    />
+                                    <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
+                                    <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
                                 </div>
                             </Topic>
 
-                            {/* OBSERVAÇÃO */}
                             <Topic title="OBSERVAÇÃO">
                                 <div className="grid grid-cols-1 gap-2">
-                                    <Field
-                                        label="Observação"
-                                        value={shown(detail.observacao)}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Observação" value={shown(detail.observacao)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
-                            {/* ETAPAS */}
                             <div className="rounded-xl border bg-background p-3">
                                 <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
                                     Etapas preenchidas
@@ -695,15 +636,9 @@ export default function QuadroAtendimentoPage() {
     );
 }
 
-/* ===== Componentes auxiliares do modal ===== */
+/* ===== Componentes auxiliares ===== */
 
-function Topic({
-    title,
-    children,
-}: {
-    title: string;
-    children: React.ReactNode;
-}) {
+function Topic({ title, children }: { title: string; children: React.ReactNode }) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
@@ -733,18 +668,35 @@ function Field({
     );
 }
 
-/* Linha de etapas usada no modal */
+/* Dots coloridos inline */
+function EtapasInlineDots({ filled }: { filled: boolean[] }) {
+    const labels = ["D", "I", "V", "S"];
+    return (
+        <div className="mt-1 flex items-center gap-4">
+            {labels.map((label, k) => (
+                <div key={k} className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground">{label}</span>
+                    <span
+                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/* Linha de etapas (modal) */
 function EtapasRow({ registro }: { registro: Registro }) {
     const preenchidas = etapasPreenchidas(registro);
+    const labels = ["D", "I", "V", "S"];
     return (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            {["D", "I", "V", "S"].map((label, k) => (
+            {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{label}</span>
                     <span
-                        className={`h-4 w-4 rounded-full border ${preenchidas[k]
-                                ? "bg-green-500 border-green-600"
-                                : "bg-transparent"
+                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
                             }`}
                     />
                 </div>
