@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   IconHome,
   IconDeviceDesktop,
@@ -25,7 +25,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar, // ⬅️ para detectar mobile e fechar
+  useSidebar, // vamos detectar mobile e fechar
 } from "@/components/ui/sidebar";
 
 const data = {
@@ -44,25 +44,43 @@ const data = {
 };
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const pathname = usePathname();
-  const { isMobile, setOpen } = useSidebar();
+  const router = useRouter();
+  const sidebar = useSidebar() as any;
 
-  // Fecha o sidebar APENAS no mobile ao clicar num item.
-  const handleMobileClick = React.useCallback(
-    (e?: React.MouseEvent) => {
-      if (e) {
-        // não fechar em cmd/ctrl/shift/alt click ou botão do meio
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
+  // fecha imediatamente o drawer mobile (cobre diferentes versões do componente)
+  const closeMobileNow = React.useCallback(() => {
+    if (typeof sidebar?.setOpenMobile === "function") {
+      sidebar.setOpenMobile(false);
+    } else if (typeof sidebar?.setOpen === "function") {
+      sidebar.setOpen(false);
+    }
+  }, [sidebar]);
+
+  // navega de forma controlada no MOBILE: fecha e depois muda a rota
+  const handleNavigateMobile = React.useCallback(
+    (href: string, e?: React.MouseEvent<HTMLAnchorElement>) => {
+      // permitir abrir em nova aba/janela etc.
+      if (
+        e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1
+      ) {
+        return;
       }
-      if (isMobile) setOpen(false);
-    },
-    [isMobile, setOpen]
-  );
+      const isMobile: boolean =
+        !!sidebar?.isMobile ||
+        // fallback por conferência de viewport (caso a lib não exponha isMobile)
+        (typeof window !== "undefined" && window.matchMedia?.("(max-width: 1024px)")?.matches) ||
+        false;
 
-  // Fallback: quando a rota muda, garante fechamento no mobile
-  React.useEffect(() => {
-    if (isMobile) setOpen(false);
-  }, [pathname, isMobile, setOpen]);
+      if (isMobile) {
+        e?.preventDefault(); // NÃO deixa o Link navegar ainda
+        closeMobileNow();    // fecha já o menu (efeito imediato)
+        // navega programaticamente
+        router.push(href);
+      }
+      // no desktop, não fazemos nada: Link cuida da navegação e o menu fica como está
+    },
+    [router, sidebar?.isMobile, closeMobileNow]
+  );
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -71,7 +89,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <Link href="/" onClick={handleMobileClick}>
+              <Link href="/" onClick={(e) => handleNavigateMobile("/", e)}>
                 <img
                   src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
                   alt="Logo PAI"
@@ -85,15 +103,18 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       {/* Menu principal */}
       <SidebarContent>
-        {/* passa a callback para cada item */}
-        <NavMain items={data.navMain} onItemClick={handleMobileClick} />
+        {/* Passa a navegação controlada para cada item */}
+        <NavMain
+          items={data.navMain}
+          onNavigate={handleNavigateMobile}
+        />
 
         {/* Ajuda no rodapé visual */}
         <div className="mt-auto px-2">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild>
-                <Link href="/help" onClick={handleMobileClick}>
+                <Link href="/help" onClick={(e) => handleNavigateMobile("/help", e)}>
                   <IconHelp className="!size-5" />
                   <span>Ajuda</span>
                 </Link>

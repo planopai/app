@@ -16,7 +16,7 @@ import {
 
 export function NavMain({
   items,
-  onItemClick, // ⬅️ callback opcional (usada para fechar no mobile)
+  onNavigate, // ⬅️ novo: navegação controlada pelo AppSidebar (fecha menu no mobile)
   iconClass = "size-9 sm:size-10 lg:size-11 xl:size-12",
   textClass = "text-base sm:text-lg lg:text-lg xl:text-lg",
   itemClass = "gap-2 sm:gap-2.5 md:gap-3 lg:gap-3.5",
@@ -28,7 +28,7 @@ export function NavMain({
     url: string;
     icon?: Icon;
   }[];
-  onItemClick?: (e?: React.MouseEvent<HTMLAnchorElement>) => void;
+  onNavigate?: (href: string, e?: React.MouseEvent<HTMLAnchorElement>) => void;
   iconClass?: string;
   textClass?: string;
   itemClass?: string;
@@ -63,7 +63,7 @@ export function NavMain({
                   <Link
                     href={item.url}
                     aria-current={active ? "page" : undefined}
-                    onClick={onItemClick}
+                    onClick={(e) => onNavigate?.(item.url, e)}
                   >
                     {IconComp ? (
                       <IconComp className={clsx("shrink-0", iconClass)} />
