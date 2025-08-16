@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   IconHome,
   IconDeviceDesktop,
@@ -25,16 +24,19 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/sidebar";
 
 const data = {
   user: { name: "shadcn", email: "m@example.com", avatar: "/avatars/shadcn.jpg" },
+  // Lista PLANA para compatibilidade com o NavMain atual (sem subitens)
   navMain: [
     { title: "Início", url: "/", icon: IconHome },
     { title: "Quadro de Atendimento", url: "/quadro-atendimento", icon: IconDeviceDesktop },
     { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
+
+    // Item único "Memorial"
     { title: "Memorial", url: "/memorial", icon: IconBuildingSkyscraper },
+
     { title: "Obituário", url: "/obituario", icon: IconBook },
     { title: "Leads", url: "/leads", icon: IconUsersGroup },
     { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
@@ -43,38 +45,6 @@ const data = {
 };
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  // Pega o contexto do sidebar (algumas versões têm métodos diferentes)
-  const sidebar = useSidebar() as any;
-  const pathname = usePathname();
-
-  // Função robusta para fechar/encolher independente da versão
-  const collapseOrClose = React.useCallback(() => {
-    // mobile: tenta fechar overlay
-    if (sidebar?.isMobile) {
-      sidebar?.setOpen?.(false);
-      return;
-    }
-    // desktop: tenta colapsar/fechar usando o que existir
-    sidebar?.setState?.("collapsed"); // algumas builds expõem isso
-    sidebar?.toggleSidebar?.();       // outras expõem um toggle
-    sidebar?.setOpen?.(false);        // fallback (fecha/colapsa em várias builds)
-  }, [sidebar]);
-
-  // Fecha/encolhe ao clicar (ignora Cmd/Ctrl/Shift/Middle click)
-  const handleNavigate = React.useCallback((e?: React.MouseEvent) => {
-    if (e) {
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
-    }
-    collapseOrClose();
-  }, [collapseOrClose]);
-
-  // Fallback: ao mudar de rota, garante que o menu foi fechado/encolhido
-  React.useEffect(() => {
-    if (!pathname) return;
-    collapseOrClose();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
-
   return (
     <Sidebar collapsible="icon" {...props}>
       {/* Cabeçalho: logo */}
@@ -82,7 +52,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <Link href="/" onClick={handleNavigate}>
+              <Link href="/">
                 <img
                   src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
                   alt="Logo PAI"
@@ -96,14 +66,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       {/* Menu principal */}
       <SidebarContent>
-        <NavMain items={data.navMain} onItemClick={handleNavigate} />
+        <NavMain items={data.navMain} />
 
         {/* Ajuda no rodapé visual */}
         <div className="mt-auto px-2">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild>
-                <Link href="/help" onClick={handleNavigate}>
+                <Link href="/help">
                   <IconHelp className="!size-5" />
                   <span>Ajuda</span>
                 </Link>
