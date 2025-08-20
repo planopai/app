@@ -334,7 +334,7 @@ export default function HistoricoSepultamentosPage() {
                 const raw = ent.detalhes as any;
 
                 const materiaisLines: string[] = [];
-                const arrumacaoChecked: string[] = [];
+                const arrSet = new Set<string>(); // <— para deduplicar arrumação
 
                 try {
                     const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
@@ -345,7 +345,7 @@ export default function HistoricoSepultamentosPage() {
 
                             if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
                                 if (/^arrumacao(_json)?$/i.test(key)) {
-                                    arrumacaoChecked.push(...parseArrumacao(obj[key]));
+                                    for (const it of parseArrumacao(obj[key])) arrSet.add(it);
                                 }
                                 continue;
                             }
@@ -360,7 +360,7 @@ export default function HistoricoSepultamentosPage() {
                             }
 
                             if (/^arrumacao(_json)?$/i.test(key)) {
-                                arrumacaoChecked.push(...parseArrumacao(obj[key]));
+                                for (const it of parseArrumacao(obj[key])) arrSet.add(it);
                                 continue;
                             }
 
@@ -389,9 +389,9 @@ export default function HistoricoSepultamentosPage() {
                     detalhesLines.unshift("Materiais:");
                     for (const l of materiaisLines) detalhesLines.push(`• ${l}`);
                 }
-                if (arrumacaoChecked.length) {
+                if (arrSet.size) {
                     detalhesLines.push("Arrumação:");
-                    for (const item of arrumacaoChecked) detalhesLines.push(`• ${item}`);
+                    for (const item of Array.from(arrSet)) detalhesLines.push(`• ${item}`);
                 }
 
                 // Quebra em largura disponível
@@ -453,7 +453,9 @@ export default function HistoricoSepultamentosPage() {
                 y += cardH + 8;
             }
 
-            const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "").toLowerCase().replace(/[^a-z0-9]+/g, "_")}.pdf`;
+            const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")}.pdf`;
             doc.save(filename);
         } catch (err) {
             console.error("Falha ao gerar PDF:", err);
@@ -468,7 +470,9 @@ export default function HistoricoSepultamentosPage() {
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Histórico dos Sepultamentos</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                    Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.
+                </p>
             </header>
 
             {/* Filtros */}
@@ -632,15 +636,13 @@ export default function HistoricoSepultamentosPage() {
 
                                         if (obj && typeof obj === "object") {
                                             const chips: string[] = [];
+                                            const arrSet = new Set<string>(); // <— DEDUP arrumação para a tela
 
                                             for (const key of Object.keys(obj)) {
                                                 if (["materiais_json", "id", "acao"].includes(key)) continue;
 
                                                 if (/^arrumacao(_json)?$/i.test(key)) {
-                                                    const items = parseArrumacao(obj[key]);
-                                                    if (items.length) {
-                                                        chips.push(`<div class=\"mt-2\"><b>Arrumação:</b> ${items.map((t) => `<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\">${sanitize(t)}</span>`).join("")}</div>`);
-                                                    }
+                                                    for (const it of parseArrumacao(obj[key])) arrSet.add(it);
                                                     continue;
                                                 }
 
@@ -661,6 +663,14 @@ export default function HistoricoSepultamentosPage() {
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
                                                 chips.push(`<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`);
+                                            }
+
+                                            // adiciona Arrumação UMA vez só
+                                            if (arrSet.size) {
+                                                const items = Array.from(arrSet);
+                                                chips.unshift(`<div class=\"mt-2\"><b>Arrumação:</b> ${items
+                                                    .map((t) => `<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\">${sanitize(t)}</span>`)
+                                                    .join("")}</div>`);
                                             }
 
                                             if (chips.length) detalhesHtml = `<div class=\"mt-2\">${chips.join("")}</div>`;
