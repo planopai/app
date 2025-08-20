@@ -145,15 +145,77 @@ const ARR_LABELS: Record<ArrKey, string> = {
     barba: "Barba",
 };
 
-/* Type guards para os selects multiple */
-function isMaterialKey(v: string): v is MaterialKey {
-    return (MATERIAL_KEYS as readonly string[]).includes(v);
-}
-function isArrKey(v: string): v is ArrKey {
-    return (ARR_KEYS as readonly string[]).includes(v);
+/* ===== Itens combinados (select único) ===== */
+type AllItemKey =
+    | MaterialKey
+    | ArrKey
+    | "assistencia_sim"
+    | "assistencia_nao"
+    | "tanato_sim"
+    | "tanato_nao";
+
+const ALL_ITEMS: AllItemKey[] = [
+    ...MATERIAL_KEYS,
+    ...ARR_KEYS,
+    "assistencia_sim",
+    "assistencia_nao",
+    "tanato_sim",
+    "tanato_nao",
+];
+
+const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
+    // Materiais
+    cadeiras: MATERIAL_LABELS.cadeiras,
+    bebedouros: MATERIAL_LABELS.bebedouros,
+    suporte_coroa: MATERIAL_LABELS.suporte_coroa,
+    kit_lanche: MATERIAL_LABELS.kit_lanche,
+    velas: MATERIAL_LABELS.velas,
+    tenda: MATERIAL_LABELS.tenda,
+    placa: MATERIAL_LABELS.placa,
+    paramentacao: MATERIAL_LABELS.paramentacao,
+    // Arrumação
+    luvas: ARR_LABELS.luvas,
+    palha: ARR_LABELS.palha,
+    tamponamento: ARR_LABELS.tamponamento,
+    maquiagem: ARR_LABELS.maquiagem,
+    algodao: ARR_LABELS.algodao,
+    cordao: ARR_LABELS.cordao,
+    barba: ARR_LABELS.barba,
+    // Assistência / Tanato
+    assistencia_sim: "Assistência (Sim)",
+    assistencia_nao: "Assistência (Não)",
+    tanato_sim: "Tanatopraxia (Sim)",
+    tanato_nao: "Tanatopraxia (Não)",
+};
+const ALL_ITEM_TIPO: Record<AllItemKey, "Material" | "Arrumação" | "Assistência" | "Tanatopraxia"> = {
+    cadeiras: "Material",
+    bebedouros: "Material",
+    suporte_coroa: "Material",
+    kit_lanche: "Material",
+    velas: "Material",
+    tenda: "Material",
+    placa: "Material",
+    paramentacao: "Material",
+    luvas: "Arrumação",
+    palha: "Arrumação",
+    tamponamento: "Arrumação",
+    maquiagem: "Arrumação",
+    algodao: "Arrumação",
+    cordao: "Arrumação",
+    barba: "Arrumação",
+    assistencia_sim: "Assistência",
+    assistencia_nao: "Assistência",
+    tanato_sim: "Tanatopraxia",
+    tanato_nao: "Tanatopraxia",
+};
+
+function normSimNao(s?: string) {
+    const v = (s || "").trim().toLowerCase();
+    if (v === "sim") return "sim";
+    if (v === "não" || v === "nao") return "nao";
+    return "";
 }
 
-/* Helpers de análise */
 function parseMateriaisRegistro(r: RegistroAnalise): Record<MaterialKey, number> {
     const base = {} as Record<MaterialKey, number>;
     MATERIAL_KEYS.forEach((k) => (base[k] = 0));
@@ -181,6 +243,7 @@ function parseMateriaisRegistro(r: RegistroAnalise): Record<MaterialKey, number>
 
     return base;
 }
+
 function parseArrumacaoRegistro(r: RegistroAnalise): Record<ArrKey, boolean> {
     const out = {} as Record<ArrKey, boolean>;
     ARR_KEYS.forEach((k) => (out[k] = false));
@@ -193,12 +256,6 @@ function parseArrumacaoRegistro(r: RegistroAnalise): Record<ArrKey, boolean> {
         } catch { }
     }
     return out;
-}
-function normSimNao(s?: string) {
-    const v = (s || "").trim().toLowerCase();
-    if (v === "sim") return "sim";
-    if (v === "não" || v === "nao") return "nao";
-    return "";
 }
 
 /* ========================== Endpoints (proxy) ========================= */
@@ -236,7 +293,7 @@ export default function HistoricoSepultamentosPage() {
 
     const [gerandoPdf, setGerandoPdf] = useState(false);
 
-    // jsPDF via CDN
+    // jsPDF via CDN (mantido)
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
         if ((window as any)[KEY]) return;
@@ -245,23 +302,6 @@ export default function HistoricoSepultamentosPage() {
         script.async = true;
         script.onload = () => ((window as any)[KEY] = true);
         document.body.appendChild(script);
-    }, []);
-
-    // Chart.js via CDN (para análise)
-    const [chartReady, setChartReady] = useState(false);
-    const ensureChartJs = useCallback(() => {
-        if ((window as any).__chartjs_loaded__) {
-            setChartReady(true);
-            return;
-        }
-        const s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/chart.js";
-        s.async = true;
-        s.onload = () => {
-            (window as any).__chartjs_loaded__ = true;
-            setChartReady(true);
-        };
-        document.body.appendChild(s);
     }, []);
 
     // Carregar lista de falecidos
@@ -361,7 +401,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // Exportar PDF (MANTIDO)
+    // Exportar PDF (mantido)
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
 
@@ -538,23 +578,17 @@ export default function HistoricoSepultamentosPage() {
         }
     }, [selecionado, log]);
 
-    /* =========================== ANÁLISE GERAL =========================== */
+    /* =========================== ANÁLISE GERAL (TABELA) =========================== */
     const [analiseOpen, setAnaliseOpen] = useState(false);
     const [loadingAnalise, setLoadingAnalise] = useState(false);
     const [dadosAnalise, setDadosAnalise] = useState<RegistroAnalise[]>([]);
-
-    // filtros da análise
     const [aDe, setADe] = useState("");
     const [aAte, setAAte] = useState("");
-
-    const [selMateriais, setSelMateriais] = useState<MaterialKey[]>([]);
-    const [selArrumacao, setSelArrumacao] = useState<ArrKey[]>([]);
-    const [selAssistencia, setSelAssistencia] = useState<Array<"Sim" | "Não">>([]);
-    const [selTanato, setSelTanato] = useState<Array<"Sim" | "Não">>([]);
+    type SelectedItem = "ALL" | AllItemKey;
+    const [selectedItem, setSelectedItem] = useState<SelectedItem>("ALL");
 
     const abrirAnalise = useCallback(async () => {
         setAnaliseOpen(true);
-        ensureChartJs();
         if (dadosAnalise.length > 0) return;
 
         setLoadingAnalise(true);
@@ -568,136 +602,65 @@ export default function HistoricoSepultamentosPage() {
         } finally {
             setLoadingAnalise(false);
         }
-    }, [dadosAnalise.length, ensureChartJs]);
+    }, [dadosAnalise.length]);
 
-    // data base do registro para filtro
+    // Data base do registro para filtro
     function getRegDate(r: RegistroAnalise): string {
         const cands = [r.data_inicio_velorio, r.data, r.data_fim_velorio].filter(Boolean) as string[];
         return (cands[0] || "").slice(0, 10);
     }
 
-    // Filtrados para a análise
     const dadosFiltradosAnalise = useMemo(() => {
         return (dadosAnalise || []).filter((r) => {
             const date = getRegDate(r);
             if (aDe && date && date < aDe) return false;
             if (aAte && date && date > aAte) return false;
-
-            if (selAssistencia.length > 0) {
-                const val = normSimNao(r.assistencia);
-                const wantsSim = selAssistencia.includes("Sim");
-                const wantsNao = selAssistencia.includes("Não");
-                const match = (wantsSim && val === "sim") || (wantsNao && val === "nao");
-                if (!match) return false;
-            }
-
-            if (selTanato.length > 0) {
-                const val = normSimNao(r.tanato);
-                const wantsSim = selTanato.includes("Sim");
-                const wantsNao = selTanato.includes("Não");
-                const match = (wantsSim && val === "sim") || (wantsNao && val === "nao");
-                if (!match) return false;
-            }
-
-            if (selArrumacao.length > 0) {
-                const arr = parseArrumacaoRegistro(r);
-                const ok = selArrumacao.some((k) => arr[k]);
-                if (!ok) return false;
-            }
-
-            if (selMateriais.length > 0) {
-                const mats = parseMateriaisRegistro(r);
-                const ok = selMateriais.some((k) => (mats[k] || 0) > 0);
-                if (!ok) return false;
-            }
-
             return true;
         });
-    }, [dadosAnalise, aDe, aAte, selAssistencia, selTanato, selArrumacao, selMateriais]);
+    }, [dadosAnalise, aDe, aAte]);
 
-    // Agregações
-    const agregados = useMemo(() => {
-        const matsTotal = {} as Record<MaterialKey, number>;
-        MATERIAL_KEYS.forEach((k) => (matsTotal[k] = 0));
-
-        let assistSim = 0;
-        let assistNao = 0;
-
-        const arrCount = {} as Record<ArrKey, number>;
-        ARR_KEYS.forEach((k) => (arrCount[k] = 0));
+    // Contadores por item
+    const contagemPorItem = useMemo(() => {
+        const counts: Record<AllItemKey, number> = {} as any;
+        ALL_ITEMS.forEach((k) => (counts[k] = 0));
 
         for (const r of dadosFiltradosAnalise) {
+            // materiais: soma qtd
             const mats = parseMateriaisRegistro(r);
-            for (const k of MATERIAL_KEYS) matsTotal[k] += mats[k] || 0;
+            for (const k of MATERIAL_KEYS) counts[k] += mats[k] || 0;
 
+            // arrumação: conta presença
+            const arr = parseArrumacaoRegistro(r);
+            for (const k of ARR_KEYS) if (arr[k]) counts[k] += 1;
+
+            // assistência
             const a = normSimNao(r.assistencia);
-            if (a === "sim") assistSim++;
-            else if (a === "nao") assistNao++;
+            if (a === "sim") counts.assistencia_sim += 1;
+            else if (a === "nao") counts.assistencia_nao += 1;
 
-            const ar = parseArrumacaoRegistro(r);
-            for (const k of ARR_KEYS) if (ar[k]) arrCount[k] = (arrCount[k] || 0) + 1;
+            // tanato
+            const t = normSimNao(r.tanato);
+            if (t === "sim") counts.tanato_sim += 1;
+            else if (t === "nao") counts.tanato_nao += 1;
         }
-
-        const matsLabels = MATERIAL_KEYS.map((k) => MATERIAL_LABELS[k]);
-        const matsVals = MATERIAL_KEYS.map((k) => matsTotal[k]);
-
-        return {
-            totalReg: dadosFiltradosAnalise.length,
-            matsLabels,
-            matsVals,
-            assistSim,
-            assistNao,
-            arrCount,
-        };
+        return counts;
     }, [dadosFiltradosAnalise]);
 
-    // Gráficos
-    const barRef = useRef<HTMLCanvasElement | null>(null);
-    const pieRef = useRef<HTMLCanvasElement | null>(null);
-    const barChartRef = useRef<any>(null);
-    const pieChartRef = useRef<any>(null);
-
-    useEffect(() => {
-        if (!analiseOpen || !chartReady) return;
-        const Chart: any = (window as any).Chart;
-        if (!Chart) return;
-
-        try {
-            barChartRef.current?.destroy();
-            pieChartRef.current?.destroy();
-        } catch { }
-
-        if (barRef.current) {
-            barChartRef.current = new Chart(barRef.current, {
-                type: "bar",
-                data: {
-                    labels: agregados.matsLabels,
-                    datasets: [{ label: "Qtd total", data: agregados.matsVals }],
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-                    plugins: { legend: { display: false } },
-                },
-            });
-        }
-
-        if (pieRef.current) {
-            pieChartRef.current = new Chart(pieRef.current, {
-                type: "doughnut",
-                data: {
-                    labels: ["Com assistência", "Sem assistência"],
-                    datasets: [{ data: [agregados.assistSim, agregados.assistNao] }],
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: "top" } },
-                },
-            });
-        }
-    }, [analiseOpen, chartReady, agregados]);
+    type Row = { key: AllItemKey; item: string; tipo: string; quantidade: number };
+    const rows = useMemo<Row[]>(() => {
+        const keys: AllItemKey[] = selectedItem === "ALL" ? ALL_ITEMS : [selectedItem];
+        const arr = keys.map<Row>((k) => ({
+            key: k,
+            item: ALL_ITEM_LABELS[k],
+            tipo: ALL_ITEM_TIPO[k],
+            quantidade: contagemPorItem[k],
+        }));
+        // Se "Todos", esconda zeros; se item único, mostre mesmo que 0
+        const filtered = selectedItem === "ALL" ? arr.filter((r) => r.quantidade > 0) : arr;
+        // Ordena por maior quantidade
+        filtered.sort((a, b) => b.quantidade - a.quantidade);
+        return filtered;
+    }, [selectedItem, contagemPorItem]);
 
     /* ================================ UI ================================ */
     return (
@@ -955,6 +918,7 @@ export default function HistoricoSepultamentosPage() {
                                         <div
                                             key={i}
                                             className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm"
+                                            // eslint-disable-next-line react/no-danger
                                             dangerouslySetInnerHTML={{
                                                 __html: `
                           <div class="flex gap-3">
@@ -985,7 +949,7 @@ export default function HistoricoSepultamentosPage() {
                 </div>
             </div>
 
-            {/* ============ MODAL: ANÁLISE GERAL ============ */}
+            {/* ============ MODAL: ANÁLISE GERAL (TABELA) ============ */}
             {analiseOpen && (
                 <div
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3 sm:p-6"
@@ -996,25 +960,22 @@ export default function HistoricoSepultamentosPage() {
                         if (e.target === e.currentTarget) setAnaliseOpen(false);
                     }}
                 >
-                    <div className="w-full rounded-2xl border bg-white p-4 shadow-xl max-w-6xl">
-                        <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="w-full max-w-6xl rounded-2xl border bg-white shadow-xl">
+                        {/* Cabeçalho */}
+                        <div className="flex items-center justify-between gap-2 border-b p-4">
                             <div>
                                 <h3 className="text-lg font-semibold">Análise Geral</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    Selecione nenhum, um ou vários itens por categoria. Os gráficos atualizam automaticamente.
+                                    Selecione o período e um item específico — ou “Todos os itens”. A tabela mostra as quantidades no período.
                                 </p>
                             </div>
-                            <button
-                                className="rounded-md border p-2 text-sm hover:bg-muted"
-                                onClick={() => setAnaliseOpen(false)}
-                                title="Fechar"
-                            >
+                            <button className="rounded-md border p-2 text-sm hover:bg-muted" onClick={() => setAnaliseOpen(false)} title="Fechar">
                                 <IconX className="size-4" />
                             </button>
                         </div>
 
-                        {/* Filtros (multi-selects) */}
-                        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
+                        {/* Filtros */}
+                        <div className="grid gap-3 p-4 md:grid-cols-4">
                             <label className="flex flex-col gap-1">
                                 <span className="text-xs text-muted-foreground">Data inicial</span>
                                 <input type="date" value={aDe} onChange={(e) => setADe(e.target.value)} className="input" />
@@ -1023,114 +984,47 @@ export default function HistoricoSepultamentosPage() {
                                 <span className="text-xs text-muted-foreground">Data final</span>
                                 <input type="date" value={aAte} onChange={(e) => setAAte(e.target.value)} className="input" />
                             </label>
-
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Materiais (multi)</span>
+                            <label className="md:col-span-2 flex flex-col gap-1">
+                                <span className="text-xs text-muted-foreground">Item</span>
                                 <select
-                                    multiple
-                                    className="input min-h-[42px]"
-                                    onChange={(e) =>
-                                        setSelMateriais(
-                                            Array.from(e.currentTarget.selectedOptions)
-                                                .map((o) => o.value)
-                                                .filter(isMaterialKey)
-                                        )
-                                    }
+                                    className="input"
+                                    value={selectedItem}
+                                    onChange={(e) => setSelectedItem((e.target.value as SelectedItem) || "ALL")}
                                 >
-                                    {MATERIAL_KEYS.map((k) => (
-                                        <option key={k} value={k}>
-                                            {MATERIAL_LABELS[k]}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Arrumação (multi)</span>
-                                <select
-                                    multiple
-                                    className="input min-h-[42px]"
-                                    onChange={(e) =>
-                                        setSelArrumacao(
-                                            Array.from(e.currentTarget.selectedOptions)
-                                                .map((o) => o.value)
-                                                .filter(isArrKey)
-                                        )
-                                    }
-                                >
-                                    {ARR_KEYS.map((k) => (
-                                        <option key={k} value={k}>
-                                            {ARR_LABELS[k]}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Assistência (multi)</span>
-                                <select
-                                    multiple
-                                    className="input min-h-[42px]"
-                                    onChange={(e) =>
-                                        setSelAssistencia(Array.from(e.currentTarget.selectedOptions).map((o) => o.value as "Sim" | "Não"))
-                                    }
-                                >
-                                    <option value="Sim">Sim</option>
-                                    <option value="Não">Não</option>
-                                </select>
-                            </label>
-
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Tanatopraxia (multi)</span>
-                                <select
-                                    multiple
-                                    className="input min-h-[42px]"
-                                    onChange={(e) =>
-                                        setSelTanato(Array.from(e.currentTarget.selectedOptions).map((o) => o.value as "Sim" | "Não"))
-                                    }
-                                >
-                                    <option value="Sim">Sim</option>
-                                    <option value="Não">Não</option>
+                                    <option value="ALL">Todos os itens</option>
+                                    <optgroup label="Materiais">
+                                        {MATERIAL_KEYS.map((k) => (
+                                            <option key={k} value={k}>
+                                                {MATERIAL_LABELS[k]}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                    <optgroup label="Arrumação">
+                                        {ARR_KEYS.map((k) => (
+                                            <option key={k} value={k}>
+                                                {ARR_LABELS[k]}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                    <optgroup label="Assistência / Tanatopraxia">
+                                        <option value="assistencia_sim">Assistência (Sim)</option>
+                                        <option value="assistencia_nao">Assistência (Não)</option>
+                                        <option value="tanato_sim">Tanatopraxia (Sim)</option>
+                                        <option value="tanato_nao">Tanatopraxia (Não)</option>
+                                    </optgroup>
                                 </select>
                             </label>
                         </div>
 
-                        {/* Resumo topo */}
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                            <span className="rounded bg-muted px-2 py-1">
-                                Registros considerados: <b>{agregados.totalReg}</b>
+                        {/* Resumo */}
+                        <div className="px-4">
+                            <span className="rounded bg-muted px-2 py-1 text-xs">
+                                Registros considerados: <b>{dadosFiltradosAnalise.length}</b>
                             </span>
-                            {selMateriais.length > 0 && (
-                                <span className="rounded bg-muted px-2 py-1">
-                                    Materiais: <b>{selMateriais.map((k) => MATERIAL_LABELS[k]).join(", ")}</b>
-                                </span>
-                            )}
-                            {selArrumacao.length > 0 && (
-                                <span className="rounded bg-muted px-2 py-1">
-                                    Arrumação: <b>{selArrumacao.map((k) => ARR_LABELS[k]).join(", ")}</b>
-                                </span>
-                            )}
-                            {selAssistencia.length > 0 && (
-                                <span className="rounded bg-muted px-2 py-1">Assistência: <b>{selAssistencia.join(", ")}</b></span>
-                            )}
-                            {selTanato.length > 0 && (
-                                <span className="rounded bg-muted px-2 py-1">Tanatopraxia: <b>{selTanato.join(", ")}</b></span>
-                            )}
-                            {(selMateriais.length + selArrumacao.length + selAssistencia.length + selTanato.length) > 0 && (
-                                <button
-                                    className="ml-auto rounded border px-2 py-1"
-                                    onClick={() => {
-                                        setSelMateriais([]); setSelArrumacao([]); setSelAssistencia([]); setSelTanato([]);
-                                        setADe(""); setAAte("");
-                                    }}
-                                >
-                                    Limpar filtros
-                                </button>
-                            )}
                         </div>
 
-                        {/* Gráficos */}
-                        <div className="mt-4">
+                        {/* Tabela */}
+                        <div className="p-4">
                             {loadingAnalise ? (
                                 <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
                                     Carregando dados para análise...
@@ -1139,25 +1033,49 @@ export default function HistoricoSepultamentosPage() {
                                 <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
                                     Sem dados para análise no momento.
                                 </div>
+                            ) : rows.length === 0 ? (
+                                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                                    Nenhum item consumido no período selecionado.
+                                </div>
                             ) : (
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    {/* Materiais */}
-                                    <div className="rounded-xl border p-3">
-                                        <div className="mb-2 text-sm font-semibold">Materiais mais consumidos</div>
-                                        <div className="h-[320px] sm:h-[340px]">
-                                            <canvas ref={barRef} />
-                                        </div>
-                                    </div>
-
-                                    {/* Assistência */}
-                                    <div className="rounded-xl border p-3">
-                                        <div className="mb-2 text-sm font-semibold">Distribuição de Assistência</div>
-                                        <div className="h-[320px] sm:h-[340px]">
-                                            <canvas ref={pieRef} />
-                                        </div>
-                                    </div>
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-muted/50">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-semibold">Item</th>
+                                                <th className="w-40 px-3 py-2 text-left font-semibold">Categoria</th>
+                                                <th className="w-28 px-3 py-2 text-left font-semibold">Quantidade</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rows.map((r) => (
+                                                <tr key={r.key} className="border-t">
+                                                    <td className="px-3 py-2">{r.item}</td>
+                                                    <td className="px-3 py-2">{r.tipo}</td>
+                                                    <td className="px-3 py-2 font-semibold">{r.quantidade}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             )}
+                        </div>
+
+                        {/* Rodapé fixo com ação opcional */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t p-3">
+                            <div className="text-xs text-muted-foreground">
+                                Dica: selecione “Todos os itens” para enxergar rapidamente o que mais saiu no período.
+                            </div>
+                            <button
+                                className="rounded-md border px-3 py-1.5 text-sm"
+                                onClick={() => {
+                                    setADe("");
+                                    setAAte("");
+                                    setSelectedItem("ALL");
+                                }}
+                            >
+                                Limpar filtros
+                            </button>
                         </div>
                     </div>
                 </div>
