@@ -9,6 +9,8 @@ type Registro = {
     data?: string;
     falecido?: string;
     local_velorio?: string;
+    data_inicio_velorio?: string; // <— adicionado
+    data_fim_velorio?: string; // <— já utilizado em outros pontos
     hora_fim_velorio?: string;
     hora_inicio_velorio?: string;
     agente?: string;
@@ -31,37 +33,40 @@ type Registro = {
 type Aviso = { usuario?: string; mensagem?: string };
 
 /* =========================
-   Regras de etapas & helpers
+   Helpers comuns
    ========================= */
-const etapasCampos: (string | string[])[][] = [
-    ["falecido", "contato", "religiao", "convenio"],
-    ["urna", "roupa", "assistencia", "tanato"],
-    [["local_sepultamento", "local"], "local_velorio", "data_inicio_velorio"],
-    ["data_fim_velorio", "hora_inicio_velorio", "hora_fim_velorio", "observacao"],
-];
+const sanitize = (t?: string) =>
+    t
+        ? t
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+        : "";
 
-function etapasPreenchidas(registro: Registro) {
-    return etapasCampos.map((campos) =>
-        campos.every((k) => {
-            if (Array.isArray(k)) {
-                return k.some(
-                    (key) =>
-                        registro[key] &&
-                        String(registro[key]).trim() &&
-                        !["selecionar...", "selecione..."].includes(
-                            String(registro[key]).toLowerCase()
-                        )
-                );
-            }
-            return (
-                registro[k] &&
-                String(registro[k]).trim() &&
-                !["selecionar...", "selecione..."].includes(
-                    String(registro[k]).toLowerCase()
-                )
-            );
-        })
-    );
+const shown = (v?: string, fallback = "a definir") => {
+    const s = String(v ?? "").trim();
+    return s ? sanitize(s) : fallback;
+};
+
+/* Datas/horas → “a definir” para zeros e vazios */
+const formatDateBr = (d?: string) =>
+    !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
+
+function dateOr(d?: string) {
+    const raw = (d ?? "").trim();
+    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
+    const f = formatDateBr(raw);
+    if (!f || f === "00/00/0000") return "a definir";
+    return f;
+}
+
+function timeOr(t?: string) {
+    const raw = (t ?? "").trim();
+    if (!raw) return "a definir";
+    const hhmm = raw.slice(0, 5);
+    if (hhmm === "00:00") return "a definir";
+    return hhmm;
 }
 
 /* ---------------- Status badge ---------------- */
@@ -133,54 +138,66 @@ function convenioClass(kind: ConvenioKind) {
     }
 }
 
-/* ---------------- Sanitização + fallback ---------------- */
-const sanitize = (t?: string) =>
-    t
-        ? t
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-        : "";
-
-const shown = (v?: string, fallback = "a definir") => {
-    const s = String(v ?? "").trim();
-    return s ? sanitize(s) : fallback;
-};
-
-/* Datas/horas → “a definir” para zeros e vazios */
-const formatDateBr = (d?: string) =>
-    !d
-        ? ""
-        : d.split("-").length === 3
-            ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
-            : d;
-
-function dateOr(d?: string) {
-    const raw = (d ?? "").trim();
-    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
-    const f = formatDateBr(raw);
-    if (!f || f === "00/00/0000") return "a definir";
-    return f;
-}
-
-function timeOr(t?: string) {
-    const raw = (t ?? "").trim();
-    if (!raw) return "a definir";
-    const hhmm = raw.slice(0, 5);
-    if (hhmm === "00:00") return "a definir";
-    return hhmm;
-}
-
-/* Dots coloridos por etapa (D, I, V, S) */
+/* ---------------- Etapas (bolinhas) ---------------- */
 const STAGE_DOT_FILLED = [
     "bg-emerald-500 border-emerald-600", // D
     "bg-sky-500 border-sky-600", // I
     "bg-violet-500 border-violet-600", // V
     "bg-amber-500 border-amber-600", // S
 ];
-const STAGE_DOT_EMPTY =
-    "bg-transparent border-slate-300 dark:border-slate-600";
+const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
+
+/*
+  Nova regra das etapas:
+  - Etapa D (0): falecido, contato, religiao, convenio (todos)
+  - Etapa I (1): urna, roupa, assistencia, tanato (todos)
+  - Etapa V (2): local_velorio e data_inicio_velorio, e (local_sepultamento OU local)
+  - Etapa S (3): OU (hora_inicio_velorio) OU (data_fim_velorio E hora_fim_velorio)
+    >> Observação NUNCA é obrigatória.
+*/
+const LABELS: Record<string, string> = {
+    falecido: "Falecido",
+    contato: "Contato",
+    religiao: "Religião",
+    convenio: "Convênio",
+    urna: "Urna",
+    roupa: "Roupa",
+    assistencia: "Assistência",
+    tanato: "Tanatopraxia",
+    local_velorio: "Local do Velório",
+    data_inicio_velorio: "Data Início Velório",
+    data_fim_velorio: "Data Fim Velório",
+    hora_inicio_velorio: "Início Velório",
+    hora_fim_velorio: "Fim Velório",
+    local: "Local (Geral)",
+    local_sepultamento: "Local Sepultamento",
+};
+
+const isFilled = (registro: Registro, key?: string) => {
+    if (!key) return false;
+    const v = registro[key];
+    if (v == null) return false;
+    const s = String(v).trim().toLowerCase();
+    if (!s) return false;
+    if (["selecionar...", "selecione...", "a definir"].includes(s)) return false;
+    if (key.startsWith("data") && (s === "0000-00-00" || s === "00/00/0000")) return false;
+    if (key.startsWith("hora") && s.startsWith("00:00")) return false;
+    return true;
+};
+
+function etapasPreenchidas(registro: Registro) {
+    const d = [false, false, false, false];
+
+    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) => isFilled(registro, k));
+    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) => isFilled(registro, k));
+    d[2] =
+        isFilled(registro, "local_velorio") &&
+        isFilled(registro, "data_inicio_velorio") &&
+        (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
+    d[3] = isFilled(registro, "hora_inicio_velorio") || (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
+
+    return d;
+}
 
 /* =========================
    Texto para copiar (mantido)
@@ -226,15 +243,7 @@ export default function QuadroAtendimentoPage() {
             const m = now.getMinutes().toString().padStart(2, "0");
             const s = now.getSeconds().toString().padStart(2, "0");
             setClockTime(`${h}:${m}:${s}`);
-            const dias = [
-                "Domingo",
-                "Segunda-feira",
-                "Terça-feira",
-                "Quarta-feira",
-                "Quinta-feira",
-                "Sexta-feira",
-                "Sábado",
-            ];
+            const dias = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
             const dd = now.getDate().toString().padStart(2, "0");
             const mm = (now.getMonth() + 1).toString().padStart(2, "0");
             const yyyy = now.getFullYear();
@@ -248,10 +257,7 @@ export default function QuadroAtendimentoPage() {
     // dados
     useEffect(() => {
         const load = () =>
-            fetch(
-                `https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`,
-                { cache: "no-store" }
-            )
+            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .then((j) => setRegistros(Array.isArray(j) ? j : []))
                 .catch(() => setRegistros([]));
@@ -263,10 +269,7 @@ export default function QuadroAtendimentoPage() {
     // avisos
     useEffect(() => {
         const load = () =>
-            fetch(
-                `https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`,
-                { cache: "no-store" }
-            )
+            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .then((j) => setAvisos(Array.isArray(j) ? j : []))
                 .catch(() => setAvisos([]));
@@ -297,10 +300,7 @@ export default function QuadroAtendimentoPage() {
     const ativos = useMemo(
         () =>
             registros.filter(
-                (r) =>
-                    String(r.status).toLowerCase() !== "concluido" &&
-                    String(r.status).toLowerCase() !== "fase11" &&
-                    capStatus(r.status).toLowerCase() !== "material recolhido"
+                (r) => String(r.status).toLowerCase() !== "concluido" && String(r.status).toLowerCase() !== "fase11" && capStatus(r.status).toLowerCase() !== "material recolhido"
             ),
         [registros]
     );
@@ -331,14 +331,35 @@ export default function QuadroAtendimentoPage() {
         }
     }
 
+    // helpers para observações por container
+    const obsList = (missing: string[]) =>
+        missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.";
+
+    const missingEtapa0 = (r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k));
+    const missingEtapa1 = (r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k));
+    const missingEtapa2 = (r: Registro) => {
+        const miss: string[] = [];
+        if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
+        if (!isFilled(r, "data_inicio_velorio")) miss.push("data_inicio_velorio");
+        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local"))) miss.push("local_sepultamento");
+        return miss;
+    };
+    const noteEtapa3 = (r: Registro) => {
+        const hasInicio = isFilled(r, "hora_inicio_velorio");
+        const hasFim = isFilled(r, "data_fim_velorio") && isFilled(r, "hora_fim_velorio");
+        if (hasInicio && hasFim) return "Horários definidos.";
+        if (hasInicio) return "Horário de início definido.";
+        if (hasFim) return "Horário de encerramento definido.";
+        return "Pendências de horário.";
+    };
+
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
             {/* Header/clock */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Atualizado em tempo real — <span className="font-medium">{clockTime}</span> •{" "}
-                    {clockDate}
+                    Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
                 </p>
             </div>
 
@@ -371,11 +392,7 @@ export default function QuadroAtendimentoPage() {
                                         <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
                                             <td>{dateOr(r.data)}</td>
                                             <td>
-                                                <button
-                                                    className="font-semibold underline-offset-2 hover:underline"
-                                                    onClick={() => showDetail(r)}
-                                                    title="Ver detalhes"
-                                                >
+                                                <button className="font-semibold underline-offset-2 hover:underline" onClick={() => showDetail(r)} title="Ver detalhes">
                                                     {shown(r.falecido)}
                                                 </button>
                                             </td>
@@ -383,11 +400,7 @@ export default function QuadroAtendimentoPage() {
                                             <td>{timeOr(r.hora_fim_velorio)}</td>
                                             <td>{shown(r.agente)}</td>
                                             <td>
-                                                <span
-                                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
-                                                        r.status
-                                                    )}`}
-                                                >
+                                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}>
                                                     {capStatus(r.status) || "a definir"}
                                                 </span>
                                             </td>
@@ -406,9 +419,7 @@ export default function QuadroAtendimentoPage() {
             {/* Cards (mobile) */}
             <div className="sm:hidden space-y-3">
                 {ativos.length === 0 ? (
-                    <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
-                        Nenhum atendimento encontrado.
-                    </div>
+                    <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">Nenhum atendimento encontrado.</div>
                 ) : (
                     ativos.map((r, i) => {
                         const preenchidas = etapasPreenchidas(r);
@@ -420,38 +431,22 @@ export default function QuadroAtendimentoPage() {
                         const convKind = normalizeConvenio(r.convenio);
                         return (
                             <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
-                                {/* Linha 1: Título + Data (direita) */}
+                                {/* Linha 1: Título + Data */}
                                 <div className="flex items-start justify-between gap-3">
-                                    <button
-                                        className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
-                                        onClick={() => showDetail(r)}
-                                        title="Ver detalhes"
-                                    >
+                                    <button className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline" onClick={() => showDetail(r)} title="Ver detalhes">
                                         {shown(r.falecido)}
                                     </button>
-                                    <div className="shrink-0 text-xs text-muted-foreground mt-0.5">
-                                        {dataBR}
-                                    </div>
+                                    <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
                                 </div>
 
-                                {/* Linha 2: Chips (Status + Convênio) e Agente à direita */}
+                                {/* Linha 2: Chips + Agente */}
                                 <div className="mt-2 flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
-                                        <span
-                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
-                                        >
-                                            {statusTxt}
-                                        </span>
-                                        <span
-                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
-                                                convKind
-                                            )}`}
-                                            title="Convênio"
-                                        >
+                                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>{statusTxt}</span>
+                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(convKind)}`} title="Convênio">
                                             {convKind}
                                         </span>
                                     </div>
-
                                     <div className="text-xs">
                                         <span className="text-muted-foreground">Agente:&nbsp;</span>
                                         <b>{shown(r.agente)}</b>
@@ -464,7 +459,7 @@ export default function QuadroAtendimentoPage() {
                                     {shown(r.local_velorio)}
                                 </div>
 
-                                {/* Bloco: Sepultamento (sem o título "Endereço") */}
+                                {/* Bloco: Sepultamento */}
                                 <div className="mt-3 rounded-lg border bg-background p-3">
                                     <div className="text-sm">
                                         <span className="text-muted-foreground">Sepultamento&nbsp;</span>
@@ -490,9 +485,7 @@ export default function QuadroAtendimentoPage() {
             {/* Avisos */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Mensagens importantes do sistema
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
                 <div className="mt-4 space-y-2">
                     {avisos.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
@@ -509,93 +502,49 @@ export default function QuadroAtendimentoPage() {
 
             {/* ===== Modal de Detalhes ===== */}
             {open && detail && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6"
-                    aria-modal
-                    role="dialog"
-                >
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     {/* overlay */}
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
 
                     {/* painel */}
-                    <div
-                        className="
-              relative z-10 w-full max-w-4xl
-              rounded-xl border bg-card shadow-2xl
-              max-h-[80vh] overflow-y-auto overscroll-contain
-            "
-                    >
+                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overscroll-contain">
                         {/* header */}
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className="text-[12px] text-muted-foreground leading-tight">
-                                        Detalhes do atendimento
-                                    </div>
-                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
-                                        {shown(detail.falecido)}
-                                    </h3>
+                                    <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
+                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">{shown(detail.falecido)}</h3>
                                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                        <span className="text-muted-foreground">
-                                            Data: <b>{dateOr(detail.data)}</b>
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            • Agente: <b>{shown(detail.agente)}</b>
-                                        </span>
+                                        <span className="text-muted-foreground">Data: <b>{dateOr(detail.data)}</b></span>
+                                        <span className="text-muted-foreground">• Hora: <b>{timeOr(detail.hora_fim_velorio)}</b></span>
+                                        <span className="text-muted-foreground">• Agente: <b>{shown(detail.agente)}</b></span>
                                     </div>
                                 </div>
 
                                 <div className="flex shrink-0 items-center gap-2">
-                                    <span
-                                        className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(
-                                            detail.status
-                                        )}`}
-                                        title="Status"
-                                    >
+                                    <span className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(detail.status)}`} title="Status">
                                         {capStatus(detail.status)}
                                     </span>
                                     <span className="hidden sm:inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         ATENDIMENTO {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                     </span>
-                                    <button
-                                        onClick={handleCopy}
-                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                        aria-label="Copiar"
-                                        title="Copiar informações"
-                                    >
+                                    <button onClick={handleCopy} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Copiar" title="Copiar informações">
                                         {copied ? "Copiado!" : "Copiar"}
                                     </button>
-                                    <button
-                                        onClick={closeDetail}
-                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                        aria-label="Fechar"
-                                    >
-                                        Fechar
-                                    </button>
+                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">Fechar</button>
                                 </div>
                             </div>
 
                             {/* badges no mobile */}
                             <div className="mt-2 flex gap-2 sm:hidden">
-                                <span
-                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
-                                        detail.status
-                                    )}`}
-                                >
-                                    {capStatus(detail.status)}
-                                </span>
-                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                                    ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
-                                </span>
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>{capStatus(detail.status)}</span>
+                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}</span>
                             </div>
                         </div>
 
                         {/* conteúdo com TÓPICOS */}
                         <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
-                            <Topic title="INFORMAÇÕES GERAIS">
+                            <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Falecido" value={shown(detail.falecido)} />
                                     <Field label="Religião" value={shown(detail.religiao)} />
@@ -604,33 +553,29 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                             </Topic>
 
-                            <Topic title="ITENS">
+                            <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Urna" value={shown(detail.urna)} />
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                    <Field
-                                        label="Materiais"
-                                        value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Materiais" value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
-                            <Topic title="VELÓRIO">
+                            <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
                                     <Field label="Local Velório" value={shown(detail.local_velorio)} />
                                     <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                    <Field label="Data Fim Velório" value={dateOr(detail.data_fim_velorio)} />
+                                    {/* Removidos do modal: Data Fim Velório & Hora Fim Velório */}
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    <Field label="Fim Velório" value={timeOr(detail.hora_fim_velorio)} />
+                                    {/* Removido: <Field label="Fim Velório" value={timeOr(detail.hora_fim_velorio)} /> */}
                                 </div>
                             </Topic>
 
-                            <Topic title="SEPULTAMENTO">
+                            <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
@@ -645,9 +590,7 @@ export default function QuadroAtendimentoPage() {
                             </Topic>
 
                             <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
-                                    Etapas preenchidas
-                                </div>
+                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
                                 <EtapasRow registro={detail} />
                             </div>
                         </div>
@@ -660,31 +603,22 @@ export default function QuadroAtendimentoPage() {
 
 /* ===== Componentes auxiliares ===== */
 
-function Topic({ title, children }: { title: string; children: React.ReactNode }) {
+function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
-            <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
-                {title}
-            </h4>
+            <div className="flex items-start justify-between gap-2">
+                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
+                {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
+            </div>
             {children}
         </section>
     );
 }
 
-function Field({
-    label,
-    value,
-    className = "",
-}: {
-    label: string;
-    value: string;
-    className?: string;
-}) {
+function Field({ label, value, className = "" }: { label: string; value: string; className?: string }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
-                {label}:
-            </span>
+            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
             <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
         </div>
     );
@@ -698,10 +632,7 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span
-                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
-                            }`}
-                    />
+                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
                 </div>
             ))}
         </div>
@@ -717,10 +648,7 @@ function EtapasRow({ registro }: { registro: Registro }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{label}</span>
-                    <span
-                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
-                            }`}
-                    />
+                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
                 </div>
             ))}
         </div>
