@@ -203,6 +203,9 @@ const fases = [
 /** URL ABSOLUTA DO LOGIN (fix) */
 const LOGIN_ABSOLUTE = "https://pai.planoassistencialintegrado.com.br/login";
 
+/** URL ABSOLUTA DO BACKEND (fix) */
+const API = "https://pai.planoassistencialintegrado.com.br";
+
 /** Evita múltiplos redirecionamentos/alerts (fix) */
 let IS_REDIRECTING = false;
 
@@ -470,7 +473,7 @@ export default function AcompanhamentoPage() {
     const fetchRegistros = useCallback(async () => {
         try {
             const r = await fetch(
-                "/api/php/informativo.php?listar=1&_nocache=" + Date.now(),
+                `${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`,
                 {
                     cache: "no-store",
                     headers: {
@@ -505,9 +508,10 @@ export default function AcompanhamentoPage() {
 
     const fetchAvisos = useCallback(async () => {
         try {
-            const r = await fetch("/api/php/avisos.php?listar=1&_nocache=" + Date.now(), {
-                credentials: "include",
-            });
+            const r = await fetch(
+                `${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`,
+                { credentials: "include" }
+            );
             if (r.status === 401) {
                 redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
                 return;
@@ -560,7 +564,7 @@ export default function AcompanhamentoPage() {
             ...flatQtd,
         };
 
-        return jsonWith401("/api/php/informativo.php", {
+        return jsonWith401(`${API}/api/php/informativo.php`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -621,9 +625,7 @@ export default function AcompanhamentoPage() {
                     base[m.key] = {
                         checked:
                             !!parsedItem?.checked || Number(qtdCol) > 0 || !!parsedItem?.qtd,
-                        qtd: Number(
-                            parsedItem?.qtd ?? (qtdCol != null ? qtdCol : 0)
-                        ),
+                        qtd: Number(parsedItem?.qtd ?? (qtdCol != null ? qtdCol : 0)),
                     };
                 });
                 return base;
@@ -855,7 +857,7 @@ export default function AcompanhamentoPage() {
             return;
         }
         try {
-            const res = await jsonWith401("/api/php/avisos.php", {
+            const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ mensagem: val }),
@@ -875,7 +877,7 @@ export default function AcompanhamentoPage() {
     const editarAviso = useCallback(
         async (id: number | string, mensagem: string) => {
             try {
-                const res = await jsonWith401("/api/php/avisos.php", {
+                const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ id, mensagem }),
@@ -897,7 +899,7 @@ export default function AcompanhamentoPage() {
         async (id: number | string) => {
             if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
             try {
-                const res = await jsonWith401("/api/php/avisos.php", {
+                const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ id, excluir: true }),
@@ -918,7 +920,7 @@ export default function AcompanhamentoPage() {
     const finalizarAviso = useCallback(
         async (id: number | string) => {
             try {
-                const res = await jsonWith401("/api/php/avisos.php", {
+                const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ id, finalizar: true }),
