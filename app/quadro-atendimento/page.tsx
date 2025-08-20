@@ -9,8 +9,8 @@ type Registro = {
     data?: string;
     falecido?: string;
     local_velorio?: string;
-    data_inicio_velorio?: string; // <— adicionado
-    data_fim_velorio?: string; // <— já utilizado em outros pontos
+    data_inicio_velorio?: string;
+    data_fim_velorio?: string;
     hora_fim_velorio?: string;
     hora_inicio_velorio?: string;
     agente?: string;
@@ -18,7 +18,13 @@ type Registro = {
     religiao?: string;
     contato?: string;
     convenio?: string;
-    observacao?: string;
+    observacao?: string; // genérica (mantida p/ clipboard)
+    // novas observações por etapa
+    observacao_atendimento?: string;
+    observacao_itens?: string;
+    observacao_velorio01?: string;
+    observacao_velorio02?: string;
+
     urna?: string;
     roupa?: string;
     assistencia?: string;
@@ -148,12 +154,11 @@ const STAGE_DOT_FILLED = [
 const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
 
 /*
-  Nova regra das etapas:
-  - Etapa D (0): falecido, contato, religiao, convenio (todos)
-  - Etapa I (1): urna, roupa, assistencia, tanato (todos)
-  - Etapa V (2): local_velorio e data_inicio_velorio, e (local_sepultamento OU local)
-  - Etapa S (3): OU (hora_inicio_velorio) OU (data_fim_velorio E hora_fim_velorio)
-    >> Observação NUNCA é obrigatória.
+  Regras das etapas (observação NÃO é obrigatória):
+  - D (0): falecido, contato, religiao, convenio (todos)
+  - I (1): urna, roupa, assistencia, tanato (todos)
+  - V (2): local_velorio e data_inicio_velorio e (local_sepultamento OU local)
+  - S (3): hora_inicio_velorio OU (data_fim_velorio E hora_fim_velorio)
 */
 const LABELS: Record<string, string> = {
     falecido: "Falecido",
@@ -194,7 +199,9 @@ function etapasPreenchidas(registro: Registro) {
         isFilled(registro, "local_velorio") &&
         isFilled(registro, "data_inicio_velorio") &&
         (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
-    d[3] = isFilled(registro, "hora_inicio_velorio") || (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
+    d[3] =
+        isFilled(registro, "hora_inicio_velorio") ||
+        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
 
     return d;
 }
@@ -300,7 +307,10 @@ export default function QuadroAtendimentoPage() {
     const ativos = useMemo(
         () =>
             registros.filter(
-                (r) => String(r.status).toLowerCase() !== "concluido" && String(r.status).toLowerCase() !== "fase11" && capStatus(r.status).toLowerCase() !== "material recolhido"
+                (r) =>
+                    String(r.status).toLowerCase() !== "concluido" &&
+                    String(r.status).toLowerCase() !== "fase11" &&
+                    capStatus(r.status).toLowerCase() !== "material recolhido"
             ),
         [registros]
     );
@@ -492,7 +502,7 @@ export default function QuadroAtendimentoPage() {
                     ) : (
                         avisos.map((a, i) => (
                             <div key={i} className="flex gap-2 text-sm">
-                                <strong>{sanitize(a.usuario)}:</strong>
+                                <strong>{sanitize(a.usuario)}</strong>
                                 <span>{sanitize(a.mensagem)}</span>
                             </div>
                         ))
@@ -515,9 +525,15 @@ export default function QuadroAtendimentoPage() {
                                     <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
                                     <h3 className="truncate text-base sm:text-lg font-bold leading-tight">{shown(detail.falecido)}</h3>
                                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                        <span className="text-muted-foreground">Data: <b>{dateOr(detail.data)}</b></span>
-                                        <span className="text-muted-foreground">• Hora: <b>{timeOr(detail.hora_fim_velorio)}</b></span>
-                                        <span className="text-muted-foreground">• Agente: <b>{shown(detail.agente)}</b></span>
+                                        <span className="text-muted-foreground">
+                                            Data: <b>{dateOr(detail.data)}</b>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            • Agente: <b>{shown(detail.agente)}</b>
+                                        </span>
                                     </div>
                                 </div>
 
@@ -531,7 +547,9 @@ export default function QuadroAtendimentoPage() {
                                     <button onClick={handleCopy} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Copiar" title="Copiar informações">
                                         {copied ? "Copiado!" : "Copiar"}
                                     </button>
-                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">Fechar</button>
+                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
+                                        Fechar
+                                    </button>
                                 </div>
                             </div>
 
@@ -550,6 +568,8 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Religião" value={shown(detail.religiao)} />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
+                                    {/* Observação da etapa */}
+                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -560,6 +580,8 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
                                     <Field label="Materiais" value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")} className="sm:col-span-2" />
+                                    {/* Observação da etapa */}
+                                    <Field label="Obs. Itens" value={shown(detail.observacao_itens)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -572,6 +594,8 @@ export default function QuadroAtendimentoPage() {
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
                                     {/* Removido: <Field label="Fim Velório" value={timeOr(detail.hora_fim_velorio)} /> */}
+                                    {/* Observação da etapa */}
+                                    <Field label="Obs. Velório 01" value={shown(detail.observacao_velorio01)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -580,14 +604,12 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
+                                    {/* Observação da etapa */}
+                                    <Field label="Obs. Velório 02" value={shown(detail.observacao_velorio02)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
-                            <Topic title="OBSERVAÇÃO">
-                                <div className="grid grid-cols-1 gap-2">
-                                    <Field label="Observação" value={shown(detail.observacao)} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
+                            {/* Removido o bloco final "OBSERVAÇÃO" (genérico) */}
 
                             <div className="rounded-xl border bg-background p-3">
                                 <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
