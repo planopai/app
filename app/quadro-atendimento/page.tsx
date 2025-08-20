@@ -595,7 +595,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
                                     {/* Removido: <Field label="Fim Velório" value={timeOr(detail.hora_fim_velorio)} /> */}
                                     {/* Observação da etapa */}
-                                    <Field label="Obs. Velório 01" value={shown(detail.observacao_velorio01)} className="sm:col-span-2" />
+                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -605,7 +605,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
                                     {/* Observação da etapa */}
-                                    <Field label="Obs. Velório 02" value={shown(detail.observacao_velorio02)} className="sm:col-span-2" />
+                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02)} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
