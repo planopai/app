@@ -10,7 +10,21 @@ import {
     IconChevronRight,
     IconListDetails,
     IconLoader2,
+    IconChartBar,
+    IconRefresh,
+    IconAdjustmentsHorizontal,
+    IconX,
 } from "@tabler/icons-react";
+import {
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    LabelList,
+} from "recharts";
 
 /* ================================ Tipos ================================ */
 interface FalecidoItem {
@@ -92,26 +106,68 @@ function titleCaseFromSnake(s: string) {
         .join(" ");
 }
 
+/* Materiais e Arrumação (listas exibidas) */
+type MaterialKey =
+    | "cadeiras"
+    | "bebedouros"
+    | "suporte_coroa"
+    | "kit_lanche"
+    | "velas"
+    | "tenda"
+    | "placa"
+    | "paramentacao";
+const MATERIAIS: { key: MaterialKey; label: string }[] = [
+    { key: "cadeiras", label: "Cadeiras" },
+    { key: "bebedouros", label: "Bebedouros" },
+    { key: "suporte_coroa", label: "Suporte Coroa" },
+    { key: "kit_lanche", label: "Kit Lanche" },
+    { key: "velas", label: "Velas" },
+    { key: "tenda", label: "Tenda" },
+    { key: "placa", label: "Placa" },
+    { key: "paramentacao", label: "Paramentação" },
+];
+
+type ArrKey =
+    | "luvas"
+    | "palha"
+    | "tamponamento"
+    | "maquiagem"
+    | "algodao"
+    | "cordao"
+    | "barba";
+const ARRUMACAO: { key: ArrKey; label: string }[] = [
+    { key: "luvas", label: "Luvas" },
+    { key: "palha", label: "Palha" },
+    { key: "tamponamento", label: "Tamponamento" },
+    { key: "maquiagem", label: "Maquiagem" },
+    { key: "algodao", label: "Algodão" },
+    { key: "cordao", label: "Cordão" },
+    { key: "barba", label: "Barba" },
+];
+
 /* Materiais helpers */
 const MATERIAL_QTD_REGEX = /^materiais_(.+?)_qtd$/i;
 function materialKeyToName(key: string) {
     const m = key.match(MATERIAL_QTD_REGEX);
     if (!m) return null;
-    return titleCaseFromSnake(m[1]);
+    return titleCaseFromSnake(m[1]).replace("Suporte Coroa", "Suporte Coroa").replace("Kit Lanche", "Kit Lanche");
 }
 
 /* Arrumação helpers */
-function parseArrumacao(val: any): string[] {
+function parseArrumacao(val: any): Partial<Record<ArrKey, boolean>> {
     try {
         const obj = typeof val === "string" ? JSON.parse(val) : val;
-        if (!obj || typeof obj !== "object") return [];
-        const checked: string[] = [];
+        if (!obj || typeof obj !== "object") return {};
+        const res: Partial<Record<ArrKey, boolean>> = {};
         for (const [k, v] of Object.entries(obj)) {
-            if (v) checked.push(`✅ ${titleCaseFromSnake(k)}`);
+            const kk = k.toLowerCase() as ArrKey;
+            if (["luvas", "palha", "tamponamento", "maquiagem", "algodao", "cordao", "barba"].includes(kk)) {
+                res[kk] = !!v;
+            }
         }
-        return checked;
+        return res;
     } catch {
-        return [];
+        return {};
     }
 }
 
@@ -164,7 +220,7 @@ export default function HistoricoSepultamentosPage() {
     const carregarFalecidos = useCallback(async () => {
         try {
             setLoadingLista(true);
-            const res = await fetch(`${LISTAR_FALECIDOS}&_nocache=${Date.now()}`, { cache: "no-store" });
+            const res = await fetch(`${LISTAR_FALECIDOS}&'_nocache'=${Date.now()}`, { cache: "no-store" });
             const json = await res.json();
             let arr: FalecidoItem[] = [];
             if (json && json.sucesso && json.dados) arr = json.dados;
@@ -224,7 +280,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // ===== Nunito no jsPDF (com fallback) =====
+    // ===== PDF (igual ao seu anterior) =====
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -232,7 +288,6 @@ export default function HistoricoSepultamentosPage() {
         try {
             const regularUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
             const boldUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
-
             async function fetchTTF(u: string) {
                 const r = await fetch(u);
                 if (!r.ok) throw new Error("Fonte não encontrada");
@@ -242,13 +297,11 @@ export default function HistoricoSepultamentosPage() {
                 for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
                 return btoa(binary);
             }
-
             const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
             doc.addFileToVFS("Nunito-Regular.ttf", regB64);
             doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
             doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
             doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
-
             nunitoStateRef.current = "ok";
             return true;
         } catch {
@@ -257,10 +310,8 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // Exportar PDF (jsPDF puro)
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
-
         setGerandoPdf(true);
         try {
             const w: any = window as any;
@@ -273,37 +324,25 @@ export default function HistoricoSepultamentosPage() {
             const { jsPDF } = jspdf;
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
             const hasNunito = await ensureNunito(doc);
-
-            // dimensões
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
             const marginL = 14;
             const marginR = 14;
             const contentW = pageW - marginL - marginR;
-
-            // fontes
             const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
             const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
-
             let y = 22;
-
-            // Título
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(18);
             doc.text("Histórico dos Sepultamentos", pageW / 2, y, { align: "center" });
             y += 8;
-
-            // Nome do falecido
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(13);
             doc.text((selecionado.falecido || "").toString(), pageW / 2, y, { align: "center" });
             y += 12;
-
-            // Card layout
             const cardPadX = 6;
             const cardPadY = 6;
-            const lineGap = 3; // espaço entre linhas
-
+            const lineGap = 3;
             const writeLine = (
                 text: string | string[],
                 x: number,
@@ -316,54 +355,42 @@ export default function HistoricoSepultamentosPage() {
                 if (Array.isArray(text)) doc.text(text, x, yy);
                 else doc.text(text, x, yy);
             };
-
             for (const ent of log) {
-                // 1) Data/hora
                 const dataLine = formataDataHora(ent.datahora) || "";
-
-                // 2) Ação + status
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
-
-                // 3) Usuário
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
-
-                // 4) Detalhes (sem objetos crus; materiais formatados; arrumação com ✅)
                 const detalhesLines: string[] = [];
                 const raw = ent.detalhes as any;
-
                 const materiaisLines: string[] = [];
-                const arrSet = new Set<string>(); // <— para deduplicar arrumação
-
+                const arrSet = new Set<string>();
                 try {
-                    const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
-
+                    const obj =
+                        raw && typeof raw === "string"
+                            ? (JSON.parse(raw) as Record<string, any>)
+                            : (raw as Record<string, any>);
                     if (obj && typeof obj === "object") {
                         for (const key of Object.keys(obj)) {
                             if (["materiais_json", "id", "acao"].includes(key)) continue;
-
                             if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
                                 if (/^arrumacao(_json)?$/i.test(key)) {
-                                    for (const it of parseArrumacao(obj[key])) arrSet.add(it);
+                                    const arr = parseArrumacao(obj[key]);
+                                    for (const [k, v] of Object.entries(arr)) if (v) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
                                 }
                                 continue;
                             }
-
                             const matName = materialKeyToName(key);
                             if (matName) {
                                 const qtd = obj[key];
-                                if (qtd != null && String(qtd).trim() !== "") {
-                                    materiaisLines.push(`${matName}: ${String(qtd)}`);
-                                }
+                                if (qtd != null && String(qtd).trim() !== "") materiaisLines.push(`${matName}: ${String(qtd)}`);
                                 continue;
                             }
-
                             if (/^arrumacao(_json)?$/i.test(key)) {
-                                for (const it of parseArrumacao(obj[key])) arrSet.add(it);
+                                const arr = parseArrumacao(obj[key]);
+                                for (const [k, v] of Object.entries(arr)) if (v) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
                                 continue;
                             }
-
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
@@ -374,9 +401,6 @@ export default function HistoricoSepultamentosPage() {
                     }
                 } catch {
                     let detalhesRaw = String(raw || "");
-                    if (/arrumacao\s*json/i.test(detalhesRaw) || /materiais\s*:\s*\[/i.test(detalhesRaw)) {
-                        detalhesRaw = "";
-                    }
                     Object.keys(FASES_NOMES).forEach((cod) => {
                         const faseNome = FASES_NOMES[cod];
                         const regEx = new RegExp(cod, "g");
@@ -384,7 +408,6 @@ export default function HistoricoSepultamentosPage() {
                     });
                     if (detalhesRaw.trim()) detalhesLines.push(detalhesRaw.trim());
                 }
-
                 if (materiaisLines.length) {
                     detalhesLines.unshift("Materiais:");
                     for (const l of materiaisLines) detalhesLines.push(`• ${l}`);
@@ -393,66 +416,51 @@ export default function HistoricoSepultamentosPage() {
                     detalhesLines.push("Arrumação:");
                     for (const item of Array.from(arrSet)) detalhesLines.push(`• ${item}`);
                 }
-
-                // Quebra em largura disponível
                 doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(9);
                 const dataWrapped = doc.splitTextToSize(dataLine, contentW - cardPadX * 2);
-
                 doc.setFont(titleFont[0], titleFont[1]);
                 doc.setFontSize(12);
                 const acaoWrapped = doc.splitTextToSize(acaoFull, contentW - cardPadX * 2);
-
                 doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(10);
                 const usuarioWrapped = doc.splitTextToSize(usuarioLine, contentW - cardPadX * 2);
-
                 doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(11);
                 const detalhesWrapped = detalhesLines.flatMap((l) => doc.splitTextToSize(l, contentW - cardPadX * 2));
-
                 const hData = dataWrapped.length ? 4 + (dataWrapped.length - 1) * 4 : 0;
                 const hAcao = acaoWrapped.length * 5;
                 const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 5 : 0;
                 const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
-
-                const innerHeight = (hData ? hData + lineGap : 0) + hAcao + (hUsuario ? lineGap + hUsuario : 0) + (hDetalhes ? lineGap + hDetalhes : 0);
+                const innerHeight =
+                    (hData ? hData + lineGap : 0) + hAcao + (hUsuario ? lineGap + hUsuario : 0) + (hDetalhes ? lineGap + hDetalhes : 0);
                 const cardH = innerHeight + cardPadY * 2;
-
                 if (y + cardH + 8 > pageH) {
                     doc.addPage();
                     y = 22;
                 }
-
                 doc.setDrawColor(210);
                 doc.setLineWidth(0.25);
                 doc.roundedRect(marginL, y, contentW, cardH, 3, 3);
-
                 let yy = y + cardPadY;
-
                 if (dataWrapped.length) {
                     writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
                     yy += hData + lineGap;
                 }
-
                 writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
                 yy += hAcao;
-
                 if (usuarioWrapped.length) {
                     yy += lineGap;
                     writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
                     yy += hUsuario;
                 }
-
                 if (detalhesWrapped.length) {
                     yy += lineGap;
                     writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
                     yy += hDetalhes;
                 }
-
                 y += cardH + 8;
             }
-
             const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
                 .toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")}.pdf`;
@@ -464,6 +472,192 @@ export default function HistoricoSepultamentosPage() {
             setGerandoPdf(false);
         }
     }, [selecionado, log]);
+
+    /* ===================== ESTADO: Análise Geral ===================== */
+    const [analiseOpen, setAnaliseOpen] = useState(false);
+    const [analiseFrom, setAnaliseFrom] = useState<string>("");
+    const [analiseTo, setAnaliseTo] = useState<string>("");
+
+    const [analiseMateriais, setAnaliseMateriais] = useState<Record<MaterialKey, boolean>>(
+        () =>
+            MATERIAIS.reduce((acc, m) => {
+                acc[m.key] = true;
+                return acc;
+            }, {} as Record<MaterialKey, boolean>)
+    );
+    const [analiseArr, setAnaliseArr] = useState<Record<ArrKey, boolean>>(
+        () =>
+            ARRUMACAO.reduce((acc, a) => {
+                acc[a.key] = true;
+                return acc;
+            }, {} as Record<ArrKey, boolean>)
+    );
+
+    const [analiseLoading, setAnaliseLoading] = useState(false);
+    const [analiseError, setAnaliseError] = useState<string | null>(null);
+    const [analiseLogs, setAnaliseLogs] = useState<Record<string, LogItem[]>>({});
+
+    // resultados agregados
+    const [matTotals, setMatTotals] = useState<Record<MaterialKey, number>>({
+        cadeiras: 0, bebedouros: 0, suporte_coroa: 0, kit_lanche: 0, velas: 0, tenda: 0, placa: 0, paramentacao: 0,
+    });
+    const [arrTotals, setArrTotals] = useState<Record<ArrKey, number>>({
+        luvas: 0, palha: 0, tamponamento: 0, maquiagem: 0, algodao: 0, cordao: 0, barba: 0,
+    });
+    const [analiseConsiderados, setAnaliseConsiderados] = useState<number>(0);
+
+    const [ordenarDesc, setOrdenarDesc] = useState(true);
+    const [ocultarZero, setOcultarZero] = useState(true);
+
+    // Busca logs de TODOS registros (usa a lista já carregada)
+    const baixarDadosAnalise = useCallback(async () => {
+        setAnaliseError(null);
+        setAnaliseLoading(true);
+        try {
+            const ids = lista.map((r) => r.sepultamento_id).filter(Boolean);
+            const chunks: string[][] = [];
+            const chunkSize = 15; // throttle leve
+            for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
+
+            const out: Record<string, LogItem[]> = {};
+            for (const c of chunks) {
+                const results = await Promise.allSettled(
+                    c.map(async (id) => {
+                        const r = await fetch(`${LOG_POR_ID(id)}&_nocache=${Date.now()}`, { cache: "no-store" });
+                        const j = await r.json();
+                        let arr: LogItem[] = [];
+                        if (j && j.sucesso && j.dados) arr = j.dados;
+                        else if (Array.isArray(j)) arr = j;
+                        return { id, logs: arr || [] };
+                    })
+                );
+                results.forEach((p) => {
+                    if (p.status === "fulfilled") out[p.value.id] = p.value.logs;
+                });
+            }
+            setAnaliseLogs(out);
+        } catch (e: any) {
+            setAnaliseError("Não foi possível carregar os dados para análise.");
+        } finally {
+            setAnaliseLoading(false);
+        }
+    }, [lista]);
+
+    // Recalcula agregados localmente com base nos logs baixados + filtros
+    const aplicarFiltrosAnalise = useCallback(() => {
+        // parse datas
+        const fromDate = analiseFrom ? new Date(`${analiseFrom}T00:00:00`) : null;
+        const toDate = analiseTo ? new Date(`${analiseTo}T23:59:59.999`) : null;
+
+        // totais
+        const mats: Record<MaterialKey, number> = {
+            cadeiras: 0, bebedouros: 0, suporte_coroa: 0, kit_lanche: 0, velas: 0, tenda: 0, placa: 0, paramentacao: 0,
+        };
+        const arrs: Record<ArrKey, number> = {
+            luvas: 0, palha: 0, tamponamento: 0, maquiagem: 0, algodao: 0, cordao: 0, barba: 0,
+        };
+
+        let considerados = 0;
+
+        // para cada registro, pegamos o "último estado" dentro do período
+        for (const [id, logs] of Object.entries(analiseLogs)) {
+            // filtra por data
+            const logsFiltrados = logs
+                .filter((l) => {
+                    if (!l.datahora) return false;
+                    const d = new Date(l.datahora.replace(" ", "T"));
+                    if (Number.isNaN(d.getTime())) return false;
+                    if (fromDate && d < fromDate) return false;
+                    if (toDate && d > toDate) return false;
+                    return true;
+                })
+                .sort((a, b) => {
+                    const da = new Date((a.datahora || "").replace(" ", "T")).getTime();
+                    const db = new Date((b.datahora || "").replace(" ", "T")).getTime();
+                    return da - db;
+                });
+
+            if (logsFiltrados.length === 0) continue;
+
+            // estado final por registro dentro do período
+            const matFinal: Partial<Record<MaterialKey, number>> = {};
+            const arrFinal: Partial<Record<ArrKey, boolean>> = {};
+
+            for (const ent of logsFiltrados) {
+                const raw = ent.detalhes as any;
+                try {
+                    const obj =
+                        raw && typeof raw === "string"
+                            ? (JSON.parse(raw) as Record<string, any>)
+                            : (raw as Record<string, any>);
+
+                    if (obj && typeof obj === "object") {
+                        // materiais_*_qtd
+                        for (const [k, v] of Object.entries(obj)) {
+                            const mName = materialKeyToName(k);
+                            if (mName) {
+                                // converte label -> key do nosso enum
+                                const keySnake = (k.match(MATERIAL_QTD_REGEX)?.[1] || "") as MaterialKey;
+                                const key = keySnake as MaterialKey;
+                                const qtd = v == null || v === "" ? undefined : Number(v);
+                                if (!Number.isNaN(qtd as number)) matFinal[key] = qtd as number;
+                            }
+                        }
+                        // arrumacao
+                        for (const [k, v] of Object.entries(parseArrumacao(obj.arrumacao ?? obj.arrumacao_json))) {
+                            const kk = k as ArrKey;
+                            arrFinal[kk] = !!v;
+                        }
+                    }
+                } catch {
+                    // Ignora detalhes não-JSON neste agregado
+                }
+            }
+
+            // Só considera o registro se ele tem alguma info relevante
+            const temMateriais = Object.keys(matFinal).length > 0;
+            const temArr = Object.keys(arrFinal).length > 0;
+            if (!temMateriais && !temArr) continue;
+
+            considerados++;
+
+            // Aplica seleção de filtros e soma
+            MATERIAIS.forEach(({ key }) => {
+                if (!analiseMateriais[key]) return;
+                const qtd = matFinal[key];
+                if (typeof qtd === "number") mats[key] += qtd;
+            });
+            ARRUMACAO.forEach(({ key }) => {
+                if (!analiseArr[key]) return;
+                if (arrFinal[key]) arrs[key] += 1;
+            });
+        }
+
+        setMatTotals(mats);
+        setArrTotals(arrs);
+        setAnaliseConsiderados(considerados);
+    }, [analiseLogs, analiseFrom, analiseTo, analiseMateriais, analiseArr]);
+
+    // Dados para os gráficos
+    const materiaisChartData = useMemo(() => {
+        let data = MATERIAIS.map(({ key, label }) => ({
+            name: label,
+            total: matTotals[key] || 0,
+        }));
+        if (ocultarZero) data = data.filter((d) => d.total > 0);
+        if (ordenarDesc) data = data.sort((a, b) => b.total - a.total);
+        return data;
+    }, [matTotals, ordenarDesc, ocultarZero]);
+
+    const arrumacaoChartData = useMemo(() => {
+        let data = ARRUMACAO.map(({ key, label }) => ({
+            name: label,
+            total: arrTotals[key] || 0,
+        }));
+        if (ocultarZero) data = data.filter((d) => d.total > 0);
+        if (ordenarDesc) data = data.sort((a, b) => b.total - a.total);
+        return data;
+    }, [arrTotals, ordenarDesc, ocultarZero]);
 
     /* ================================ UI ================================ */
     return (
@@ -477,10 +671,23 @@ export default function HistoricoSepultamentosPage() {
 
             {/* Filtros */}
             <div className="rounded-2xl border bg-card/60 p-4 sm:p-5 shadow-sm backdrop-blur">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                    <IconFilter className="size-4 text-muted-foreground" />
-                    Filtros
+                <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                        <IconFilter className="size-4 text-muted-foreground" />
+                        Filtros
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setAnaliseOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs sm:text-sm hover:bg-muted/60"
+                        title="Abrir análise geral"
+                    >
+                        <IconChartBar className="size-4" />
+                        Análise Geral
+                    </button>
                 </div>
+
                 <form
                     className="grid gap-3 sm:grid-cols-3"
                     onSubmit={(e) => {
@@ -603,7 +810,9 @@ export default function HistoricoSepultamentosPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
                         <div>
                             <div className="text-sm font-semibold">Histórico</div>
-                            <div className="text-xs text-muted-foreground">{selecionado ? sanitize(selecionado.falecido) : "Selecione um registro para visualizar"}</div>
+                            <div className="text-xs text-muted-foreground">
+                                {selecionado ? sanitize(selecionado.falecido) : "Selecione um registro para visualizar"}
+                            </div>
                         </div>
 
                         <button
@@ -620,7 +829,9 @@ export default function HistoricoSepultamentosPage() {
 
                     <div className="p-4" id="logAreaExport">
                         {!selecionado ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Selecione um registro para visualizar o histórico completo.</div>
+                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                                Selecione um registro para visualizar o histórico completo.
+                            </div>
                         ) : loadingLog ? (
                             <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Carregando histórico...</div>
                         ) : log.length === 0 ? (
@@ -630,67 +841,68 @@ export default function HistoricoSepultamentosPage() {
                                 {log.map((ent, i) => {
                                     let detalhesHtml = "";
                                     const raw = ent.detalhes as any;
-
                                     try {
-                                        const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
-
+                                        const obj =
+                                            raw && typeof raw === "string"
+                                                ? (JSON.parse(raw) as Record<string, any>)
+                                                : (raw as Record<string, any>);
                                         if (obj && typeof obj === "object") {
                                             const chips: string[] = [];
-                                            const arrSet = new Set<string>(); // <— DEDUP arrumação para a tela
-
+                                            const arrSet = new Set<string>();
                                             for (const key of Object.keys(obj)) {
                                                 if (["materiais_json", "id", "acao"].includes(key)) continue;
-
                                                 if (/^arrumacao(_json)?$/i.test(key)) {
-                                                    for (const it of parseArrumacao(obj[key])) arrSet.add(it);
+                                                    const arr = parseArrumacao(obj[key]);
+                                                    Object.entries(arr).forEach(([kk, vv]) => {
+                                                        if (vv) arrSet.add(`✅ ${titleCaseFromSnake(kk)}`);
+                                                    });
                                                     continue;
                                                 }
-
                                                 const matName = materialKeyToName(key);
                                                 if (matName) {
                                                     const val = obj[key];
                                                     if (val != null && String(val).trim() !== "") {
-                                                        chips.push(`<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\"><b>${sanitize(matName)}:</b> ${sanitize(String(val))}</span>`);
+                                                        chips.push(
+                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
+                                                                matName
+                                                            )}:</b> ${sanitize(String(val))}</span>`
+                                                        );
                                                     }
                                                     continue;
                                                 }
-
                                                 if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
-
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
-                                                chips.push(`<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`);
+                                                chips.push(
+                                                    `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
+                                                        nome
+                                                    )}:</b> ${sanitize(val)}</span>`
+                                                );
                                             }
-
-                                            // adiciona Arrumação UMA vez só
                                             if (arrSet.size) {
                                                 const items = Array.from(arrSet);
-                                                chips.unshift(`<div class=\"mt-2\"><b>Arrumação:</b> ${items
-                                                    .map((t) => `<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\">${sanitize(t)}</span>`)
-                                                    .join("")}</div>`);
+                                                chips.unshift(
+                                                    `<div class="mt-2"><b>Arrumação:</b> ${items
+                                                        .map((t) => `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">${sanitize(t)}</span>`)
+                                                        .join("")}</div>`
+                                                );
                                             }
-
-                                            if (chips.length) detalhesHtml = `<div class=\"mt-2\">${chips.join("")}</div>`;
+                                            if (chips.length) detalhesHtml = `<div class="mt-2">${chips.join("")}</div>`;
                                         }
                                     } catch {
                                         let detalhesRaw = String(raw || "");
-                                        if (/Arrumacao\s*Json\s*:/i.test(detalhesRaw) || /Materiais\s*:\s*\[object\s+Object\]/i.test(detalhesRaw)) {
-                                            detalhesRaw = detalhesRaw.replace(/Arrumacao\s*Json\s*:[^\n]*/gi, "");
-                                            detalhesRaw = detalhesRaw.replace(/Materiais\s*:\s*\[object\s+Object\]/gi, "");
-                                        }
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
                                             const regEx = new RegExp(cod, "g");
                                             detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                                         });
                                         if (detalhesRaw.trim()) {
-                                            detalhesHtml = `<div class=\"mt-2 text-sm\">${sanitize(detalhesRaw)}</div>`;
+                                            detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
                                         }
                                     }
-
                                     return (
                                         <div
                                             key={i}
@@ -698,20 +910,20 @@ export default function HistoricoSepultamentosPage() {
                                             // eslint-disable-next-line react/no-danger
                                             dangerouslySetInnerHTML={{
                                                 __html: `
-                          <div class=\"flex gap-3\">
-                            <div class=\"text-xl leading-none\">${iconeAcao(ent.acao, ent.status_novo)}</div>
-                            <div class=\"flex-1\">
-                              <div class=\"text-xs text-muted-foreground\">${formataDataHora(ent.datahora)}</div>
-                              <div class=\"text-sm\">
+                          <div class="flex gap-3">
+                            <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
+                            <div class="flex-1">
+                              <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
+                              <div class="text-sm">
                                 ${ent.acao ? sanitize(capitalize(ent.acao)) : ""}
                                 ${ent.status_novo
-                                                        ? `<span class=\"ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary\">${sanitize(
+                                                        ? `<span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">${sanitize(
                                                             traduzirFase(ent.status_novo)
                                                         )}</span>`
                                                         : ""
                                                     }
                               </div>
-                              <div class=\"text-xs text-muted-foreground\">Usuário: ${sanitize(ent.usuario || "")}</div>
+                              <div class="text-xs text-muted-foreground">Usuário: ${sanitize(ent.usuario || "")}</div>
                               ${detalhesHtml}
                             </div>
                           </div>
@@ -725,6 +937,254 @@ export default function HistoricoSepultamentosPage() {
                     </div>
                 </div>
             </div>
+
+            {/* ===================== MODAL: ANÁLISE GERAL ===================== */}
+            {analiseOpen && (
+                <div
+                    className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Análise Geral"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setAnaliseOpen(false);
+                    }}
+                >
+                    <div className="w-full max-w-6xl rounded-2xl bg-white p-4 shadow-xl">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                <IconChartBar className="size-5 text-muted-foreground" />
+                                <h2 className="text-lg font-semibold">Análise Geral</h2>
+                                <span className="text-xs text-muted-foreground">Registros: {Object.keys(analiseLogs).length || lista.length}</span>
+                            </div>
+                            <button
+                                onClick={() => setAnaliseOpen(false)}
+                                className="rounded-md border px-2 py-1 text-sm hover:bg-muted"
+                                aria-label="Fechar"
+                            >
+                                <IconX className="size-4" />
+                            </button>
+                        </div>
+
+                        {/* Filtros da análise */}
+                        <div className="grid gap-3 lg:grid-cols-[1fr,1fr]">
+                            <div className="rounded-xl border p-3">
+                                <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                                    <IconAdjustmentsHorizontal className="size-4 text-muted-foreground" />
+                                    Período & Controles
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="flex flex-col gap-1">
+                                        <span className="text-xs text-muted-foreground">De</span>
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            value={analiseFrom}
+                                            onChange={(e) => setAnaliseFrom(e.target.value)}
+                                        />
+                                    </label>
+                                    <label className="flex flex-col gap-1">
+                                        <span className="text-xs text-muted-foreground">Até</span>
+                                        <input
+                                            type="date"
+                                            className="input"
+                                            value={analiseTo}
+                                            onChange={(e) => setAnaliseTo(e.target.value)}
+                                        />
+                                    </label>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                    <label className="inline-flex items-center gap-2 text-sm">
+                                        <input type="checkbox" checked={ordenarDesc} onChange={(e) => setOrdenarDesc(e.target.checked)} />
+                                        Ordenar por valor (desc)
+                                    </label>
+                                    <label className="inline-flex items-center gap-2 text-sm">
+                                        <input type="checkbox" checked={ocultarZero} onChange={(e) => setOcultarZero(e.target.checked)} />
+                                        Ocultar itens com zero
+                                    </label>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={baixarDadosAnalise}
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                                        disabled={analiseLoading}
+                                        title="Baixar/atualizar logs de todos os registros"
+                                    >
+                                        {analiseLoading ? <IconLoader2 className="size-4 animate-spin" /> : <IconRefresh className="size-4" />}
+                                        {analiseLoading ? "Carregando dados…" : "Atualizar dados"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={aplicarFiltrosAnalise}
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                        title="Aplicar filtros e recalcular"
+                                    >
+                                        <IconFilter className="size-4" />
+                                        Aplicar filtros
+                                    </button>
+                                    <span className="text-xs text-muted-foreground self-center">
+                                        Considerados no período: <b>{analiseConsiderados}</b>
+                                    </span>
+                                </div>
+
+                                {analiseError && (
+                                    <div className="mt-3 rounded-md bg-red-50 p-2 text-sm text-red-700">{analiseError}</div>
+                                )}
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                                <div className="rounded-xl border p-3">
+                                    <div className="mb-2 text-sm font-semibold">Materiais (selecione)</div>
+                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                        {MATERIAIS.map(({ key, label }) => (
+                                            <label key={key} className="inline-flex items-center gap-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!analiseMateriais[key]}
+                                                    onChange={(e) =>
+                                                        setAnaliseMateriais((prev) => ({ ...prev, [key]: e.target.checked }))
+                                                    }
+                                                />
+                                                {label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 flex gap-2">
+                                        <button
+                                            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                            onClick={() =>
+                                                setAnaliseMateriais(
+                                                    MATERIAIS.reduce((acc, m) => {
+                                                        acc[m.key] = true;
+                                                        return acc;
+                                                    }, {} as Record<MaterialKey, boolean>)
+                                                )
+                                            }
+                                        >
+                                            Marcar todos
+                                        </button>
+                                        <button
+                                            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                            onClick={() =>
+                                                setAnaliseMateriais(
+                                                    MATERIAIS.reduce((acc, m) => {
+                                                        acc[m.key] = false;
+                                                        return acc;
+                                                    }, {} as Record<MaterialKey, boolean>)
+                                                )
+                                            }
+                                        >
+                                            Desmarcar todos
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border p-3">
+                                    <div className="mb-2 text-sm font-semibold">Arrumação (selecione)</div>
+                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                        {ARRUMACAO.map(({ key, label }) => (
+                                            <label key={key} className="inline-flex items-center gap-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!analiseArr[key]}
+                                                    onChange={(e) =>
+                                                        setAnaliseArr((prev) => ({ ...prev, [key]: e.target.checked }))
+                                                    }
+                                                />
+                                                {label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 flex gap-2">
+                                        <button
+                                            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                            onClick={() =>
+                                                setAnaliseArr(
+                                                    ARRUMACAO.reduce((acc, a) => {
+                                                        acc[a.key] = true;
+                                                        return acc;
+                                                    }, {} as Record<ArrKey, boolean>)
+                                                )
+                                            }
+                                        >
+                                            Marcar todos
+                                        </button>
+                                        <button
+                                            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                            onClick={() =>
+                                                setAnaliseArr(
+                                                    ARRUMACAO.reduce((acc, a) => {
+                                                        acc[a.key] = false;
+                                                        return acc;
+                                                    }, {} as Record<ArrKey, boolean>)
+                                                )
+                                            }
+                                        >
+                                            Desmarcar todos
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Gráficos */}
+                        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                            <div className="rounded-2xl border p-3">
+                                <div className="mb-2 text-sm font-semibold">Materiais mais consumidos (soma de quantidades)</div>
+                                <div className="h-[320px]">
+                                    {materiaisChartData.length === 0 ? (
+                                        <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                                            Sem dados para exibir.
+                                        </div>
+                                    ) : (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={materiaisChartData} margin={{ top: 8, right: 16, left: 0, bottom: 20 }}>
+                                                <CartesianGrid strokeDasharray="3 3" />
+                                                <XAxis dataKey="name" angle={-20} textAnchor="end" interval={0} height={50} />
+                                                <YAxis allowDecimals={false} />
+                                                <Tooltip />
+                                                <Bar dataKey="total">
+                                                    <LabelList dataKey="total" position="top" />
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border p-3">
+                                <div className="mb-2 text-sm font-semibold">Arrumação (quantidade de atendimentos com ✅)</div>
+                                <div className="h-[320px]">
+                                    {arrumacaoChartData.length === 0 ? (
+                                        <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                                            Sem dados para exibir.
+                                        </div>
+                                    ) : (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={arrumacaoChartData} margin={{ top: 8, right: 16, left: 0, bottom: 20 }}>
+                                                <CartesianGrid strokeDasharray="3 3" />
+                                                <XAxis dataKey="name" angle={-20} textAnchor="end" interval={0} height={50} />
+                                                <YAxis allowDecimals={false} />
+                                                <Tooltip />
+                                                <Bar dataKey="total">
+                                                    <LabelList dataKey="total" position="top" />
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-3 text-xs text-muted-foreground">
+                            Dica: clique em <b>Atualizar dados</b> para baixar/atualizar os logs de todos os registros. Em seguida,
+                            ajuste o período e seleções e clique em <b>Aplicar filtros</b> para recalcular os gráficos localmente.
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
