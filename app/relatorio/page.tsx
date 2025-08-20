@@ -40,8 +40,7 @@ interface RegistroAnalise {
     tanato?: string;      // "Sim" | "Não" | ""
     materiais_json?: string;
     arrumacao_json?: string;
-    // Colunas *_qtd podem vir como string ou number
-    [key: string]: any;
+    [key: string]: any; // também recebemos materiais_*_qtd
 }
 
 /* ========================= Mapeamentos & utils ======================== */
@@ -108,7 +107,7 @@ function titleCaseFromSnake(s: string) {
         .join(" ");
 }
 
-/* Materiais para a análise */
+/* ===== Materiais (análise) ===== */
 const MATERIAL_KEYS = [
     "cadeiras",
     "bebedouros",
@@ -119,7 +118,9 @@ const MATERIAL_KEYS = [
     "placa",
     "paramentacao",
 ] as const;
-const MATERIAL_LABELS: Record<typeof MATERIAL_KEYS[number], string> = {
+type MaterialKey = (typeof MATERIAL_KEYS)[number];
+
+const MATERIAL_LABELS: Record<MaterialKey, string> = {
     cadeiras: "Cadeiras",
     bebedouros: "Bebedouros",
     suporte_coroa: "Suporte Coroa",
@@ -130,9 +131,11 @@ const MATERIAL_LABELS: Record<typeof MATERIAL_KEYS[number], string> = {
     paramentacao: "Paramentação",
 };
 
-/* Arrumação para a análise */
+/* ===== Arrumação (análise) ===== */
 const ARR_KEYS = ["luvas", "palha", "tamponamento", "maquiagem", "algodao", "cordao", "barba"] as const;
-const ARR_LABELS: Record<typeof ARR_KEYS[number], string> = {
+type ArrKey = (typeof ARR_KEYS)[number];
+
+const ARR_LABELS: Record<ArrKey, string> = {
     luvas: "Luvas",
     palha: "Palha",
     tamponamento: "Tamponamento",
@@ -142,18 +145,25 @@ const ARR_LABELS: Record<typeof ARR_KEYS[number], string> = {
     barba: "Barba",
 };
 
-/* Helpers para materiais e arrumação (análise) */
-function parseMateriaisRegistro(r: RegistroAnalise): Record<string, number> {
-    const base: Record<string, number> = {};
+/* Type guards para os selects multiple */
+function isMaterialKey(v: string): v is MaterialKey {
+    return (MATERIAL_KEYS as readonly string[]).includes(v);
+}
+function isArrKey(v: string): v is ArrKey {
+    return (ARR_KEYS as readonly string[]).includes(v);
+}
+
+/* Helpers de análise */
+function parseMateriaisRegistro(r: RegistroAnalise): Record<MaterialKey, number> {
+    const base = {} as Record<MaterialKey, number>;
     MATERIAL_KEYS.forEach((k) => (base[k] = 0));
 
-    // via JSON
     if (r.materiais_json) {
         try {
             const obj = JSON.parse(String(r.materiais_json));
             if (obj && typeof obj === "object") {
                 MATERIAL_KEYS.forEach((k) => {
-                    const it = obj[k];
+                    const it = (obj as any)[k];
                     if (it && typeof it === "object") {
                         const qtd = Number((it as any).qtd ?? 0);
                         const checked = !!(it as any).checked;
@@ -161,11 +171,8 @@ function parseMateriaisRegistro(r: RegistroAnalise): Record<string, number> {
                     }
                 });
             }
-        } catch {
-            // ignora
-        }
+        } catch { }
     }
-    // via colunas *_qtd
     MATERIAL_KEYS.forEach((k) => {
         const col = (r as any)[`materiais_${k}_qtd`];
         const qtd = Number(col ?? 0);
@@ -174,30 +181,29 @@ function parseMateriaisRegistro(r: RegistroAnalise): Record<string, number> {
 
     return base;
 }
-
-function parseArrumacaoRegistro(r: RegistroAnalise): Record<string, boolean> {
-    const out: Record<string, boolean> = {};
+function parseArrumacaoRegistro(r: RegistroAnalise): Record<ArrKey, boolean> {
+    const out = {} as Record<ArrKey, boolean>;
     ARR_KEYS.forEach((k) => (out[k] = false));
     if (r.arrumacao_json) {
         try {
             const obj = JSON.parse(String(r.arrumacao_json));
             if (obj && typeof obj === "object") {
-                ARR_KEYS.forEach((k) => {
-                    out[k] = !!(obj as any)[k];
-                });
+                ARR_KEYS.forEach((k) => (out[k] = !!(obj as any)[k]));
             }
-        } catch {
-            // ignora
-        }
+        } catch { }
     }
     return out;
+}
+function normSimNao(s?: string) {
+    const v = (s || "").trim().toLowerCase();
+    if (v === "sim") return "sim";
+    if (v === "não" || v === "nao") return "nao";
+    return "";
 }
 
 /* ========================== Endpoints (proxy) ========================= */
 const LISTAR_FALECIDOS = "/api/php/historico_sepultamentos.php?listar_falecidos=1";
 const LOG_POR_ID = (id: string) => `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
-
-/** Fonte para a Análise Geral (registros com materiais/arrumação) */
 const LISTAR_ANALITICO = "/api/php/informativo.php?listar=1";
 
 /* =============================== Página =============================== */
@@ -230,7 +236,7 @@ export default function HistoricoSepultamentosPage() {
 
     const [gerandoPdf, setGerandoPdf] = useState(false);
 
-    // ===== Carrega jsPDF via CDN (mantido) =====
+    // jsPDF via CDN
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
         if ((window as any)[KEY]) return;
@@ -241,7 +247,7 @@ export default function HistoricoSepultamentosPage() {
         document.body.appendChild(script);
     }, []);
 
-    // ===== Carrega Chart.js via CDN sob demanda (para análise) =====
+    // Chart.js via CDN (para análise)
     const [chartReady, setChartReady] = useState(false);
     const ensureChartJs = useCallback(() => {
         if ((window as any).__chartjs_loaded__) {
@@ -322,7 +328,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // ===== Nunito no jsPDF (com fallback) =====
+    // Nunito no jsPDF (com fallback)
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -355,7 +361,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // Exportar PDF (jsPDF puro) — MANTIDO
+    // Exportar PDF (MANTIDO)
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
 
@@ -372,32 +378,27 @@ export default function HistoricoSepultamentosPage() {
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
             const hasNunito = await ensureNunito(doc);
 
-            // dimensões
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
             const marginL = 14;
             const marginR = 14;
             const contentW = pageW - marginL - marginR;
 
-            // fontes
             const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
             const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
 
             let y = 22;
 
-            // Título
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(18);
             doc.text("Histórico dos Sepultamentos", pageW / 2, y, { align: "center" });
             y += 8;
 
-            // Nome do falecido
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(13);
             doc.text((selecionado.falecido || "").toString(), pageW / 2, y, { align: "center" });
             y += 12;
 
-            // Card layout
             const cardPadX = 6;
             const cardPadY = 6;
             const lineGap = 3;
@@ -410,18 +411,12 @@ export default function HistoricoSepultamentosPage() {
             };
 
             for (const ent of log) {
-                // 1) Data/hora
                 const dataLine = formataDataHora(ent.datahora) || "";
-
-                // 2) Ação + status
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
-
-                // 3) Usuário
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
 
-                // 4) Detalhes
                 const detalhesLines: string[] = [];
                 const raw = ent.detalhes as any;
 
@@ -442,7 +437,6 @@ export default function HistoricoSepultamentosPage() {
                                 continue;
                             }
 
-                            // materiais_*_qtd
                             const m = key.match(/^materiais_(.+?)_qtd$/i);
                             if (m) {
                                 const nome = titleCaseFromSnake(m[1]);
@@ -479,7 +473,6 @@ export default function HistoricoSepultamentosPage() {
                     for (const item of Array.from(arrSet)) detalhesLines.push(`• ${item}`);
                 }
 
-                // Quebra em largura disponível
                 doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(9);
                 const dataWrapped = doc.splitTextToSize(dataLine, contentW - cardPadX * 2);
@@ -501,7 +494,7 @@ export default function HistoricoSepultamentosPage() {
                 const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 5 : 0;
                 const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
 
-                const innerHeight = (hData ? hData + lineGap : 0) + hAcao + (hUsuario ? lineGap + hUsuario : 0) + (hDetalhes ? lineGap + hDetalhes : 0);
+                const innerHeight = (hData ? hData + hUsuario + hDetalhes + 3 : hUsuario + hDetalhes + 3) + hAcao;
                 const cardH = innerHeight + cardPadY * 2;
 
                 if (y + cardH + 8 > pageH) {
@@ -517,20 +510,18 @@ export default function HistoricoSepultamentosPage() {
 
                 if (dataWrapped.length) {
                     writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
-                    yy += hData + lineGap;
+                    yy += 4 + (dataWrapped.length - 1) * 4 + 3;
                 }
                 writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
                 yy += hAcao;
 
                 if (usuarioWrapped.length) {
-                    yy += lineGap;
                     writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
-                    yy += hUsuario;
+                    yy += usuarioWrapped.length * 5;
                 }
                 if (detalhesWrapped.length) {
-                    yy += lineGap;
                     writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
-                    yy += hDetalhes;
+                    yy += detalhesWrapped.length * 5;
                 }
                 y += cardH + 8;
             }
@@ -555,10 +546,11 @@ export default function HistoricoSepultamentosPage() {
     // filtros da análise
     const [aDe, setADe] = useState("");
     const [aAte, setAAte] = useState("");
-    const [aMaterial, setAMaterial] = useState<"" | typeof MATERIAL_KEYS[number]>("");
-    const [aArrumacao, setAArrumacao] = useState<"" | typeof ARR_KEYS[number]>("");
-    const [aAssistencia, setAAssistencia] = useState<"" | "Sim" | "Não">("");
-    const [aTanato, setATanato] = useState<"" | "Sim" | "Não">("");
+
+    const [selMateriais, setSelMateriais] = useState<MaterialKey[]>([]);
+    const [selArrumacao, setSelArrumacao] = useState<ArrKey[]>([]);
+    const [selAssistencia, setSelAssistencia] = useState<Array<"Sim" | "Não">>([]);
+    const [selTanato, setSelTanato] = useState<Array<"Sim" | "Não">>([]);
 
     const abrirAnalise = useCallback(async () => {
         setAnaliseOpen(true);
@@ -578,79 +570,74 @@ export default function HistoricoSepultamentosPage() {
         }
     }, [dadosAnalise.length, ensureChartJs]);
 
-    // função para escolher a data do registro para análises
+    // data base do registro para filtro
     function getRegDate(r: RegistroAnalise): string {
         const cands = [r.data_inicio_velorio, r.data, r.data_fim_velorio].filter(Boolean) as string[];
-        const d = (cands[0] || "").slice(0, 10);
-        return d;
+        return (cands[0] || "").slice(0, 10);
     }
 
     // Filtrados para a análise
     const dadosFiltradosAnalise = useMemo(() => {
-        const de = aDe || "";
-        const ate = aAte || "";
         return (dadosAnalise || []).filter((r) => {
             const date = getRegDate(r);
-            if (de && date && date < de) return false;
-            if (ate && date && date > ate) return false;
+            if (aDe && date && date < aDe) return false;
+            if (aAte && date && date > aAte) return false;
 
-            if (aAssistencia && (r.assistencia || "").toLowerCase() !== aAssistencia.toLowerCase()) return false;
-            if (aTanato && (r.tanato || "").toLowerCase() !== aTanato.toLowerCase()) return false;
+            if (selAssistencia.length > 0) {
+                const val = normSimNao(r.assistencia);
+                const wantsSim = selAssistencia.includes("Sim");
+                const wantsNao = selAssistencia.includes("Não");
+                const match = (wantsSim && val === "sim") || (wantsNao && val === "nao");
+                if (!match) return false;
+            }
 
-            if (aArrumacao) {
+            if (selTanato.length > 0) {
+                const val = normSimNao(r.tanato);
+                const wantsSim = selTanato.includes("Sim");
+                const wantsNao = selTanato.includes("Não");
+                const match = (wantsSim && val === "sim") || (wantsNao && val === "nao");
+                if (!match) return false;
+            }
+
+            if (selArrumacao.length > 0) {
                 const arr = parseArrumacaoRegistro(r);
-                if (!arr[aArrumacao]) return false;
+                const ok = selArrumacao.some((k) => arr[k]);
+                if (!ok) return false;
             }
-            if (aMaterial) {
+
+            if (selMateriais.length > 0) {
                 const mats = parseMateriaisRegistro(r);
-                if (!mats[aMaterial] || mats[aMaterial] <= 0) return false;
+                const ok = selMateriais.some((k) => (mats[k] || 0) > 0);
+                if (!ok) return false;
             }
+
             return true;
         });
-    }, [dadosAnalise, aDe, aAte, aAssistencia, aTanato, aArrumacao, aMaterial]);
+    }, [dadosAnalise, aDe, aAte, selAssistencia, selTanato, selArrumacao, selMateriais]);
 
     // Agregações
     const agregados = useMemo(() => {
-        // materiais
-        const matsTotal: Record<string, number> = {};
+        const matsTotal = {} as Record<MaterialKey, number>;
         MATERIAL_KEYS.forEach((k) => (matsTotal[k] = 0));
 
-        // assistência
         let assistSim = 0;
         let assistNao = 0;
 
-        // atendimentos por dia
-        const porDia: Record<string, number> = {};
-
-        // arrumação (quantos registros possuem cada marcação)
-        const arrCount: Record<string, number> = {};
+        const arrCount = {} as Record<ArrKey, number>;
         ARR_KEYS.forEach((k) => (arrCount[k] = 0));
 
         for (const r of dadosFiltradosAnalise) {
-            // materiais
             const mats = parseMateriaisRegistro(r);
             for (const k of MATERIAL_KEYS) matsTotal[k] += mats[k] || 0;
 
-            // assistência
-            const a = (r.assistencia || "").toLowerCase();
+            const a = normSimNao(r.assistencia);
             if (a === "sim") assistSim++;
-            else if (a === "não" || a === "nao" || a === "não ") assistNao++;
             else if (a === "nao") assistNao++;
 
-            // por dia
-            const d = getRegDate(r);
-            if (d) porDia[d] = (porDia[d] || 0) + 1;
-
-            // arrumação
             const ar = parseArrumacaoRegistro(r);
             for (const k of ARR_KEYS) if (ar[k]) arrCount[k] = (arrCount[k] || 0) + 1;
         }
 
-        // ordena dias
-        const dias = Object.keys(porDia).sort();
-        const diasVals = dias.map((d) => porDia[d]);
-
-        // materiais não zero
         const matsLabels = MATERIAL_KEYS.map((k) => MATERIAL_LABELS[k]);
         const matsVals = MATERIAL_KEYS.map((k) => matsTotal[k]);
 
@@ -660,97 +647,53 @@ export default function HistoricoSepultamentosPage() {
             matsVals,
             assistSim,
             assistNao,
-            diasLabels: dias,
-            diasVals,
             arrCount,
         };
     }, [dadosFiltradosAnalise]);
 
-    // ===== Gráficos (Chart.js pelo window) =====
+    // Gráficos
     const barRef = useRef<HTMLCanvasElement | null>(null);
     const pieRef = useRef<HTMLCanvasElement | null>(null);
-    const lineRef = useRef<HTMLCanvasElement | null>(null);
-
     const barChartRef = useRef<any>(null);
     const pieChartRef = useRef<any>(null);
-    const lineChartRef = useRef<any>(null);
 
     useEffect(() => {
         if (!analiseOpen || !chartReady) return;
         const Chart: any = (window as any).Chart;
         if (!Chart) return;
 
-        // destroy anteriores
         try {
             barChartRef.current?.destroy();
             pieChartRef.current?.destroy();
-            lineChartRef.current?.destroy();
         } catch { }
 
-        // Bar – Materiais mais consumidos
         if (barRef.current) {
             barChartRef.current = new Chart(barRef.current, {
                 type: "bar",
                 data: {
                     labels: agregados.matsLabels,
-                    datasets: [
-                        {
-                            label: "Qtd total",
-                            data: agregados.matsVals,
-                        },
-                    ],
+                    datasets: [{ label: "Qtd total", data: agregados.matsVals }],
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 } },
-                    },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
                     plugins: { legend: { display: false } },
                 },
             });
         }
 
-        // Doughnut – Assistência
         if (pieRef.current) {
             pieChartRef.current = new Chart(pieRef.current, {
                 type: "doughnut",
                 data: {
                     labels: ["Com assistência", "Sem assistência"],
-                    datasets: [
-                        {
-                            data: [agregados.assistSim, agregados.assistNao],
-                        },
-                    ],
+                    datasets: [{ data: [agregados.assistSim, agregados.assistNao] }],
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                },
-            });
-        }
-
-        // Line – Atendimentos por dia
-        if (lineRef.current) {
-            lineChartRef.current = new Chart(lineRef.current, {
-                type: "line",
-                data: {
-                    labels: agregados.diasLabels,
-                    datasets: [
-                        {
-                            label: "Atendimentos",
-                            data: agregados.diasVals,
-                            fill: false,
-                            tension: 0.2,
-                        },
-                    ],
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 } },
-                    },
+                    plugins: { legend: { position: "top" } },
                 },
             });
         }
@@ -785,12 +728,7 @@ export default function HistoricoSepultamentosPage() {
                     </button>
                 </div>
 
-                <form
-                    className="grid gap-3 sm:grid-cols-3"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                    }}
-                >
+                <form className="grid gap-3 sm:grid-cols-3" onSubmit={(e) => e.preventDefault()}>
                     <label className="flex flex-col gap-1">
                         <span className="text-xs text-muted-foreground">Nome do falecido</span>
                         <div className="relative">
@@ -947,7 +885,7 @@ export default function HistoricoSepultamentosPage() {
 
                                         if (obj && typeof obj === "object") {
                                             const chips: string[] = [];
-                                            const arrSet = new Set<string>(); // <— DEDUP arrumação para a tela
+                                            const arrSet = new Set<string>();
 
                                             for (const key of Object.keys(obj)) {
                                                 if (["materiais_json", "id", "acao"].includes(key)) continue;
@@ -1063,7 +1001,7 @@ export default function HistoricoSepultamentosPage() {
                             <div>
                                 <h3 className="text-lg font-semibold">Análise Geral</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    Filtre por datas e itens para ver os materiais mais consumidos, atendimentos por dia e proporções de assistência.
+                                    Selecione nenhum, um ou vários itens por categoria. Os gráficos atualizam automaticamente.
                                 </p>
                             </div>
                             <button
@@ -1075,7 +1013,7 @@ export default function HistoricoSepultamentosPage() {
                             </button>
                         </div>
 
-                        {/* Filtros da análise (Selects ao invés de checklists) */}
+                        {/* Filtros (multi-selects) */}
                         <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
                             <label className="flex flex-col gap-1">
                                 <span className="text-xs text-muted-foreground">Data inicial</span>
@@ -1087,13 +1025,18 @@ export default function HistoricoSepultamentosPage() {
                             </label>
 
                             <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Material (contém)</span>
+                                <span className="text-xs text-muted-foreground">Materiais (multi)</span>
                                 <select
-                                    className="input"
-                                    value={aMaterial}
-                                    onChange={(e) => setAMaterial((e.target.value || "") as any)}
+                                    multiple
+                                    className="input min-h-[42px]"
+                                    onChange={(e) =>
+                                        setSelMateriais(
+                                            Array.from(e.currentTarget.selectedOptions)
+                                                .map((o) => o.value)
+                                                .filter(isMaterialKey)
+                                        )
+                                    }
                                 >
-                                    <option value="">Todos</option>
                                     {MATERIAL_KEYS.map((k) => (
                                         <option key={k} value={k}>
                                             {MATERIAL_LABELS[k]}
@@ -1103,13 +1046,18 @@ export default function HistoricoSepultamentosPage() {
                             </label>
 
                             <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Arrumação (contém)</span>
+                                <span className="text-xs text-muted-foreground">Arrumação (multi)</span>
                                 <select
-                                    className="input"
-                                    value={aArrumacao}
-                                    onChange={(e) => setAArrumacao((e.target.value || "") as any)}
+                                    multiple
+                                    className="input min-h-[42px]"
+                                    onChange={(e) =>
+                                        setSelArrumacao(
+                                            Array.from(e.currentTarget.selectedOptions)
+                                                .map((o) => o.value)
+                                                .filter(isArrKey)
+                                        )
+                                    }
                                 >
-                                    <option value="">Todas</option>
                                     {ARR_KEYS.map((k) => (
                                         <option key={k} value={k}>
                                             {ARR_LABELS[k]}
@@ -1119,56 +1067,69 @@ export default function HistoricoSepultamentosPage() {
                             </label>
 
                             <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Assistência</span>
+                                <span className="text-xs text-muted-foreground">Assistência (multi)</span>
                                 <select
-                                    className="input"
-                                    value={aAssistencia}
-                                    onChange={(e) => setAAssistencia((e.target.value || "") as any)}
+                                    multiple
+                                    className="input min-h-[42px]"
+                                    onChange={(e) =>
+                                        setSelAssistencia(Array.from(e.currentTarget.selectedOptions).map((o) => o.value as "Sim" | "Não"))
+                                    }
                                 >
-                                    <option value="">Todos</option>
                                     <option value="Sim">Sim</option>
                                     <option value="Não">Não</option>
                                 </select>
                             </label>
 
                             <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Tanatopraxia</span>
-                                <select className="input" value={aTanato} onChange={(e) => setATanato((e.target.value || "") as any)}>
-                                    <option value="">Todos</option>
+                                <span className="text-xs text-muted-foreground">Tanatopraxia (multi)</span>
+                                <select
+                                    multiple
+                                    className="input min-h-[42px]"
+                                    onChange={(e) =>
+                                        setSelTanato(Array.from(e.currentTarget.selectedOptions).map((o) => o.value as "Sim" | "Não"))
+                                    }
+                                >
                                     <option value="Sim">Sim</option>
                                     <option value="Não">Não</option>
                                 </select>
                             </label>
                         </div>
 
-                        {/* Info topo */}
+                        {/* Resumo topo */}
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                             <span className="rounded bg-muted px-2 py-1">
                                 Registros considerados: <b>{agregados.totalReg}</b>
                             </span>
-                            {aMaterial ? (
+                            {selMateriais.length > 0 && (
                                 <span className="rounded bg-muted px-2 py-1">
-                                    Material: <b>{MATERIAL_LABELS[aMaterial]}</b>
+                                    Materiais: <b>{selMateriais.map((k) => MATERIAL_LABELS[k]).join(", ")}</b>
                                 </span>
-                            ) : null}
-                            {aArrumacao ? (
+                            )}
+                            {selArrumacao.length > 0 && (
                                 <span className="rounded bg-muted px-2 py-1">
-                                    Arrumação: <b>{ARR_LABELS[aArrumacao]}</b>
+                                    Arrumação: <b>{selArrumacao.map((k) => ARR_LABELS[k]).join(", ")}</b>
                                 </span>
-                            ) : null}
-                            {aAssistencia ? (
-                                <span className="rounded bg-muted px-2 py-1">
-                                    Assistência: <b>{aAssistencia}</b>
-                                </span>
-                            ) : null}
-                            {aTanato ? (
-                                <span className="rounded bg-muted px-2 py-1">
-                                    Tanatopraxia: <b>{aTanato}</b>
-                                </span>
-                            ) : null}
+                            )}
+                            {selAssistencia.length > 0 && (
+                                <span className="rounded bg-muted px-2 py-1">Assistência: <b>{selAssistencia.join(", ")}</b></span>
+                            )}
+                            {selTanato.length > 0 && (
+                                <span className="rounded bg-muted px-2 py-1">Tanatopraxia: <b>{selTanato.join(", ")}</b></span>
+                            )}
+                            {(selMateriais.length + selArrumacao.length + selAssistencia.length + selTanato.length) > 0 && (
+                                <button
+                                    className="ml-auto rounded border px-2 py-1"
+                                    onClick={() => {
+                                        setSelMateriais([]); setSelArrumacao([]); setSelAssistencia([]); setSelTanato([]);
+                                        setADe(""); setAAte("");
+                                    }}
+                                >
+                                    Limpar filtros
+                                </button>
+                            )}
                         </div>
 
-                        {/* Corpo do modal */}
+                        {/* Gráficos */}
                         <div className="mt-4">
                             {loadingAnalise ? (
                                 <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
@@ -1179,46 +1140,23 @@ export default function HistoricoSepultamentosPage() {
                                     Sem dados para análise no momento.
                                 </div>
                             ) : (
-                                <>
-                                    {/* GRID de gráficos */}
-                                    <div className="grid gap-4 md:grid-cols-2">
-                                        {/* Materiais mais consumidos */}
-                                        <div className="rounded-xl border p-3">
-                                            <div className="mb-2 text-sm font-semibold">Materiais mais consumidos</div>
-                                            <div className="h-[320px]">
-                                                <canvas ref={barRef} />
-                                            </div>
-                                        </div>
-
-                                        {/* % Assistência */}
-                                        <div className="rounded-xl border p-3">
-                                            <div className="mb-2 text-sm font-semibold">Distribuição de Assistência</div>
-                                            <div className="h-[320px]">
-                                                <canvas ref={pieRef} />
-                                            </div>
-                                        </div>
-
-                                        {/* Atendimentos por dia */}
-                                        <div className="rounded-xl border p-3 md:col-span-2">
-                                            <div className="mb-2 text-sm font-semibold">Atendimentos por dia</div>
-                                            <div className="h-[320px]">
-                                                <canvas ref={lineRef} />
-                                            </div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    {/* Materiais */}
+                                    <div className="rounded-xl border p-3">
+                                        <div className="mb-2 text-sm font-semibold">Materiais mais consumidos</div>
+                                        <div className="h-[320px] sm:h-[340px]">
+                                            <canvas ref={barRef} />
                                         </div>
                                     </div>
 
-                                    {/* Resumo de arrumação */}
-                                    <div className="mt-4 rounded-xl border p-3">
-                                        <div className="mb-2 text-sm font-semibold">Arrumação (quantidade de registros que possuem)</div>
-                                        <div className="flex flex-wrap gap-2 text-xs">
-                                            {ARR_KEYS.map((k) => (
-                                                <span key={k} className="rounded border px-2 py-1">
-                                                    {ARR_LABELS[k]}: <b>{agregados.arrCount[k] || 0}</b>
-                                                </span>
-                                            ))}
+                                    {/* Assistência */}
+                                    <div className="rounded-xl border p-3">
+                                        <div className="mb-2 text-sm font-semibold">Distribuição de Assistência</div>
+                                        <div className="h-[320px] sm:h-[340px]">
+                                            <canvas ref={pieRef} />
                                         </div>
                                     </div>
-                                </>
+                                </div>
                             )}
                         </div>
                     </div>
