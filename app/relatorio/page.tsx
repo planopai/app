@@ -85,11 +85,39 @@ function capitalize(s?: string) {
     if (!s) return "";
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
+function titleCaseFromSnake(s: string) {
+    return s
+        .split("_")
+        .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p))
+        .join(" ");
+}
+
+/* Materiais helpers */
+const MATERIAL_QTD_REGEX = /^materiais_(.+?)_qtd$/i;
+function materialKeyToName(key: string) {
+    const m = key.match(MATERIAL_QTD_REGEX);
+    if (!m) return null;
+    return titleCaseFromSnake(m[1]);
+}
+
+/* Arrumação helpers */
+function parseArrumacao(val: any): string[] {
+    try {
+        const obj = typeof val === "string" ? JSON.parse(val) : val;
+        if (!obj || typeof obj !== "object") return [];
+        const checked: string[] = [];
+        for (const [k, v] of Object.entries(obj)) {
+            if (v) checked.push(`✅ ${titleCaseFromSnake(k)}`);
+        }
+        return checked;
+    } catch {
+        return [];
+    }
+}
 
 /* ========================== Endpoints (proxy) ========================= */
 const LISTAR_FALECIDOS = "/api/php/historico_sepultamentos.php?listar_falecidos=1";
-const LOG_POR_ID = (id: string) =>
-    `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
+const LOG_POR_ID = (id: string) => `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
 /* =============================== Página =============================== */
 export default function HistoricoSepultamentosPage() {
@@ -202,10 +230,8 @@ export default function HistoricoSepultamentosPage() {
         if (nunitoStateRef.current === "ok") return true;
         if (nunitoStateRef.current === "fail") return false;
         try {
-            const regularUrl =
-                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
-            const boldUrl =
-                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
+            const regularUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
+            const boldUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
 
             async function fetchTTF(u: string) {
                 const r = await fetch(u);
@@ -256,8 +282,8 @@ export default function HistoricoSepultamentosPage() {
             const contentW = pageW - marginL - marginR;
 
             // fontes
-            const titleFont = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"] as const;
-            const normalFont = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"] as const;
+            const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
+            const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
 
             let y = 22;
 
@@ -278,7 +304,13 @@ export default function HistoricoSepultamentosPage() {
             const cardPadY = 6;
             const lineGap = 3; // espaço entre linhas
 
-            const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
+            const writeLine = (
+                text: string | string[],
+                x: number,
+                yy: number,
+                size = 11,
+                bold = false
+            ) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
                 doc.setFontSize(size);
                 if (Array.isArray(text)) doc.text(text, x, yy);
@@ -286,8 +318,6 @@ export default function HistoricoSepultamentosPage() {
             };
 
             for (const ent of log) {
-                // Monta as linhas de conteúdo
-
                 // 1) Data/hora
                 const dataLine = formataDataHora(ent.datahora) || "";
 
@@ -299,27 +329,38 @@ export default function HistoricoSepultamentosPage() {
                 // 3) Usuário
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
 
-                // 4) Detalhes (sem materiais_json; com quantidades amigáveis)
+                // 4) Detalhes (sem objetos crus; materiais formatados; arrumação com ✅)
                 const detalhesLines: string[] = [];
-                const raw = ent.detalhes;
+                const raw = ent.detalhes as any;
+
+                const materiaisLines: string[] = [];
+                const arrumacaoChecked: string[] = [];
 
                 try {
-                    const obj =
-                        raw && typeof raw === "string"
-                            ? (JSON.parse(raw) as Record<string, any>)
-                            : (raw as Record<string, any>);
+                    const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
 
                     if (obj && typeof obj === "object") {
-                        for (const key in obj) {
-                            if (key === "materiais_json" || key === "id" || key === "acao") continue;
+                        for (const key of Object.keys(obj)) {
+                            if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                            if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
-                                const nome =
-                                    key === "materiais_cadeiras_qtd" ? "Materiais Cadeiras Qtd" : "Materiais Bebedouros Qtd";
-                                const v = obj[key];
-                                if (v != null && String(v).trim() !== "") {
-                                    detalhesLines.push(`• ${nome}: ${String(v)}`);
+                            if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
+                                if (/^arrumacao(_json)?$/i.test(key)) {
+                                    arrumacaoChecked.push(...parseArrumacao(obj[key]));
                                 }
+                                continue;
+                            }
+
+                            const matName = materialKeyToName(key);
+                            if (matName) {
+                                const qtd = obj[key];
+                                if (qtd != null && String(qtd).trim() !== "") {
+                                    materiaisLines.push(`${matName}: ${String(qtd)}`);
+                                }
+                                continue;
+                            }
+
+                            if (/^arrumacao(_json)?$/i.test(key)) {
+                                arrumacaoChecked.push(...parseArrumacao(obj[key]));
                                 continue;
                             }
 
@@ -328,20 +369,29 @@ export default function HistoricoSepultamentosPage() {
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                             v = String(v);
                             if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
-
-                            detalhesLines.push(`• ${nome}: ${v}`);
+                            detalhesLines.push(`${nome}: ${v}`);
                         }
                     }
                 } catch {
                     let detalhesRaw = String(raw || "");
+                    if (/arrumacao\s*json/i.test(detalhesRaw) || /materiais\s*:\s*\[/i.test(detalhesRaw)) {
+                        detalhesRaw = "";
+                    }
                     Object.keys(FASES_NOMES).forEach((cod) => {
                         const faseNome = FASES_NOMES[cod];
                         const regEx = new RegExp(cod, "g");
                         detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                     });
-                    if (!(/^\s*\{/.test(detalhesRaw) && /materiais_json/i.test(detalhesRaw))) {
-                        if (detalhesRaw.trim()) detalhesLines.push(`• ${detalhesRaw.trim()}`);
-                    }
+                    if (detalhesRaw.trim()) detalhesLines.push(detalhesRaw.trim());
+                }
+
+                if (materiaisLines.length) {
+                    detalhesLines.unshift("Materiais:");
+                    for (const l of materiaisLines) detalhesLines.push(`• ${l}`);
+                }
+                if (arrumacaoChecked.length) {
+                    detalhesLines.push("Arrumação:");
+                    for (const item of arrumacaoChecked) detalhesLines.push(`• ${item}`);
                 }
 
                 // Quebra em largura disponível
@@ -359,55 +409,41 @@ export default function HistoricoSepultamentosPage() {
 
                 doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(11);
-                const detalhesWrapped = detalhesLines.flatMap((l) =>
-                    doc.splitTextToSize(l, contentW - cardPadX * 2)
-                );
+                const detalhesWrapped = detalhesLines.flatMap((l) => doc.splitTextToSize(l, contentW - cardPadX * 2));
 
-                // Alturas
                 const hData = dataWrapped.length ? 4 + (dataWrapped.length - 1) * 4 : 0;
                 const hAcao = acaoWrapped.length * 5;
                 const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 5 : 0;
                 const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
 
-                const innerHeight =
-                    (hData ? hData + lineGap : 0) +
-                    hAcao +
-                    (hUsuario ? lineGap + hUsuario : 0) +
-                    (hDetalhes ? lineGap + hDetalhes : 0);
-
+                const innerHeight = (hData ? hData + lineGap : 0) + hAcao + (hUsuario ? lineGap + hUsuario : 0) + (hDetalhes ? lineGap + hDetalhes : 0);
                 const cardH = innerHeight + cardPadY * 2;
 
-                // Quebra de página
                 if (y + cardH + 8 > pageH) {
                     doc.addPage();
                     y = 22;
                 }
 
-                // Card
                 doc.setDrawColor(210);
                 doc.setLineWidth(0.25);
                 doc.roundedRect(marginL, y, contentW, cardH, 3, 3);
 
                 let yy = y + cardPadY;
 
-                // Data
                 if (dataWrapped.length) {
                     writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
                     yy += hData + lineGap;
                 }
 
-                // Ação + status
                 writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
                 yy += hAcao;
 
-                // Usuário
                 if (usuarioWrapped.length) {
                     yy += lineGap;
                     writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
                     yy += hUsuario;
                 }
 
-                // Detalhes
                 if (detalhesWrapped.length) {
                     yy += lineGap;
                     writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
@@ -417,9 +453,7 @@ export default function HistoricoSepultamentosPage() {
                 y += cardH + 8;
             }
 
-            const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "_")}.pdf`;
+            const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "").toLowerCase().replace(/[^a-z0-9]+/g, "_")}.pdf`;
             doc.save(filename);
         } catch (err) {
             console.error("Falha ao gerar PDF:", err);
@@ -434,9 +468,7 @@ export default function HistoricoSepultamentosPage() {
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Histórico dos Sepultamentos</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.</p>
             </header>
 
             {/* Filtros */}
@@ -525,9 +557,7 @@ export default function HistoricoSepultamentosPage() {
                                         <button
                                             type="button"
                                             onClick={() => selecionarRegistro(item)}
-                                            className={`group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition hover:bg-muted/40 ${selecionado?.sepultamento_id === item.sepultamento_id
-                                                    ? "border-primary/60 bg-primary/5"
-                                                    : ""
+                                            className={`group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition hover:bg-muted/40 ${selecionado?.sepultamento_id === item.sepultamento_id ? "border-primary/60 bg-primary/5" : ""
                                                 }`}
                                         >
                                             <span className="font-medium">{item.falecido}</span>
@@ -569,9 +599,7 @@ export default function HistoricoSepultamentosPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
                         <div>
                             <div className="text-sm font-semibold">Histórico</div>
-                            <div className="text-xs text-muted-foreground">
-                                {selecionado ? sanitize(selecionado.falecido) : "Selecione um registro para visualizar"}
-                            </div>
+                            <div className="text-xs text-muted-foreground">{selecionado ? sanitize(selecionado.falecido) : "Selecione um registro para visualizar"}</div>
                         </div>
 
                         <button
@@ -588,81 +616,68 @@ export default function HistoricoSepultamentosPage() {
 
                     <div className="p-4" id="logAreaExport">
                         {!selecionado ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                Selecione um registro para visualizar o histórico completo.
-                            </div>
+                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Selecione um registro para visualizar o histórico completo.</div>
                         ) : loadingLog ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                Carregando histórico...
-                            </div>
+                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Carregando histórico...</div>
                         ) : log.length === 0 ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                Nenhum log encontrado para este registro.
-                            </div>
+                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum log encontrado para este registro.</div>
                         ) : (
                             <div className="space-y-3">
                                 {log.map((ent, i) => {
-                                    // ------- chips HTML só para visualização em tela --------
                                     let detalhesHtml = "";
-                                    const raw = ent.detalhes;
+                                    const raw = ent.detalhes as any;
 
                                     try {
-                                        const obj =
-                                            raw && typeof raw === "string"
-                                                ? (JSON.parse(raw) as Record<string, any>)
-                                                : (raw as Record<string, any>);
+                                        const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
 
                                         if (obj && typeof obj === "object") {
-                                            const partes: string[] = [];
+                                            const chips: string[] = [];
 
-                                            for (const key in obj) {
-                                                if (key === "materiais_json") continue;
+                                            for (const key of Object.keys(obj)) {
+                                                if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                                                if (key === "materiais_cadeiras_qtd" || key === "materiais_bebedouros_qtd") {
-                                                    const nome =
-                                                        key === "materiais_cadeiras_qtd"
-                                                            ? "Materiais Cadeiras Qtd"
-                                                            : "Materiais Bebedouros Qtd";
-                                                    const val = obj[key];
-                                                    if (val != null && String(val).trim() !== "") {
-                                                        partes.push(
-                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${nome}:</b> ${sanitize(
-                                                                String(val)
-                                                            )}</span>`
-                                                        );
+                                                if (/^arrumacao(_json)?$/i.test(key)) {
+                                                    const items = parseArrumacao(obj[key]);
+                                                    if (items.length) {
+                                                        chips.push(`<div class=\"mt-2\"><b>Arrumação:</b> ${items.map((t) => `<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\">${sanitize(t)}</span>`).join("")}</div>`);
                                                     }
                                                     continue;
                                                 }
 
-                                                if (key === "id" || key === "acao") continue;
+                                                const matName = materialKeyToName(key);
+                                                if (matName) {
+                                                    const val = obj[key];
+                                                    if (val != null && String(val).trim() !== "") {
+                                                        chips.push(`<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\"><b>${sanitize(matName)}:</b> ${sanitize(String(val))}</span>`);
+                                                    }
+                                                    continue;
+                                                }
+
+                                                if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
+
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
-
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
-
-                                                partes.push(
-                                                    `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${nome}:</b> ${sanitize(
-                                                        val
-                                                    )}</span>`
-                                                );
+                                                chips.push(`<span class=\"inline-block rounded border px-2 py-1 text-xs mr-2 mb-2\"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`);
                                             }
 
-                                            if (partes.length) detalhesHtml = `<div class="mt-2">${partes.join("")}</div>`;
+                                            if (chips.length) detalhesHtml = `<div class=\"mt-2\">${chips.join("")}</div>`;
                                         }
                                     } catch {
                                         let detalhesRaw = String(raw || "");
+                                        if (/Arrumacao\s*Json\s*:/i.test(detalhesRaw) || /Materiais\s*:\s*\[object\s+Object\]/i.test(detalhesRaw)) {
+                                            detalhesRaw = detalhesRaw.replace(/Arrumacao\s*Json\s*:[^\n]*/gi, "");
+                                            detalhesRaw = detalhesRaw.replace(/Materiais\s*:\s*\[object\s+Object\]/gi, "");
+                                        }
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
                                             const regEx = new RegExp(cod, "g");
                                             detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                                         });
-                                        if (/^\s*\{/.test(detalhesRaw) && /materiais_json/i.test(detalhesRaw)) {
-                                            detalhesRaw = "";
-                                        }
                                         if (detalhesRaw.trim()) {
-                                            detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
+                                            detalhesHtml = `<div class=\"mt-2 text-sm\">${sanitize(detalhesRaw)}</div>`;
                                         }
                                     }
 
@@ -673,20 +688,20 @@ export default function HistoricoSepultamentosPage() {
                                             // eslint-disable-next-line react/no-danger
                                             dangerouslySetInnerHTML={{
                                                 __html: `
-                          <div class="flex gap-3">
-                            <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
-                            <div class="flex-1">
-                              <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
-                              <div class="text-sm">
+                          <div class=\"flex gap-3\">
+                            <div class=\"text-xl leading-none\">${iconeAcao(ent.acao, ent.status_novo)}</div>
+                            <div class=\"flex-1\">
+                              <div class=\"text-xs text-muted-foreground\">${formataDataHora(ent.datahora)}</div>
+                              <div class=\"text-sm\">
                                 ${ent.acao ? sanitize(capitalize(ent.acao)) : ""}
                                 ${ent.status_novo
-                                                        ? ` <span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">${sanitize(
+                                                        ? `<span class=\"ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary\">${sanitize(
                                                             traduzirFase(ent.status_novo)
                                                         )}</span>`
                                                         : ""
                                                     }
                               </div>
-                              <div class="text-xs text-muted-foreground">Usuário: ${sanitize(ent.usuario || "")}</div>
+                              <div class=\"text-xs text-muted-foreground\">Usuário: ${sanitize(ent.usuario || "")}</div>
                               ${detalhesHtml}
                             </div>
                           </div>
