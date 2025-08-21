@@ -458,10 +458,8 @@ export default function AcompanhamentoPage() {
 
     // Ações
     const [acaoOpen, setAcaoOpen] = useState(false);
-    const [acaoIdx, setAcaoIdx] = useState<number | null>(null);
-    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(
-        null
-    );
+    const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
+    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
     // Info Etapas
@@ -774,11 +772,13 @@ export default function AcompanhamentoPage() {
     /* -------------------- Ações (status) -------------------- */
 
     const abrirPopupAcao = useCallback((idx: number) => {
+        const r = registros[idx];
+        if (!r) return;
         setAcaoMsg(null);
-        setAcaoIdx(idx);
+        setAcaoId(r.id ?? null);
         setAcaoSubmitting(false);
         setAcaoOpen(true);
-    }, []);
+    }, [registros]);
 
     const proximaFase = useCallback((r: Registro) => {
         const atual = r.status || "fase00";
@@ -805,9 +805,8 @@ export default function AcompanhamentoPage() {
     const registrarAcao = useCallback(
         async (acao: string) => {
             if (acaoSubmitting) return; // trava duplo clique
-            if (acaoIdx == null || !registros[acaoIdx]) return;
+            if (acaoId == null) return;
 
-            const id = registros[acaoIdx].id;
             const ok = window.confirm("Deseja confirmar essa ação?");
             if (!ok) return;
 
@@ -815,7 +814,7 @@ export default function AcompanhamentoPage() {
             try {
                 const json = await enviarRegistroPHP({
                     acao: "atualizar_status",
-                    id,
+                    id: acaoId,
                     status: acao,
                 });
 
@@ -838,7 +837,7 @@ export default function AcompanhamentoPage() {
                 setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
             }
         },
-        [acaoIdx, registros, enviarRegistroPHP, fetchRegistros, acaoSubmitting]
+        [acaoId, enviarRegistroPHP, fetchRegistros, acaoSubmitting]
     );
 
     /* -------------------- Info Etapas -------------------- */
@@ -1007,7 +1006,7 @@ export default function AcompanhamentoPage() {
                             </tr>
                         )}
                         {registrosVisiveis.map((r, idx) => (
-                            <tr key={String(r.id ?? idx)} className="border-t">
+                            <tr key={String(r.id ?? `row-${idx}`)} className="border-t">
                                 <td className="px-3 py-2">
                                     <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
                                         {capitalizeStatus(r.status)}
@@ -1474,7 +1473,10 @@ export default function AcompanhamentoPage() {
                 <h2 className="text-xl font-semibold">Registrar uma ação</h2>
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {(() => {
-                        const r = acaoIdx != null ? registros[acaoIdx] : undefined;
+                        const r = useMemo(
+                            () => (acaoId != null ? registros.find((x) => x.id === acaoId) : undefined),
+                            [acaoId, registros]
+                        );
                         const skipConservacao = r ? isTanatoNo(r.tanato) : false;
                         const skipTransportando = r
                             ? salasMemorial.includes((r.local_velorio || "").trim())
@@ -1493,13 +1495,8 @@ export default function AcompanhamentoPage() {
                                     type="button"
                                     disabled={!habilitar || acaoSubmitting}
                                     onClick={() => registrarAcao(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting
-                                            ? "hover:bg-muted"
-                                            : "pointer-events-none opacity-50"
-                                        }`}
-                                    title={
-                                        habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"
-                                    }
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar && !acaoSubmitting ? "hover:bg-muted" : "pointer-events-none opacity-50"}`}
+                                    title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
                                 >
                                     {acaoToStatus(f)}
                                 </button>
