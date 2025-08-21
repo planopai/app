@@ -107,6 +107,17 @@ function titleCaseFromSnake(s: string) {
         .join(" ");
 }
 
+/** Normalizador seguro para booleanos vindos como string/number */
+function asBool(v: any): boolean {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+    if (typeof v === "string") {
+        const s = v.trim().toLowerCase();
+        return s === "1" || s === "true" || s === "sim" || s === "on";
+    }
+    return false;
+}
+
 /* ===== Materiais (análise) ===== */
 const MATERIAL_KEYS = [
     "cadeiras",
@@ -228,7 +239,7 @@ function parseMateriaisRegistro(r: RegistroAnalise): Record<MaterialKey, number>
                     const it = (obj as any)[k];
                     if (it && typeof it === "object") {
                         const qtd = Number((it as any).qtd ?? 0);
-                        const checked = !!(it as any).checked;
+                        const checked = asBool((it as any).checked); // <-- corrigido
                         if (checked && qtd > 0) base[k] += qtd;
                     }
                 });
@@ -251,7 +262,7 @@ function parseArrumacaoRegistro(r: RegistroAnalise): Record<ArrKey, boolean> {
         try {
             const obj = JSON.parse(String(r.arrumacao_json));
             if (obj && typeof obj === "object") {
-                ARR_KEYS.forEach((k) => (out[k] = !!(obj as any)[k]));
+                ARR_KEYS.forEach((k) => (out[k] = asBool((obj as any)[k]))); // <-- corrigido
             }
         } catch { }
     }
@@ -441,7 +452,6 @@ export default function HistoricoSepultamentosPage() {
 
             const cardPadX = 6;
             const cardPadY = 6;
-            const lineGap = 3;
 
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
@@ -472,7 +482,7 @@ export default function HistoricoSepultamentosPage() {
                             if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
                                 if (/^arrumacao(_json)?$/i.test(key)) {
                                     const o = obj[key] || {};
-                                    for (const [k, v] of Object.entries(o)) if (v) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
+                                    for (const [k, v] of Object.entries(o)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`); // <-- corrigido
                                 }
                                 continue;
                             }
@@ -855,7 +865,7 @@ export default function HistoricoSepultamentosPage() {
 
                                                 if (/^arrumacao(_json)?$/i.test(key)) {
                                                     const aobj = obj[key] || {};
-                                                    for (const [k, v] of Object.entries(aobj)) if (v) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
+                                                    for (const [k, v] of Object.entries(aobj)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`); // <-- corrigido
                                                     continue;
                                                 }
 
