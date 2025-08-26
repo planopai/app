@@ -15,6 +15,7 @@ import {
     jsonWith401,
     enviarRegistroPHP,
     capitalizeStatus,
+    normalizarStatus, // ✅ importa a normalização
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
@@ -86,7 +87,16 @@ export default function AcompanhamentoPage() {
 
             const data = await r.json().catch(() => null);
             if (data?.need_login) return;
-            setRegistros(Array.isArray(data) ? data : []);
+
+            // ✅ normaliza status de todos os registros (corrige os antigos com rótulos)
+            const sane: Registro[] = Array.isArray(data)
+                ? data.map((it: any) => ({
+                    ...it,
+                    status: normalizarStatus(it?.status) ?? it?.status,
+                }))
+                : [];
+
+            setRegistros(sane);
         } catch {
             setRegistros([]);
         }

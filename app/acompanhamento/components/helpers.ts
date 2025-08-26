@@ -3,12 +3,9 @@
 import { API, LOGIN_ABSOLUTE, materiaisConfig, salasMemorial } from "./constants";
 import type { ArrumacaoState, MateriaisState } from "./types";
 
-/* ------------------------------------------------------------------------------------------------
- * Defaults
- * ----------------------------------------------------------------------------------------------*/
-
 let IS_REDIRECTING = false;
 
+/* -------------------- Defaults -------------------- */
 export function defaultMateriais(): MateriaisState {
     return materiaisConfig.reduce((acc, m) => {
         acc[m.key] = { checked: false, qtd: 0 };
@@ -28,16 +25,11 @@ export function defaultArrumacao(): ArrumacaoState {
     };
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Sessão / Fetch helpers
- * ----------------------------------------------------------------------------------------------*/
-
+/* -------------------- Login / fetch -------------------- */
 export function redirectToLogin(loginUrl?: string, msg?: string) {
     if (IS_REDIRECTING) return;
     IS_REDIRECTING = true;
-    try {
-        if (msg) alert(msg);
-    } catch { }
+    try { if (msg) alert(msg); } catch { }
     const url = (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
     try {
         window.location.replace(url);
@@ -63,9 +55,7 @@ export async function jsonWith401(url: string, init?: RequestInit) {
     try {
         data = await resp.json();
     } catch {
-        if (!resp.ok) {
-            throw new Error("Falha na requisição.");
-        }
+        if (!resp.ok) throw new Error("Falha na requisição.");
     }
 
     if (data?.need_login) {
@@ -81,92 +71,56 @@ export async function jsonWith401(url: string, init?: RequestInit) {
     return data;
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Normalização de status do banco
- * ----------------------------------------------------------------------------------------------*/
+/* -------------------- Status <-> rótulos -------------------- */
+// Tabela completa de rótulos que já vi no projeto.
+// Coloque variações em minúsculas e sem acento para cobrir registros antigos.
+const ROTULO_PARA_FASE: Record<string, string> = {
+    "removendo": "fase01",
+    "aguardando procedimento": "fase02",
+    "preparando": "fase03",
+    "aguardando ornamentacao": "fase04",
+    "ornamentando": "fase05",
+    "corpo pronto": "fase06",
+    "transportando": "fase07",
+    "velando": "fase08",
+    "sepultando": "fase09",
+    "sepultamento concluido": "fase10",
+    "material recolhido": "fase11",
+};
 
-function norm(s?: string) {
-    return (s ?? "")
-        .toString()
-        .trim()
-        .toLowerCase()
+// Remove acentos e baixa o caso para normalizar rótulos antigos
+function normalizeKey(s: string) {
+    return s
         .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "");
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
 }
 
-/** Converte rótulos variados ou números para o código "faseNN". */
-export function normalizarStatusParaFase(status?: string): string | undefined {
+/** Converte “Velando”, “Transportando”, etc. (ou “faseXX”) em “faseXX”. */
+export function normalizarStatus(status?: string): string | undefined {
     if (!status) return undefined;
-    const raw = String(status).trim();
-
-    // "fase 8", "fase08", "Fase8"
-    const m1 = /^fase\s*0?(\d{1,2})$/i.exec(raw);
-    if (m1) return `fase${String(Number(m1[1])).padStart(2, "0")}`;
-
-    // "8"
-    if (/^\d+$/.test(raw)) return `fase${String(Number(raw)).padStart(2, "0")}`;
-
-    // Rotulos humanos vindos do banco
-    const labelToFase: Record<string, string> = {
-        removendo: "fase01",
-        aguardandoprocedimento: "fase02",
-        preparando: "fase03",
-        aguardandoornamentacao: "fase04",
-        ornamentando: "fase05",
-        corpopronto: "fase06",
-        transportando: "fase07",
-        velando: "fase08",
-        sepultando: "fase09",
-        sepultamentoconcluido: "fase10",
-        materialrecolhido: "fase11",
-
-        // sinônimos que aparecem
-        velorio: "fase08",
-        entregadecorpo: "fase08",
-    };
-
-    const n = norm(raw);
-    if (labelToFase[n]) return labelToFase[n];
-
-    // "fase8" sem zero
-    const m2 = /^fase(\d{1,2})$/i.exec(raw);
-    if (m2) return `fase${String(Number(m2[1])).padStart(2, "0")}`;
-
-    return undefined;
+    const s = String(status).trim();
+    if (s.startsWith("fase")) return s; // já está ok
+    const mapeado = ROTULO_PARA_FASE[normalizeKey(s)];
+    return mapeado ?? undefined;
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Labels
- * ----------------------------------------------------------------------------------------------*/
-
+/* -------------------- Textos -------------------- */
 export function capitalizeStatus(s?: string) {
-    // aceita rótulos do banco ou códigos, normaliza e devolve label
-    const code = normalizarStatusParaFase(s) ?? s;
-    switch (code) {
-        case "fase01":
-            return "Removendo";
-        case "fase02":
-            return "Aguardando Procedimento";
-        case "fase03":
-            return "Preparando";
-        case "fase04":
-            return "Aguardando Ornamentação";
-        case "fase05":
-            return "Ornamentando";
-        case "fase06":
-            return "Corpo Pronto";
-        case "fase07":
-            return "Transportando";
-        case "fase08":
-            return "Velando";
-        case "fase09":
-            return "Sepultando";
-        case "fase10":
-            return "Sepultamento Concluído";
-        case "fase11":
-            return "Material Recolhido";
-        default:
-            return "Aguardando";
+    switch (s) {
+        case "fase01": return "Removendo";
+        case "fase02": return "Aguardando Procedimento";
+        case "fase03": return "Preparando";
+        case "fase04": return "Aguardando Ornamentação";
+        case "fase05": return "Ornamentando";
+        case "fase06": return "Corpo Pronto";
+        case "fase07": return "Transportando";
+        case "fase08": return "Velando";
+        case "fase09": return "Sepultando";
+        case "fase10": return "Sepultamento Concluído";
+        case "fase11": return "Material Recolhido";
+        default: return "Aguardando";
     }
 }
 
@@ -187,22 +141,14 @@ export function acaoToStatus(acao: string) {
     return map[acao] ?? "fase01";
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Regras auxiliares
- * ----------------------------------------------------------------------------------------------*/
-
 export function isTanatoNo(v?: string) {
     if (!v) return false;
     const s = v.trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Envio ao backend
- * ----------------------------------------------------------------------------------------------*/
-
+/* -------------------- Envio registro -------------------- */
 export async function enviarRegistroPHP(data: any) {
-    // achatar materiais/arrumação -> JSON + colunas *_qtd
     let materiais_json = "";
     const flatQtd: Record<string, string> = {};
 
@@ -212,15 +158,12 @@ export async function enviarRegistroPHP(data: any) {
             const q = Number(data.materiais?.[m.key]?.qtd ?? 0);
             const c = !!data.materiais?.[m.key]?.checked;
             const col = `materiais_${m.key}_qtd`;
-            if (c && q > 0) flatQtd[col] = String(q);
-            else flatQtd[col] = "";
+            flatQtd[col] = c && q > 0 ? String(q) : "";
         });
     }
 
     let arrumacao_json = "";
-    if (data.arrumacao) {
-        arrumacao_json = JSON.stringify(data.arrumacao);
-    }
+    if (data.arrumacao) arrumacao_json = JSON.stringify(data.arrumacao);
 
     const body = {
         ...data,
@@ -237,34 +180,23 @@ export async function enviarRegistroPHP(data: any) {
     });
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Próxima fase (usa status do BANCO normalizado!)
- * ----------------------------------------------------------------------------------------------*/
-
+/* -------------------- Próxima fase -------------------- */
 export function proximaFaseDoRegistro(
     r: { status?: string; local_velorio?: string; tanato?: string },
     fases: readonly string[]
 ) {
-    // NORMALIZA o que veio do banco (rótulo, número, etc.)
-    const atual = normalizarStatusParaFase(r.status) ?? "fase00";
-
-    // se o código não estiver em `fases`, começamos antes do início (-1 => 0)
-    let nextIdx = fases.indexOf(atual as any) + 1;
+    // ✅ Normaliza sempre que calcular
+    const atualCode = normalizarStatus(r.status) ?? "fase00";
+    let nextIdx = fases.indexOf(atualCode as any) + 1;
 
     const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
     const skipConservacao = isTanatoNo(r.tanato);
 
     while (nextIdx < fases.length) {
         const next = fases[nextIdx];
-        if (skipTransportando && next === "fase07") {
-            nextIdx++;
-            continue;
-        }
-        if (skipConservacao && (next === "fase03" || next === "fase04")) {
-            nextIdx++;
-            continue;
-        }
-        return next; // próxima fase válida
+        if (skipTransportando && next === "fase07") { nextIdx++; continue; }
+        if (skipConservacao && (next === "fase03" || next === "fase04")) { nextIdx++; continue; }
+        return next;
     }
-    return null; // chegou ao final
+    return null;
 }
