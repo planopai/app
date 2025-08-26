@@ -5,34 +5,10 @@ import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases, salasMemorial } from "./constants";
-import { acaoToStatus, isTanatoNo, proximaFaseDoRegistro } from "./helpers";
+import { acaoToStatus, isTanatoNo, proximaFaseDoRegistro, normalizarStatus } from "./helpers";
 
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
-
-/** Quando o backend manda rótulo humano (ex.: "Velando") em vez de "fase08",
- *  convertemos para o código da fase para que o cálculo funcione.
- *  Ajuste/complete os rótulos conforme seu backend. */
-const ROTULO_PARA_FASE: Record<string, Fase> = {
-    Removendo: "fase01",
-    "Aguardando Procedimento": "fase02",
-    Preparando: "fase03",
-    "Aguardando Ornamentação": "fase04",
-    Ornamentando: "fase05",
-    "Corpo Pronto": "fase06",
-    Transportando: "fase07",
-    Velando: "fase08",
-    Sepultando: "fase09",
-    "Sepultamento Concluído": "fase10",
-    "Material Recolhido": "fase11",
-};
-
-function normalizarStatus(status?: string): Fase | undefined {
-    if (!status) return undefined;
-    const s = status.trim();
-    if (s.startsWith("fase")) return s as Fase; // já é código
-    return ROTULO_PARA_FASE[s]; // mapeia rótulo -> código
-}
 
 export default function AcaoModal({
     open,
@@ -53,9 +29,9 @@ export default function AcaoModal({
 }) {
     // Registro selecionado — já normalizando o status para "faseXX"
     const registroAtual = useMemo(() => {
-        const r = acaoId != null ? registros.find((x) => x.id === acaoId) : undefined;
+        const r = acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
         if (!r) return undefined;
-        const statusFix = normalizarStatus(r.status) ?? ("fase00" as Fase);
+        const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
@@ -92,21 +68,18 @@ export default function AcaoModal({
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
             <h2 className="text-xl font-semibold">Registrar uma ação</h2>
 
-            {/* Sem registro selecionado */}
             {!registroAtual && (
                 <p className="mt-4 text-sm text-muted-foreground">
                     Nenhum registro selecionado. Selecione um registro para continuar.
                 </p>
             )}
 
-            {/* Sem fases visíveis (depois dos skips) */}
             {registroAtual && fasesVisiveis.length === 0 && (
                 <p className="mt-4 text-sm text-muted-foreground">
                     Nenhuma etapa disponível para este registro com as condições atuais.
                 </p>
             )}
 
-            {/* Botões */}
             {registroAtual && fasesVisiveis.length > 0 && (
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -128,7 +101,6 @@ export default function AcaoModal({
                         })}
                     </div>
 
-                    {/* Se já não há próxima fase possível (fim do fluxo) */}
                     {prox === null && (
                         <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
                     )}

@@ -15,7 +15,7 @@ import {
     jsonWith401,
     enviarRegistroPHP,
     capitalizeStatus,
-    normalizarStatus, // ✅ importa a normalização
+    normalizarStatus,
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
@@ -88,10 +88,11 @@ export default function AcompanhamentoPage() {
             const data = await r.json().catch(() => null);
             if (data?.need_login) return;
 
-            // ✅ normaliza status de todos os registros (corrige os antigos com rótulos)
+            // normaliza status para faseXX
             const sane: Registro[] = Array.isArray(data)
                 ? data.map((it: any) => ({
                     ...it,
+                    id: it?.id != null ? String(it.id) : it.id, // <- id como string pra evitar mismatch
                     status: normalizarStatus(it?.status) ?? it?.status,
                 }))
                 : [];
@@ -207,20 +208,30 @@ export default function AcompanhamentoPage() {
     /* -------------------- Ciclos -------------------- */
 
     useEffect(() => {
+        // carrega na chegada
         fetchRegistros();
         fetchAvisos();
-        const intReg = setInterval(fetchRegistros, 10000);
+    }, [fetchRegistros, fetchAvisos]);
+
+    useEffect(() => {
+        // polling — pausa o fetch de registros enquanto o modal de ação está aberto
+        const tickReg = () => {
+            if (!acaoOpen) fetchRegistros();
+        };
+        const intReg = setInterval(tickReg, 10000);
         const intAv = setInterval(fetchAvisos, 3000);
+
         const onVis = () => {
-            if (!document.hidden) fetchRegistros();
+            if (!document.hidden && !acaoOpen) fetchRegistros();
         };
         document.addEventListener("visibilitychange", onVis);
+
         return () => {
             clearInterval(intReg);
             clearInterval(intAv);
             document.removeEventListener("visibilitychange", onVis);
         };
-    }, [fetchRegistros, fetchAvisos]);
+    }, [fetchRegistros, fetchAvisos, acaoOpen]);
 
     useEffect(() => {
         const onEsc = (e: KeyboardEvent) => {
@@ -394,7 +405,7 @@ export default function AcompanhamentoPage() {
             const r = registros[idx];
             if (!r) return;
             setAcaoMsg(null);
-            setAcaoId(r.id ?? null);
+            setAcaoId(r.id != null ? String(r.id) : null); // id normalizado para string
             setAcaoSubmitting(false);
             setAcaoOpen(true);
         },
