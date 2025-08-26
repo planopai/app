@@ -4,27 +4,33 @@ import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases, salasMemorial } from "./constants";
-import { acaoToStatus, isTanatoNo } from "./helpers";
+import { acaoToStatus, isTanatoNo, proximaFaseDoRegistro } from "./helpers";
 
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
 
-/** Dado o status atual (ou fase00), as fases visíveis e o array completo,
- *  retorna a próxima fase visível mais à frente no array completo. */
-function calcularProximaFase(
-    statusAtual: Fase | undefined,
-    fasesVisiveis: readonly Fase[],
-    fasesTodas: readonly Fase[]
-): Fase | null {
-    const atual: Fase = (statusAtual ?? "fase00") as Fase;
+/** Mapa de rótulo -> código da fase (caso o backend envie rótulos como "Velando") */
+const ROTULO_PARA_FASE: Record<string, Fase> = {
+    // ajuste conforme seus rótulos reais
+    "Removendo": "fase01",
+    "Aguardando Procedimento": "fase02",
+    "Preparando": "fase03",
+    "Aguardando Ornamentação": "fase04",
+    "Ornamentando": "fase05",
+    "Corpo Pronto": "fase06",
+    "Transportando": "fase07",
+    "Velando": "fase08",
+    "Sepultando": "fase09",
+    "Sepultamento Concluído": "fase10",
+    "Material Recolhido": "fase11",
+    // se houver outros rótulos equivalentes, adicione-os aqui
+};
 
-    // Índice base no array completo; se não existir, começamos antes do início
-    const idxAtualNoAll = fasesTodas.indexOf(atual);
-    const idxBase = idxAtualNoAll >= 0 ? idxAtualNoAll : -1;
-
-    // A próxima fase visível cuja posição no array completo seja maior que a atual
-    const proxima = fasesVisiveis.find((f) => fasesTodas.indexOf(f) > idxBase) ?? null;
-    return proxima;
+/** Garante que sempre trabalharemos com o CÓDIGO da fase (ex.: "fase08") */
+function normalizarStatus(status?: string): Fase | undefined {
+    if (!status) return undefined;
+    if (status.startsWith("fase")) return status as Fase;
+    return ROTULO_PARA_FASE[status] ?? undefined;
 }
 
 export default function AcaoModal({
@@ -44,13 +50,15 @@ export default function AcaoModal({
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
 }) {
-    // 1) Registro selecionado — se não houver, não renderize os botões
-    const registroAtual = useMemo(
-        () => (acaoId != null ? registros.find((x) => x.id === acaoId) : undefined),
-        [acaoId, registros]
-    );
+    // 1) Registro selecionado — já normalizando o status para "faseXX"
+    const registroAtual = useMemo(() => {
+        const r = acaoId != null ? registros.find((x) => x.id === acaoId) : undefined;
+        if (!r) return undefined;
+        const statusNormalizado = normalizarStatus(r.status) ?? ("fase00" as Fase);
+        return { ...r, status: statusNormalizado } as Registro & { status: Fase };
+    }, [acaoId, registros]);
 
-    // 2) Skips
+    // 2) Skips (iguais aos usados para montar fasesVisiveis)
     const skipConservacao = !!registroAtual && isTanatoNo(registroAtual.tanato);
     const skipTransportando =
         !!registroAtual && salasMemorial.includes((registroAtual.local_velorio || "").trim());
@@ -66,15 +74,22 @@ export default function AcaoModal({
         [skipTransportando, skipConservacao]
     );
 
-    // 4) Próxima fase baseada no índice do array completo
+    // 4) Próxima fase calculada pela mesma função usada no helpers (fonte única)
     const prox = useMemo<Fase | null>(() => {
         if (!registroAtual) return null;
-        return calcularProximaFase(
-            (registroAtual.status as Fase | undefined) ?? ("fase00" as Fase),
-            fasesVisiveis,
-            fases as readonly Fase[]
-        );
-    }, [registroAtual, fasesVisiveis]);
+
+        // Usa a função do helpers que já respeita ordem e skips
+        const proxima = proximaFaseDoRegistro(
+            {
+                status: (registroAtual.status as string) ?? "fase00",
+                local_velorio: registroAtual.local_velorio,
+                tanato: registroAtual.tanato,
+            },
+            fases as readonly string[]
+        ) as Fase | null;
+
+        return proxima;
+    }, [registroAtual]);
 
     // --- Render ---
     return (
