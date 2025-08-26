@@ -14,6 +14,7 @@ import {
     defaultMateriais,
     jsonWith401,
     enviarRegistroPHP,
+    capitalizeStatus,
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
@@ -58,6 +59,8 @@ export default function AcompanhamentoPage() {
     // Ações
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
+    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
     // Info
     const [infoOpen, setInfoOpen] = useState(false);
@@ -78,7 +81,7 @@ export default function AcompanhamentoPage() {
             });
 
             if (r.status === 401) {
-                // endpoint pode não retornar JSON com need_login; só não atualiza
+                // aqui o endpoint pode não retornar JSON com need_login; só não atualiza
                 return;
             }
 
@@ -381,10 +384,44 @@ export default function AcompanhamentoPage() {
         (idx: number) => {
             const r = registros[idx];
             if (!r) return;
+            setAcaoMsg(null);
             setAcaoId(r.id ?? null);
+            setAcaoSubmitting(false);
             setAcaoOpen(true);
         },
         [registros]
+    );
+
+    const registrarAcao = useCallback(
+        async (acao: string) => {
+            if (acaoSubmitting) return;
+            if (acaoId == null) return;
+
+            const ok = window.confirm("Deseja confirmar essa ação?");
+            if (!ok) return;
+
+            setAcaoSubmitting(true);
+            try {
+                const json = await enviarRegistroPHP({
+                    acao: "atualizar_status",
+                    id: acaoId,
+                    status: acao,
+                });
+
+                if (json?.sucesso) {
+                    setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
+                    fetchRegistros();
+                    setTimeout(() => setAcaoOpen(false), 500);
+                } else {
+                    setAcaoSubmitting(false);
+                    setAcaoMsg({ text: json?.erro || "Erro ao atualizar status.", ok: false });
+                }
+            } catch (e: any) {
+                setAcaoSubmitting(false);
+                setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
+            }
+        },
+        [acaoId, fetchRegistros, acaoSubmitting]
     );
 
     /* -------------------- Resumos -------------------- */
@@ -497,13 +534,14 @@ export default function AcompanhamentoPage() {
                 setWizardData={setWizardData}
             />
 
-            {/* AcaoModal agora é totalmente server-driven */}
             <AcaoModal
                 open={acaoOpen}
                 setOpen={setAcaoOpen}
                 registros={registros}
                 acaoId={acaoId}
-                onAfterAction={fetchRegistros} // atualiza a tabela após registrar ação
+                registrarAcao={registrarAcao}
+                acaoMsg={acaoMsg}
+                acaoSubmitting={acaoSubmitting}
             />
 
             <InfoModal
