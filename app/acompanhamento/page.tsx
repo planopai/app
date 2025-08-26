@@ -81,7 +81,6 @@ export default function AcompanhamentoPage() {
             });
 
             if (r.status === 401) {
-                // aqui o endpoint pode não retornar JSON com need_login; só não atualiza
                 return;
             }
 
@@ -544,12 +543,7 @@ export default function AcompanhamentoPage() {
                 acaoSubmitting={acaoSubmitting}
             />
 
-            <InfoModal
-                open={infoOpen}
-                setOpen={setInfoOpen}
-                infoIdx={infoIdx}
-                abrirWizard={abrirWizard}
-            />
+            <InfoModal open={infoOpen} setOpen={setInfoOpen} infoIdx={infoIdx} abrirWizard={abrirWizard} />
         </div>
     );
 }
