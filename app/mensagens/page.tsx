@@ -90,7 +90,7 @@ function MessageCard({
 }) {
     const src = resolveImageSrc(item.image);
     return (
-        <div className="flex items-start gap-3 rounded-xl border bg-card/70 p-3 shadow-sm sm:p-4">
+        <div className="flex items-start gap-3 rounded-xl border bg-white p-3 shadow-sm sm:p-4">
             <img
                 src={src}
                 alt={item.name}
@@ -236,7 +236,7 @@ export default function MensagensPage() {
         }
     }
 
-    // Sanitização leve + normalização (evita espaçamentos estranhos)
+    // Sanitização leve + normalização
     const normalizeForPdf = (s?: string) =>
         (s ?? "")
             .normalize("NFC")
@@ -245,7 +245,7 @@ export default function MensagensPage() {
             .replace(/[\u200B-\u200D\uFEFF]/g, "")
             .replace(/\uFE0F/g, ""); // VS16
 
-    // helper: mede e devolve linhas/altura; desenha linha-a-linha
+    // helper: mede e desenha linha-a-linha
     function wrapText(
         doc: any,
         text: string,
@@ -264,7 +264,6 @@ export default function MensagensPage() {
         const lh = fontSize * 1.15 * mmPerPt;
         const height = Math.max(lh * lines.length, lh);
         if (draw) {
-            // garante que não há charSpace aplicado
             if (typeof (doc as any).setCharSpace === "function") (doc as any).setCharSpace(0);
             let cy = y;
             for (const ln of lines) {
@@ -275,7 +274,7 @@ export default function MensagensPage() {
         return { lines, height, lineHeight: lh };
     }
 
-    // ------- Exportar PDF (capas 1–3; mensagens a partir da 4 com fundo global; 4 por página) -------
+    // ------- Exportar PDF -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
@@ -292,7 +291,6 @@ export default function MensagensPage() {
 
         const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
-        // garante fonte Unicode
         const hasDejaVu = await ensureDejaVu(doc);
         const FONT = hasDejaVu ? "DejaVuSans" : "helvetica";
 
@@ -304,11 +302,25 @@ export default function MensagensPage() {
         const margin = { top: 16, right: 14, bottom: 16, left: 14 };
         const contentW = pageW - margin.left - margin.right;
 
-        // Grade fixa: 4 cards por página
-        const cardsPerPage = 4;
-        const gapY = 8; // espaço vertical entre cards
+        // 3 capas (imagens cheias)
+        const covers = ["/capa.png", "/contracapa.png", "/contracapa02.png"];
+        for (let i = 0; i < covers.length; i++) {
+            if (i > 0) doc.addPage();
+            const coverData = await toDataURL(covers[i]);
+            doc.addImage(coverData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+        }
 
-        // Card (altura fixa para layout uniforme)
+        // Página 4 em diante com fundo geral
+        const bgData = await toDataURL("/fundo.png");
+        const startContentPage = () => {
+            doc.addPage();
+            doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+        };
+        startContentPage();
+
+        // Layout fixo: 4 cards por página
+        const cardsPerPage = 4;
+        const gapY = 8;
         const minCardH = 36;
         const maxCardH = 56;
         const availH = pageH - margin.top - margin.bottom;
@@ -318,35 +330,18 @@ export default function MensagensPage() {
         // Aparência do card
         const cardPadX = 8;
         const cardPadY = 8;
-        const cornerRadius = 3;
-        const borderWidth = 0.25;
+        const cornerRadius = 6; // mais arredondado para parecer com a UI
+        const borderWidth = 0.6;
 
-        // Layout interno
+        // Interno
         const imgSize = 26;
         const innerGap = 8;
         const nameBodyGap = 6;
 
-        // Tipografia (reduz se necessário)
-        const titleStart = 12; // pt
-        const bodyStart = 11;  // pt
-        const bodyMin = 9;     // pt
-
-        // ---------- 1) CAPAS (páginas 1, 2 e 3) ----------
-        const covers = ["/capa.png", "/contracapa.png", "/contracapa02.png"];
-        for (let i = 0; i < covers.length; i++) {
-            if (i > 0) doc.addPage();
-            const coverData = await toDataURL(covers[i]);
-            doc.addImage(coverData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
-        }
-
-        // ---------- 2) Página 4 em diante: fundo global + 4 cards por página ----------
-        const bgData = await toDataURL("/fundo.png");
-        const startContentPage = () => {
-            doc.addPage();
-            doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
-        };
-        // cria a página 4
-        startContentPage();
+        // Tipografia
+        const titleStart = 12;
+        const bodyStart = 11;
+        const bodyMin = 9;
 
         for (let i = 0; i < approved.length; i++) {
             const m = approved[i];
@@ -356,10 +351,11 @@ export default function MensagensPage() {
             const cardX = margin.left;
             const cardY = margin.top + idx * (cardH + gapY);
 
-            // contorno do card
+            // >>> FUNDO BRANCO DO CARD (preenche + desenha borda)
+            doc.setFillColor(255, 255, 255);
             doc.setDrawColor(210);
             doc.setLineWidth(borderWidth);
-            doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius);
+            doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius, "FD");
 
             // imagem
             const imgX = cardX + cardPadX;
@@ -370,89 +366,48 @@ export default function MensagensPage() {
                 doc.addImage(imgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
             } catch { }
 
-            // área de texto
+            // texto
             const textX = imgX + imgSize + innerGap;
             const textTop = cardY + cardPadY;
             const textMaxW = contentW - (textX - cardX) - cardPadX;
             const maxH = cardH - 2 * cardPadY;
 
-            // NOME
+            // Nome
             let titleSize = titleStart;
-            let { lines: nameLines, height: nameH, lineHeight: titleLH } = wrapText(
-                doc,
-                m.name || "",
-                textX,
-                textTop,
-                textMaxW,
-                FONT,
-                "bold",
-                titleSize,
-                false
-            );
+            let { height: nameH } = wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", titleSize, false);
 
-            // CORPO
+            // Corpo
             let bodySize = bodyStart;
-            let body = wrapText(
-                doc,
-                m.text || "",
-                textX,
-                textTop + nameH + nameBodyGap,
-                textMaxW,
-                FONT,
-                "normal",
-                bodySize,
-                false
-            );
+            let body = wrapText(doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, FONT, "normal", bodySize, false);
 
-            // Ajuste para caber dentro do card
+            // Ajusta até caber
             while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
                 bodySize -= 0.5;
-                body = wrapText(
-                    doc,
-                    m.text || "",
-                    textX,
-                    textTop + nameH + nameBodyGap,
-                    textMaxW,
-                    FONT,
-                    "normal",
-                    bodySize,
-                    false
-                );
+                body = wrapText(doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, FONT, "normal", bodySize, false);
             }
 
-            // Se ainda não couber, corta com reticências
+            // Ellipsis se ainda exceder
             if (nameH + nameBodyGap + body.height > maxH) {
                 const mmPerPt = 0.352777778;
                 const lh = bodySize * 1.15 * mmPerPt;
                 const maxBodyH = maxH - nameH - nameBodyGap;
                 const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
-                let lines = (doc.splitTextToSize(normalizeForPdf(m.text || ""), textMaxW) as string[]).slice(
-                    0,
-                    maxLines
-                );
+                let lines = (doc.splitTextToSize(normalizeForPdf(m.text || ""), textMaxW) as string[]).slice(0, maxLines);
                 if (lines.length && maxLines > 0) {
                     lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
                 }
-                // redesenha body com as linhas cortadas
-                body = {
-                    lines,
-                    height: Math.max(lh * lines.length, 0),
-                    lineHeight: lh,
-                };
+                body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
             }
 
-            // DESENHAR (linha-a-linha SEM maxWidth → nunca estoura)
-            // Nome
+            // Desenhar textos (linha-a-linha)
             wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", titleSize, true);
-            // Corpo
-            // (já temos `body.lines` e `lineHeight`, então desenhamos manualmente)
             if (typeof (doc as any).setCharSpace === "function") (doc as any).setCharSpace(0);
             doc.setFont(FONT, "normal");
             doc.setFontSize(bodySize);
-            let yy = textTop + nameH + nameBodyGap;
+            let y = textTop + nameH + nameBodyGap;
             for (const ln of body.lines) {
-                doc.text(ln, textX, yy, { baseline: "top", align: "left" });
-                yy += body.lineHeight;
+                doc.text(ln, textX, y, { baseline: "top", align: "left" });
+                y += body.lineHeight;
             }
         }
 
