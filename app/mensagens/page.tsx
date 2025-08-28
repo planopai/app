@@ -199,7 +199,58 @@ export default function MensagensPage() {
         }
     }
 
-    // ------- Exportar PDF (capas 1–3; mensagens a partir da 4 com fundo global) -------
+    // ===== Fonte Unicode (DejaVu Sans) para PDF =====
+    const fontStateRef = useRef<"none" | "ok" | "fail">("none");
+    async function ensureDejaVu(doc: any): Promise<boolean> {
+        if (fontStateRef.current === "ok") return true;
+        if (fontStateRef.current === "fail") return false;
+        try {
+            const regularUrl =
+                "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts-ttf@2.37/ttf/DejaVuSans.ttf";
+            const boldUrl =
+                "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts-ttf@2.37/ttf/DejaVuSans-Bold.ttf";
+
+            async function fetchTTF(u: string) {
+                const r = await fetch(u);
+                if (!r.ok) throw new Error("Fonte não encontrada");
+                const b = await r.arrayBuffer();
+                let binary = "";
+                const bytes = new Uint8Array(b);
+                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                return btoa(binary);
+            }
+
+            const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
+
+            doc.addFileToVFS("DejaVuSans.ttf", regB64);
+            doc.addFont("DejaVuSans.ttf", "DejaVuSans", "normal");
+
+            doc.addFileToVFS("DejaVuSans-Bold.ttf", boldB64);
+            doc.addFont("DejaVuSans-Bold.ttf", "DejaVuSans", "bold");
+
+            fontStateRef.current = "ok";
+            return true;
+        } catch {
+            fontStateRef.current = "fail";
+            return false;
+        }
+    }
+
+    // --- limpar texto: normaliza, remove NBSP/zero-width/VS16 e troca emojis por "❤"
+    const normalizeForPdf = (s?: string) =>
+        (s ?? "")
+            .normalize("NFC")
+            .replace(/\r\n?/g, "\n")
+            .replace(/\u00A0/g, " ")
+            .replace(/[\u200B-\u200D\uFEFF]/g, "")
+            .replace(/\uFE0F/g, "")
+            // qualquer emoji (faixa ampla + dingbats) -> coração
+            .replace(
+                /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}]/gu,
+                "❤"
+            );
+
+    // ------- Exportar PDF (capas 1–3; mensagens a partir da 4 com fundo global; 4 por página) -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
@@ -216,6 +267,10 @@ export default function MensagensPage() {
 
         const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
+        // garante fonte Unicode
+        const hasDejaVu = await ensureDejaVu(doc);
+        const FONT = hasDejaVu ? "DejaVuSans" : "helvetica";
+
         // Dimensões
         const pageW = doc.internal.pageSize.getWidth();
         const pageH = doc.internal.pageSize.getHeight();
@@ -228,12 +283,12 @@ export default function MensagensPage() {
         const cardsPerPage = 4;
         const gapY = 8; // espaço vertical entre cards
 
-        // Card “padrão” menor para não ficar gigante
-        const minCardH = 34; // altura mínima do card
-        const maxCardH = 52; // altura máxima desejada
+        // Card “padrão” menor
+        const minCardH = 34;
+        const maxCardH = 52;
         const availH = pageH - margin.top - margin.bottom;
         const baseH = (availH - gapY * (cardsPerPage - 1)) / cardsPerPage;
-        const cardH = Math.max(minCardH, Math.min(maxCardH, baseH)); // altura fixa por página
+        const cardH = Math.max(minCardH, Math.min(maxCardH, baseH));
 
         // Aparência do card
         const cardPadX = 8;
@@ -242,16 +297,16 @@ export default function MensagensPage() {
         const borderWidth = 0.25;
 
         // Layout interno
-        const imgSize = 24;      // foto
-        const innerGap = 6;      // espaço entre foto e coluna de texto
-        const nameBodyGap = 6;   // espaço entre nome e mensagem
+        const imgSize = 24;
+        const innerGap = 6;
+        const nameBodyGap = 6;
 
-        // Tipografia (Helvetica padrão)
+        // Tipografia
         const titleSizeStart = 12; // pt
         const bodySizeStart = 11;  // pt
         const bodyMinSize = 9;     // pt
 
-        // conversão pt -> mm (jsPDF usa pt internamente para fonte)
+        // conversão pt -> mm
         const mmPerPt = 0.352777778;
         const lineH = (pt: number, factor = 1.15) => pt * factor * mmPerPt;
 
@@ -265,39 +320,31 @@ export default function MensagensPage() {
 
         // ---------- 2) Página 4 em diante: fundo global + 4 cards por página ----------
         const bgData = await toDataURL("/fundo.png");
-
         const startContentPage = () => {
             doc.addPage();
             doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
         };
-
         // cria a página 4
         startContentPage();
-
-        // desenha N cards por página
-        approved.forEach(async (_m, idx) => { }); // apenas para tipagem
 
         for (let i = 0; i < approved.length; i++) {
             const m = approved[i];
             const idxInPage = i % cardsPerPage;
 
-            if (i > 0 && idxInPage === 0) {
-                // nova página de conteúdo com fundo
-                startContentPage();
-            }
+            if (i > 0 && idxInPage === 0) startContentPage();
 
             const cardX = margin.left;
             const cardY = margin.top + idxInPage * (cardH + gapY);
 
-            // contorno do card (sem fundo – o fundo é da página)
+            // contorno do card
             doc.setDrawColor(210);
             doc.setLineWidth(borderWidth);
             doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius);
 
-            // imagem (esquerda, alinhada ao topo do conteúdo)
+            // imagem (esquerda)
             const innerH = cardH - 2 * cardPadY;
             const imgX = cardX + cardPadX;
-            const imgY = cardY + cardPadY; // topo
+            const imgY = cardY + cardPadY;
             try {
                 const imgUrl = resolveImageSrc(m.image);
                 const imgData = await toDataURL(imgUrl);
@@ -310,56 +357,62 @@ export default function MensagensPage() {
             const textTop = cardY + cardPadY;
             const maxContentH = innerH;
 
-            // Medidas do nome
+            // NOME
             let titleSize = titleSizeStart;
-            doc.setFont("helvetica", "bold");
+            doc.setFont(FONT, "bold");
             doc.setFontSize(titleSize);
-            const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
+            const nameLines = doc.splitTextToSize(normalizeForPdf(m.name), textMaxW) as string[];
             const nameH = Math.max(lineH(titleSize) * nameLines.length, lineH(titleSize));
 
-            // Ajuste do corpo para caber no card:
+            // CORPO
             let bodySize = bodySizeStart;
-            let bodyLines = [] as string[];
+            let bodyLines: string[] = [];
             let bodyH = 0;
-
             const fitBody = () => {
-                doc.setFont("helvetica", "normal");
+                doc.setFont(FONT, "normal");
                 doc.setFontSize(bodySize);
-                bodyLines = doc.splitTextToSize(m.text || "", textMaxW) as string[];
+                bodyLines = doc.splitTextToSize(normalizeForPdf(m.text), textMaxW) as string[];
                 bodyH = Math.max(lineH(bodySize) * bodyLines.length, 0);
             };
-
             fitBody();
 
-            // Reduz a fonte até caber
             while (nameH + nameBodyGap + bodyH > maxContentH && bodySize > bodyMinSize) {
                 bodySize -= 0.5;
                 fitBody();
             }
 
-            // Se ainda não couber, corta com reticências
             if (nameH + nameBodyGap + bodyH > maxContentH) {
                 const maxBodyH = maxContentH - nameH - nameBodyGap;
                 const lh = lineH(bodySize);
                 const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
                 if (maxLines < bodyLines.length && maxLines > 0) {
                     const clipped = bodyLines.slice(0, maxLines);
-                    // adiciona “…” no final da última linha
-                    clipped[clipped.length - 1] = clipped[clipped.length - 1].replace(/\s*$/, "") + "…";
+                    clipped[clipped.length - 1] =
+                        clipped[clipped.length - 1].replace(/\s*$/, "") + "…";
                     bodyLines = clipped;
                     bodyH = lh * clipped.length;
                 }
             }
 
-            // Desenha textos (baseline top para alinhar certinho)
-            doc.setFont("helvetica", "bold");
+            // desenha textos (com largura máxima e baseline top)
+            (doc as any).setCharSpace?.(0);
+            doc.setFont(FONT, "bold");
             doc.setFontSize(titleSize);
-            (doc as any).text(nameLines, textX, textTop, { baseline: "top" });
+            (doc as any).text(nameLines, textX, textTop, {
+                baseline: "top",
+                align: "left",
+                maxWidth: textMaxW,
+            });
 
-            doc.setFont("helvetica", "normal");
+            (doc as any).setCharSpace?.(0);
+            doc.setFont(FONT, "normal");
             doc.setFontSize(bodySize);
             const bodyY = textTop + nameH + nameBodyGap;
-            (doc as any).text(bodyLines, textX, bodyY, { baseline: "top" });
+            (doc as any).text(bodyLines, textX, bodyY, {
+                baseline: "top",
+                align: "left",
+                maxWidth: textMaxW,
+            });
         }
 
         doc.save(`mensagens_aprovadas_sala0${room}.pdf`);
