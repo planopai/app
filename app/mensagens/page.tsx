@@ -354,7 +354,7 @@ export default function MensagensPage() {
             // fontes
             const nunitoOk = await ensureNunito(doc); // capa
             const dejaOk = await ensureDejaVu(doc); // miolo
-            const CONTENT_FONT = dejaOk ? "DejaVuSans" : "helvetica"; // <<< miolo
+            const CONTENT_FONT = dejaOk ? "Nunito" : "helvetica"; // <<< miolo
             const COVER_FONT = nunitoOk ? "Nunito" : "helvetica"; // <<< capa
 
             setProgress(15);
