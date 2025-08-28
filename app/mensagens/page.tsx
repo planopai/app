@@ -306,19 +306,19 @@ export default function MensagensPage() {
             const textMaxW = contentW - (textX - margin.left) - cardPadX;
 
             // Medidas do conteúdo
-            const titleSize = 13;
+            const titleSize = 15;
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(titleSize);
             const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
             const nameH = nameLines.length * getLineH(titleSize);
 
-            const bodySize = 12;
+            const bodySize = 11;
             doc.setFont(normalFont[0], normalFont[1]);
             doc.setFontSize(bodySize);
             const bodyLines = doc.splitTextToSize(m.text || "", textMaxW);
             const bodyH = bodyLines.length * getLineH(bodySize);
 
-            const contentH = Math.max(imgSize, nameH + 6 + bodyH); // 6 = gap interno entre nome e texto
+            const contentH = Math.max(imgSize, nameH + 3 + bodyH); // 6 = gap interno entre nome e texto
             const cardH = contentH + cardPadY * 2;
 
             // quebra de página: nunca cortar um card
