@@ -362,8 +362,8 @@ export default function MensagensPage() {
 
             // Título (nome + datas)
             doc.setTextColor(34, 51, 80); // #223350
-            doc.setFont(COVER_FONT, "bold");
-            let nameSize = 26;
+            doc.setFont(COVER_FONT, "nunito");
+            let nameSize = 36;
             doc.setFontSize(nameSize);
             const maxTitleW = pageW * 0.8;
             const nameLines = doc.splitTextToSize(falecido || meta.nome, maxTitleW) as string[];
@@ -380,7 +380,7 @@ export default function MensagensPage() {
             const d1 = formatDateBR(meta.nasc);
             const d2 = formatDateBR(meta.obito);
             doc.setFont(COVER_FONT, "normal");
-            doc.setFontSize(14);
+            doc.setFontSize(20);
             const gap = 24; // distância do centro
             const w1 = doc.getTextWidth(d1);
             const w2 = doc.getTextWidth(d2);
