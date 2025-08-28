@@ -236,16 +236,43 @@ export default function MensagensPage() {
         }
     }
 
-    // Sanitização leve + normalização
-    const normalizeForPdf = (s?: string) =>
-        (s ?? "")
-            .normalize("NFC")
-            .replace(/\r\n?/g, "\n")
-            .replace(/\u00A0/g, " ")
-            .replace(/[\u200B-\u200D\uFEFF]/g, "")
-            .replace(/\uFE0F/g, ""); // VS16
+    // --- Sanitização robusta p/ PDF: normaliza e substitui emojis por símbolos seguros
+    const sanitizeForPdf = (input?: string) => {
+        let s = (input ?? "").normalize("NFC");
 
-    // helper: mede e desenha linha-a-linha
+        // linhas/espaços padrão
+        s = s.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
+
+        // remove zero-width + VS16 + ZWJ
+        s = s.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\uFE0F/g, "");
+
+        // keycaps (ex.: 1️⃣) -> mantém o dígito
+        s = s.replace(/([#*0-9])\uFE0F?\u20E3/gu, "$1");
+
+        // flags (pares de "regional indicator") -> •
+        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•");
+
+        // corações bem comuns -> ♥ (texto)
+        s = s.replace(
+            /[\u2764\u2665\u2661\u{1F494}\u{1F493}\u{1F495}-\u{1F49F}\u{1F9E1}\u{1FA77}]/gu,
+            "♥"
+        );
+
+        // TODO: qualquer outro emoji (Extended Pictographic) -> •
+        try {
+            s = s.replace(/\p{Extended_Pictographic}/gu, "•");
+        } catch {
+            // fallback, caso o navegador não suporte property escapes
+            s = s.replace(
+                /[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/gu,
+                "•"
+            );
+        }
+
+        return s;
+    };
+
+    // helper: mede e desenha linha-a-linha (sempre saneando antes!)
     function wrapText(
         doc: any,
         text: string,
@@ -257,9 +284,10 @@ export default function MensagensPage() {
         fontSize: number,
         draw: boolean
     ) {
+        const clean = sanitizeForPdf(text);
         doc.setFont(fontName, fontStyle);
         doc.setFontSize(fontSize);
-        const lines = doc.splitTextToSize(normalizeForPdf(text), maxW) as string[];
+        const lines = doc.splitTextToSize(clean, maxW) as string[];
         const mmPerPt = 0.352777778;
         const lh = fontSize * 1.15 * mmPerPt;
         const height = Math.max(lh * lines.length, lh);
@@ -330,7 +358,7 @@ export default function MensagensPage() {
         // Aparência do card
         const cardPadX = 8;
         const cardPadY = 8;
-        const cornerRadius = 6; // mais arredondado para parecer com a UI
+        const cornerRadius = 6;
         const borderWidth = 0.6;
 
         // Interno
@@ -351,7 +379,7 @@ export default function MensagensPage() {
             const cardX = margin.left;
             const cardY = margin.top + idx * (cardH + gapY);
 
-            // >>> FUNDO BRANCO DO CARD (preenche + desenha borda)
+            // Fundo branco + borda
             doc.setFillColor(255, 255, 255);
             doc.setDrawColor(210);
             doc.setLineWidth(borderWidth);
@@ -374,16 +402,46 @@ export default function MensagensPage() {
 
             // Nome
             let titleSize = titleStart;
-            let { height: nameH } = wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", titleSize, false);
+            let { height: nameH } = wrapText(
+                doc,
+                m.name || "",
+                textX,
+                textTop,
+                textMaxW,
+                FONT,
+                "bold",
+                titleSize,
+                false
+            );
 
             // Corpo
             let bodySize = bodyStart;
-            let body = wrapText(doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, FONT, "normal", bodySize, false);
+            let body = wrapText(
+                doc,
+                m.text || "",
+                textX,
+                textTop + nameH + nameBodyGap,
+                textMaxW,
+                FONT,
+                "normal",
+                bodySize,
+                false
+            );
 
-            // Ajusta até caber
+            // Ajuste para caber
             while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
                 bodySize -= 0.5;
-                body = wrapText(doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, FONT, "normal", bodySize, false);
+                body = wrapText(
+                    doc,
+                    m.text || "",
+                    textX,
+                    textTop + nameH + nameBodyGap,
+                    textMaxW,
+                    FONT,
+                    "normal",
+                    bodySize,
+                    false
+                );
             }
 
             // Ellipsis se ainda exceder
@@ -392,14 +450,15 @@ export default function MensagensPage() {
                 const lh = bodySize * 1.15 * mmPerPt;
                 const maxBodyH = maxH - nameH - nameBodyGap;
                 const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
-                let lines = (doc.splitTextToSize(normalizeForPdf(m.text || ""), textMaxW) as string[]).slice(0, maxLines);
+                let clean = (sanitizeForPdf(m.text || "") || "");
+                let lines = (doc.splitTextToSize(clean, textMaxW) as string[]).slice(0, maxLines);
                 if (lines.length && maxLines > 0) {
                     lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
                 }
                 body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
             }
 
-            // Desenhar textos (linha-a-linha)
+            // Desenhar textos
             wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", titleSize, true);
             if (typeof (doc as any).setCharSpace === "function") (doc as any).setCharSpace(0);
             doc.setFont(FONT, "normal");
