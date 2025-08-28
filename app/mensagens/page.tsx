@@ -177,15 +177,11 @@ export default function MensagensPage() {
         loadMessages();
     }, [loadMessages]);
 
-    // Cache simples para imagens base64 (evita refetch do mesmo arquivo)
+    // ===== util: cache simples de dataURLs =====
     const dataUrlCache = useRef<Map<string, string>>(new Map());
-
-    // fetch -> base64
     async function toDataURL(url: string): Promise<string> {
-        // cache
         const cache = dataUrlCache.current;
         if (cache.has(url)) return cache.get(url)!;
-
         try {
             const resp = await fetch(url, { credentials: "include" });
             if (!resp.ok) throw new Error("img fetch fail");
@@ -205,17 +201,14 @@ export default function MensagensPage() {
 
     // ===== Nunito no jsPDF (com fallback para Helvetica) =====
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
-
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
         if (nunitoStateRef.current === "fail") return false;
-
         try {
             const regularUrl =
                 "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
             const boldUrl =
                 "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
-
             async function fetchTTF(u: string) {
                 const r = await fetch(u);
                 if (!r.ok) throw new Error("Fonte não encontrada");
@@ -225,15 +218,11 @@ export default function MensagensPage() {
                 for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
                 return btoa(binary);
             }
-
             const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-
             doc.addFileToVFS("Nunito-Regular.ttf", regB64);
             doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
-
             doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
             doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
-
             nunitoStateRef.current = "ok";
             return true;
         } catch {
@@ -242,7 +231,7 @@ export default function MensagensPage() {
         }
     }
 
-    // ------- Exportar PDF com capa/contracapas e fundo dos cards -------
+    // ------- Exportar PDF (capas 1–3; mensagens a partir da 4 com fundo global) -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
@@ -264,23 +253,22 @@ export default function MensagensPage() {
         const pageW = doc.internal.pageSize.getWidth();
         const pageH = doc.internal.pageSize.getHeight();
 
-        // Margens & layout
+        // Margens e layout do conteúdo
         const margin = { top: 16, right: 14, bottom: 16, left: 14 };
         const contentW = pageW - margin.left - margin.right;
 
-        // Card layout
-        const cardPadX = 7;
-        const cardPadY = 7;
-        const gapNameBody = 5;
-        const imgSize = 24;
-        const innerGap = 6; // espaço entre imagem e textos
-        const betweenCardsY = 8;
+        // Layout do cartão
+        const cardPadX = 8;
+        const cardPadY = 8;
+        const imgSize = 32;        // foto quadrada
+        const innerGap = 10;       // espaço entre a foto e os textos
+        const betweenCardsY = 12;  // espaço vertical entre cards
 
         // Fontes
         const titleFont = hasNunito ? (["Nunito", "bold"] as const) : (["helvetica", "bold"] as const);
         const normalFont = hasNunito ? (["Nunito", "normal"] as const) : (["helvetica", "normal"] as const);
 
-        // util de altura de linha (preciso p/ medir com precisão)
+        // util p/ altura de linha consistente
         const getLineH = (fontSize: number) => {
             const factor =
                 typeof (doc as any).getLineHeightFactor === "function"
@@ -289,88 +277,87 @@ export default function MensagensPage() {
             return fontSize * factor;
         };
 
-        // ---------- 1) Páginas de capa ----------
-        const coverFiles = ["/capa.png", "/contracapa.png", "/contracapa02.png"];
-        for (let i = 0; i < coverFiles.length; i++) {
-            const dataUrl = await toDataURL(coverFiles[i]);
-            // desenha a imagem do tamanho inteiro da página
-            doc.addImage(dataUrl, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
-            if (i < coverFiles.length - 1) doc.addPage();
+        // ---------- 1) CAPAS (páginas 1, 2 e 3) ----------
+        const covers = ["/capa.png", "/contracapa.png", "/contracapa02.png"];
+        for (let i = 0; i < covers.length; i++) {
+            if (i > 0) doc.addPage();
+            const coverData = await toDataURL(covers[i]);
+            doc.addImage(coverData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
         }
 
-        // fundo do card (mensagem)
-        const cardBgDataUrl = await toDataURL("/fundo.png");
+        // ---------- 2) Página 4 em diante: fundo global + mensagens ----------
+        const fundoData = await toDataURL("/fundo.png");
 
+        // helper: cria nova página de conteúdo com o fundo aplicado
+        function newContentPage() {
+            doc.addPage();
+            doc.addImage(fundoData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            return margin.top;
+        }
+
+        // inicia na página 4 já com o fundo
+        doc.addPage();
+        doc.addImage(fundoData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
         let y = margin.top;
 
         for (const m of approved) {
-            // calcular dimensões do conteúdo para saber a altura final do card
+            // Área de texto à direita da foto
             const textX = margin.left + cardPadX + imgSize + innerGap;
             const textMaxW = contentW - (textX - margin.left) - cardPadX;
 
-            // Nome
-            const titleSize = 12;
+            // Medidas do conteúdo
+            const titleSize = 13;
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(titleSize);
             const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
             const nameH = nameLines.length * getLineH(titleSize);
 
-            // Corpo
-            const bodySize = 11;
+            const bodySize = 12;
             doc.setFont(normalFont[0], normalFont[1]);
             doc.setFontSize(bodySize);
             const bodyLines = doc.splitTextToSize(m.text || "", textMaxW);
             const bodyH = bodyLines.length * getLineH(bodySize);
 
-            const contentHeight = Math.max(imgSize, nameH + gapNameBody + bodyH);
-            const cardH = contentHeight + cardPadY * 2;
+            const contentH = Math.max(imgSize, nameH + 6 + bodyH); // 6 = gap interno entre nome e texto
+            const cardH = contentH + cardPadY * 2;
 
-            // quebra de página SEMPRE antes de desenhar, para não cortar
+            // quebra de página: nunca cortar um card
             if (y + cardH > pageH - margin.bottom) {
-                doc.addPage();
-                y = margin.top;
+                y = newContentPage();
             }
 
+            // desenha o card: borda arredondada, sem fundo (fundo já é o da página)
             const cardX = margin.left;
             const cardY = y;
-
-            // 1) fundo do card (imagem personalizada)
-            doc.addImage(cardBgDataUrl, "PNG", cardX, cardY, contentW, cardH, undefined, "FAST");
-
-            // 2) borda do card (sutil, ajuda a destacar)
             doc.setDrawColor(210);
             doc.setLineWidth(0.25);
             doc.roundedRect(cardX, cardY, contentW, cardH, 3, 3);
 
-            // 3) imagem do autor (foto/ícone)
+            // imagem (esquerda)
             const imgX = cardX + cardPadX;
             const imgY = cardY + cardPadY;
             try {
                 const msgImgUrl = resolveImageSrc(m.image);
                 const msgImgData = await toDataURL(msgImgUrl);
-                // não forçamos tipo: jsPDF detecta PNG/JPEG do dataURL
                 doc.addImage(msgImgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
             } catch {
                 // ignora
             }
 
-            // 4) textos
+            // textos (direita)
             const textYStart = imgY;
-            const textStartX = imgX + imgSize + innerGap;
+            const titleBaselineAdjust = 1.5;
 
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(titleSize);
-            // pequena correção para “sentar” melhor no topo
-            const titleBaselineAdjust = 1.5;
-            doc.text(nameLines, textStartX, textYStart + titleBaselineAdjust);
+            doc.text(nameLines, textX, textYStart + titleBaselineAdjust);
 
             doc.setFont(normalFont[0], normalFont[1]);
             doc.setFontSize(bodySize);
-            // corpo começa após o nome + gap
-            const bodyY = textYStart + nameH + gapNameBody;
-            doc.text(bodyLines, textStartX, bodyY);
+            const bodyY = textYStart + nameH + 6;
+            doc.text(bodyLines, textX, bodyY);
 
-            // avança Y para o próximo card
+            // avança para o próximo
             y += cardH + betweenCardsY;
         }
 
@@ -378,7 +365,7 @@ export default function MensagensPage() {
     }, [approved, room]);
 
     return (
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
+        <div className="mx-auto w/full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
             {/* Topbar */}
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">

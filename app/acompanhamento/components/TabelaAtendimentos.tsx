@@ -3,15 +3,13 @@ import React from "react";
 import { Registro } from "./types";
 import { capitalizeStatus } from "./helpers";
 
-export default function TabelaAtendimentos({
-    registros,
-    onAcao,
-    onInfo,
-}: {
+interface Props {
     registros: Registro[];
     onAcao: (idx: number) => void;
     onInfo: (idx: number) => void;
-}) {
+}
+
+export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props) {
     const visiveis = registros.filter((r) => r.status !== "fase11");
 
     return (
@@ -27,44 +25,45 @@ export default function TabelaAtendimentos({
                     </tr>
                 </thead>
                 <tbody id="tb-registros">
-                    {visiveis.length === 0 && (
+                    {visiveis.length === 0 ? (
                         <tr>
                             <td className="px-3 py-6 text-center opacity-70" colSpan={5}>
                                 Nenhum registro cadastrado.
                             </td>
                         </tr>
+                    ) : (
+                        visiveis.map((r, idx) => (
+                            <tr key={String(r.id ?? `row-${idx}`)} className="border-t">
+                                <td className="px-3 py-2">
+                                    <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
+                                        {capitalizeStatus(r.status)}
+                                    </span>
+                                </td>
+                                <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium">{r.falecido || ""}</span>
+                                    </div>
+                                </td>
+                                <td className="px-3 py-2">{r.agente || ""}</td>
+                                <td className="px-3 py-2">
+                                    <button
+                                        className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+                                        onClick={() => onAcao(idx)}
+                                    >
+                                        Ações
+                                    </button>
+                                </td>
+                                <td className="px-3 py-2">
+                                    <button
+                                        className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+                                        onClick={() => onInfo(idx)}
+                                    >
+                                        Info
+                                    </button>
+                                </td>
+                            </tr>
+                        ))
                     )}
-                    {visiveis.map((r, idx) => (
-                        <tr key={String(r.id ?? `row-${idx}`)} className="border-t">
-                            <td className="px-3 py-2">
-                                <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-                                    {capitalizeStatus(r.status)}
-                                </span>
-                            </td>
-                            <td className="px-3 py-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium">{r.falecido || ""}</span>
-                                </div>
-                            </td>
-                            <td className="px-3 py-2">{r.agente || ""}</td>
-                            <td className="px-3 py-2">
-                                <button
-                                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
-                                    onClick={() => onAcao(idx)}
-                                >
-                                    Ações
-                                </button>
-                            </td>
-                            <td className="px-3 py-2">
-                                <button
-                                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
-                                    onClick={() => onInfo(idx)}
-                                >
-                                    Info
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
                 </tbody>
             </table>
         </div>
