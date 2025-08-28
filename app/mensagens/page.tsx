@@ -177,18 +177,27 @@ export default function MensagensPage() {
         loadMessages();
     }, [loadMessages]);
 
+    // Cache simples para imagens base64 (evita refetch do mesmo arquivo)
+    const dataUrlCache = useRef<Map<string, string>>(new Map());
+
     // fetch -> base64
     async function toDataURL(url: string): Promise<string> {
+        // cache
+        const cache = dataUrlCache.current;
+        if (cache.has(url)) return cache.get(url)!;
+
         try {
             const resp = await fetch(url, { credentials: "include" });
             if (!resp.ok) throw new Error("img fetch fail");
             const blob = await resp.blob();
-            return await new Promise((resolve, reject) => {
+            const dataUrl: string = await new Promise((resolve, reject) => {
                 const fr = new FileReader();
                 fr.onload = () => resolve(String(fr.result));
                 fr.onerror = reject;
                 fr.readAsDataURL(blob);
             });
+            cache.set(url, dataUrl);
+            return dataUrl;
         } catch {
             return FALLBACK_IMG;
         }
@@ -202,7 +211,6 @@ export default function MensagensPage() {
         if (nunitoStateRef.current === "fail") return false;
 
         try {
-            // TTFs oficiais via jsDelivr (mirror do Google Fonts)
             const regularUrl =
                 "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
             const boldUrl =
@@ -234,7 +242,7 @@ export default function MensagensPage() {
         }
     }
 
-    // ------- Exportar PDF: Nunito (se disponível), espaçamentos e margens melhores -------
+    // ------- Exportar PDF com capa/contracapas e fundo dos cards -------
     const exportApprovedPdf = useCallback(async () => {
         if (approved.length === 0) {
             alert("Não há mensagens aprovadas para exportar.");
@@ -256,87 +264,114 @@ export default function MensagensPage() {
         const pageW = doc.internal.pageSize.getWidth();
         const pageH = doc.internal.pageSize.getHeight();
 
-        // Margens externas e padding interno do card
-        const marginL = 14;
-        const marginR = 14;
-        const contentW = pageW - marginL - marginR;
+        // Margens & layout
+        const margin = { top: 16, right: 14, bottom: 16, left: 14 };
+        const contentW = pageW - margin.left - margin.right;
 
-        const cardPadX = 6;
-        const cardPadY = 6;
-        const gap = 6; // espaço entre NOME e corpo
+        // Card layout
+        const cardPadX = 7;
+        const cardPadY = 7;
+        const gapNameBody = 5;
         const imgSize = 24;
+        const innerGap = 6; // espaço entre imagem e textos
+        const betweenCardsY = 8;
 
         // Fontes
-        const titleFont = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"] as const;
-        const normalFont = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"] as const;
+        const titleFont = hasNunito ? (["Nunito", "bold"] as const) : (["helvetica", "bold"] as const);
+        const normalFont = hasNunito ? (["Nunito", "normal"] as const) : (["helvetica", "normal"] as const);
 
-        let y = 22;
+        // util de altura de linha (preciso p/ medir com precisão)
+        const getLineH = (fontSize: number) => {
+            const factor =
+                typeof (doc as any).getLineHeightFactor === "function"
+                    ? (doc as any).getLineHeightFactor()
+                    : 1.15;
+            return fontSize * factor;
+        };
 
-        // Título
-        doc.setFont(titleFont[0], titleFont[1]);
-        doc.setFontSize(18);
-        doc.text(`Mensagens Aprovadas — Sala 0${room}`, pageW / 2, y, { align: "center" });
-        y += 8;
+        // ---------- 1) Páginas de capa ----------
+        const coverFiles = ["/capa.png", "/contracapa.png", "/contracapa02.png"];
+        for (let i = 0; i < coverFiles.length; i++) {
+            const dataUrl = await toDataURL(coverFiles[i]);
+            // desenha a imagem do tamanho inteiro da página
+            doc.addImage(dataUrl, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            if (i < coverFiles.length - 1) doc.addPage();
+        }
 
-        // Data
-        doc.setFont(normalFont[0], normalFont[1]);
-        doc.setFontSize(11);
-        doc.text(new Date().toLocaleString("pt-BR"), pageW / 2, y, { align: "center" });
-        y += 12;
+        // fundo do card (mensagem)
+        const cardBgDataUrl = await toDataURL("/fundo.png");
+
+        let y = margin.top;
 
         for (const m of approved) {
-            const innerX = marginL + cardPadX;
-            const imgX = innerX;
-            const imgY = y + cardPadY;
-            const textX = innerX + imgSize + 6;
-            const textMaxW = contentW - (textX - marginL) - cardPadX;
+            // calcular dimensões do conteúdo para saber a altura final do card
+            const textX = margin.left + cardPadX + imgSize + innerGap;
+            const textMaxW = contentW - (textX - margin.left) - cardPadX;
 
             // Nome
+            const titleSize = 12;
             doc.setFont(titleFont[0], titleFont[1]);
-            doc.setFontSize(12);
+            doc.setFontSize(titleSize);
             const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
-            const nameH = nameLines.length * 5;
+            const nameH = nameLines.length * getLineH(titleSize);
 
             // Corpo
+            const bodySize = 11;
             doc.setFont(normalFont[0], normalFont[1]);
-            doc.setFontSize(11);
+            doc.setFontSize(bodySize);
             const bodyLines = doc.splitTextToSize(m.text || "", textMaxW);
-            const bodyH = Math.max(0, bodyLines.length * 5);
+            const bodyH = bodyLines.length * getLineH(bodySize);
 
-            const contentHeight = Math.max(imgSize, nameH + gap + bodyH);
+            const contentHeight = Math.max(imgSize, nameH + gapNameBody + bodyH);
             const cardH = contentHeight + cardPadY * 2;
 
-            // Quebra de página
-            if (y + cardH + 6 > pageH) {
+            // quebra de página SEMPRE antes de desenhar, para não cortar
+            if (y + cardH > pageH - margin.bottom) {
                 doc.addPage();
-                y = 22;
+                y = margin.top;
             }
 
-            // Card
+            const cardX = margin.left;
+            const cardY = y;
+
+            // 1) fundo do card (imagem personalizada)
+            doc.addImage(cardBgDataUrl, "PNG", cardX, cardY, contentW, cardH, undefined, "FAST");
+
+            // 2) borda do card (sutil, ajuda a destacar)
             doc.setDrawColor(210);
             doc.setLineWidth(0.25);
-            doc.roundedRect(marginL, y, contentW, cardH, 3, 3);
+            doc.roundedRect(cardX, cardY, contentW, cardH, 3, 3);
 
-            // Imagem
+            // 3) imagem do autor (foto/ícone)
+            const imgX = cardX + cardPadX;
+            const imgY = cardY + cardPadY;
             try {
-                const imgUrl = resolveImageSrc(m.image);
-                const dataUrl = await toDataURL(imgUrl);
-                doc.addImage(dataUrl, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
+                const msgImgUrl = resolveImageSrc(m.image);
+                const msgImgData = await toDataURL(msgImgUrl);
+                // não forçamos tipo: jsPDF detecta PNG/JPEG do dataURL
+                doc.addImage(msgImgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
             } catch {
                 // ignora
             }
 
-            // Nome
+            // 4) textos
+            const textYStart = imgY;
+            const textStartX = imgX + imgSize + innerGap;
+
             doc.setFont(titleFont[0], titleFont[1]);
-            doc.setFontSize(12);
-            doc.text(nameLines, textX, imgY + 2);
+            doc.setFontSize(titleSize);
+            // pequena correção para “sentar” melhor no topo
+            const titleBaselineAdjust = 1.5;
+            doc.text(nameLines, textStartX, textYStart + titleBaselineAdjust);
 
-            // Corpo (mais afastado do nome)
             doc.setFont(normalFont[0], normalFont[1]);
-            doc.setFontSize(11);
-            doc.text(bodyLines, textX, imgY + nameH + gap);
+            doc.setFontSize(bodySize);
+            // corpo começa após o nome + gap
+            const bodyY = textYStart + nameH + gapNameBody;
+            doc.text(bodyLines, textStartX, bodyY);
 
-            y += cardH + 10;
+            // avança Y para o próximo card
+            y += cardH + betweenCardsY;
         }
 
         doc.save(`mensagens_aprovadas_sala0${room}.pdf`);
@@ -431,16 +466,6 @@ export default function MensagensPage() {
                         <IconMessageCircle2 className="size-5 text-muted-foreground" />
                         <h2 className="text-lg font-semibold">Mensagens Aprovadas</h2>
                     </div>
-                    <button
-                        type="button"
-                        onClick={exportApprovedPdf}
-                        disabled={approved.length === 0}
-                        className={btn}
-                        title="Exportar PDF"
-                    >
-                        <IconDownload className="size-4" />
-                        Exportar PDF
-                    </button>
                 </div>
 
                 {approved.length === 0 ? (
@@ -448,24 +473,38 @@ export default function MensagensPage() {
                         Não há mensagem aprovada nesta sala.
                     </div>
                 ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {approved.map((m) => (
-                            <MessageCard
-                                key={`a-${m.id}`}
-                                item={m}
-                                actions={
-                                    <button
-                                        onClick={() => deleteMessage(m.id, "approved")}
-                                        className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
-                                        title="Excluir"
-                                    >
-                                        <IconTrash className="size-4 text-red-600" />
-                                        Excluir
-                                    </button>
-                                }
-                            />
-                        ))}
-                    </div>
+                    <>
+                        <div className="mb-3">
+                            <button
+                                type="button"
+                                onClick={exportApprovedPdf}
+                                disabled={approved.length === 0}
+                                className={btn}
+                                title="Exportar PDF"
+                            >
+                                <IconDownload className="size-4" />
+                                Exportar PDF
+                            </button>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {approved.map((m) => (
+                                <MessageCard
+                                    key={`a-${m.id}`}
+                                    item={m}
+                                    actions={
+                                        <button
+                                            onClick={() => deleteMessage(m.id, "approved")}
+                                            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
+                                            title="Excluir"
+                                        >
+                                            <IconTrash className="size-4 text-red-600" />
+                                            Excluir
+                                        </button>
+                                    }
+                                />
+                            ))}
+                        </div>
+                    </>
                 )}
             </section>
         </div>
