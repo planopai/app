@@ -119,6 +119,15 @@ export default function MensagensPage() {
     const [approved, setApproved] = useState<MessageItem[]>([]);
     const [error, setError] = useState<string | null>(null);
 
+    // Modal & geração
+    const [showModal, setShowModal] = useState(false);
+    const [falecido, setFalecido] = useState("");
+    const [nascimento, setNascimento] = useState(""); // yyyy-mm-dd
+    const [falecimento, setFalecimento] = useState(""); // yyyy-mm-dd
+    const [generating, setGenerating] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [progressMsg, setProgressMsg] = useState("");
+
     // Carrega jsPDF (UMD)
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
@@ -199,17 +208,17 @@ export default function MensagensPage() {
         }
     }
 
-    // ===== Fonte Unicode (DejaVu Sans) para PDF =====
-    const fontStateRef = useRef<"none" | "ok" | "fail">("none");
+    // ===== Fontes =====
+    // DejaVu (Unicode) – para o miolo com emojis
+    const djvStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureDejaVu(doc: any): Promise<boolean> {
-        if (fontStateRef.current === "ok") return true;
-        if (fontStateRef.current === "fail") return false;
+        if (djvStateRef.current === "ok") return true;
+        if (djvStateRef.current === "fail") return false;
         try {
             const regularUrl =
                 "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts-ttf@2.37/ttf/DejaVuSans.ttf";
             const boldUrl =
                 "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts-ttf@2.37/ttf/DejaVuSans-Bold.ttf";
-
             async function fetchTTF(u: string) {
                 const r = await fetch(u);
                 if (!r.ok) throw new Error("Fonte não encontrada");
@@ -219,60 +228,70 @@ export default function MensagensPage() {
                 for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
                 return btoa(binary);
             }
-
             const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-
             doc.addFileToVFS("DejaVuSans.ttf", regB64);
             doc.addFont("DejaVuSans.ttf", "DejaVuSans", "normal");
-
             doc.addFileToVFS("DejaVuSans-Bold.ttf", boldB64);
             doc.addFont("DejaVuSans-Bold.ttf", "DejaVuSans", "bold");
-
-            fontStateRef.current = "ok";
+            djvStateRef.current = "ok";
             return true;
         } catch {
-            fontStateRef.current = "fail";
+            djvStateRef.current = "fail";
+            return false;
+        }
+    }
+    // Nunito – para a capa
+    const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
+    async function ensureNunito(doc: any): Promise<boolean> {
+        if (nunitoStateRef.current === "ok") return true;
+        if (nunitoStateRef.current === "fail") return false;
+        try {
+            const regularUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
+            const boldUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
+            async function fetchTTF(u: string) {
+                const r = await fetch(u);
+                if (!r.ok) throw new Error("Fonte não encontrada");
+                const b = await r.arrayBuffer();
+                let binary = "";
+                const bytes = new Uint8Array(b);
+                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                return btoa(binary);
+            }
+            const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
+            doc.addFileToVFS("Nunito-Regular.ttf", regB64);
+            doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
+            doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
+            doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
+            nunitoStateRef.current = "ok";
+            return true;
+        } catch {
+            nunitoStateRef.current = "fail";
             return false;
         }
     }
 
-    // --- Sanitização robusta p/ PDF: normaliza e substitui emojis por símbolos seguros
+    // --- Sanitização robusta p/ PDF (evita bugs com emojis)
     const sanitizeForPdf = (input?: string) => {
         let s = (input ?? "").normalize("NFC");
-
-        // linhas/espaços padrão
         s = s.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
-
-        // remove zero-width + VS16 + ZWJ
         s = s.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\uFE0F/g, "");
-
-        // keycaps (ex.: 1️⃣) -> mantém o dígito
-        s = s.replace(/([#*0-9])\uFE0F?\u20E3/gu, "$1");
-
-        // flags (pares de "regional indicator") -> •
-        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•");
-
-        // corações bem comuns -> ♥ (texto)
+        s = s.replace(/([#*0-9])\uFE0F?\u20E3/gu, "$1"); // keycaps
+        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•");  // flags
         s = s.replace(
             /[\u2764\u2665\u2661\u{1F494}\u{1F493}\u{1F495}-\u{1F49F}\u{1F9E1}\u{1FA77}]/gu,
             "♥"
         );
-
-        // TODO: qualquer outro emoji (Extended Pictographic) -> •
         try {
             s = s.replace(/\p{Extended_Pictographic}/gu, "•");
         } catch {
-            // fallback, caso o navegador não suporte property escapes
-            s = s.replace(
-                /[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/gu,
-                "•"
-            );
+            s = s.replace(/[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/gu, "•");
         }
-
         return s;
     };
 
-    // helper: mede e desenha linha-a-linha (sempre saneando antes!)
+    // helper: mede e desenha linha-a-linha
     function wrapText(
         doc: any,
         text: string,
@@ -302,179 +321,242 @@ export default function MensagensPage() {
         return { lines, height, lineHeight: lh };
     }
 
-    // ------- Exportar PDF -------
-    const exportApprovedPdf = useCallback(async () => {
-        if (approved.length === 0) {
-            alert("Não há mensagens aprovadas para exportar.");
-            return;
-        }
+    const formatDateBR = (iso: string) => {
+        if (!iso) return "";
+        const [y, m, d] = iso.split("-");
+        return `${d}/${m}/${y}`;
+    };
 
-        const w: any = window as any;
-        const jspdf = w.jspdf;
-        if (!jspdf || !jspdf.jsPDF) {
-            alert("Ferramenta de PDF ainda carregando. Tente novamente em alguns segundos.");
-            return;
-        }
-        const { jsPDF } = jspdf;
+    // ------- Exportar PDF (com modal) -------
+    const runExport = useCallback(
+        async (meta: { nome: string; nasc: string; obito: string }) => {
+            const w: any = window as any;
+            const jspdf = w.jspdf;
+            if (!jspdf || !jspdf.jsPDF) {
+                throw new Error("Ferramenta de PDF ainda carregando. Tente novamente.");
+            }
+            const { jsPDF } = jspdf;
+            const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
-        const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+            // Dimensões
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            const centerX = pageW / 2;
 
-        const hasDejaVu = await ensureDejaVu(doc);
-        const FONT = hasDejaVu ? "DejaVuSans" : "helvetica";
+            // Progresso – 0%
+            setProgress(5);
+            setProgressMsg("Carregando fontes…");
 
-        // Dimensões
-        const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
+            // fontes
+            const nunitoOk = await ensureNunito(doc); // capa
+            const dejaOk = await ensureDejaVu(doc);   // miolo
+            const CONTENT_FONT = dejaOk ? "DejaVuSans" : "helvetica";
+            const COVER_FONT = nunitoOk ? "Nunito" : "helvetica";
 
-        // Margens & layout
-        const margin = { top: 16, right: 14, bottom: 16, left: 14 };
-        const contentW = pageW - margin.left - margin.right;
+            setProgress(15);
+            setProgressMsg("Carregando imagens de capa…");
 
-        // 3 capas (imagens cheias)
-        const covers = ["/capa.png", "/contracapa.png", "/contracapa02.png"];
-        for (let i = 0; i < covers.length; i++) {
-            if (i > 0) doc.addPage();
-            const coverData = await toDataURL(covers[i]);
-            doc.addImage(coverData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
-        }
+            // CAPA (página 1)
+            const capa = await toDataURL("/capa.png");
+            doc.addImage(capa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
 
-        // Página 4 em diante com fundo geral
-        const bgData = await toDataURL("/fundo.png");
-        const startContentPage = () => {
+            // Título (nome + datas)
+            doc.setTextColor(34, 51, 80); // #223350
+            doc.setFont(COVER_FONT, "bold");
+            let nameSize = 26;
+            doc.setFontSize(nameSize);
+            const maxTitleW = pageW * 0.8;
+            const nameLines = doc.splitTextToSize(falecido || meta.nome, maxTitleW) as string[];
+            // posição vertical aproximada (meio-superior)
+            const mmPerPt = 0.352777778;
+            const nameLH = nameSize * 1.15 * mmPerPt;
+            const blockH = nameLH * nameLines.length;
+            let nameY = pageH * 0.42 - blockH / 2;
+            // desenha nome centralizado
+            (doc as any).text(nameLines, centerX, nameY, { align: "center", baseline: "top" });
+
+            // Datas
+            const dtY = nameY + blockH + 8;
+            const d1 = formatDateBR(meta.nasc);
+            const d2 = formatDateBR(meta.obito);
+            doc.setFont(COVER_FONT, "normal");
+            doc.setFontSize(14);
+            const gap = 24; // distância do centro
+            const w1 = doc.getTextWidth(d1);
+            const w2 = doc.getTextWidth(d2);
+            doc.text(d1, centerX - gap - w1 / 2, dtY, { baseline: "top" });
+            doc.text(d2, centerX + gap - w2 / 2, dtY, { baseline: "top" });
+
+            // CONTRACAPAS (páginas 2 e 3)
+            setProgress(25);
+            setProgressMsg("Carregando contracapas…");
+            const contracapa = await toDataURL("/contracapa.png");
+            const contracapa2 = await toDataURL("/contracapa02.png");
             doc.addPage();
-            doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
-        };
-        startContentPage();
+            doc.addImage(contracapa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            doc.addPage();
+            doc.addImage(contracapa2, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
 
-        // Layout fixo: 4 cards por página
-        const cardsPerPage = 4;
-        const gapY = 8;
-        const minCardH = 36;
-        const maxCardH = 56;
-        const availH = pageH - margin.top - margin.bottom;
-        const baseH = (availH - gapY * (cardsPerPage - 1)) / cardsPerPage;
-        const cardH = Math.max(minCardH, Math.min(maxCardH, baseH));
+            // Páginas de mensagens (4+)
+            setProgress(35);
+            setProgressMsg("Preparando páginas de mensagens…");
 
-        // Aparência do card
-        const cardPadX = 8;
-        const cardPadY = 8;
-        const cornerRadius = 6;
-        const borderWidth = 0.6;
+            const bgData = await toDataURL("/fundo.png");
+            const startContentPage = () => {
+                doc.addPage();
+                doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            };
+            // cria a primeira de conteúdo (página 4)
+            startContentPage();
 
-        // Interno
-        const imgSize = 26;
-        const innerGap = 8;
-        const nameBodyGap = 6;
+            // Margens & layout
+            const margin = { top: 16, right: 14, bottom: 16, left: 14 };
+            const contentW = pageW - margin.left - margin.right;
 
-        // Tipografia
-        const titleStart = 12;
-        const bodyStart = 11;
-        const bodyMin = 9;
+            // 4 cards por página
+            const cardsPerPage = 4;
+            const gapY = 8;
+            const minCardH = 36;
+            const maxCardH = 56;
+            const availH = pageH - margin.top - margin.bottom;
+            const baseH = (availH - gapY * (cardsPerPage - 1)) / cardsPerPage;
+            const cardH = Math.max(minCardH, Math.min(maxCardH, baseH));
 
-        for (let i = 0; i < approved.length; i++) {
-            const m = approved[i];
-            const idx = i % cardsPerPage;
-            if (i > 0 && idx === 0) startContentPage();
+            // Card
+            const cardPadX = 8;
+            const cardPadY = 8;
+            const cornerRadius = 6;
+            const borderWidth = 0.6;
 
-            const cardX = margin.left;
-            const cardY = margin.top + idx * (cardH + gapY);
+            // Interno
+            const imgSize = 26;
+            const innerGap = 8;
+            const nameBodyGap = 6;
 
-            // Fundo branco + borda
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(210);
-            doc.setLineWidth(borderWidth);
-            doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius, "FD");
+            // Tipografia
+            const titleStart = 12;
+            const bodyStart = 11;
+            const bodyMin = 9;
 
-            // imagem
-            const imgX = cardX + cardPadX;
-            const imgY = cardY + cardPadY;
-            try {
-                const imgUrl = resolveImageSrc(m.image);
-                const imgData = await toDataURL(imgUrl);
-                doc.addImage(imgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
-            } catch { }
+            const total = Math.max(approved.length, 1);
+            for (let i = 0; i < approved.length; i++) {
+                const m = approved[i];
+                const idx = i % cardsPerPage;
+                if (i > 0 && idx === 0) startContentPage();
 
-            // texto
-            const textX = imgX + imgSize + innerGap;
-            const textTop = cardY + cardPadY;
-            const textMaxW = contentW - (textX - cardX) - cardPadX;
-            const maxH = cardH - 2 * cardPadY;
+                const cardX = margin.left;
+                const cardY = margin.top + idx * (cardH + gapY);
 
-            // Nome
-            let titleSize = titleStart;
-            let { height: nameH } = wrapText(
-                doc,
-                m.name || "",
-                textX,
-                textTop,
-                textMaxW,
-                FONT,
-                "bold",
-                titleSize,
-                false
-            );
+                // fundo branco + borda
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(210);
+                doc.setLineWidth(borderWidth);
+                doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius, "FD");
 
-            // Corpo
-            let bodySize = bodyStart;
-            let body = wrapText(
-                doc,
-                m.text || "",
-                textX,
-                textTop + nameH + nameBodyGap,
-                textMaxW,
-                FONT,
-                "normal",
-                bodySize,
-                false
-            );
+                // imagem
+                const imgX = cardX + cardPadX;
+                const imgY = cardY + cardPadY;
+                try {
+                    const imgUrl = resolveImageSrc(m.image);
+                    const imgData = await toDataURL(imgUrl);
+                    doc.addImage(imgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
+                } catch { }
 
-            // Ajuste para caber
-            while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
-                bodySize -= 0.5;
-                body = wrapText(
-                    doc,
-                    m.text || "",
-                    textX,
-                    textTop + nameH + nameBodyGap,
-                    textMaxW,
-                    FONT,
-                    "normal",
-                    bodySize,
-                    false
+                // área de texto
+                const textX = imgX + imgSize + innerGap;
+                const textTop = cardY + cardPadY;
+                const textMaxW = contentW - (textX - cardX) - cardPadX;
+                const maxH = cardH - 2 * cardPadY;
+
+                // Nome
+                let titleSize = titleStart;
+                let { height: nameH } = wrapText(
+                    doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, false
                 );
-            }
 
-            // Ellipsis se ainda exceder
-            if (nameH + nameBodyGap + body.height > maxH) {
-                const mmPerPt = 0.352777778;
-                const lh = bodySize * 1.15 * mmPerPt;
-                const maxBodyH = maxH - nameH - nameBodyGap;
-                const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
-                let clean = (sanitizeForPdf(m.text || "") || "");
-                let lines = (doc.splitTextToSize(clean, textMaxW) as string[]).slice(0, maxLines);
-                if (lines.length && maxLines > 0) {
-                    lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
+                // Corpo
+                let bodySize = bodyStart;
+                let body = wrapText(
+                    doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, CONTENT_FONT, "normal", bodySize, false
+                );
+
+                // Ajuste para caber
+                while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
+                    bodySize -= 0.5;
+                    body = wrapText(
+                        doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, CONTENT_FONT, "normal", bodySize, false
+                    );
                 }
-                body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
+
+                // Ellipsis se ainda exceder
+                if (nameH + nameBodyGap + body.height > maxH) {
+                    const mmPerPt = 0.352777778;
+                    const lh = bodySize * 1.15 * mmPerPt;
+                    const maxBodyH = maxH - nameH - nameBodyGap;
+                    const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
+                    let clean = (sanitizeForPdf(m.text || "") || "");
+                    let lines = (doc.splitTextToSize(clean, textMaxW) as string[]).slice(0, maxLines);
+                    if (lines.length && maxLines > 0) {
+                        lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
+                    }
+                    body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
+                }
+
+                // Desenhar textos
+                wrapText(doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, true);
+                doc.setFont(CONTENT_FONT, "normal");
+                doc.setFontSize(bodySize);
+                let y = textTop + nameH + nameBodyGap;
+                for (const ln of body.lines) {
+                    doc.text(ln, textX, y, { baseline: "top", align: "left" });
+                    y += body.lineHeight;
+                }
+
+                // progresso
+                const pct = 35 + Math.round(((i + 1) / total) * 60);
+                setProgress(pct);
+                setProgressMsg(`Gerando mensagens (${i + 1}/${total})…`);
             }
 
-            // Desenhar textos
-            wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", titleSize, true);
-            if (typeof (doc as any).setCharSpace === "function") (doc as any).setCharSpace(0);
-            doc.setFont(FONT, "normal");
-            doc.setFontSize(bodySize);
-            let y = textTop + nameH + nameBodyGap;
-            for (const ln of body.lines) {
-                doc.text(ln, textX, y, { baseline: "top", align: "left" });
-                y += body.lineHeight;
-            }
+            setProgress(98);
+            setProgressMsg("Finalizando documento…");
+
+            doc.save(`livro_homenagens_sala0${room}.pdf`);
+            setProgress(100);
+            setProgressMsg("Concluído!");
+        },
+        [approved, room]
+    );
+
+    const onOpenModal = () => {
+        setShowModal(true);
+        setProgress(0);
+        setProgressMsg("");
+    };
+
+    const onSubmitGenerate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!falecido.trim()) {
+            alert("Informe o nome do falecido.");
+            return;
         }
-
-        doc.save(`mensagens_aprovadas_sala0${room}.pdf`);
-    }, [approved, room]);
+        try {
+            setGenerating(true);
+            setProgress(1);
+            setProgressMsg("Iniciando…");
+            await runExport({ nome: falecido.trim(), nasc: nascimento, obito: falecimento });
+            setGenerating(false);
+            setShowModal(false);
+        } catch (err: any) {
+            setGenerating(false);
+            setProgress(0);
+            setProgressMsg("");
+            alert(err?.message || "Falha ao gerar o PDF.");
+        }
+    };
 
     return (
-        <div className="mx-auto w/full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
             {/* Topbar */}
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -562,6 +644,17 @@ export default function MensagensPage() {
                         <IconMessageCircle2 className="size-5 text-muted-foreground" />
                         <h2 className="text-lg font-semibold">Mensagens Aprovadas</h2>
                     </div>
+                    {approved.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={onOpenModal}
+                            className={btn}
+                            title="Gerar Livro de Homenagens"
+                        >
+                            <IconDownload className="size-4" />
+                            Exportar PDF
+                        </button>
+                    )}
                 </div>
 
                 {approved.length === 0 ? (
@@ -569,40 +662,105 @@ export default function MensagensPage() {
                         Não há mensagem aprovada nesta sala.
                     </div>
                 ) : (
-                    <>
-                        <div className="mb-3">
-                            <button
-                                type="button"
-                                onClick={exportApprovedPdf}
-                                disabled={approved.length === 0}
-                                className={btn}
-                                title="Exportar PDF"
-                            >
-                                <IconDownload className="size-4" />
-                                Exportar PDF
-                            </button>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            {approved.map((m) => (
-                                <MessageCard
-                                    key={`a-${m.id}`}
-                                    item={m}
-                                    actions={
-                                        <button
-                                            onClick={() => deleteMessage(m.id, "approved")}
-                                            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
-                                            title="Excluir"
-                                        >
-                                            <IconTrash className="size-4 text-red-600" />
-                                            Excluir
-                                        </button>
-                                    }
-                                />
-                            ))}
-                        </div>
-                    </>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {approved.map((m) => (
+                            <MessageCard
+                                key={`a-${m.id}`}
+                                item={m}
+                                actions={
+                                    <button
+                                        onClick={() => deleteMessage(m.id, "approved")}
+                                        className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
+                                        title="Excluir"
+                                    >
+                                        <IconTrash className="size-4 text-red-600" />
+                                        Excluir
+                                    </button>
+                                }
+                            />
+                        ))}
+                    </div>
                 )}
             </section>
+
+            {/* MODAL – Gerar Livro */}
+            {showModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3">
+                    <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+                        <div className="mb-4">
+                            <h3 className="text-xl font-semibold">Gerar Livro de Homenagens</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Informe os dados para personalizar a capa (página 1).
+                            </p>
+                        </div>
+
+                        <form onSubmit={onSubmitGenerate} className="space-y-3">
+                            <div>
+                                <label className="block text-sm font-medium">Nome do falecido</label>
+                                <input
+                                    type="text"
+                                    className="mt-1 w-full rounded-md border px-3 py-2 outline-none"
+                                    value={falecido}
+                                    onChange={(e) => setFalecido(e.target.value)}
+                                    placeholder="Ex.: João Batista de Jesus"
+                                    required
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label className="block text-sm font-medium">Nascimento</label>
+                                    <input
+                                        type="date"
+                                        className="mt-1 w-full rounded-md border px-3 py-2 outline-none"
+                                        value={nascimento}
+                                        onChange={(e) => setNascimento(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium">Falecimento</label>
+                                    <input
+                                        type="date"
+                                        className="mt-1 w-full rounded-md border px-3 py-2 outline-none"
+                                        value={falecimento}
+                                        onChange={(e) => setFalecimento(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Progresso */}
+                            {generating ? (
+                                <div className="rounded-md border bg-muted/20 p-3">
+                                    <div className="mb-2 text-sm">{progressMsg}</div>
+                                    <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
+                                        <div
+                                            className="h-full bg-blue-600 transition-all"
+                                            style={{ width: `${progress}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <div className="mt-4 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    disabled={generating}
+                                    onClick={() => setShowModal(false)}
+                                    className="rounded-md border px-3 py-2 text-sm"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={generating}
+                                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                >
+                                    Gerar Livro de Homenagens
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
