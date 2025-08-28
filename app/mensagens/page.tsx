@@ -258,11 +258,11 @@ export default function MensagensPage() {
         const contentW = pageW - margin.left - margin.right;
 
         // Layout do cartão
-        const cardPadX = 8;
-        const cardPadY = 8;
-        const imgSize = 32;        // foto quadrada
-        const innerGap = 5;       // espaço entre a foto e os textos
-        const betweenCardsY = 8;  // espaço vertical entre cards
+        const cardPadX = 10;
+        const cardPadY = 10;
+        const imgSize = 25;        // foto quadrada 
+        const innerGap = 10;       // espaço entre o titulo e o texto
+        const betweenCardsY = 10;  // espaço vertical entre cards
 
         // Fontes
         const titleFont = hasNunito ? (["Nunito", "bold"] as const) : (["helvetica", "bold"] as const);
@@ -295,17 +295,17 @@ export default function MensagensPage() {
             return margin.top;
         }
 
-        // inicia na página 4 já com o fundo
+        // inicia na página 4 já com o fundo ( Conteudo iniciando a partir da 04 )
         doc.addPage();
         doc.addImage(fundoData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
         let y = margin.top;
 
         for (const m of approved) {
-            // Área de texto à direita da foto
+            // Área de texto à direita da foto ( margem respeitada )
             const textX = margin.left + cardPadX + imgSize + innerGap;
             const textMaxW = contentW - (textX - margin.left) - cardPadX;
 
-            // Medidas do conteúdo
+            // Medidas do conteúdo para analise geral
             const titleSize = 15;
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(titleSize);
