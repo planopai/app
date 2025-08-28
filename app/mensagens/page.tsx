@@ -350,8 +350,8 @@ export default function MensagensPage() {
             // fontes
             const nunitoOk = await ensureNunito(doc); // capa
             const dejaOk = await ensureDejaVu(doc);   // miolo
-            const CONTENT_FONT = dejaOk ? "DejaVuSans" : "helvetica";
-            const COVER_FONT = nunitoOk ? "Nunito" : "helvetica";
+            const CONTENT_FONT = dejaOk ? "Nunito" : "normal";
+            const COVER_FONT = nunitoOk ? "Nunito" : "normal";
 
             setProgress(15);
             setProgressMsg("Carregando imagens de capa…");
