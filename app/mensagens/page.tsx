@@ -199,7 +199,7 @@ export default function MensagensPage() {
         }
     }
 
-    // ===== Nunito no jsPDF (com fallback para Helvetica) =====
+    // ===== Nunito no jsPDF (com fallback controlado) =====
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -257,16 +257,27 @@ export default function MensagensPage() {
         const margin = { top: 16, right: 14, bottom: 16, left: 14 };
         const contentW = pageW - margin.left - margin.right;
 
-        // Layout do cartão
-        const cardPadX = 10;
-        const cardPadY = 10;
-        const imgSize = 25;        // foto quadrada 
-        const innerGap = 10;       // espaço entre o titulo e o texto
-        const betweenCardsY = 10;  // espaço vertical entre cards
+        // ======== DISTÂNCIAS IGUAIS AO CÓDIGO ANTIGO ========
+        const cardPadX = 6;      // padding horizontal do card
+        const cardPadY = 6;      // padding vertical do card
+        const imgSize = 24;      // foto (quadrada)
+        const innerGap = 6;      // distância entre FOTO e COLUNA DE TEXTO (foto -> nome/texto)
+        const nameBodyGap = 6;   // distância entre NOME e MENSAGEM
+        const betweenCardsY = 10; // espaço entre cards
+        // =====================================================
 
-        // Fontes
-        const titleFont = hasNunito ? (["Nunito", "bold"] as const) : (["helvetica", "bold"] as const);
-        const normalFont = hasNunito ? (["Nunito", "normal"] as const) : (["helvetica", "normal"] as const);
+        // Tipografia (somente Nunito; fallback para Helvetica se não carregar)
+        const titleSize = 12;
+        const bodySize = 11;
+        const titleFont = hasNunito ? "Nunito" : "helvetica";
+        const normalFont = hasNunito ? "Nunito" : "helvetica";
+
+        if (!hasNunito) {
+            // avisa uma vez caso Nunito não carregue
+            try {
+                alert("Aviso: não foi possível carregar a fonte Nunito. Usando Helvetica como fallback.");
+            } catch { }
+        }
 
         // util p/ altura de linha consistente
         const getLineH = (fontSize: number) => {
@@ -288,52 +299,49 @@ export default function MensagensPage() {
         // ---------- 2) Página 4 em diante: fundo global + mensagens ----------
         const fundoData = await toDataURL("/fundo.png");
 
-        // helper: cria nova página de conteúdo com o fundo aplicado
-        function newContentPage() {
+        function addContentPageWithBackground() {
             doc.addPage();
             doc.addImage(fundoData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
             return margin.top;
         }
 
-        // inicia na página 4 já com o fundo ( Conteudo iniciando a partir da 04 )
+        // cria a página 4 com o fundo
         doc.addPage();
         doc.addImage(fundoData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
         let y = margin.top;
 
         for (const m of approved) {
-            // Área de texto à direita da foto ( margem respeitada )
+            // coluna de texto à direita da foto
             const textX = margin.left + cardPadX + imgSize + innerGap;
             const textMaxW = contentW - (textX - margin.left) - cardPadX;
 
-            // Medidas do conteúdo para analise geral
-            const titleSize = 15;
-            doc.setFont(titleFont[0], titleFont[1]);
+            // medir nome e corpo
+            doc.setFont(titleFont, "bold");
             doc.setFontSize(titleSize);
             const nameLines = doc.splitTextToSize(m.name || "", textMaxW);
             const nameH = nameLines.length * getLineH(titleSize);
 
-            const bodySize = 11;
-            doc.setFont(normalFont[0], normalFont[1]);
+            doc.setFont(normalFont, "normal");
             doc.setFontSize(bodySize);
             const bodyLines = doc.splitTextToSize(m.text || "", textMaxW);
             const bodyH = bodyLines.length * getLineH(bodySize);
 
-            const contentH = Math.max(imgSize, nameH + 3 + bodyH); // 6 = gap interno entre nome e texto
+            const contentH = Math.max(imgSize, nameH + nameBodyGap + bodyH);
             const cardH = contentH + cardPadY * 2;
 
-            // quebra de página: nunca cortar um card
+            // se não couber inteiro, quebra antes de desenhar
             if (y + cardH > pageH - margin.bottom) {
-                y = newContentPage();
+                y = addContentPageWithBackground();
             }
 
-            // desenha o card: borda arredondada, sem fundo (fundo já é o da página)
+            // desenha contorno do card
             const cardX = margin.left;
             const cardY = y;
             doc.setDrawColor(210);
             doc.setLineWidth(0.25);
             doc.roundedRect(cardX, cardY, contentW, cardH, 3, 3);
 
-            // imagem (esquerda)
+            // foto
             const imgX = cardX + cardPadX;
             const imgY = cardY + cardPadY;
             try {
@@ -341,23 +349,21 @@ export default function MensagensPage() {
                 const msgImgData = await toDataURL(msgImgUrl);
                 doc.addImage(msgImgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
             } catch {
-                // ignora
+                // ignore
             }
 
-            // textos (direita)
-            const textYStart = imgY;
+            // textos
             const titleBaselineAdjust = 1.5;
-
-            doc.setFont(titleFont[0], titleFont[1]);
+            doc.setFont(titleFont, "bold");
             doc.setFontSize(titleSize);
-            doc.text(nameLines, textX, textYStart + titleBaselineAdjust);
+            doc.text(nameLines, textX, imgY + titleBaselineAdjust);
 
-            doc.setFont(normalFont[0], normalFont[1]);
+            doc.setFont(normalFont, "normal");
             doc.setFontSize(bodySize);
-            const bodyY = textYStart + nameH + 6;
+            const bodyY = imgY + nameH + nameBodyGap;
             doc.text(bodyLines, textX, bodyY);
 
-            // avança para o próximo
+            // próximo card
             y += cardH + betweenCardsY;
         }
 
@@ -365,7 +371,7 @@ export default function MensagensPage() {
     }, [approved, room]);
 
     return (
-        <div className="mx-auto w/full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
             {/* Topbar */}
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
