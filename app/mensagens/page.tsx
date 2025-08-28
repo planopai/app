@@ -261,8 +261,8 @@ export default function MensagensPage() {
         const cardPadX = 8;
         const cardPadY = 8;
         const imgSize = 32;        // foto quadrada
-        const innerGap = 10;       // espaço entre a foto e os textos
-        const betweenCardsY = 12;  // espaço vertical entre cards
+        const innerGap = 5;       // espaço entre a foto e os textos
+        const betweenCardsY = 8;  // espaço vertical entre cards
 
         // Fontes
         const titleFont = hasNunito ? (["Nunito", "bold"] as const) : (["helvetica", "bold"] as const);
