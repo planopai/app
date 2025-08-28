@@ -278,7 +278,7 @@ export default function MensagensPage() {
         s = s.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
         s = s.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\uFE0F/g, "");
         s = s.replace(/([#*0-9])\uFE0F?\u20E3/gu, "$1"); // keycaps
-        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•");  // flags
+        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•"); // flags
         s = s.replace(
             /[\u2764\u2665\u2661\u{1F494}\u{1F493}\u{1F495}-\u{1F49F}\u{1F9E1}\u{1FA77}]/gu,
             "♥"
@@ -343,15 +343,19 @@ export default function MensagensPage() {
             const pageH = doc.internal.pageSize.getHeight();
             const centerX = pageW / 2;
 
+            // >>> CONFIGS DA CAPA (ajuste aqui quando quiser) <<<
+            const NAME_SIZE = 48; // tamanho do NOME
+            const DATE_SIZE = 24; // tamanho das DATAS
+
             // Progresso – 0%
             setProgress(5);
             setProgressMsg("Carregando fontes…");
 
             // fontes
             const nunitoOk = await ensureNunito(doc); // capa
-            const dejaOk = await ensureDejaVu(doc);   // miolo
-            const CONTENT_FONT = dejaOk ? "Nunito" : "normal";
-            const COVER_FONT = nunitoOk ? "Nunito" : "normal";
+            const dejaOk = await ensureDejaVu(doc); // miolo
+            const CONTENT_FONT = dejaOk ? "DejaVuSans" : "helvetica"; // <<< miolo
+            const COVER_FONT = nunitoOk ? "Nunito" : "helvetica"; // <<< capa
 
             setProgress(15);
             setProgressMsg("Carregando imagens de capa…");
@@ -362,17 +366,14 @@ export default function MensagensPage() {
 
             // Título (nome + datas)
             doc.setTextColor(34, 51, 80); // #223350
-            doc.setFont(COVER_FONT, "nunito");
-            let nameSize = 36;
-            doc.setFontSize(nameSize);
+            doc.setFont(COVER_FONT, "bold");
+            doc.setFontSize(NAME_SIZE);
             const maxTitleW = pageW * 0.8;
-            const nameLines = doc.splitTextToSize(falecido || meta.nome, maxTitleW) as string[];
-            // posição vertical aproximada (meio-superior)
+            const nameLines = doc.splitTextToSize(meta.nome, maxTitleW) as string[];
             const mmPerPt = 0.352777778;
-            const nameLH = nameSize * 1.15 * mmPerPt;
+            const nameLH = NAME_SIZE * 1.15 * mmPerPt;
             const blockH = nameLH * nameLines.length;
             let nameY = pageH * 0.42 - blockH / 2;
-            // desenha nome centralizado
             (doc as any).text(nameLines, centerX, nameY, { align: "center", baseline: "top" });
 
             // Datas
@@ -380,8 +381,8 @@ export default function MensagensPage() {
             const d1 = formatDateBR(meta.nasc);
             const d2 = formatDateBR(meta.obito);
             doc.setFont(COVER_FONT, "normal");
-            doc.setFontSize(20);
-            const gap = 24; // distância do centro
+            doc.setFontSize(DATE_SIZE);
+            const gap = 24;
             const w1 = doc.getTextWidth(d1);
             const w2 = doc.getTextWidth(d2);
             doc.text(d1, centerX - gap - w1 / 2, dtY, { baseline: "top" });
@@ -406,7 +407,7 @@ export default function MensagensPage() {
                 doc.addPage();
                 doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
             };
-            // cria a primeira de conteúdo (página 4)
+            // primeira de conteúdo (página 4)
             startContentPage();
 
             // Margens & layout
@@ -433,7 +434,7 @@ export default function MensagensPage() {
             const innerGap = 8;
             const nameBodyGap = 6;
 
-            // Tipografia
+            // Tipografia miolo
             const titleStart = 12;
             const bodyStart = 11;
             const bodyMin = 9;
@@ -471,27 +472,51 @@ export default function MensagensPage() {
                 // Nome
                 let titleSize = titleStart;
                 let { height: nameH } = wrapText(
-                    doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, false
+                    doc,
+                    m.name || "",
+                    textX,
+                    textTop,
+                    textMaxW,
+                    CONTENT_FONT,
+                    "bold",
+                    titleSize,
+                    false
                 );
 
                 // Corpo
                 let bodySize = bodyStart;
                 let body = wrapText(
-                    doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, CONTENT_FONT, "normal", bodySize, false
+                    doc,
+                    m.text || "",
+                    textX,
+                    textTop + nameH + nameBodyGap,
+                    textMaxW,
+                    CONTENT_FONT,
+                    "normal",
+                    bodySize,
+                    false
                 );
 
                 // Ajuste para caber
                 while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
                     bodySize -= 0.5;
                     body = wrapText(
-                        doc, m.text || "", textX, textTop + nameH + nameBodyGap, textMaxW, CONTENT_FONT, "normal", bodySize, false
+                        doc,
+                        m.text || "",
+                        textX,
+                        textTop + nameH + nameBodyGap,
+                        textMaxW,
+                        CONTENT_FONT,
+                        "normal",
+                        bodySize,
+                        false
                     );
                 }
 
                 // Ellipsis se ainda exceder
                 if (nameH + nameBodyGap + body.height > maxH) {
-                    const mmPerPt = 0.352777778;
-                    const lh = bodySize * 1.15 * mmPerPt;
+                    const mmPerPt2 = 0.352777778;
+                    const lh = bodySize * 1.15 * mmPerPt2;
                     const maxBodyH = maxH - nameH - nameBodyGap;
                     const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
                     let clean = (sanitizeForPdf(m.text || "") || "");
