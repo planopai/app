@@ -102,7 +102,7 @@ function MessageCard({
 }) {
     const src = resolveImageSrc(item.image);
     return (
-        <div className="flex items-start gap-3 rounded-xl border bg-white p-3 shadow-sm sm:p-4">
+        <div className="min-w-0 flex items-start gap-3 rounded-xl border bg-white p-3 shadow-sm sm:p-4">
             <img
                 src={src}
                 alt={item.name}
@@ -668,7 +668,7 @@ export default function MensagensPage() {
                         Nenhuma mensagem recebida nesta sala.
                     </div>
                 ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
                         {received.map((m) => (
                             <MessageCard
                                 key={`r-${m.id}`}
@@ -706,17 +706,6 @@ export default function MensagensPage() {
                         <IconMessageCircle2 className="size-5 text-muted-foreground" />
                         <h2 className="text-lg font-semibold">Mensagens Aprovadas</h2>
                     </div>
-                    {approved.length > 0 && (
-                        <button
-                            type="button"
-                            onClick={onOpenModal}
-                            className={btn}
-                            title="Gerar Livro de Homenagens"
-                        >
-                            <IconDownload className="size-4" />
-                            Exportar PDF
-                        </button>
-                    )}
                 </div>
 
                 {approved.length === 0 ? (
@@ -724,24 +713,38 @@ export default function MensagensPage() {
                         Não há mensagem aprovada nesta sala.
                     </div>
                 ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {approved.map((m) => (
-                            <MessageCard
-                                key={`a-${m.id}`}
-                                item={m}
-                                actions={
-                                    <button
-                                        onClick={() => deleteMessage(m.id, "approved")}
-                                        className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
-                                        title="Excluir"
-                                    >
-                                        <IconTrash className="size-4 text-red-600" />
-                                        Excluir
-                                    </button>
-                                }
-                            />
-                        ))}
-                    </div>
+                    <>
+                        <div className="mb-3 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={onOpenModal}
+                                className={btn}
+                                title="Gerar Livro de Homenagens"
+                            >
+                                <IconDownload className="size-4" />
+                                Exportar PDF
+                            </button>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
+                            {approved.map((m) => (
+                                <MessageCard
+                                    key={`a-${m.id}`}
+                                    item={m}
+                                    actions={
+                                        <button
+                                            onClick={() => deleteMessage(m.id, "approved")}
+                                            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
+                                            title="Excluir"
+                                        >
+                                            <IconTrash className="size-4 text-red-600" />
+                                            Excluir
+                                        </button>
+                                    }
+                                />
+                            ))}
+                        </div>
+                    </>
                 )}
             </section>
 
