@@ -33,11 +33,12 @@ interface LogItem {
 /** Registros brutos para a Análise Geral (vem do informativo.php?listar=1) */
 interface RegistroAnalise {
     id?: number | string;
+    sepultamento_id?: string;
     data?: string; // data de criação
     data_inicio_velorio?: string;
     data_fim_velorio?: string;
     assistencia?: string; // "Sim" | "Não" | ""
-    tanato?: string;      // "Sim" | "Não" | ""
+    tanato?: string; // "Sim" | "Não" | ""
     materiais_json?: string;
     arrumacao_json?: string;
     [key: string]: any; // também recebemos materiais_*_qtd
@@ -90,11 +91,7 @@ function formataDataHora(str?: string) {
 }
 function sanitize(txt?: string) {
     if (!txt) return "";
-    return String(txt)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+    return String(txt).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function capitalize(s?: string) {
     if (!s) return "";
@@ -143,7 +140,21 @@ const MATERIAL_LABELS: Record<MaterialKey, string> = {
 };
 
 /* ===== Arrumação (análise) ===== */
-const ARR_KEYS = ["luvas", "palha", "tamponamento", "maquiagem", "algodao", "cordao", "barba"] as const;
+// ⚠️ inclui os 5 novos itens solicitados
+const ARR_KEYS = [
+    "luvas",
+    "palha",
+    "tamponamento",
+    "maquiagem",
+    "algodao",
+    "cordao",
+    "barba",
+    "ta32",
+    "fluido_cavitario",
+    "formol",
+    "mascara",
+    "invol",
+] as const;
 type ArrKey = (typeof ARR_KEYS)[number];
 
 const ARR_LABELS: Record<ArrKey, string> = {
@@ -154,25 +165,17 @@ const ARR_LABELS: Record<ArrKey, string> = {
     algodao: "Algodão",
     cordao: "Cordão",
     barba: "Barba",
+    ta32: "TA-32",
+    fluido_cavitario: "Fluído Cavitário",
+    formol: "Formol",
+    mascara: "Máscara",
+    invol: "Invol",
 };
 
 /* ===== Itens combinados (select único) ===== */
-type AllItemKey =
-    | MaterialKey
-    | ArrKey
-    | "assistencia_sim"
-    | "assistencia_nao"
-    | "tanato_sim"
-    | "tanato_nao";
+type AllItemKey = MaterialKey | ArrKey | "assistencia_sim" | "assistencia_nao" | "tanato_sim" | "tanato_nao";
 
-const ALL_ITEMS: AllItemKey[] = [
-    ...MATERIAL_KEYS,
-    ...ARR_KEYS,
-    "assistencia_sim",
-    "assistencia_nao",
-    "tanato_sim",
-    "tanato_nao",
-];
+const ALL_ITEMS: AllItemKey[] = [...MATERIAL_KEYS, ...ARR_KEYS, "assistencia_sim", "assistencia_nao", "tanato_sim", "tanato_nao"];
 
 const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
     // Materiais
@@ -192,6 +195,11 @@ const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
     algodao: ARR_LABELS.algodao,
     cordao: ARR_LABELS.cordao,
     barba: ARR_LABELS.barba,
+    ta32: ARR_LABELS.ta32,
+    fluido_cavitario: ARR_LABELS.fluido_cavitario,
+    formol: ARR_LABELS.formol,
+    mascara: ARR_LABELS.mascara,
+    invol: ARR_LABELS.invol,
     // Assistência / Tanato
     assistencia_sim: "Assistência (Sim)",
     assistencia_nao: "Assistência (Não)",
@@ -214,6 +222,11 @@ const ALL_ITEM_TIPO: Record<AllItemKey, "Material" | "Arrumação" | "Assistênc
     algodao: "Arrumação",
     cordao: "Arrumação",
     barba: "Arrumação",
+    ta32: "Arrumação",
+    fluido_cavitario: "Arrumação",
+    formol: "Arrumação",
+    mascara: "Arrumação",
+    invol: "Arrumação",
     assistencia_sim: "Assistência",
     assistencia_nao: "Assistência",
     tanato_sim: "Tanatopraxia",
@@ -225,48 +238,6 @@ function normSimNao(s?: string) {
     if (v === "sim") return "sim";
     if (v === "não" || v === "nao") return "nao";
     return "";
-}
-
-function parseMateriaisRegistro(r: RegistroAnalise): Record<MaterialKey, number> {
-    const base = {} as Record<MaterialKey, number>;
-    MATERIAL_KEYS.forEach((k) => (base[k] = 0));
-
-    if (r.materiais_json) {
-        try {
-            const obj = JSON.parse(String(r.materiais_json));
-            if (obj && typeof obj === "object") {
-                MATERIAL_KEYS.forEach((k) => {
-                    const it = (obj as any)[k];
-                    if (it && typeof it === "object") {
-                        const qtd = Number((it as any).qtd ?? 0);
-                        const checked = asBool((it as any).checked); // <-- corrigido
-                        if (checked && qtd > 0) base[k] += qtd;
-                    }
-                });
-            }
-        } catch { }
-    }
-    MATERIAL_KEYS.forEach((k) => {
-        const col = (r as any)[`materiais_${k}_qtd`];
-        const qtd = Number(col ?? 0);
-        if (!Number.isNaN(qtd) && qtd > 0) base[k] += qtd;
-    });
-
-    return base;
-}
-
-function parseArrumacaoRegistro(r: RegistroAnalise): Record<ArrKey, boolean> {
-    const out = {} as Record<ArrKey, boolean>;
-    ARR_KEYS.forEach((k) => (out[k] = false));
-    if (r.arrumacao_json) {
-        try {
-            const obj = JSON.parse(String(r.arrumacao_json));
-            if (obj && typeof obj === "object") {
-                ARR_KEYS.forEach((k) => (out[k] = asBool((obj as any)[k]))); // <-- corrigido
-            }
-        } catch { }
-    }
-    return out;
 }
 
 /* ========================== Endpoints (proxy) ========================= */
@@ -482,7 +453,7 @@ export default function HistoricoSepultamentosPage() {
                             if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
                                 if (/^arrumacao(_json)?$/i.test(key)) {
                                     const o = obj[key] || {};
-                                    for (const [k, v] of Object.entries(o)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`); // <-- corrigido
+                                    for (const [k, v] of Object.entries(o)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
                                 }
                                 continue;
                             }
@@ -597,6 +568,10 @@ export default function HistoricoSepultamentosPage() {
     type SelectedItem = "ALL" | AllItemKey;
     const [selectedItem, setSelectedItem] = useState<SelectedItem>("ALL");
 
+    // cache de logs por registro (para deltas/auditoria)
+    const [logsCache, setLogsCache] = useState<Record<string, LogItem[]>>({});
+
+    // abre modal e carrega lista básica (sem logs ainda)
     const abrirAnalise = useCallback(async () => {
         setAnaliseOpen(true);
         if (dadosAnalise.length > 0) return;
@@ -614,47 +589,165 @@ export default function HistoricoSepultamentosPage() {
         }
     }, [dadosAnalise.length]);
 
-    // Data base do registro para filtro
-    function getRegDate(r: RegistroAnalise): string {
-        const cands = [r.data_inicio_velorio, r.data, r.data_fim_velorio].filter(Boolean) as string[];
-        return (cands[0] || "").slice(0, 10);
+    /** Util: extrai snapshot de materiais de um "detalhes" */
+    function extrairEstadoMateriais(obj: any): Record<string, number> {
+        const out: Record<string, number> = {};
+        if (obj?.materiais_json) {
+            try {
+                const mj = JSON.parse(obj.materiais_json);
+                for (const k of Object.keys(mj || {})) {
+                    const it = mj[k];
+                    const qtd = Number(it?.qtd || 0);
+                    const checked = asBool(it?.checked);
+                    if (checked && qtd > 0) out[k] = (out[k] || 0) + qtd;
+                }
+            } catch { }
+        }
+        for (const k of MATERIAL_KEYS) {
+            const col = obj?.[`materiais_${k}_qtd`];
+            const qtd = Number(col || 0);
+            if (qtd > 0) out[k] = (out[k] || 0) + qtd;
+        }
+        return out;
     }
 
-    const dadosFiltradosAnalise = useMemo(() => {
-        return (dadosAnalise || []).filter((r) => {
-            const date = getRegDate(r);
-            if (aDe && date && date < aDe) return false;
-            if (aAte && date && date > aAte) return false;
-            return true;
-        });
-    }, [dadosAnalise, aDe, aAte]);
+    /** Util: extrai snapshot de arrumação de um "detalhes" */
+    function extrairEstadoArrumacao(obj: any): Record<string, boolean> {
+        const out: Record<string, boolean> = {} as any;
+        for (const k of ARR_KEYS) out[k] = false;
+        if (obj?.arrumacao_json) {
+            try {
+                const a = JSON.parse(obj.arrumacao_json);
+                for (const k of ARR_KEYS) out[k] = asBool(a?.[k]);
+            } catch { }
+        }
+        return out;
+    }
 
-    // Contadores por item
+    /** Baixa logs de vários registros com limite de concorrência simples */
+    async function carregarLogsParaAnalise(regs: RegistroAnalise[], maxConc = 5) {
+        const ids = regs
+            .map((r) => String(r.id ?? (r as any).sepultamento_id ?? ""))
+            .filter(Boolean);
+        const pendentes = ids.filter((id) => !logsCache[id]);
+        if (pendentes.length === 0) return;
+
+        setLoadingAnalise(true);
+        const novo: Record<string, LogItem[]> = {};
+        let i = 0;
+        async function worker() {
+            while (i < pendentes.length) {
+                const id = pendentes[i++];
+                try {
+                    const res = await fetch(`${LOG_POR_ID(id)}&_nocache=${Date.now()}`, { cache: "no-store" });
+                    const json = await res.json();
+                    novo[id] = json && json.sucesso && json.dados ? json.dados : Array.isArray(json) ? json : [];
+                } catch {
+                    novo[id] = [];
+                }
+            }
+        }
+        const workers = Array.from({ length: Math.min(maxConc, pendentes.length) }, worker);
+        await Promise.all(workers);
+        setLogsCache((prev) => ({ ...prev, ...novo }));
+        setLoadingAnalise(false);
+    }
+
+    // carrega logs quando modal aberto ou período mudar
+    useEffect(() => {
+        if (!analiseOpen || dadosAnalise.length === 0) return;
+        carregarLogsParaAnalise(dadosAnalise);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [analiseOpen, dadosAnalise, aDe, aAte]);
+
+    /** Normaliza datahora "YYYY-MM-DD..." → "YYYY-MM-DD" */
+    function dataDia(s?: string) {
+        return (s || "").slice(0, 10);
+    }
+
+    /** Aplica filtro de período sobre a data do LOG */
+    function estaNoPeriodo(datahora?: string) {
+        const d = dataDia(datahora);
+        if (aDe && d && d < aDe) return false;
+        if (aAte && d && d > aAte) return false;
+        return true;
+    }
+
+    // registros que efetivamente têm evento no período (para exibir no "Registros considerados")
+    const registrosComEventoNoPeriodo = useMemo(() => {
+        let count = 0;
+        for (const r of dadosAnalise) {
+            const id = String(r.id ?? (r as any).sepultamento_id ?? "");
+            const logs = logsCache[id];
+            if (!logs || logs.length === 0) continue;
+            if (logs.some((ent) => estaNoPeriodo(ent.datahora))) count++;
+        }
+        return count;
+    }, [dadosAnalise, logsCache, aDe, aAte]);
+
+    /** Calcula consumo por deltas de LOG (materiais) e ativações (arrumação) */
     const contagemPorItem = useMemo(() => {
         const counts: Record<AllItemKey, number> = {} as any;
         ALL_ITEMS.forEach((k) => (counts[k] = 0));
 
-        for (const r of dadosFiltradosAnalise) {
-            // materiais: soma qtd
-            const mats = parseMateriaisRegistro(r);
-            for (const k of MATERIAL_KEYS) counts[k] += mats[k] || 0;
+        // Materiais/Arrumação por LOG (deltas/ativação)
+        for (const r of dadosAnalise) {
+            const id = String(r.id ?? (r as any).sepultamento_id ?? "");
+            const logs = logsCache[id];
+            if (!logs || logs.length === 0) continue;
 
-            // arrumação: conta presença
-            const arr = parseArrumacaoRegistro(r);
-            for (const k of ARR_KEYS) if (arr[k]) counts[k] += 1;
+            const ord = [...logs]
+                .filter((ent) => estaNoPeriodo(ent.datahora))
+                .sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
 
-            // assistência
+            let prevMat: Record<string, number> = {};
+            let prevArr: Record<string, boolean> = {};
+            for (const ent of ord) {
+                const raw = ent.detalhes as any;
+                const obj =
+                    raw && typeof raw === "string"
+                        ? (() => {
+                            try {
+                                return JSON.parse(raw) as Record<string, any>;
+                            } catch {
+                                return {};
+                            }
+                        })()
+                        : (raw as Record<string, any>) || {};
+
+                const curMat = extrairEstadoMateriais(obj);
+                const curArr = extrairEstadoArrumacao(obj);
+
+                // deltas materiais (apenas incrementos)
+                for (const k of MATERIAL_KEYS) {
+                    const d = (curMat[k] || 0) - (prevMat[k] || 0);
+                    if (d > 0) counts[k] += d;
+                }
+
+                // arrumação: conta ativações (false -> true)
+                for (const k of ARR_KEYS) {
+                    const was = !!prevArr[k];
+                    const now = !!curArr[k];
+                    if (!was && now) counts[k] += 1;
+                }
+
+                prevMat = curMat;
+                prevArr = curArr;
+            }
+        }
+
+        // Assistência / Tanato (contagem simples por estado) — se quiser, dá para migrar para base de logs também
+        for (const r of dadosAnalise) {
             const a = normSimNao(r.assistencia);
             if (a === "sim") counts.assistencia_sim += 1;
             else if (a === "nao") counts.assistencia_nao += 1;
-
-            // tanato
             const t = normSimNao(r.tanato);
             if (t === "sim") counts.tanato_sim += 1;
             else if (t === "nao") counts.tanato_nao += 1;
         }
+
         return counts;
-    }, [dadosFiltradosAnalise]);
+    }, [dadosAnalise, logsCache, aDe, aAte]);
 
     type Row = { key: AllItemKey; item: string; tipo: string; quantidade: number };
     const rows = useMemo<Row[]>(() => {
@@ -665,9 +758,7 @@ export default function HistoricoSepultamentosPage() {
             tipo: ALL_ITEM_TIPO[k],
             quantidade: contagemPorItem[k],
         }));
-        // Se "Todos", esconda zeros; se item único, mostre mesmo que 0
         const filtered = selectedItem === "ALL" ? arr.filter((r) => r.quantidade > 0) : arr;
-        // Ordena por maior quantidade
         filtered.sort((a, b) => b.quantidade - a.quantidade);
         return filtered;
     }, [selectedItem, contagemPorItem]);
@@ -677,9 +768,7 @@ export default function HistoricoSepultamentosPage() {
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Histórico dos Sepultamentos</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.</p>
             </header>
 
             {/* Filtros */}
@@ -843,9 +932,7 @@ export default function HistoricoSepultamentosPage() {
                         ) : loadingLog ? (
                             <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Carregando histórico...</div>
                         ) : log.length === 0 ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                Nenhum log encontrado para este registro.
-                            </div>
+                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum log encontrado para este registro.</div>
                         ) : (
                             <div className="space-y-3">
                                 {log.map((ent, i) => {
@@ -853,8 +940,7 @@ export default function HistoricoSepultamentosPage() {
                                     const raw = ent.detalhes as any;
 
                                     try {
-                                        const obj =
-                                            raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
+                                        const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
 
                                         if (obj && typeof obj === "object") {
                                             const chips: string[] = [];
@@ -865,7 +951,7 @@ export default function HistoricoSepultamentosPage() {
 
                                                 if (/^arrumacao(_json)?$/i.test(key)) {
                                                     const aobj = obj[key] || {};
-                                                    for (const [k, v] of Object.entries(aobj)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`); // <-- corrigido
+                                                    for (const [k, v] of Object.entries(aobj)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
                                                     continue;
                                                 }
 
@@ -875,9 +961,9 @@ export default function HistoricoSepultamentosPage() {
                                                     if (val != null && String(val).trim() !== "") {
                                                         const nome = titleCaseFromSnake(m[1]);
                                                         chips.push(
-                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
-                                                                nome
-                                                            )}:</b> ${sanitize(String(val))}</span>`
+                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(
+                                                                String(val)
+                                                            )}</span>`
                                                         );
                                                     }
                                                     continue;
@@ -891,9 +977,7 @@ export default function HistoricoSepultamentosPage() {
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
                                                 chips.push(
-                                                    `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
-                                                        nome
-                                                    )}:</b> ${sanitize(val)}</span>`
+                                                    `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`
                                                 );
                                             }
 
@@ -959,7 +1043,7 @@ export default function HistoricoSepultamentosPage() {
                 </div>
             </div>
 
-            {/* ============ MODAL: ANÁLISE GERAL (TABELA) ============ */}
+            {/* ============ MODAL: ANÁLISE GERAL (TABELA/CARDS) ============ */}
             {analiseOpen && (
                 <div
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3 sm:p-6"
@@ -970,13 +1054,15 @@ export default function HistoricoSepultamentosPage() {
                         if (e.target === e.currentTarget) setAnaliseOpen(false);
                     }}
                 >
-                    <div className="w-full max-w-6xl rounded-2xl border bg-white shadow-xl">
-                        {/* Cabeçalho */}
-                        <div className="flex items-center justify-between gap-2 border-b p-4">
+                    {/* container com altura máxima e rolagem interna (evita body-scroll) */}
+                    <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl border bg-white shadow-xl">
+                        {/* Cabeçalho (sticky) */}
+                        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-white/90 p-4 backdrop-blur">
                             <div>
                                 <h3 className="text-lg font-semibold">Análise Geral</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    Selecione o período e um item específico — ou “Todos os itens”. A tabela mostra as quantidades no período.
+                                    A análise soma consumo pelos <b>eventos de log</b> no período selecionado (materiais por <i>deltas</i> e arrumação por{" "}
+                                    <i>ativações</i>).
                                 </p>
                             </div>
                             <button className="rounded-md border p-2 text-sm hover:bg-muted" onClick={() => setAnaliseOpen(false)} title="Fechar">
@@ -984,108 +1070,128 @@ export default function HistoricoSepultamentosPage() {
                             </button>
                         </div>
 
-                        {/* Filtros */}
-                        <div className="grid gap-3 p-4 md:grid-cols-4">
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Data inicial</span>
-                                <input type="date" value={aDe} onChange={(e) => setADe(e.target.value)} className="input" />
-                            </label>
-                            <label className="flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Data final</span>
-                                <input type="date" value={aAte} onChange={(e) => setAAte(e.target.value)} className="input" />
-                            </label>
-                            <label className="md:col-span-2 flex flex-col gap-1">
-                                <span className="text-xs text-muted-foreground">Item</span>
-                                <select
-                                    className="input"
-                                    value={selectedItem}
-                                    onChange={(e) => setSelectedItem((e.target.value as SelectedItem) || "ALL")}
-                                >
-                                    <option value="ALL">Todos os itens</option>
-                                    <optgroup label="Materiais">
-                                        {MATERIAL_KEYS.map((k) => (
-                                            <option key={k} value={k}>
-                                                {MATERIAL_LABELS[k]}
-                                            </option>
-                                        ))}
-                                    </optgroup>
-                                    <optgroup label="Arrumação">
-                                        {ARR_KEYS.map((k) => (
-                                            <option key={k} value={k}>
-                                                {ARR_LABELS[k]}
-                                            </option>
-                                        ))}
-                                    </optgroup>
-                                    <optgroup label="Assistência / Tanatopraxia">
-                                        <option value="assistencia_sim">Assistência (Sim)</option>
-                                        <option value="assistencia_nao">Assistência (Não)</option>
-                                        <option value="tanato_sim">Tanatopraxia (Sim)</option>
-                                        <option value="tanato_nao">Tanatopraxia (Não)</option>
-                                    </optgroup>
-                                </select>
-                            </label>
-                        </div>
-
-                        {/* Resumo */}
-                        <div className="px-4">
-                            <span className="rounded bg-muted px-2 py-1 text-xs">
-                                Registros considerados: <b>{dadosFiltradosAnalise.length}</b>
-                            </span>
-                        </div>
-
-                        {/* Tabela */}
-                        <div className="p-4">
-                            {loadingAnalise ? (
-                                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                    Carregando dados para análise...
-                                </div>
-                            ) : dadosAnalise.length === 0 ? (
-                                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                    Sem dados para análise no momento.
-                                </div>
-                            ) : rows.length === 0 ? (
-                                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                                    Nenhum item consumido no período selecionado.
-                                </div>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full text-sm">
-                                        <thead className="bg-muted/50">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left font-semibold">Item</th>
-                                                <th className="w-40 px-3 py-2 text-left font-semibold">Categoria</th>
-                                                <th className="w-28 px-3 py-2 text-left font-semibold">Quantidade</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {rows.map((r) => (
-                                                <tr key={r.key} className="border-t">
-                                                    <td className="px-3 py-2">{r.item}</td>
-                                                    <td className="px-3 py-2">{r.tipo}</td>
-                                                    <td className="px-3 py-2 font-semibold">{r.quantidade}</td>
-                                                </tr>
+                        {/* Corpo com rolagem própria */}
+                        <div className="h-[calc(90vh-56px)] overflow-auto">
+                            {/* Filtros */}
+                            <div className="grid gap-3 p-4 md:grid-cols-4">
+                                <label className="flex flex-col gap-1">
+                                    <span className="text-xs text-muted-foreground">Data inicial</span>
+                                    <input type="date" value={aDe} onChange={(e) => setADe(e.target.value)} className="input" />
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                    <span className="text-xs text-muted-foreground">Data final</span>
+                                    <input type="date" value={aAte} onChange={(e) => setAAte(e.target.value)} className="input" />
+                                </label>
+                                <label className="md:col-span-2 flex flex-col gap-1">
+                                    <span className="text-xs text-muted-foreground">Item</span>
+                                    <select className="input" value={selectedItem} onChange={(e) => setSelectedItem((e.target.value as SelectedItem) || "ALL")}>
+                                        <option value="ALL">Todos os itens</option>
+                                        <optgroup label="Materiais">
+                                            {MATERIAL_KEYS.map((k) => (
+                                                <option key={k} value={k}>
+                                                    {MATERIAL_LABELS[k]}
+                                                </option>
                                             ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Rodapé fixo com ação opcional */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-t p-3">
-                            <div className="text-xs text-muted-foreground">
-                                Dica: selecione “Todos os itens” para enxergar rapidamente o que mais saiu no período.
+                                        </optgroup>
+                                        <optgroup label="Arrumação">
+                                            {ARR_KEYS.map((k) => (
+                                                <option key={k} value={k}>
+                                                    {ARR_LABELS[k]}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        <optgroup label="Assistência / Tanatopraxia">
+                                            <option value="assistencia_sim">Assistência (Sim)</option>
+                                            <option value="assistencia_nao">Assistência (Não)</option>
+                                            <option value="tanato_sim">Tanatopraxia (Sim)</option>
+                                            <option value="tanato_nao">Tanatopraxia (Não)</option>
+                                        </optgroup>
+                                    </select>
+                                </label>
                             </div>
-                            <button
-                                className="rounded-md border px-3 py-1.5 text-sm"
-                                onClick={() => {
-                                    setADe("");
-                                    setAAte("");
-                                    setSelectedItem("ALL");
-                                }}
-                            >
-                                Limpar filtros
-                            </button>
+
+                            {/* Resumo */}
+                            <div className="flex flex-wrap items-center gap-2 px-4">
+                                <span className="rounded bg-muted px-2 py-1 text-xs">
+                                    Registros com evento no período: <b>{registrosComEventoNoPeriodo}</b>
+                                </span>
+                                {loadingAnalise && (
+                                    <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs">
+                                        <IconLoader2 className="size-3 animate-spin" />
+                                        Processando…
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Tabela (desktop) / Cards (mobile) */}
+                            <div className="p-4">
+                                {dadosAnalise.length === 0 ? (
+                                    <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Sem dados para análise no momento.</div>
+                                ) : rows.length === 0 ? (
+                                    <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum item consumido no período selecionado.</div>
+                                ) : (
+                                    <>
+                                        {/* Desktop: tabela */}
+                                        <div className="hidden md:block">
+                                            <div className="overflow-hidden rounded-lg border">
+                                                <table className="min-w-full text-sm">
+                                                    <thead className="sticky top-0 bg-muted/60 backdrop-blur">
+                                                        <tr>
+                                                            <th className="px-3 py-2 text-left font-semibold">Item</th>
+                                                            <th className="w-40 px-3 py-2 text-left font-semibold">Categoria</th>
+                                                            <th className="w-28 px-3 py-2 text-left font-semibold">Quantidade</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {rows.map((r) => (
+                                                            <tr key={r.key} className="border-t">
+                                                                <td className="px-3 py-2">{r.item}</td>
+                                                                <td className="px-3 py-2">{r.tipo}</td>
+                                                                <td className="px-3 py-2 font-semibold">{r.quantidade}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+
+                                        {/* Mobile: cards */}
+                                        <div className="md:hidden">
+                                            <ul className="grid gap-2">
+                                                {rows.map((r) => (
+                                                    <li key={r.key} className="rounded-lg border p-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="font-medium">{r.item}</div>
+                                                            <div className="text-xs text-muted-foreground">{r.tipo}</div>
+                                                        </div>
+                                                        <div className="mt-1 text-lg font-semibold">{r.quantidade}</div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Rodapé fixo com ação opcional */}
+                            <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t bg-white/90 p-3 backdrop-blur">
+                                <div className="text-xs text-muted-foreground">Dica: em “Todos os itens” você vê rapidamente o que mais saiu no período.</div>
+                                <div className="flex gap-2">
+                                    <button
+                                        className="rounded-md border px-3 py-1.5 text-sm"
+                                        onClick={() => {
+                                            setADe("");
+                                            setAAte("");
+                                            setSelectedItem("ALL");
+                                        }}
+                                    >
+                                        Limpar filtros
+                                    </button>
+                                    <button className="rounded-md border px-3 py-1.5 text-sm" onClick={() => carregarLogsParaAnalise(dadosAnalise)}>
+                                        Recarregar dados
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
