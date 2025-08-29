@@ -24,6 +24,11 @@ export type ArrumacaoState = {
     algodao: boolean;
     cordao: boolean;
     barba: boolean;
+    ta32: boolean;
+    fluido_cavitario?: boolean;
+    formol: boolean;
+    mascara: boolean;
+    invol: boolean;
 };
 
 export type Registro = {

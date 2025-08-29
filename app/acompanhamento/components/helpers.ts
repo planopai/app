@@ -22,6 +22,11 @@ export function defaultArrumacao(): ArrumacaoState {
         algodao: false,
         cordao: false,
         barba: false,
+        ta32: false,
+        fluido_cavitario: false,
+        formol: false,
+        mascara: false,
+        invol: false
     };
 }
 

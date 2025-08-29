@@ -24,6 +24,11 @@ export default function ArrumacaoModal({
         { key: "algodao", label: "Algodão" },
         { key: "cordao", label: "Cordão" },
         { key: "barba", label: "Barba" },
+        { key: "ta32", label: "TA-32" },
+        { key: "fluido_cavitario", label: "Fluído Cavitário" },
+        { key: "formol", label: "Formol" },
+        { key: "mascara", label: "Máscara" },
+        { key: "invol", label: "Invol" },
     ];
 
     return (
