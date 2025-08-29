@@ -787,7 +787,7 @@ export default function MensagensPage() {
                                     }`}
                             >
                                 <IconListSearch className="size-4" />
-                                Selecionar do Memorial
+                                Selecionar Falecido
                             </button>
                         </div>
 
