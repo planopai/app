@@ -564,7 +564,7 @@ export default function MensagensPage() {
             setMemorialError(null);
             const params = new URLSearchParams();
             if (memorialQuery.trim()) params.set("q", memorialQuery.trim());
-            params.set("limit", "300");
+            params.set("limit", "3");
             const url = `/api/php/livro.php?${params.toString()}`;
             const res = await fetch(url, { cache: "no-store", credentials: "include" });
             const data = await res.json().catch(() => ({}));
