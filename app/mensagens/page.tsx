@@ -140,10 +140,10 @@ export default function MensagensPage() {
     const [progress, setProgress] = useState(0);
     const [progressMsg, setProgressMsg] = useState("");
 
-    // NOVO: modo de preenchimento (manual | memorial)
+    // modo de preenchimento (manual | memorial)
     const [fillMode, setFillMode] = useState<"manual" | "memorial">("manual");
 
-    // NOVO: dados do memorial
+    // dados do memorial
     const [memorialList, setMemorialList] = useState<MemorialItem[]>([]);
     const [memorialLoading, setMemorialLoading] = useState(false);
     const [memorialError, setMemorialError] = useState<string | null>(null);
@@ -231,7 +231,6 @@ export default function MensagensPage() {
     }
 
     // ===== Fontes =====
-    // DejaVu (Unicode) – para o miolo com emojis
     const djvStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureDejaVu(doc: any): Promise<boolean> {
         if (djvStateRef.current === "ok") return true;
@@ -262,7 +261,6 @@ export default function MensagensPage() {
             return false;
         }
     }
-    // Nunito – para a capa
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -299,8 +297,8 @@ export default function MensagensPage() {
         let s = (input ?? "").normalize("NFC");
         s = s.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
         s = s.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\uFE0F/g, "");
-        s = s.replace(/([#*0-9])\uFE0F?\u20E3/gu, "$1"); // keycaps
-        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•"); // flags
+        s = s.replace(/([#*0-9])\uFE0F?\u20E3/gu, "$1");
+        s = s.replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, "•");
         s = s.replace(
             /[\u2764\u2665\u2661\u{1F494}\u{1F493}\u{1F495}-\u{1F49F}\u{1F9E1}\u{1FA77}]/gu,
             "♥"
@@ -348,7 +346,7 @@ export default function MensagensPage() {
         return `${d}/${m}/${y}`;
     };
 
-    // ------- Exportar PDF (com modal) -------
+    // ------- Exportar PDF -------
     const runExport = useCallback(
         async (meta: { nome: string; nasc: string; obito: string }) => {
             const w: any = window as any;
@@ -363,7 +361,6 @@ export default function MensagensPage() {
             const pageH = doc.internal.pageSize.getHeight();
             const centerX = pageW / 2;
 
-            // >>> CONFIGS DA CAPA <<<
             const NAME_SIZE = 48;
             const DATE_SIZE = 24;
 
@@ -378,11 +375,9 @@ export default function MensagensPage() {
             setProgress(15);
             setProgressMsg("Carregando imagens de capa…");
 
-            // CAPA
             const capa = await toDataURL("/capa.png");
             doc.addImage(capa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
 
-            // Título (nome + datas)
             doc.setTextColor(34, 51, 80);
             doc.setFont(COVER_FONT, "bold");
             doc.setFontSize(NAME_SIZE);
@@ -394,7 +389,6 @@ export default function MensagensPage() {
             let nameY = pageH * 0.42 - blockH / 2;
             (doc as any).text(nameLines, centerX, nameY, { align: "center", baseline: "top" });
 
-            // Datas
             const dtY = nameY + blockH + 8;
             const d1 = formatDateBR(meta.nasc);
             const d2 = formatDateBR(meta.obito);
@@ -406,7 +400,6 @@ export default function MensagensPage() {
             doc.text(d1, centerX - gap - w1 / 2, dtY, { baseline: "top" });
             doc.text(d2, centerX + gap - w2 / 2, dtY, { baseline: "top" });
 
-            // CONTRACAPAS
             setProgress(25);
             setProgressMsg("Carregando contracapas…");
             const contracapa = await toDataURL("/contracapa.png");
@@ -416,7 +409,6 @@ export default function MensagensPage() {
             doc.addPage();
             doc.addImage(contracapa2, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
 
-            // Páginas de mensagens
             setProgress(35);
             setProgressMsg("Preparando páginas de mensagens…");
 
@@ -485,7 +477,7 @@ export default function MensagensPage() {
                     textX,
                     textTop,
                     textMaxW,
-                    CONTENT_FONT,
+                    "Nunito",
                     "bold",
                     titleSize,
                     false
@@ -498,7 +490,7 @@ export default function MensagensPage() {
                     textX,
                     textTop + nameH + nameBodyGap,
                     textMaxW,
-                    CONTENT_FONT,
+                    "Nunito",
                     "normal",
                     bodySize,
                     false
@@ -512,7 +504,7 @@ export default function MensagensPage() {
                         textX,
                         textTop + nameH + nameBodyGap,
                         textMaxW,
-                        CONTENT_FONT,
+                        "Nunito",
                         "normal",
                         bodySize,
                         false
@@ -532,8 +524,8 @@ export default function MensagensPage() {
                     body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
                 }
 
-                wrapText(doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, true);
-                doc.setFont(CONTENT_FONT, "normal");
+                wrapText(doc, m.name || "", textX, textTop, textMaxW, "Nunito", "bold", titleSize, true);
+                doc.setFont("Nunito", "normal");
                 doc.setFontSize(bodySize);
                 let y = textTop + nameH + nameBodyGap;
                 for (const ln of body.lines) {
@@ -565,7 +557,7 @@ export default function MensagensPage() {
         setSelectedMemorialId(null);
     };
 
-    // ====== NOVO: buscar do memorial ======
+    // ====== buscar do memorial ======
     const loadMemorial = useCallback(async () => {
         try {
             setMemorialLoading(true);
@@ -580,8 +572,7 @@ export default function MensagensPage() {
                 throw new Error(data?.message || "Falha ao carregar o memorial.");
             }
             const arr: MemorialItem[] = data?.dados ?? [];
-            // já vem ordenado por criado_em DESC no PHP
-            setMemorialList(arr);
+            setMemorialList(arr); // já vem ordenado DESC
         } catch (e: any) {
             setMemorialError(e?.message || "Erro ao carregar memorial.");
             setMemorialList([]);
@@ -602,8 +593,7 @@ export default function MensagensPage() {
         setFalecido(item.nome_completo || "");
         setNascimento(item.data_nascimento || "");
         setFalecimento(item.data_falecimento || "");
-        // troca para manual para permitir edições se quiser
-        setFillMode("manual");
+        setFillMode("manual"); // volta para manual (permite editar)
     };
 
     const onSubmitGenerate = async (e: React.FormEvent) => {
@@ -801,7 +791,7 @@ export default function MensagensPage() {
                             </button>
                         </div>
 
-                        {/* Painel Memorial */}
+                        {/* Painel Memorial — SOMENTE LISTA DE NOMES */}
                         {fillMode === "memorial" && (
                             <div className="mb-5 rounded-xl border p-3">
                                 <div className="mb-3 flex items-center gap-2">
@@ -840,49 +830,30 @@ export default function MensagensPage() {
                                     </div>
                                 )}
 
-                                <div className="max-h-72 overflow-auto rounded-lg border">
-                                    <table className="min-w-full text-sm">
-                                        <thead className="bg-muted/40">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left font-semibold">Nome</th>
-                                                <th className="px-3 py-2 text-left font-semibold">Nascimento</th>
-                                                <th className="px-3 py-2 text-left font-semibold">Falecimento</th>
-                                                <th className="px-3 py-2 text-left font-semibold">Sala</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {memorialList.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={4} className="px-3 py-6 text-center opacity-70">
-                                                        Nenhum registro encontrado.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                memorialList.map((it) => {
-                                                    const selected = selectedMemorialId === it.id;
-                                                    return (
-                                                        <tr
-                                                            key={it.id}
-                                                            className={`cursor-pointer border-t hover:bg-muted/30 ${selected ? "bg-primary/10" : ""
-                                                                }`}
-                                                            onClick={() => onPickFromMemorial(it)}
-                                                        >
-                                                            <td className="px-3 py-2 font-medium">
-                                                                {it.nome_completo}
-                                                            </td>
-                                                            <td className="px-3 py-2">
-                                                                {it.data_nascimento ? formatDateBR(it.data_nascimento) : "—"}
-                                                            </td>
-                                                            <td className="px-3 py-2">
-                                                                {it.data_falecimento ? formatDateBR(it.data_falecimento) : "—"}
-                                                            </td>
-                                                            <td className="px-3 py-2">{it.sala || "—"}</td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
+                                <div className="max-h-72 overflow-auto rounded-lg border divide-y">
+                                    {memorialList.length === 0 ? (
+                                        <div className="px-3 py-6 text-center text-sm opacity-70">
+                                            Nenhum registro encontrado.
+                                        </div>
+                                    ) : (
+                                        memorialList.map((it) => {
+                                            const selected = selectedMemorialId === it.id;
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={it.id}
+                                                    onClick={() => onPickFromMemorial(it)}
+                                                    className={`block w-full cursor-pointer px-3 py-2 text-left text-sm transition ${selected
+                                                            ? "bg-primary/10 font-semibold text-primary"
+                                                            : "hover:bg-muted/30"
+                                                        }`}
+                                                    title="Selecionar"
+                                                >
+                                                    {it.nome_completo}
+                                                </button>
+                                            );
+                                        })
+                                    )}
                                 </div>
 
                                 <p className="mt-2 text-xs text-muted-foreground">
