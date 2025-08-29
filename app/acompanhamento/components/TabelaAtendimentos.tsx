@@ -45,8 +45,11 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                         {/* Agente: escondido no mobile, visível a partir de sm */}
                         <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
 
+                        {/* Ações: no mobile funciona também como coluna de Info (empilhado) */}
                         <th className="w-36 px-3 py-2 text-left font-semibold">Ações</th>
-                        <th className="w-28 px-3 py-2 text-left font-semibold">Info</th>
+
+                        {/* Info: somente desktop/tablet */}
+                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">Info</th>
                     </tr>
                 </thead>
                 <tbody id="tb-registros">
@@ -78,17 +81,30 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                 {/* Agente: escondido no mobile, visível a partir de sm */}
                                 <td className="hidden px-3 py-2 sm:table-cell">{r.agente || ""}</td>
 
+                                {/* Ações: no mobile empilha Ações (azul escuro) e Info (azul claro) */}
                                 <td className="px-3 py-2">
-                                    <button
-                                        className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
-                                        onClick={() => onAcao(idx)}
-                                    >
-                                        Ações
-                                    </button>
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800"
+                                            onClick={() => onAcao(idx)}
+                                        >
+                                            Ações
+                                        </button>
+
+                                        {/* Info no mobile (fica dentro da mesma coluna) */}
+                                        <button
+                                            className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
+                                            onClick={() => onInfo(idx)}
+                                        >
+                                            Info
+                                        </button>
+                                    </div>
                                 </td>
-                                <td className="px-3 py-2">
+
+                                {/* Info no desktop/tablet: coluna separada */}
+                                <td className="hidden px-3 py-2 sm:table-cell">
                                     <button
-                                        className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+                                        className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
                                         onClick={() => onInfo(idx)}
                                     >
                                         Info
