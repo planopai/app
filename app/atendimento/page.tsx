@@ -14,6 +14,8 @@ type RegistroSala = {
     data_sepultamento?: string;
     horario_sepultamento?: string;
     local_sepultamento?: string;
+    /** URL da foto (servida pelo PHP em listar/consultar) */
+    foto_url?: string;
 };
 
 /* ============================================================
@@ -90,7 +92,7 @@ export default function AtendimentoPage() {
     const [salaSelecionada, setSalaSelecionada] =
         useState<"Sala 01" | "Sala 02" | "Sala 03">("Sala 01");
 
-    // Estado controlado do formulário
+    // Estado controlado do formulário (criação)
     const [form, setForm] = useState({
         nome: "",
         localVelorio: "Memorial Senhor do Bonfim",
@@ -205,6 +207,7 @@ export default function AtendimentoPage() {
     // Edição (popup)
     const [editOpen, setEditOpen] = useState(false);
     const [edit, setEdit] = useState<RegistroSala | null>(null);
+    const [editFotoFile, setEditFotoFile] = useState<File | null>(null); // NOVO: arquivo escolhido no modal
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
@@ -222,7 +225,9 @@ export default function AtendimentoPage() {
                 data_sepultamento: d.data_sepultamento ?? "",
                 horario_sepultamento: d.horario_sepultamento ?? "",
                 local_sepultamento: d.local_sepultamento ?? "",
+                foto_url: d.foto_url ?? "", // NOVO
             });
+            setEditFotoFile(null); // zera eventual seleção anterior
             setEditOpen(true);
             setErrEdicao(null);
         } catch (e: any) {
@@ -234,26 +239,52 @@ export default function AtendimentoPage() {
     const salvarEdicao = useCallback(async () => {
         if (!edit) return;
         try {
-            const payload = {
-                id: edit.id,
-                sala: edit.sala,
-                nome_completo: edit.nome_completo,
-                horario_inicio: edit.horario_inicio,
-                horario_termino: edit.horario_termino,
-                data_sepultamento: edit.data_sepultamento,
-                horario_sepultamento: edit.horario_sepultamento,
-                local_sepultamento: edit.local_sepultamento,
-            };
-            const res = await fetch("/api/php/salaControle.php?action=editar", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-                cache: "no-store",
-            });
-            const data = await res.json().catch(() => ({}));
+            let res: Response;
+            let data: any;
+
+            if (editFotoFile) {
+                // Quando tem nova foto, envia via multipart/form-data
+                const fd = new FormData();
+                fd.append("id", String(edit.id));
+                fd.append("sala", edit.sala);
+                fd.append("nome_completo", edit.nome_completo ?? "");
+                fd.append("horario_inicio", edit.horario_inicio ?? "");
+                fd.append("horario_termino", edit.horario_termino ?? "");
+                fd.append("data_sepultamento", edit.data_sepultamento ?? "");
+                fd.append("horario_sepultamento", edit.horario_sepultamento ?? "");
+                fd.append("local_sepultamento", edit.local_sepultamento ?? "");
+                fd.append("foto_falecido", editFotoFile);
+
+                res = await fetch("/api/php/salaControle.php?action=editar", {
+                    method: "POST",
+                    body: fd,
+                    cache: "no-store",
+                });
+            } else {
+                // Sem nova foto, mantém JSON como antes
+                const payload = {
+                    id: edit.id,
+                    sala: edit.sala,
+                    nome_completo: edit.nome_completo,
+                    horario_inicio: edit.horario_inicio,
+                    horario_termino: edit.horario_termino,
+                    data_sepultamento: edit.data_sepultamento,
+                    horario_sepultamento: edit.horario_sepultamento,
+                    local_sepultamento: edit.local_sepultamento,
+                };
+                res = await fetch("/api/php/salaControle.php?action=editar", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                    cache: "no-store",
+                });
+            }
+
+            data = await res.json().catch(() => ({}));
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setEditOpen(false);
                 setEdit(null);
+                setEditFotoFile(null);
                 carregarDados();
             } else {
                 alert("Erro ao salvar edição: " + (data?.message || data?.msg || "Desconhecido"));
@@ -262,7 +293,7 @@ export default function AtendimentoPage() {
             setErrEdicao("Erro ao salvar edição. Verifique o console para detalhes.");
             console.error("Erro ao salvar edição:", e);
         }
-    }, [edit, carregarDados]);
+    }, [edit, editFotoFile, carregarDados]);
 
     // Exclusão (popup)
     const [delOpen, setDelOpen] = useState(false);
@@ -604,12 +635,12 @@ export default function AtendimentoPage() {
             </div>
 
             {/* Popup de Edição */}
-            <Modal open={editOpen} onClose={() => setEditOpen(false)} ariaLabel="Editar Registro">
+            <Modal open={editOpen} onClose={() => { setEditOpen(false); setEditFotoFile(null); }} ariaLabel="Editar Registro">
                 <div className="flex items-start justify-between">
                     <h2 className="text-xl font-semibold">Editar Registro</h2>
                     <button
                         className="rounded-md border px-2 py-1 text-xs"
-                        onClick={() => setEditOpen(false)}
+                        onClick={() => { setEditOpen(false); setEditFotoFile(null); }}
                         aria-label="Fechar"
                     >
                         ×
@@ -708,8 +739,51 @@ export default function AtendimentoPage() {
                         />
                     </div>
 
+                    {/* NOVO: Foto do falecido no modal de edição */}
+                    <div>
+                        <label className="mb-1 block text-sm font-medium">Foto do Falecido</label>
+
+                        {/* Mostra a foto atual se existir e não houver nova selecionada */}
+                        {edit?.foto_url && !editFotoFile && (
+                            <div className="mb-2">
+                                <img
+                                    src={edit.foto_url}
+                                    alt="Foto atual"
+                                    className="max-h-40 rounded-md border"
+                                />
+                            </div>
+                        )}
+
+                        {/* Pré-visualização da nova foto */}
+                        {editFotoFile && (
+                            <div className="mb-2">
+                                <img
+                                    src={URL.createObjectURL(editFotoFile)}
+                                    alt="Pré-visualização"
+                                    className="max-h-40 rounded-md border"
+                                />
+                            </div>
+                        )}
+
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => setEditFotoFile(e.target.files?.[0] ?? null)}
+                            className="w-full rounded-md border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Se você escolher um arquivo, ele substituirá a foto atual ao salvar.
+                        </p>
+                    </div>
+
                     <div className="mt-2 flex justify-end gap-2">
-                        <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setEditOpen(false)}>
+                        <button
+                            className="rounded-md border px-3 py-2 text-sm"
+                            onClick={() => {
+                                setEditOpen(false);
+                                setEditFotoFile(null);
+                            }}
+                        >
                             Cancelar
                         </button>
                         <button
