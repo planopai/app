@@ -8,6 +8,9 @@ import {
     IconRefresh,
     IconDoor,
     IconDownload,
+    IconListSearch,
+    IconUserCheck,
+    IconSearch,
 } from "@tabler/icons-react";
 
 type Room = 1 | 2 | 3;
@@ -22,6 +25,15 @@ type MessageItem = {
 type ApiResponse = {
     receivedMessages: MessageItem[];
     approvedMessages: MessageItem[];
+};
+
+type MemorialItem = {
+    id: number;
+    sala: string;
+    nome_completo: string;
+    data_nascimento: string | null;
+    data_falecimento: string | null;
+    criado_em: string; // timestamp
 };
 
 const FALLBACK_IMG = "https://via.placeholder.com/100";
@@ -127,6 +139,16 @@ export default function MensagensPage() {
     const [generating, setGenerating] = useState(false);
     const [progress, setProgress] = useState(0);
     const [progressMsg, setProgressMsg] = useState("");
+
+    // NOVO: modo de preenchimento (manual | memorial)
+    const [fillMode, setFillMode] = useState<"manual" | "memorial">("manual");
+
+    // NOVO: dados do memorial
+    const [memorialList, setMemorialList] = useState<MemorialItem[]>([]);
+    const [memorialLoading, setMemorialLoading] = useState(false);
+    const [memorialError, setMemorialError] = useState<string | null>(null);
+    const [memorialQuery, setMemorialQuery] = useState("");
+    const [selectedMemorialId, setSelectedMemorialId] = useState<number | null>(null);
 
     // Carrega jsPDF (UMD)
     useEffect(() => {
@@ -272,7 +294,7 @@ export default function MensagensPage() {
         }
     }
 
-    // --- Sanitização robusta p/ PDF (evita bugs com emojis)
+    // --- Sanitização robusta p/ PDF
     const sanitizeForPdf = (input?: string) => {
         let s = (input ?? "").normalize("NFC");
         s = s.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
@@ -291,7 +313,6 @@ export default function MensagensPage() {
         return s;
     };
 
-    // helper: mede e desenha linha-a-linha
     function wrapText(
         doc: any,
         text: string,
@@ -338,34 +359,31 @@ export default function MensagensPage() {
             const { jsPDF } = jspdf;
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
-            // Dimensões
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
             const centerX = pageW / 2;
 
-            // >>> CONFIGS DA CAPA (ajuste aqui quando quiser) <<<
-            const NAME_SIZE = 48; // tamanho do NOME
-            const DATE_SIZE = 24; // tamanho das DATAS
+            // >>> CONFIGS DA CAPA <<<
+            const NAME_SIZE = 48;
+            const DATE_SIZE = 24;
 
-            // Progresso – 0%
             setProgress(5);
             setProgressMsg("Carregando fontes…");
 
-            // fontes
-            const nunitoOk = await ensureNunito(doc); // capa
-            const dejaOk = await ensureDejaVu(doc); // miolo
-            const CONTENT_FONT = dejaOk ? "Nunito" : "helvetica"; // <<< miolo
-            const COVER_FONT = nunitoOk ? "Nunito" : "helvetica"; // <<< capa
+            const nunitoOk = await ensureNunito(doc);
+            const dejaOk = await ensureDejaVu(doc);
+            const CONTENT_FONT = dejaOk ? "Nunito" : "helvetica";
+            const COVER_FONT = nunitoOk ? "Nunito" : "helvetica";
 
             setProgress(15);
             setProgressMsg("Carregando imagens de capa…");
 
-            // CAPA (página 1)
+            // CAPA
             const capa = await toDataURL("/capa.png");
             doc.addImage(capa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
 
             // Título (nome + datas)
-            doc.setTextColor(34, 51, 80); // #223350
+            doc.setTextColor(34, 51, 80);
             doc.setFont(COVER_FONT, "bold");
             doc.setFontSize(NAME_SIZE);
             const maxTitleW = pageW * 0.8;
@@ -388,7 +406,7 @@ export default function MensagensPage() {
             doc.text(d1, centerX - gap - w1 / 2, dtY, { baseline: "top" });
             doc.text(d2, centerX + gap - w2 / 2, dtY, { baseline: "top" });
 
-            // CONTRACAPAS (páginas 2 e 3)
+            // CONTRACAPAS
             setProgress(25);
             setProgressMsg("Carregando contracapas…");
             const contracapa = await toDataURL("/contracapa.png");
@@ -398,7 +416,7 @@ export default function MensagensPage() {
             doc.addPage();
             doc.addImage(contracapa2, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
 
-            // Páginas de mensagens (4+)
+            // Páginas de mensagens
             setProgress(35);
             setProgressMsg("Preparando páginas de mensagens…");
 
@@ -407,14 +425,11 @@ export default function MensagensPage() {
                 doc.addPage();
                 doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
             };
-            // primeira de conteúdo (página 4)
             startContentPage();
 
-            // Margens & layout
             const margin = { top: 16, right: 14, bottom: 16, left: 14 };
             const contentW = pageW - margin.left - margin.right;
 
-            // 4 cards por página
             const cardsPerPage = 4;
             const gapY = 8;
             const minCardH = 36;
@@ -423,18 +438,15 @@ export default function MensagensPage() {
             const baseH = (availH - gapY * (cardsPerPage - 1)) / cardsPerPage;
             const cardH = Math.max(minCardH, Math.min(maxCardH, baseH));
 
-            // Card
             const cardPadX = 8;
             const cardPadY = 8;
             const cornerRadius = 6;
             const borderWidth = 0.6;
 
-            // Interno
             const imgSize = 26;
             const innerGap = 8;
             const nameBodyGap = 6;
 
-            // Tipografia miolo
             const titleStart = 12;
             const bodyStart = 11;
             const bodyMin = 9;
@@ -448,13 +460,11 @@ export default function MensagensPage() {
                 const cardX = margin.left;
                 const cardY = margin.top + idx * (cardH + gapY);
 
-                // fundo branco + borda
                 doc.setFillColor(255, 255, 255);
                 doc.setDrawColor(210);
                 doc.setLineWidth(borderWidth);
                 doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius, "FD");
 
-                // imagem
                 const imgX = cardX + cardPadX;
                 const imgY = cardY + cardPadY;
                 try {
@@ -463,13 +473,11 @@ export default function MensagensPage() {
                     doc.addImage(imgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
                 } catch { }
 
-                // área de texto
                 const textX = imgX + imgSize + innerGap;
                 const textTop = cardY + cardPadY;
                 const textMaxW = contentW - (textX - cardX) - cardPadX;
                 const maxH = cardH - 2 * cardPadY;
 
-                // Nome
                 let titleSize = titleStart;
                 let { height: nameH } = wrapText(
                     doc,
@@ -483,7 +491,6 @@ export default function MensagensPage() {
                     false
                 );
 
-                // Corpo
                 let bodySize = bodyStart;
                 let body = wrapText(
                     doc,
@@ -497,7 +504,6 @@ export default function MensagensPage() {
                     false
                 );
 
-                // Ajuste para caber
                 while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
                     bodySize -= 0.5;
                     body = wrapText(
@@ -513,7 +519,6 @@ export default function MensagensPage() {
                     );
                 }
 
-                // Ellipsis se ainda exceder
                 if (nameH + nameBodyGap + body.height > maxH) {
                     const mmPerPt2 = 0.352777778;
                     const lh = bodySize * 1.15 * mmPerPt2;
@@ -527,7 +532,6 @@ export default function MensagensPage() {
                     body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
                 }
 
-                // Desenhar textos
                 wrapText(doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, true);
                 doc.setFont(CONTENT_FONT, "normal");
                 doc.setFontSize(bodySize);
@@ -537,7 +541,6 @@ export default function MensagensPage() {
                     y += body.lineHeight;
                 }
 
-                // progresso
                 const pct = 35 + Math.round(((i + 1) / total) * 60);
                 setProgress(pct);
                 setProgressMsg(`Gerando mensagens (${i + 1}/${total})…`);
@@ -546,17 +549,61 @@ export default function MensagensPage() {
             setProgress(98);
             setProgressMsg("Finalizando documento…");
 
-            doc.save(`livro_homenagens_sala0${room}.pdf`);
+            const safeName = falecido ? falecido : `sala0${room}`;
+            doc.save(`livro_homenagens_${safeName.replace(/\s+/g, "_").toLowerCase()}.pdf`);
             setProgress(100);
             setProgressMsg("Concluído!");
         },
-        [approved, room]
+        [approved, room, falecido]
     );
 
     const onOpenModal = () => {
         setShowModal(true);
         setProgress(0);
         setProgressMsg("");
+        setFillMode("manual");
+        setSelectedMemorialId(null);
+    };
+
+    // ====== NOVO: buscar do memorial ======
+    const loadMemorial = useCallback(async () => {
+        try {
+            setMemorialLoading(true);
+            setMemorialError(null);
+            const params = new URLSearchParams();
+            if (memorialQuery.trim()) params.set("q", memorialQuery.trim());
+            params.set("limit", "300");
+            const url = `/api/php/livro.php?${params.toString()}`;
+            const res = await fetch(url, { cache: "no-store", credentials: "include" });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data?.success === false) {
+                throw new Error(data?.message || "Falha ao carregar o memorial.");
+            }
+            const arr: MemorialItem[] = data?.dados ?? [];
+            // já vem ordenado por criado_em DESC no PHP
+            setMemorialList(arr);
+        } catch (e: any) {
+            setMemorialError(e?.message || "Erro ao carregar memorial.");
+            setMemorialList([]);
+        } finally {
+            setMemorialLoading(false);
+        }
+    }, [memorialQuery]);
+
+    useEffect(() => {
+        if (showModal && fillMode === "memorial") {
+            loadMemorial();
+        }
+    }, [showModal, fillMode, loadMemorial]);
+
+    // Ao selecionar um item do memorial:
+    const onPickFromMemorial = (item: MemorialItem) => {
+        setSelectedMemorialId(item.id);
+        setFalecido(item.nome_completo || "");
+        setNascimento(item.data_nascimento || "");
+        setFalecimento(item.data_falecimento || "");
+        // troca para manual para permitir edições se quiser
+        setFillMode("manual");
     };
 
     const onSubmitGenerate = async (e: React.FormEvent) => {
@@ -711,14 +758,141 @@ export default function MensagensPage() {
             {/* MODAL – Gerar Livro */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3">
-                    <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
-                        <div className="mb-4">
-                            <h3 className="text-xl font-semibold">Gerar Livro de Homenagens</h3>
-                            <p className="text-sm text-muted-foreground">
-                                Informe os dados para personalizar a capa (página 1).
-                            </p>
+                    <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+                        <div className="mb-4 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-xl font-semibold">Gerar Livro de Homenagens</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Você pode preencher manualmente ou selecionar do Memorial.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowModal(false)}
+                                className="rounded-md border px-3 py-1.5 text-sm"
+                            >
+                                Fechar
+                            </button>
                         </div>
 
+                        {/* Tabs de modo */}
+                        <div className="mb-3 grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setFillMode("manual")}
+                                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${fillMode === "manual"
+                                        ? "border-primary bg-primary/5 text-primary"
+                                        : "border-muted hover:bg-muted/40"
+                                    }`}
+                            >
+                                <IconUserCheck className="size-4" />
+                                Preencher manualmente
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFillMode("memorial")}
+                                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${fillMode === "memorial"
+                                        ? "border-primary bg-primary/5 text-primary"
+                                        : "border-muted hover:bg-muted/40"
+                                    }`}
+                            >
+                                <IconListSearch className="size-4" />
+                                Selecionar do Memorial
+                            </button>
+                        </div>
+
+                        {/* Painel Memorial */}
+                        {fillMode === "memorial" && (
+                            <div className="mb-5 rounded-xl border p-3">
+                                <div className="mb-3 flex items-center gap-2">
+                                    <div className="relative flex-1">
+                                        <IconSearch className="pointer-events-none absolute left-2 top-2.5 size-4 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar por nome…"
+                                            className="w-full rounded-md border px-8 py-2 text-sm"
+                                            value={memorialQuery}
+                                            onChange={(e) => setMemorialQuery(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") loadMemorial();
+                                            }}
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={loadMemorial}
+                                        className={btn}
+                                        title="Atualizar lista"
+                                    >
+                                        <IconRefresh className="size-4" />
+                                        Atualizar
+                                    </button>
+                                </div>
+
+                                {memorialLoading && (
+                                    <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                                        Carregando memorial…
+                                    </div>
+                                )}
+                                {memorialError && (
+                                    <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-200">
+                                        {memorialError}
+                                    </div>
+                                )}
+
+                                <div className="max-h-72 overflow-auto rounded-lg border">
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-muted/40">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-semibold">Nome</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Nascimento</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Falecimento</th>
+                                                <th className="px-3 py-2 text-left font-semibold">Sala</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {memorialList.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} className="px-3 py-6 text-center opacity-70">
+                                                        Nenhum registro encontrado.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                memorialList.map((it) => {
+                                                    const selected = selectedMemorialId === it.id;
+                                                    return (
+                                                        <tr
+                                                            key={it.id}
+                                                            className={`cursor-pointer border-t hover:bg-muted/30 ${selected ? "bg-primary/10" : ""
+                                                                }`}
+                                                            onClick={() => onPickFromMemorial(it)}
+                                                        >
+                                                            <td className="px-3 py-2 font-medium">
+                                                                {it.nome_completo}
+                                                            </td>
+                                                            <td className="px-3 py-2">
+                                                                {it.data_nascimento ? formatDateBR(it.data_nascimento) : "—"}
+                                                            </td>
+                                                            <td className="px-3 py-2">
+                                                                {it.data_falecimento ? formatDateBR(it.data_falecimento) : "—"}
+                                                            </td>
+                                                            <td className="px-3 py-2">{it.sala || "—"}</td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    A lista exibe os registros mais recentes primeiro.
+                                    Clique em um nome para preencher automaticamente os campos abaixo.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Formulário (sempre visível — pode vir preenchido do memorial) */}
                         <form onSubmit={onSubmitGenerate} className="space-y-3">
                             <div>
                                 <label className="block text-sm font-medium">Nome do falecido</label>
