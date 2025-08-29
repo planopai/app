@@ -9,6 +9,8 @@ type RegistroSala = {
     id: number | string;
     sala: "Sala 01" | "Sala 02" | "Sala 03" | string;
     nome_completo: string;
+    data_nascimento?: string;
+    data_falecimento?: string;
     horario_inicio?: string;
     horario_termino?: string;
     data_sepultamento?: string;
@@ -83,7 +85,7 @@ const salaBtn = (active: boolean) =>
 ============================================================ */
 export default function AtendimentoPage() {
     // ----------------- Multi-step -----------------
-    const TOTAL_STEPS = 11; // 0..10
+    const TOTAL_STEPS = 13; // 0..12 (adicionamos 2 passos)
     const [step, setStep] = useState(0);
 
     // Sala com botões (substitui o <select>)
@@ -93,6 +95,8 @@ export default function AtendimentoPage() {
     // Estado controlado do formulário
     const [form, setForm] = useState({
         nome: "",
+        dataNascimento: "",
+        dataFalecimento: "",
         localVelorio: "Memorial Senhor do Bonfim",
         dataSepultamento: "",
         horarioSepultamento: "",
@@ -119,6 +123,8 @@ export default function AtendimentoPage() {
         setSalaSelecionada("Sala 01");
         setForm({
             nome: "",
+            dataNascimento: "",
+            dataFalecimento: "",
             localVelorio: "Memorial Senhor do Bonfim",
             dataSepultamento: "",
             horarioSepultamento: "",
@@ -142,6 +148,8 @@ export default function AtendimentoPage() {
         const fd = new FormData();
         fd.append("sala", salaSelecionada);
         fd.append("nome", form.nome);
+        fd.append("dataNascimento", form.dataNascimento); // NOVO
+        fd.append("dataFalecimento", form.dataFalecimento); // NOVO
         fd.append("localVelorio", form.localVelorio);
         fd.append("dataSepultamento", form.dataSepultamento);
         fd.append("horarioSepultamento", form.horarioSepultamento);
@@ -208,15 +216,18 @@ export default function AtendimentoPage() {
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
-            const res = await fetch(`/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`, {
-                cache: "no-store",
-            });
+            const res = await fetch(
+                `/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`,
+                { cache: "no-store" }
+            );
             if (!res.ok) throw new Error(res.statusText);
             const d = await res.json();
             setEdit({
                 id: d.id,
                 sala: d.sala ?? "Sala 01",
                 nome_completo: d.nome_completo ?? "",
+                data_nascimento: d.data_nascimento ?? "",
+                data_falecimento: d.data_falecimento ?? "",
                 horario_inicio: d.horario_inicio ?? "",
                 horario_termino: d.horario_termino ?? "",
                 data_sepultamento: d.data_sepultamento ?? "",
@@ -238,6 +249,8 @@ export default function AtendimentoPage() {
                 id: edit.id,
                 sala: edit.sala,
                 nome_completo: edit.nome_completo,
+                data_nascimento: edit.data_nascimento, // NOVO
+                data_falecimento: edit.data_falecimento, // NOVO
                 horario_inicio: edit.horario_inicio,
                 horario_termino: edit.horario_termino,
                 data_sepultamento: edit.data_sepultamento,
@@ -276,10 +289,10 @@ export default function AtendimentoPage() {
     const confirmarExclusao = useCallback(async () => {
         if (delId == null) return;
         try {
-            const res = await fetch(`/api/php/salaControle.php?action=excluir&id=${delId}&_=${Date.now()}`, {
-                method: "DELETE",
-                cache: "no-store",
-            });
+            const res = await fetch(
+                `/api/php/salaControle.php?action=excluir&id=${delId}&_=${Date.now()}`,
+                { method: "DELETE", cache: "no-store" }
+            );
             const data = await res.json().catch(() => ({}));
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setDelOpen(false);
@@ -333,7 +346,7 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 1 */}
+                {/* Step 1 - Nome */}
                 <section className="step" hidden={step !== 1}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="nome" className="text-sm font-medium">
@@ -352,8 +365,46 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 2 */}
+                {/* Step 2 - Data de Nascimento (NOVO) */}
                 <section className="step" hidden={step !== 2}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="data-nascimento" className="text-sm font-medium">
+                            Data de Nascimento:
+                        </label>
+                        <input
+                            type="date"
+                            id="data-nascimento"
+                            name="data_nascimento"
+                            value={form.dataNascimento}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, dataNascimento: e.target.value }))
+                            }
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
+
+                {/* Step 3 - Data de Falecimento (NOVO) */}
+                <section className="step" hidden={step !== 3}>
+                    <fieldset className="grid gap-2 rounded-2xl border p-4">
+                        <label htmlFor="data-falecimento" className="text-sm font-medium">
+                            Data de Falecimento:
+                        </label>
+                        <input
+                            type="date"
+                            id="data-falecimento"
+                            name="data_falecimento"
+                            value={form.dataFalecimento}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, dataFalecimento: e.target.value }))
+                            }
+                            className="w-full rounded-md border px-3 py-2 text-sm"
+                        />
+                    </fieldset>
+                </section>
+
+                {/* Step 4 - Foto */}
+                <section className="step" hidden={step !== 4}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="foto-falecido" className="text-sm font-medium">
                             Foto do Falecido:
@@ -375,8 +426,8 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 3 */}
-                <section className="step" hidden={step !== 3}>
+                {/* Step 5 - Local Velório */}
+                <section className="step" hidden={step !== 5}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="local-velorio" className="text-sm font-medium">
                             Local do Velório:
@@ -393,8 +444,8 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 4 */}
-                <section className="step" hidden={step !== 4}>
+                {/* Step 6 - Data Sepultamento */}
+                <section className="step" hidden={step !== 6}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="data-sepultamento" className="text-sm font-medium">
                             Data do Sepultamento:
@@ -411,8 +462,8 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 5 */}
-                <section className="step" hidden={step !== 5}>
+                {/* Step 7 - Horário Sepultamento */}
+                <section className="step" hidden={step !== 7}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="horario-sepultamento" className="text-sm font-medium">
                             Horário do Sepultamento:
@@ -423,14 +474,16 @@ export default function AtendimentoPage() {
                             name="horario_sepultamento"
                             required
                             value={form.horarioSepultamento}
-                            onChange={(e) => setForm((f) => ({ ...f, horarioSepultamento: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, horarioSepultamento: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
                 </section>
 
-                {/* Step 6 */}
-                <section className="step" hidden={step !== 6}>
+                {/* Step 8 - Local Sepultamento */}
+                <section className="step" hidden={step !== 8}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="local-sepultamento" className="text-sm font-medium">
                             Local do Sepultamento:
@@ -441,14 +494,16 @@ export default function AtendimentoPage() {
                             name="local_sepultamento"
                             required
                             value={form.localSepultamento}
-                            onChange={(e) => setForm((f) => ({ ...f, localSepultamento: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, localSepultamento: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
                 </section>
 
-                {/* Step 7 */}
-                <section className="step" hidden={step !== 7}>
+                {/* Step 9 - Data Início (Velório) */}
+                <section className="step" hidden={step !== 9}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="data-velorio" className="text-sm font-medium">
                             Data Início (Velório):
@@ -465,8 +520,8 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 8 */}
-                <section className="step" hidden={step !== 8}>
+                {/* Step 10 - Horário Início (Velório) */}
+                <section className="step" hidden={step !== 10}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="horario-inicio" className="text-sm font-medium">
                             Horário de Início (Velório):
@@ -483,8 +538,8 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 9 */}
-                <section className="step" hidden={step !== 9}>
+                {/* Step 11 - Data Fim (Velório) */}
+                <section className="step" hidden={step !== 11}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="data-fim" className="text-sm font-medium">
                             Data Fim (Velório):
@@ -501,8 +556,8 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 10 */}
-                <section className="step" hidden={step !== 10}>
+                {/* Step 12 - Horário Término (Velório) */}
+                <section className="step" hidden={step !== 12}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="horario-termino" className="text-sm font-medium">
                             Horário de Término (Velório):
@@ -513,7 +568,9 @@ export default function AtendimentoPage() {
                             name="horario_termino"
                             required
                             value={form.horarioTermino}
-                            onChange={(e) => setForm((f) => ({ ...f, horarioTermino: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, horarioTermino: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -522,7 +579,9 @@ export default function AtendimentoPage() {
 
             {/* Mensagem de resposta */}
             {respMsg && (
-                <TextFeedback kind={respMsg.ok ? "success" : "error"}>{respMsg.text}</TextFeedback>
+                <TextFeedback kind={respMsg.ok ? "success" : "error"}>
+                    {respMsg.text}
+                </TextFeedback>
             )}
 
             {/* Navegação */}
@@ -645,6 +704,32 @@ export default function AtendimentoPage() {
                                 setEdit((v) => (v ? { ...v, nome_completo: e.target.value } : v))
                             }
                         />
+                    </div>
+
+                    {/* NOVOS CAMPOS NO MODAL */}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">Data de Nascimento</label>
+                            <input
+                                type="date"
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                value={edit?.data_nascimento ?? ""}
+                                onChange={(e) =>
+                                    setEdit((v) => (v ? { ...v, data_nascimento: e.target.value } : v))
+                                }
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">Data de Falecimento</label>
+                            <input
+                                type="date"
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                value={edit?.data_falecimento ?? ""}
+                                onChange={(e) =>
+                                    setEdit((v) => (v ? { ...v, data_falecimento: e.target.value } : v))
+                                }
+                            />
+                        </div>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
