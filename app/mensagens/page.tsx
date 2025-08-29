@@ -752,9 +752,6 @@ export default function MensagensPage() {
                         <div className="mb-4 flex items-center justify-between">
                             <div>
                                 <h3 className="text-xl font-semibold">Gerar Livro de Homenagens</h3>
-                                <p className="text-sm text-muted-foreground">
-                                    Você pode preencher manualmente ou selecionar do Memorial.
-                                </p>
                             </div>
                             <button
                                 type="button"
@@ -776,7 +773,7 @@ export default function MensagensPage() {
                                     }`}
                             >
                                 <IconUserCheck className="size-4" />
-                                Preencher manualmente
+                                Manual
                             </button>
                             <button
                                 type="button"
@@ -787,7 +784,7 @@ export default function MensagensPage() {
                                     }`}
                             >
                                 <IconListSearch className="size-4" />
-                                Selecionar Falecido
+                                Automático
                             </button>
                         </div>
 
@@ -857,8 +854,7 @@ export default function MensagensPage() {
                                 </div>
 
                                 <p className="mt-2 text-xs text-muted-foreground">
-                                    A lista exibe os registros mais recentes primeiro.
-                                    Clique em um nome para preencher automaticamente os campos abaixo.
+                                    Clique no nome do(a) falecido(a).
                                 </p>
                             </div>
                         )}
