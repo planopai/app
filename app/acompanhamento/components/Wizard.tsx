@@ -88,7 +88,7 @@ export default function Wizard({
                                         onClick={() => setArrumacaoOpen(true)}
                                         title="Arrumação do Corpo"
                                     >
-                                        Arrumar / Editar
+                                        Selecionar Itens
                                     </button>
                                 </div>
                             );
