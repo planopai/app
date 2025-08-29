@@ -37,7 +37,9 @@ function Modal({
     if (!open) return null;
     return (
         <div
-            className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 bg-black/50 
+                       overflow-y-auto flex justify-center items-start 
+                       p-4 sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-label={ariaLabel}
@@ -46,8 +48,12 @@ function Modal({
             }}
         >
             <div
-                className="w-full rounded-xl bg-white p-5 shadow-xl outline-none"
-                style={{ maxWidth: maxWidth ?? 720 }}
+                className="w-full rounded-xl bg-white p-5 shadow-xl outline-none
+                           max-h-[85dvh] overflow-y-auto"
+                style={{
+                    maxWidth: maxWidth ?? 720,
+                    WebkitOverflowScrolling: "touch" as any,
+                }}
             >
                 {children}
             </div>
