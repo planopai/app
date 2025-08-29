@@ -722,7 +722,7 @@ export default function MensagensPage() {
                                 title="Gerar Livro de Homenagens"
                             >
                                 <IconDownload className="size-4" />
-                                Exportar PDF
+                                Baixar Mensagens
                             </button>
                         </div>
 
