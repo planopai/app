@@ -43,13 +43,17 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                         <th className="px-3 py-2 text-left font-semibold">Falecido(a)</th>
 
                         {/* Agente: escondido no mobile, visível a partir de sm */}
-                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
+                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">
+                            Agente
+                        </th>
 
-                        {/* Ações: no mobile funciona também como coluna de Info (empilhado) */}
+                        {/* Ações: no mobile também renderiza o botão Info empilhado */}
                         <th className="w-36 px-3 py-2 text-left font-semibold">Ações</th>
 
                         {/* Info: somente desktop/tablet */}
-                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">Info</th>
+                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">
+                            Info
+                        </th>
                     </tr>
                 </thead>
                 <tbody id="tb-registros">
@@ -91,7 +95,7 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                             Ações
                                         </button>
 
-                                        {/* Info no mobile (fica dentro da mesma coluna) */}
+                                        {/* Info no mobile dentro da mesma coluna */}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
                                             onClick={() => onInfo(idx)}
