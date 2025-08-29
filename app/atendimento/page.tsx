@@ -14,8 +14,6 @@ type RegistroSala = {
     data_sepultamento?: string;
     horario_sepultamento?: string;
     local_sepultamento?: string;
-    /** Caminho relativo ou URL absoluta para a foto gravada no backend */
-    foto_falecido?: string | null;
 };
 
 /* ============================================================
@@ -207,14 +205,12 @@ export default function AtendimentoPage() {
     // Edição (popup)
     const [editOpen, setEditOpen] = useState(false);
     const [edit, setEdit] = useState<RegistroSala | null>(null);
-    const [editFotoFile, setEditFotoFile] = useState<File | null>(null);
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
-            const res = await fetch(
-                `/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`,
-                { cache: "no-store" }
-            );
+            const res = await fetch(`/api/php/salaControle.php?action=consultar&id=${id}&_=${Date.now()}`, {
+                cache: "no-store",
+            });
             if (!res.ok) throw new Error(res.statusText);
             const d = await res.json();
             setEdit({
@@ -226,9 +222,7 @@ export default function AtendimentoPage() {
                 data_sepultamento: d.data_sepultamento ?? "",
                 horario_sepultamento: d.horario_sepultamento ?? "",
                 local_sepultamento: d.local_sepultamento ?? "",
-                foto_falecido: d.foto_falecido ?? null, // <- vem do backend
             });
-            setEditFotoFile(null);
             setEditOpen(true);
             setErrEdicao(null);
         } catch (e: any) {
@@ -240,32 +234,26 @@ export default function AtendimentoPage() {
     const salvarEdicao = useCallback(async () => {
         if (!edit) return;
         try {
-            // Envia como FormData para permitir upload condicional
-            const fd = new FormData();
-            fd.append("id", String(edit.id));
-            fd.append("sala", String(edit.sala));
-            fd.append("nome_completo", edit.nome_completo || "");
-            fd.append("horario_inicio", edit.horario_inicio || "");
-            fd.append("horario_termino", edit.horario_termino || "");
-            fd.append("data_sepultamento", edit.data_sepultamento || "");
-            fd.append("horario_sepultamento", edit.horario_sepultamento || "");
-            fd.append("local_sepultamento", edit.local_sepultamento || "");
-            // Caso o usuário selecione outro arquivo, mandamos no campo esperado
-            if (editFotoFile) {
-                fd.append("foto_falecido", editFotoFile);
-            }
-
+            const payload = {
+                id: edit.id,
+                sala: edit.sala,
+                nome_completo: edit.nome_completo,
+                horario_inicio: edit.horario_inicio,
+                horario_termino: edit.horario_termino,
+                data_sepultamento: edit.data_sepultamento,
+                horario_sepultamento: edit.horario_sepultamento,
+                local_sepultamento: edit.local_sepultamento,
+            };
             const res = await fetch("/api/php/salaControle.php?action=editar", {
                 method: "POST",
-                body: fd,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
                 cache: "no-store",
             });
-
             const data = await res.json().catch(() => ({}));
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setEditOpen(false);
                 setEdit(null);
-                setEditFotoFile(null);
                 carregarDados();
             } else {
                 alert("Erro ao salvar edição: " + (data?.message || data?.msg || "Desconhecido"));
@@ -274,7 +262,7 @@ export default function AtendimentoPage() {
             setErrEdicao("Erro ao salvar edição. Verifique o console para detalhes.");
             console.error("Erro ao salvar edição:", e);
         }
-    }, [edit, editFotoFile, carregarDados]);
+    }, [edit, carregarDados]);
 
     // Exclusão (popup)
     const [delOpen, setDelOpen] = useState(false);
@@ -288,13 +276,10 @@ export default function AtendimentoPage() {
     const confirmarExclusao = useCallback(async () => {
         if (delId == null) return;
         try {
-            const res = await fetch(
-                `/api/php/salaControle.php?action=excluir&id=${delId}&_=${Date.now()}`,
-                {
-                    method: "DELETE",
-                    cache: "no-store",
-                }
-            );
+            const res = await fetch(`/api/php/salaControle.php?action=excluir&id=${delId}&_=${Date.now()}`, {
+                method: "DELETE",
+                cache: "no-store",
+            });
             const data = await res.json().catch(() => ({}));
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setDelOpen(false);
@@ -315,14 +300,6 @@ export default function AtendimentoPage() {
         const id = setInterval(carregarDados, 30000);
         return () => clearInterval(id);
     }, [carregarDados]);
-
-    // Helper para montar o src da imagem no popup (trata relativo/absoluto)
-    const resolveFotoSrc = (path?: string | null) => {
-        if (!path) return "";
-        if (/^https?:\/\//i.test(path)) return path;
-        // assume que o arquivo está acessível via /api/php/<caminho-relativo>
-        return `/api/php/${path}`.replace(/\/+/g, "/");
-    };
 
     /* ============================================================
        Render
@@ -410,9 +387,7 @@ export default function AtendimentoPage() {
                             name="local_velorio"
                             required
                             value={form.localVelorio}
-                            onChange={(e) =>
-                                setForm((f) => ({ ...f, localVelorio: e.target.value }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, localVelorio: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -430,9 +405,7 @@ export default function AtendimentoPage() {
                             name="data_sepultamento"
                             required
                             value={form.dataSepultamento}
-                            onChange={(e) =>
-                                setForm((f) => ({ ...f, dataSepultamento: e.target.value }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, dataSepultamento: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -450,12 +423,7 @@ export default function AtendimentoPage() {
                             name="horario_sepultamento"
                             required
                             value={form.horarioSepultamento}
-                            onChange={(e) =>
-                                setForm((f) => ({
-                                    ...f,
-                                    horarioSepultamento: e.target.value,
-                                }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, horarioSepultamento: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -473,12 +441,7 @@ export default function AtendimentoPage() {
                             name="local_sepultamento"
                             required
                             value={form.localSepultamento}
-                            onChange={(e) =>
-                                setForm((f) => ({
-                                    ...f,
-                                    localSepultamento: e.target.value,
-                                }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, localSepultamento: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -496,9 +459,7 @@ export default function AtendimentoPage() {
                             name="data_velorio"
                             required
                             value={form.dataVelorio}
-                            onChange={(e) =>
-                                setForm((f) => ({ ...f, dataVelorio: e.target.value }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, dataVelorio: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -516,9 +477,7 @@ export default function AtendimentoPage() {
                             name="horario_inicio"
                             required
                             value={form.horarioInicio}
-                            onChange={(e) =>
-                                setForm((f) => ({ ...f, horarioInicio: e.target.value }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, horarioInicio: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -554,9 +513,7 @@ export default function AtendimentoPage() {
                             name="horario_termino"
                             required
                             value={form.horarioTermino}
-                            onChange={(e) =>
-                                setForm((f) => ({ ...f, horarioTermino: e.target.value }))
-                            }
+                            onChange={(e) => setForm((f) => ({ ...f, horarioTermino: e.target.value }))}
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -565,9 +522,7 @@ export default function AtendimentoPage() {
 
             {/* Mensagem de resposta */}
             {respMsg && (
-                <TextFeedback kind={respMsg.ok ? "success" : "error"}>
-                    {respMsg.text}
-                </TextFeedback>
+                <TextFeedback kind={respMsg.ok ? "success" : "error"}>{respMsg.text}</TextFeedback>
             )}
 
             {/* Navegação */}
@@ -692,38 +647,6 @@ export default function AtendimentoPage() {
                         />
                     </div>
 
-                    {/* Foto atual + substituição */}
-                    <div>
-                        <label className="mb-1 block text-sm font-medium">Foto do Falecido</label>
-
-                        {edit?.foto_falecido ? (
-                            <div className="mb-2">
-                                <img
-                                    src={resolveFotoSrc(edit.foto_falecido)}
-                                    alt={`Foto atual de ${edit?.nome_completo || "Falecido"}`}
-                                    className="h-40 w-auto rounded-lg border object-cover"
-                                />
-                                <p className="mt-1 text-xs text-muted-foreground break-all">
-                                    Arquivo atual: <b>{edit.foto_falecido}</b>
-                                </p>
-                            </div>
-                        ) : (
-                            <p className="mb-2 text-xs text-muted-foreground">Sem foto cadastrada.</p>
-                        )}
-
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => setEditFotoFile(e.target.files?.[0] ?? null)}
-                            className="w-full rounded-md border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5"
-                        />
-                        {editFotoFile && (
-                            <div className="text-xs text-muted-foreground">
-                                Novo arquivo selecionado: <b>{editFotoFile.name}</b>
-                            </div>
-                        )}
-                    </div>
-
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                             <label className="mb-1 block text-sm font-medium">Horário de Início</label>
@@ -786,10 +709,7 @@ export default function AtendimentoPage() {
                     </div>
 
                     <div className="mt-2 flex justify-end gap-2">
-                        <button
-                            className="rounded-md border px-3 py-2 text-sm"
-                            onClick={() => setEditOpen(false)}
-                        >
+                        <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setEditOpen(false)}>
                             Cancelar
                         </button>
                         <button
