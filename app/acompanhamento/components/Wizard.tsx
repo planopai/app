@@ -68,6 +68,32 @@ export default function Wizard({
                         const val = (wizardData as any)[s.id] ?? "";
                         const id = "wizard-" + s.id;
 
+                        // 🔸 PASSO ESPECIAL: ARRUMAÇÃO DO CORPO (sempre disponível e independente)
+                        if (s.id === "arrumacao") {
+                            return (
+                                <div key={id}>
+                                    <FieldLabel>{s.label}</FieldLabel>
+
+                                    {/* Resumo em texto (somente leitura) */}
+                                    <div className="text-xs text-muted-foreground mb-2">
+                                        {arrumacaoSelecionadaResumo
+                                            ? <>Selecionados (Arrumação): {arrumacaoSelecionadaResumo}</>
+                                            : "Nenhum item selecionado"}
+                                    </div>
+
+                                    {/* Botão para abrir o modal */}
+                                    <button
+                                        type="button"
+                                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                        onClick={() => setArrumacaoOpen(true)}
+                                        title="Arrumação do Corpo"
+                                    >
+                                        Arrumar / Editar
+                                    </button>
+                                </div>
+                            );
+                        }
+
                         if (s.type === "input" || s.type === "date" || s.type === "time") {
                             return (
                                 <div key={id}>
@@ -112,41 +138,21 @@ export default function Wizard({
                                             </select>
 
                                             {(assistenciaVal || val) === "Sim" && (
-                                                <>
-                                                    <button
-                                                        type="button"
-                                                        className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                                        onClick={() => setMateriaisOpen(true)}
-                                                        title="Selecionar materiais"
-                                                    >
-                                                        Materiais
-                                                    </button>
-
-                                                    <button
-                                                        type="button"
-                                                        className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                                        onClick={() => setArrumacaoOpen(true)}
-                                                        title="Arrumação do Corpo"
-                                                    >
-                                                        Arrumação do Corpo
-                                                    </button>
-                                                </>
+                                                <button
+                                                    type="button"
+                                                    className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                                    onClick={() => setMateriaisOpen(true)}
+                                                    title="Selecionar materiais"
+                                                >
+                                                    Materiais
+                                                </button>
                                             )}
                                         </div>
 
-                                        {(assistenciaVal || val) === "Sim" && (
-                                            <>
-                                                {materiaisSelecionadosResumo && (
-                                                    <div className="mt-2 text-xs text-muted-foreground">
-                                                        Selecionados (Materiais): {materiaisSelecionadosResumo}
-                                                    </div>
-                                                )}
-                                                {arrumacaoSelecionadaResumo && (
-                                                    <div className="mt-1 text-xs text-muted-foreground">
-                                                        Selecionados (Arrumação): {arrumacaoSelecionadaResumo}
-                                                    </div>
-                                                )}
-                                            </>
+                                        {(assistenciaVal || val) === "Sim" && materiaisSelecionadosResumo && (
+                                            <div className="mt-2 text-xs text-muted-foreground">
+                                                Selecionados (Materiais): {materiaisSelecionadosResumo}
+                                            </div>
                                         )}
                                     </div>
                                 );
@@ -219,6 +225,7 @@ export default function Wizard({
                             );
                         }
 
+                        // 🔸 Default para textarea (OBSERVAÇÕES etc.) — nunca cai aqui para "arrumacao"
                         return (
                             <div key={id}>
                                 <FieldLabel>{s.label}</FieldLabel>
