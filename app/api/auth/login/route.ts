@@ -91,13 +91,14 @@ export async function POST(req: NextRequest) {
         // sinal de login
         res.cookies.set("pai_auth", "1", baseOpts);
 
-        // nome legível pelo front (não httpOnly)
-        res.cookies.set("pai_name", encodeURIComponent(nome), {
+        // nome legível pelo front (não httpOnly) — sem encodeURIComponent
+        res.cookies.set("pai_name", nome, {
             ...baseOpts,
             httpOnly: false,
         });
-        // alias opcional do usuário
-        res.cookies.set("pai_user", encodeURIComponent(usuario), {
+
+        // alias opcional do usuário — sem encodeURIComponent
+        res.cookies.set("pai_user", usuario, {
             ...baseOpts,
             httpOnly: false,
         });
