@@ -15,6 +15,12 @@ function extractPhpSessId(setCookieHeader: string | null): string | null {
     return m?.[1] || null;
 }
 
+// Apenas inicial maiúscula, restante como veio
+function capitalizeFirst(s: string) {
+    if (!s) return s;
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export async function POST(req: NextRequest) {
     try {
         // aceita JSON { usuario, senha } e também x-www-form-urlencoded
@@ -72,10 +78,12 @@ export async function POST(req: NextRequest) {
         const setCookie = resp.headers.get("set-cookie");
         const phpSess = extractPhpSessId(setCookie) || data?.sessid || "";
 
-        const nome = data?.nome ?? usuario;
+        const nomeOriginal = (data?.nome ?? usuario) as string;
+        const nomeExibicao = capitalizeFirst(nomeOriginal.trim());
+
         const isProd = process.env.NODE_ENV === "production";
 
-        const res = NextResponse.json({ sucesso: true, nome });
+        const res = NextResponse.json({ sucesso: true, nome: nomeExibicao });
         res.headers.set("Cache-Control", "no-store");
 
         // opções de cookie no domínio RAIZ (.planoassistencialintegrado.com.br)
@@ -91,13 +99,13 @@ export async function POST(req: NextRequest) {
         // sinal de login
         res.cookies.set("pai_auth", "1", baseOpts);
 
-        // nome legível pelo front (não httpOnly) — sem encodeURIComponent
-        res.cookies.set("pai_name", nome, {
+        // nome legível pelo front (não httpOnly) — sem encodeURIComponent, com inicial maiúscula
+        res.cookies.set("pai_name", nomeExibicao, {
             ...baseOpts,
             httpOnly: false,
         });
 
-        // alias opcional do usuário — sem encodeURIComponent
+        // alias opcional do usuário — cru (sem encode/transform)
         res.cookies.set("pai_user", usuario, {
             ...baseOpts,
             httpOnly: false,
