@@ -214,15 +214,12 @@ export default function AcompanhamentoPage() {
     }, [fetchRegistros, fetchAvisos]);
 
     useEffect(() => {
-        // polling — pausa o fetch de registros enquanto o modal de ação está aberto
-        const tickReg = () => {
-            if (!acaoOpen) fetchRegistros();
-        };
-        const intReg = setInterval(tickReg, 10000);
+        // polling — mantém registros e avisos frescos mesmo com modal aberto
+        const intReg = setInterval(fetchRegistros, 10000);
         const intAv = setInterval(fetchAvisos, 3000);
 
         const onVis = () => {
-            if (!document.hidden && !acaoOpen) fetchRegistros();
+            if (!document.hidden) fetchRegistros();
         };
         document.addEventListener("visibilitychange", onVis);
 
@@ -231,7 +228,7 @@ export default function AcompanhamentoPage() {
             clearInterval(intAv);
             document.removeEventListener("visibilitychange", onVis);
         };
-    }, [fetchRegistros, fetchAvisos, acaoOpen]);
+    }, [fetchRegistros, fetchAvisos]);
 
     useEffect(() => {
         const onEsc = (e: KeyboardEvent) => {
@@ -430,15 +427,15 @@ export default function AcompanhamentoPage() {
 
                 if (json?.sucesso) {
                     setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
-                    fetchRegistros();
-                    setTimeout(() => setAcaoOpen(false), 500);
+                    await fetchRegistros();    // garante status/“prox” atualizados
+                    setAcaoOpen(false);        // fecha para evitar estado velho no modal
                 } else {
-                    setAcaoSubmitting(false);
                     setAcaoMsg({ text: json?.erro || "Erro ao atualizar status.", ok: false });
                 }
             } catch (e: any) {
-                setAcaoSubmitting(false);
                 setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
+            } finally {
+                setAcaoSubmitting(false);      // SEMPRE reabilita os botões
             }
         },
         [acaoId, fetchRegistros, acaoSubmitting]
