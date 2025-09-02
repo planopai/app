@@ -89,6 +89,16 @@ function formataDataHora(str?: string) {
         second: "2-digit",
     });
 }
+function formataDataDia(str?: string) {
+    if (!str) return "";
+    const dt = new Date(str.replace(" ", "T"));
+    if (Number.isNaN(dt.getTime())) return str;
+    return dt.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+    });
+}
 function sanitize(txt?: string) {
     if (!txt) return "";
     return String(txt).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -568,6 +578,9 @@ export default function HistoricoSepultamentosPage() {
     type SelectedItem = "ALL" | AllItemKey;
     const [selectedItem, setSelectedItem] = useState<SelectedItem>("ALL");
 
+    // NOVO: filtro para considerar somente serviços com Tanatopraxia
+    const [somenteTanato, setSomenteTanato] = useState(false);
+
     // cache de logs por registro (para deltas/auditoria)
     const [logsCache, setLogsCache] = useState<Record<string, LogItem[]>>({});
 
@@ -673,17 +686,28 @@ export default function HistoricoSepultamentosPage() {
         return true;
     }
 
+    /** Preferência de data para exibição (para lista de tanato): início de velório > data (criação) */
+    function dataPreferidaRegistro(r: RegistroAnalise) {
+        return r.data_inicio_velorio || r.data || "";
+    }
+
+    /** Filtro base: aplica "somenteTanato" aos registros analisados */
+    const registrosBaseConsiderados = useMemo(() => {
+        if (!somenteTanato) return dadosAnalise;
+        return dadosAnalise.filter((r) => normSimNao(r.tanato) === "sim");
+    }, [dadosAnalise, somenteTanato]);
+
     // registros que efetivamente têm evento no período (para exibir no "Registros considerados")
     const registrosComEventoNoPeriodo = useMemo(() => {
         let count = 0;
-        for (const r of dadosAnalise) {
+        for (const r of registrosBaseConsiderados) {
             const id = String(r.id ?? (r as any).sepultamento_id ?? "");
             const logs = logsCache[id];
             if (!logs || logs.length === 0) continue;
             if (logs.some((ent) => estaNoPeriodo(ent.datahora))) count++;
         }
         return count;
-    }, [dadosAnalise, logsCache, aDe, aAte]);
+    }, [registrosBaseConsiderados, logsCache, aDe, aAte]);
 
     /** Calcula consumo por deltas de LOG (materiais) e ativações (arrumação) */
     const contagemPorItem = useMemo(() => {
@@ -691,7 +715,7 @@ export default function HistoricoSepultamentosPage() {
         ALL_ITEMS.forEach((k) => (counts[k] = 0));
 
         // Materiais/Arrumação por LOG (deltas/ativação)
-        for (const r of dadosAnalise) {
+        for (const r of registrosBaseConsiderados) {
             const id = String(r.id ?? (r as any).sepultamento_id ?? "");
             const logs = logsCache[id];
             if (!logs || logs.length === 0) continue;
@@ -736,8 +760,8 @@ export default function HistoricoSepultamentosPage() {
             }
         }
 
-        // Assistência / Tanato (contagem simples por estado) — se quiser, dá para migrar para base de logs também
-        for (const r of dadosAnalise) {
+        // Assistência / Tanato (contagem simples por estado)
+        for (const r of registrosBaseConsiderados) {
             const a = normSimNao(r.assistencia);
             if (a === "sim") counts.assistencia_sim += 1;
             else if (a === "nao") counts.assistencia_nao += 1;
@@ -747,7 +771,7 @@ export default function HistoricoSepultamentosPage() {
         }
 
         return counts;
-    }, [dadosAnalise, logsCache, aDe, aAte]);
+    }, [registrosBaseConsiderados, logsCache, aDe, aAte]);
 
     type Row = { key: AllItemKey; item: string; tipo: string; quantidade: number };
     const rows = useMemo<Row[]>(() => {
@@ -762,6 +786,24 @@ export default function HistoricoSepultamentosPage() {
         filtered.sort((a, b) => b.quantidade - a.quantidade);
         return filtered;
     }, [selectedItem, contagemPorItem]);
+
+    /** NOVO: lista (nome + data) dos serviços com tanato dentro do período escolhido (baseada em dataPreferidaRegistro) */
+    const listaTanatoPeriodo = useMemo(() => {
+        if (!registrosBaseConsiderados.length) return [];
+        const ok = registrosBaseConsiderados.filter((r) => normSimNao(r.tanato) === "sim");
+        return ok
+            .filter((r) => {
+                const d = dataDia(dataPreferidaRegistro(r));
+                if (aDe && d && d < aDe) return false;
+                if (aAte && d && d > aAte) return false;
+                return true;
+            })
+            .map((r) => ({
+                nome: (r as any).falecido || (r as any).nome || "", // tentar pegar nome se existir no registro
+                data: dataPreferidaRegistro(r),
+            }))
+            .sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+    }, [registrosBaseConsiderados, aDe, aAte]);
 
     /* ================================ UI ================================ */
     return (
@@ -1062,7 +1104,7 @@ export default function HistoricoSepultamentosPage() {
                                 <h3 className="text-lg font-semibold">Análise Geral</h3>
                                 <p className="text-xs text-muted-foreground">
                                     A análise soma consumo pelos <b>eventos de log</b> no período selecionado (materiais por <i>deltas</i> e arrumação por{" "}
-                                    <i>ativações</i>).
+                                    <i>ativações</i>). Você pode restringir aos serviços com Tanatopraxia.
                                 </p>
                             </div>
                             <button className="rounded-md border p-2 text-sm hover:bg-muted" onClick={() => setAnaliseOpen(false)} title="Fechar">
@@ -1082,6 +1124,18 @@ export default function HistoricoSepultamentosPage() {
                                     <span className="text-xs text-muted-foreground">Data final</span>
                                     <input type="date" value={aAte} onChange={(e) => setAAte(e.target.value)} className="input" />
                                 </label>
+
+                                {/* NOVO: Toggle Somente Tanato */}
+                                <label className="flex items-center gap-2 md:col-span-2">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4"
+                                        checked={somenteTanato}
+                                        onChange={(e) => setSomenteTanato(e.target.checked)}
+                                    />
+                                    <span className="text-sm">Somente serviços com Tanatopraxia</span>
+                                </label>
+
                                 <label className="md:col-span-2 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground">Item</span>
                                     <select className="input" value={selectedItem} onChange={(e) => setSelectedItem((e.target.value as SelectedItem) || "ALL")}>
@@ -1122,6 +1176,31 @@ export default function HistoricoSepultamentosPage() {
                                     </span>
                                 )}
                             </div>
+
+                            {/* NOVO: Resumo de tanato (quantidade + nomes + data) */}
+                            {somenteTanato && (
+                                <div className="px-4 pt-3">
+                                    <div className="rounded-lg border p-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-sm font-semibold">
+                                                Serviços com Tanatopraxia no período: <span className="font-bold">{listaTanatoPeriodo.length}</span>
+                                            </div>
+                                        </div>
+                                        {listaTanatoPeriodo.length > 0 ? (
+                                            <ul className="mt-2 grid gap-1">
+                                                {listaTanatoPeriodo.map((it, idx) => (
+                                                    <li key={`${it.nome}-${it.data}-${idx}`} className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
+                                                        <span className="font-medium">{it.nome || "—"}</span>
+                                                        <span className="text-xs text-muted-foreground">{formataDataDia(it.data)}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            <div className="mt-2 text-sm text-muted-foreground">Nenhum serviço com Tanatopraxia no período selecionado.</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Tabela (desktop) / Cards (mobile) */}
                             <div className="p-4">
@@ -1183,6 +1262,7 @@ export default function HistoricoSepultamentosPage() {
                                             setADe("");
                                             setAAte("");
                                             setSelectedItem("ALL");
+                                            setSomenteTanato(false);
                                         }}
                                     >
                                         Limpar filtros
