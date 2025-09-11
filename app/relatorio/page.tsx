@@ -105,6 +105,44 @@ function formataDataDia(str?: string) {
     });
 }
 
+/** Detecta texto ISO (YYYY-MM-DD[ HH:mm[:ss]]) e formata para pt-BR */
+function formataSeDataIso(v?: string) {
+    if (!v) return v;
+    const s = String(v).trim();
+
+    // ISO só data
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const dt = new Date(s + "T00:00:00");
+        if (!Number.isNaN(dt.getTime())) {
+            return dt.toLocaleDateString("pt-BR", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                timeZone: "America/Sao_Paulo",
+            });
+        }
+    }
+
+    // ISO com hora
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+        const dt = new Date(s.replace(" ", "T"));
+        if (!Number.isNaN(dt.getTime())) {
+            return dt.toLocaleString("pt-BR", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: s.length >= 19 ? "2-digit" : undefined,
+                timeZone: "America/Sao_Paulo",
+                hour12: false,
+            });
+        }
+    }
+
+    return v;
+}
+
 function sanitize(txt?: string) {
     if (!txt) return "";
     return String(txt).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -291,6 +329,9 @@ export default function HistoricoSepultamentosPage() {
 
     const [gerandoPdf, setGerandoPdf] = useState(false);
 
+    // data/hora de criação (primeiro log) do registro selecionado
+    const [criacaoSelecionado, setCriacaoSelecionado] = useState<string>("");
+
     // jsPDF via CDN (mantido)
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
@@ -312,7 +353,7 @@ export default function HistoricoSepultamentosPage() {
             if (json && json.sucesso && json.dados) arr = json.dados;
             else if (Array.isArray(json)) arr = json;
             setLista(arr);
-            // ⚠️ NÃO resetar a página aqui para evitar "voltar para 1" durante atualizações
+            // ⚠️ não resetar página aqui (evita "voltar para 1" ao auto-refresh)
         } catch {
             setLista([]);
         } finally {
@@ -345,7 +386,7 @@ export default function HistoricoSepultamentosPage() {
         return filtrados.slice(ini, ini + porPagina);
     }, [filtrados, pagina]);
 
-    // 🔧 Garantir que a página atual nunca ultrapasse o total (evita "sumir" lista)
+    // 🔧 manter página válida quando total muda
     useEffect(() => {
         if (pagina > totalPaginas) setPagina(totalPaginas);
         if (pagina < 1) setPagina(1);
@@ -356,6 +397,7 @@ export default function HistoricoSepultamentosPage() {
     const selecionarRegistro = useCallback(async (item: FalecidoItem) => {
         setSelecionado(item);
         setLog([]);
+        setCriacaoSelecionado("");
         setLoadingLog(true);
         try {
             const res = await fetch(`${LOG_POR_ID(item.sepultamento_id)}&_nocache=${Date.now()}`, {
@@ -365,6 +407,9 @@ export default function HistoricoSepultamentosPage() {
             let arr: LogItem[] = [];
             if (json && json.sucesso && json.dados) arr = json.dados;
             else if (Array.isArray(json)) arr = json;
+            const ord = (arr || []).slice().sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+            const primeiro = ord[0]?.datahora || "";
+            setCriacaoSelecionado(primeiro);
             setLog(arr || []);
         } catch {
             setLog([]);
@@ -406,7 +451,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // Exportar PDF (mantido)
+    // Exportar PDF
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
 
@@ -444,6 +489,14 @@ export default function HistoricoSepultamentosPage() {
             doc.text((selecionado.falecido || "").toString(), pageW / 2, y, { align: "center" });
             y += 12;
 
+            // se tiver “criado em”, mostra no cabeçalho
+            if (criacaoSelecionado) {
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(10);
+                doc.text(`Criado em: ${formataDataDia(criacaoSelecionado)}`, pageW / 2, y, { align: "center" });
+                y += 6;
+            }
+
             const cardPadX = 6;
             const cardPadY = 6;
 
@@ -455,7 +508,7 @@ export default function HistoricoSepultamentosPage() {
             };
 
             for (const ent of log) {
-                // PDF: exibir somente data (DD/MM/AAAA) no fuso de São Paulo
+                // PDF: data apenas (DD/MM/AAAA)
                 const dataLine = formataDataDia(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
@@ -495,6 +548,10 @@ export default function HistoricoSepultamentosPage() {
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                             v = String(v);
                             if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
+
+                            // 🔧 corrige datas ISO dentro dos detalhes
+                            v = formataSeDataIso(v);
+
                             detalhesLines.push(`${nome}: ${v}`);
                         }
                     }
@@ -581,14 +638,14 @@ export default function HistoricoSepultamentosPage() {
         } finally {
             setGerandoPdf(false);
         }
-    }, [selecionado, log]);
+    }, [selecionado, log, criacaoSelecionado]);
 
     /* =========================== ANÁLISE GERAL (TABELA) =========================== */
     const [analiseOpen, setAnaliseOpen] = useState(false);
     const [loadingAnalise, setLoadingAnalise] = useState(false);
     const [dadosAnalise, setDadosAnalise] = useState<RegistroAnalise[]>([]);
     const [aDe, setADe] = useState("");
-    const [aAte, setAAte] = useState("");
+    const [aAte, setAAte] = useState(""); // <<< CORRIGIDO: 'const', não 'aconst'
     type SelectedItem = "ALL" | AllItemKey;
     const [selectedItem, setSelectedItem] = useState<SelectedItem>("ALL");
 
@@ -711,7 +768,7 @@ export default function HistoricoSepultamentosPage() {
         return dadosAnalise.filter((r) => normSimNao(r.tanato) === "sim");
     }, [dadosAnalise, somenteTanato]);
 
-    // registros que efetivamente têm evento no período (para exibir no "Registros considerados")
+    // registros que efetivamente têm evento no período
     const registrosComEventoNoPeriodo = useMemo(() => {
         let count = 0;
         for (const r of registrosBaseConsiderados) {
@@ -723,12 +780,11 @@ export default function HistoricoSepultamentosPage() {
         return count;
     }, [registrosBaseConsiderados, logsCache, aDe, aAte]);
 
-    /** Calcula consumo por deltas de LOG (materiais) e ativações (arrumação) */
+    /** Calcula consumo por deltas/ativações */
     const contagemPorItem = useMemo(() => {
         const counts: Record<AllItemKey, number> = {} as any;
         ALL_ITEMS.forEach((k) => (counts[k] = 0));
 
-        // Materiais/Arrumação por LOG (deltas/ativação)
         for (const r of registrosBaseConsiderados) {
             const id = String(r.id ?? (r as any).sepultamento_id ?? "");
             const logs = logsCache[id];
@@ -756,13 +812,11 @@ export default function HistoricoSepultamentosPage() {
                 const curMat = extrairEstadoMateriais(obj);
                 const curArr = extrairEstadoArrumacao(obj);
 
-                // deltas materiais (apenas incrementos)
                 for (const k of MATERIAL_KEYS) {
                     const d = (curMat[k] || 0) - (prevMat[k] || 0);
                     if (d > 0) counts[k] += d;
                 }
 
-                // arrumação: conta ativações (false -> true)
                 for (const k of ARR_KEYS) {
                     const was = !!prevArr[k];
                     const now = !!curArr[k];
@@ -774,7 +828,6 @@ export default function HistoricoSepultamentosPage() {
             }
         }
 
-        // Assistência / Tanato (contagem simples por estado)
         for (const r of registrosBaseConsiderados) {
             const a = normSimNao(r.assistencia);
             if (a === "sim") counts.assistencia_sim += 1;
@@ -801,7 +854,7 @@ export default function HistoricoSepultamentosPage() {
         return filtered;
     }, [selectedItem, contagemPorItem]);
 
-    /** NOVO: lista (nome + data) dos serviços com tanato dentro do período escolhido (baseada em dataPreferidaRegistro) */
+    /** Lista de tanato no período (nome + data) */
     const listaTanatoPeriodo = useMemo(() => {
         if (!registrosBaseConsiderados.length) return [];
         const ok = registrosBaseConsiderados.filter((r) => normSimNao(r.tanato) === "sim");
@@ -813,13 +866,13 @@ export default function HistoricoSepultamentosPage() {
                 return true;
             })
             .map((r) => ({
-                nome: (r as any).falecido || (r as any).nome || "", // tentar pegar nome se existir no registro
+                nome: (r as any).falecido || (r as any).nome || "",
                 data: dataPreferidaRegistro(r),
             }))
             .sort((a, b) => (a.data || "").localeCompare(b.data || ""));
     }, [registrosBaseConsiderados, aDe, aAte]);
 
-    /* ================================ UI ================================ */
+/* ================================ UI ================================ */
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             <header className="mb-6">
