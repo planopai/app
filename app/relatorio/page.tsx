@@ -76,6 +76,8 @@ function iconeAcao(acao?: string, statusNovo?: string) {
     }
     return "📝";
 }
+
+/** Datas no formato brasileiro (UI: com hora; PDF: só data) */
 function formataDataHora(str?: string) {
     if (!str) return "";
     const dt = new Date(str.replace(" ", "T"));
@@ -87,6 +89,8 @@ function formataDataHora(str?: string) {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
+        timeZone: "America/Sao_Paulo",
+        hour12: false,
     });
 }
 function formataDataDia(str?: string) {
@@ -97,8 +101,10 @@ function formataDataDia(str?: string) {
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
+        timeZone: "America/Sao_Paulo",
     });
 }
+
 function sanitize(txt?: string) {
     if (!txt) return "";
     return String(txt).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -306,7 +312,7 @@ export default function HistoricoSepultamentosPage() {
             if (json && json.sucesso && json.dados) arr = json.dados;
             else if (Array.isArray(json)) arr = json;
             setLista(arr);
-            setPagina(1);
+            // ⚠️ NÃO resetar a página aqui para evitar "voltar para 1" durante atualizações
         } catch {
             setLista([]);
         } finally {
@@ -338,6 +344,13 @@ export default function HistoricoSepultamentosPage() {
         const ini = (pagina - 1) * porPagina;
         return filtrados.slice(ini, ini + porPagina);
     }, [filtrados, pagina]);
+
+    // 🔧 Garantir que a página atual nunca ultrapasse o total (evita "sumir" lista)
+    useEffect(() => {
+        if (pagina > totalPaginas) setPagina(totalPaginas);
+        if (pagina < 1) setPagina(1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [totalPaginas]);
 
     // Seleção + carregamento do log
     const selecionarRegistro = useCallback(async (item: FalecidoItem) => {
@@ -442,7 +455,8 @@ export default function HistoricoSepultamentosPage() {
             };
 
             for (const ent of log) {
-                const dataLine = formataDataHora(ent.datahora) || "";
+                // PDF: exibir somente data (DD/MM/AAAA) no fuso de São Paulo
+                const dataLine = formataDataDia(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
