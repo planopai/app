@@ -872,7 +872,7 @@ export default function HistoricoSepultamentosPage() {
             .sort((a, b) => (a.data || "").localeCompare(b.data || ""));
     }, [registrosBaseConsiderados, aDe, aAte]);
 
-/* ================================ UI ================================ */
+    /* ================================ UI ================================ */
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             <header className="mb-6">
@@ -978,6 +978,7 @@ export default function HistoricoSepultamentosPage() {
                                                 }`}
                                         >
                                             <span className="font-medium">{item.falecido}</span>
+                                            {/* mantemos ultima_datahora aqui; criação aparece na coluna da direita */}
                                             <span className="text-xs text-muted-foreground">{formataDataHora(item.ultima_datahora)}</span>
                                         </button>
                                     </li>
@@ -1019,6 +1020,12 @@ export default function HistoricoSepultamentosPage() {
                             <div className="text-xs text-muted-foreground">
                                 {selecionado ? sanitize(selecionado.falecido) : "Selecione um registro para visualizar"}
                             </div>
+                            {/* NOVO: data/hora de criação do atendimento (primeiro log) */}
+                            {criacaoSelecionado && (
+                                <div className="text-xs text-muted-foreground">
+                                    Criado em: <b>{formataDataHora(criacaoSelecionado)}</b>
+                                </div>
+                            )}
                         </div>
 
                         <button
@@ -1066,9 +1073,10 @@ export default function HistoricoSepultamentosPage() {
 
                                                 const m = key.match(/^materiais_(.+?)_qtd$/i);
                                                 if (m) {
-                                                    const val = obj[key];
-                                                    if (val != null && String(val).trim() !== "") {
+                                                    const valRaw = obj[key];
+                                                    if (valRaw != null && String(valRaw).trim() !== "") {
                                                         const nome = titleCaseFromSnake(m[1]);
+                                                        const val = formataSeDataIso(String(valRaw)); // se for data, já formata
                                                         chips.push(
                                                             `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(
                                                                 String(val)
@@ -1085,6 +1093,10 @@ export default function HistoricoSepultamentosPage() {
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
+
+                                                // 🔧 também formata ISO → pt-BR na UI
+                                                val = formataSeDataIso(val);
+
                                                 chips.push(
                                                     `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`
                                                 );
@@ -1244,7 +1256,7 @@ export default function HistoricoSepultamentosPage() {
                                 )}
                             </div>
 
-                            {/* NOVO: Resumo de tanato (quantidade + nomes + data) */}
+                            {/* Resumo de tanato */}
                             {somenteTanato && (
                                 <div className="px-4 pt-3">
                                     <div className="rounded-lg border p-3">
@@ -1319,7 +1331,7 @@ export default function HistoricoSepultamentosPage() {
                                 )}
                             </div>
 
-                            {/* Rodapé fixo com ação opcional */}
+                            {/* Rodapé fixo */}
                             <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t bg-white/90 p-3 backdrop-blur">
                                 <div className="text-xs text-muted-foreground">Dica: em “Todos os itens” você vê rapidamente o que mais saiu no período.</div>
                                 <div className="flex gap-2">
