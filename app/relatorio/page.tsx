@@ -423,7 +423,7 @@ export default function HistoricoSepultamentosPage() {
 
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(18);
-            doc.text("Histórico dos Sepultamentos", pageW / 2, y, { align: "center" });
+            doc.text("Relatório de Atendimento", pageW / 2, y, { align: "center" });
             y += 8;
 
             doc.setFont(titleFont[0], titleFont[1]);
@@ -809,7 +809,7 @@ export default function HistoricoSepultamentosPage() {
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             <header className="mb-6">
-                <h1 className="text-2xl font-bold tracking-tight">Histórico dos Sepultamentos</h1>
+                <h1 className="text-2xl font-bold tracking-tight">Relatório de Atendimento</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Busque pelo nome, filtre por data e visualize o histórico completo. Baixe em PDF quando quiser.</p>
             </header>
 
