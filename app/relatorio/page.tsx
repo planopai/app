@@ -72,7 +72,6 @@ function overrideCampoNome(originalKey: string, nomeAtual: string) {
 /** Substitui rótulos em textos livres vindos do backend */
 function substituirRotuloVisual(texto: string) {
     if (!texto) return texto;
-    // Troca variações com ou sem acento/espaços
     return texto.replace(/hora\s*fim\s*vel[óo]rio/gi, "Horário do Sepultamento");
 }
 
@@ -294,6 +293,106 @@ function normSimNao(s?: string) {
     return "";
 }
 
+/* ======================== RESUMO FINAL (helpers) ======================= */
+/** Campos priorizados na exibição do Resumo Final (ordem). */
+const RESUMO_ORDER = [
+    "falecido",
+    "contato",
+    "religiao",
+    "convenio",
+    "urna",
+    "roupa",
+    "assistencia",
+    "tanato",
+    "local",
+    "local_velorio",
+    "data_inicio_velorio",
+    "hora_inicio_velorio",
+    "hora_fim_velorio", // exibido como "Horário do Sepultamento"
+    "data_fim_velorio",
+] as const;
+type ResumoKey = (typeof RESUMO_ORDER)[number];
+
+function normalizaChave(k: string) {
+    return k.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+/** Lê pares chave→valor de um "detalhes" (JSON ou string) para compor o estado final. */
+function extrairParesDoDetalhe(raw: any): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!raw) return out;
+
+    // Tenta tratar como JSON
+    try {
+        const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (obj && typeof obj === "object") {
+            for (const key of Object.keys(obj)) {
+                if (["id", "acao", "materiais_json"].includes(key)) continue;
+                if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) continue;
+                if (/^materiais_.+?_qtd$/i.test(key)) continue;
+
+                const val = (obj as any)[key];
+                if (val == null) continue;
+                if (typeof val === "object") continue;
+
+                let v = String(val).trim();
+                if (!v) continue;
+
+                if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
+                v = formataSeDataIso(v);
+                v = substituirRotuloVisual(v);
+
+                const nomeVis = overrideCampoNome(key, titleCaseFromSnake(key));
+                const kNorm = normalizaChave(nomeVis);
+                out[kNorm] = v;
+            }
+            return out;
+        }
+    } catch {
+        // Fallback: parse "Label: Valor" em texto
+        const txt = substituirRotuloVisual(String(raw));
+        const regex = /([\p{L}\d _/.-]+):\s*([^\n]+)/giu;
+        let m: RegExpExecArray | null;
+        while ((m = regex.exec(txt))) {
+            const rot = m[1]?.trim() || "";
+            const val = (m[2] || "").trim();
+            if (!rot || !val) continue;
+            const nomeVis = overrideCampoNome(rot, rot.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()));
+            const kNorm = normalizaChave(nomeVis);
+            out[kNorm] = formataSeDataIso(val);
+        }
+    }
+    return out;
+}
+
+/** Varre o log cronológico, guardando o *último valor* visto de cada campo. */
+function montarResumoFinalDoLog(log: LogItem[]) {
+    const resumo: Record<string, string> = {};
+    const ord = [...log].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+
+    for (const ent of ord) {
+        const pares = extrairParesDoDetalhe(ent.detalhes);
+        for (const [k, v] of Object.entries(pares)) resumo[k] = v;
+    }
+
+    // Normalização final de chaves/rótulos
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(resumo)) {
+        const nomeVis = overrideCampoNome(k, titleCaseFromSnake(k));
+        const nomeClean = substituirRotuloVisual(nomeVis);
+        result[normalizaChave(nomeClean)] = v;
+    }
+    return result;
+}
+
+/** Último status é fase11/Material Recolhido? */
+function estaFinalizado(log: LogItem[]) {
+    if (!log?.length) return false;
+    const ult = [...log].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || "")).at(-1);
+    const s = (ult?.status_novo || "").toLowerCase();
+    return s === "fase11" || s === "material recolhido";
+}
+
 /* ========================== Endpoints (proxy) ========================= */
 const LISTAR_FALECIDOS = "/api/php/historico_sepultamentos.php?listar_falecidos=1";
 const LOG_POR_ID = (id: string) => `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
@@ -334,6 +433,10 @@ export default function HistoricoSepultamentosPage() {
 
     // Cache de data de criação por registro (para mostrar na lista e filtrar)
     const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
+
+    // ===== Novo: estado do Resumo Final
+    const [resumoFinal, setResumoFinal] = useState<Record<string, string>>({});
+    const [finalizado, setFinalizado] = useState(false);
 
     // jsPDF via CDN
     useEffect(() => {
@@ -422,6 +525,8 @@ export default function HistoricoSepultamentosPage() {
         setSelecionado(item);
         setLog([]);
         setCriacaoSelecionado("");
+        setResumoFinal({});
+        setFinalizado(false);
         setLoadingLog(true);
         try {
             const res = await fetch(`${LOG_POR_ID(item.sepultamento_id)}&_nocache=${Date.now()}`, { cache: "no-store" });
@@ -434,12 +539,24 @@ export default function HistoricoSepultamentosPage() {
             setCriacaoSelecionado(primeiro);
             if (primeiro) setCriacaoMap((prev) => ({ ...prev, [String(item.sepultamento_id)]: primeiro }));
             setLog(arr || []);
+
+            // >>> Novo: calcula resumo e flag de finalização
+            const fin = estaFinalizado(arr || []);
+            setFinalizado(fin);
+            setResumoFinal(fin ? montarResumoFinalDoLog(arr || []) : {});
         } catch {
             setLog([]);
         } finally {
             setLoadingLog(false);
         }
     }, []);
+
+    // Mantém resumo atualizado se o log mudar (por alguma atualização dinâmica)
+    useEffect(() => {
+        const fin = estaFinalizado(log || []);
+        setFinalizado(fin);
+        setResumoFinal(fin ? montarResumoFinalDoLog(log || []) : {});
+    }, [log]);
 
     // Nunito no jsPDF
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
@@ -459,10 +576,10 @@ export default function HistoricoSepultamentosPage() {
                 return btoa(binary);
             }
             const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-            doc.addFileToVFS("Nunito-Regular.ttf", regB64);
-            doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
-            doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
-            doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
+            (doc as any).addFileToVFS("Nunito-Regular.ttf", regB64);
+            (doc as any).addFont("Nunito-Regular.ttf", "Nunito", "normal");
+            (doc as any).addFileToVFS("Nunito-Bold.ttf", boldB64);
+            (doc as any).addFont("Nunito-Bold.ttf", "Nunito", "bold");
             nunitoStateRef.current = "ok";
             return true;
         } catch {
@@ -516,6 +633,44 @@ export default function HistoricoSepultamentosPage() {
                 y += 6;
             }
 
+            // >>> Novo: Resumo Final no PDF (se finalizado)
+            const fin = estaFinalizado(log);
+            const resumo = fin ? montarResumoFinalDoLog(log) : null;
+            if (resumo && Object.keys(resumo).length) {
+                doc.setFont(titleFont[0], titleFont[1]);
+                doc.setFontSize(12);
+                doc.text("Resumo Final", marginL, y);
+                y += 5;
+
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(10);
+
+                // ordem priorizada
+                const pairs: Array<[string, string]> = [];
+                for (const k of RESUMO_ORDER) {
+                    const v = resumo[k];
+                    if (v) pairs.push([overrideCampoNome(k, titleCaseFromSnake(k)), v]);
+                }
+                // demais campos
+                for (const [k, v] of Object.entries(resumo)) {
+                    if (!RESUMO_ORDER.includes(k as ResumoKey)) {
+                        pairs.push([overrideCampoNome(k, titleCaseFromSnake(k)), v]);
+                    }
+                }
+
+                for (const [label, value] of pairs) {
+                    const line = `${substituirRotuloVisual(label)}: ${value}`;
+                    const wrapped = doc.splitTextToSize(line, contentW);
+                    if (y + wrapped.length * 5 > pageH - 20) {
+                        doc.addPage();
+                        y = 22;
+                    }
+                    doc.text(wrapped, marginL, y);
+                    y += wrapped.length * 5;
+                }
+                y += 4;
+            }
+
             const cardPadX = 6;
             const cardPadY = 6;
 
@@ -527,7 +682,6 @@ export default function HistoricoSepultamentosPage() {
             };
 
             for (const ent of log) {
-                // >>> AGORA COM HORA:min:seg
                 const dataLine = formataDataHora(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
@@ -579,12 +733,10 @@ export default function HistoricoSepultamentosPage() {
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-                            // Aplicar override do rótulo visual
                             nome = overrideCampoNome(key, nome);
                             v = String(v);
                             if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
                             v = formataSeDataIso(v);
-                            // Substitui rótulo em strings livres (se vierem concatenadas)
                             nome = substituirRotuloVisual(nome);
                             v = substituirRotuloVisual(v);
                             detalhesLines.push(`${nome}: ${v}`);
@@ -600,7 +752,6 @@ export default function HistoricoSepultamentosPage() {
                         const regEx = new RegExp(cod, "g");
                         detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                     });
-                    // Substitui o rótulo visual em texto bruto
                     detalhesRaw = substituirRotuloVisual(detalhesRaw);
                     if (detalhesRaw.trim()) detalhesLines.push(detalhesRaw.trim());
                 }
@@ -642,7 +793,7 @@ export default function HistoricoSepultamentosPage() {
 
                 doc.setDrawColor(210);
                 doc.setLineWidth(0.25);
-                doc.roundedRect(marginL, y, contentW, cardH, 3, 3);
+                (doc as any).roundedRect(marginL, y, contentW, cardH, 3, 3);
 
                 let yy = y + cardPadY;
 
@@ -1067,13 +1218,12 @@ export default function HistoricoSepultamentosPage() {
                         ) : (
                             <div className="space-y-3">
                                 {log.map((ent, i) => {
+                                    // Render dos detalhes (JSON ou texto)
                                     let detalhesHtml = "";
                                     const raw = ent.detalhes as any;
 
                                     try {
-                                        const obj =
-                                            raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
-
+                                        const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
                                         if (obj && typeof obj === "object") {
                                             const chips: string[] = [];
                                             const arrSet = new Set<string>();
@@ -1081,12 +1231,14 @@ export default function HistoricoSepultamentosPage() {
                                             for (const key of Object.keys(obj)) {
                                                 if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                                                if (/^arrumacao(_json)?$/i.test(key)) {
+                                                // Arrumação
+                                                if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
                                                     const aobj = obj[key] || {};
                                                     for (const [k, v] of Object.entries(aobj)) if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
                                                     continue;
                                                 }
 
+                                                // Materiais_*_qtd
                                                 const m = key.match(/^materiais_(.+?)_qtd$/i);
                                                 if (m) {
                                                     const valRaw = obj[key];
@@ -1103,19 +1255,15 @@ export default function HistoricoSepultamentosPage() {
                                                     continue;
                                                 }
 
+                                                // Campos simples
                                                 if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
-
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-                                                // Override visual do rótulo
                                                 nome = overrideCampoNome(key, nome);
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
-
                                                 val = formataSeDataIso(val);
-
-                                                // Substituição em textos livres
                                                 nome = substituirRotuloVisual(nome);
                                                 val = substituirRotuloVisual(val);
 
@@ -1137,21 +1285,24 @@ export default function HistoricoSepultamentosPage() {
                                         }
                                     } catch {
                                         let detalhesRaw = String(raw || "");
-                                        if (/Arrumacao\s*Json\s*:/i.test(detalhesRaw) || /Materiais\s*:\s*\[object\s+Object\]/i.test(detalhesRaw)) {
-                                            detalhesRaw = detalhesRaw.replace(/Arrumacao\s*Json\s*:[^\n]*/gi, "");
-                                            detalhesRaw = detalhesRaw.replace(/Materiais\s*:\s*\[object\s+Object\]/gi, "");
-                                        }
+                                        detalhesRaw = detalhesRaw.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
+                                        detalhesRaw = detalhesRaw.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
+                                        detalhesRaw = detalhesRaw.replace(/materiais\s*:\s*\[[^\]]*\]/gi, "");
                                         Object.keys(FASES_NOMES).forEach((cod) => {
                                             const faseNome = FASES_NOMES[cod];
                                             const regEx = new RegExp(cod, "g");
                                             detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                                         });
-                                        // Substituição em texto bruto
                                         detalhesRaw = substituirRotuloVisual(detalhesRaw);
-                                        if (detalhesRaw.trim()) {
-                                            detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
-                                        }
+                                        if (detalhesRaw.trim()) detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
                                     }
+
+                                    const acao = ent.acao ? sanitize(capitalize(ent.acao)) : "";
+                                    const statusBadg = ent.status_novo
+                                        ? `<span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">${sanitize(
+                                            traduzirFase(ent.status_novo)
+                                        )}</span>`
+                                        : "";
 
                                     return (
                                         <div
@@ -1163,15 +1314,7 @@ export default function HistoricoSepultamentosPage() {
                             <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
                             <div class="flex-1">
                               <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
-                              <div class="text-sm">
-                                ${ent.acao ? sanitize(capitalize(ent.acao)) : ""}
-                                ${ent.status_novo
-                                                        ? `<span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">${sanitize(
-                                                            traduzirFase(ent.status_novo)
-                                                        )}</span>`
-                                                        : ""
-                                                    }
-                              </div>
+                              <div class="text-sm">${acao} ${statusBadg}</div>
                               <div class="text-xs text-muted-foreground">Usuário: ${sanitize(ent.usuario || "")}</div>
                               ${detalhesHtml}
                             </div>
@@ -1181,6 +1324,44 @@ export default function HistoricoSepultamentosPage() {
                                         />
                                     );
                                 })}
+
+                                {/* ==== RESUMO FINAL VISUAL (exibido somente quando finalizado) ==== */}
+                                {finalizado && Object.keys(resumoFinal).length > 0 && (
+                                    <div className="rounded-xl border bg-emerald-50/60 p-4">
+                                        <div className="mb-2 text-sm font-semibold text-emerald-900">Resumo Final (após Material Recolhido)</div>
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            {/* Ordem priorizada */}
+                                            {RESUMO_ORDER.map((k) => {
+                                                const kk = k as string;                 // ajuda a inferência
+                                                const v: string = resumoFinal[kk] ?? ""; // <- garante string
+                                                if (!v) return null;
+                                                return (
+                                                    <div key={kk} className="rounded-lg border bg-white/60 px-3 py-2">
+                                                        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                                            {substituirRotuloVisual(overrideCampoNome(kk, titleCaseFromSnake(kk)))}
+                                                        </div>
+                                                        <div className="text-sm font-medium">{v}</div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {/* Demais campos que porventura não estão na ordem priorizada */}
+                                            {(Object.entries(resumoFinal) as Array<[string, string | undefined]>)
+                                                .filter(([k]) => !RESUMO_ORDER.includes(k as ResumoKey))
+                                                .map(([k, v]) => {
+                                                    const vv: string = v ?? "";
+                                                    if (!vv) return null;
+                                                    return (
+                                                        <div key={k} className="rounded-lg border bg-white/60 px-3 py-2">
+                                                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                                                {substituirRotuloVisual(overrideCampoNome(k, titleCaseFromSnake(k)))}
+                                                            </div>
+                                                            <div className="text-sm font-medium">{vv}</div>
+                                                        </div>
+                                                    );
+                                                })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
