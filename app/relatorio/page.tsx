@@ -562,6 +562,12 @@ export default function HistoricoSepultamentosPage() {
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+
+                            // 🔽 Ajuste visual apenas para data_fim_velorio
+                            if (key === "data_fim_velorio") {
+                                nome = "Horário do Sepultamento";
+                            }
+
                             v = String(v);
                             if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
                             v = formataSeDataIso(v);
@@ -1051,7 +1057,7 @@ export default function HistoricoSepultamentosPage() {
                                             raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
 
                                         if (obj && typeof obj === "object") {
-                                            const chips: string[] = [];
+                                            const chips: React.ReactNode[] = [];
                                             const arrSet = new Set<string>();
 
                                             for (const key of Object.keys(obj)) {
@@ -1078,18 +1084,28 @@ export default function HistoricoSepultamentosPage() {
                                                     continue;
                                                 }
 
+                                                
+
                                                 if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
 
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+
+                                                // 🔽 Ajuste visual apenas para data_fim_velorio
+                                                if (key === "data_fim_velorio") {
+                                                    nome = "Horário do Sepultamento";
+                                                }
+
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
-
                                                 val = formataSeDataIso(val);
 
+                                                // Agora chips é JSX.Element[]
                                                 chips.push(
-                                                    `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`
+                                                    <span key={`${key}-${i}`} className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
+                                                        <b>{sanitize(nome)}:</b> {sanitize(val)}
+                                                    </span>
                                                 );
                                             }
 
