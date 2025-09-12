@@ -400,7 +400,6 @@ export default function HistoricoSepultamentosPage() {
     useEffect(() => {
         if (pagina > totalPaginas) setPagina(totalPaginas);
         if (pagina < 1) setPagina(1);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [totalPaginas]);
 
     const selecionarRegistro = useCallback(async (item: FalecidoItem) => {
@@ -512,7 +511,8 @@ export default function HistoricoSepultamentosPage() {
             };
 
             for (const ent of log) {
-                const dataLine = formataDataDia(ent.datahora) || "";
+                // >>> AGORA COM HORA:min:seg
+                const dataLine = formataDataHora(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
@@ -529,7 +529,7 @@ export default function HistoricoSepultamentosPage() {
                         for (const key of Object.keys(obj)) {
                             if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                            // >>> ARRUMAÇÃO: tratar SEMPRE (objeto OU string JSON)
+                            // ARRUMAÇÃO (objeto ou string JSON)
                             if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
                                 let aobj: any = {};
                                 const val = obj[key];
@@ -545,10 +545,10 @@ export default function HistoricoSepultamentosPage() {
                                 for (const [k, v] of Object.entries(aobj)) {
                                     if (asBool(v)) detalhesLines.push(`${titleCaseFromSnake(k)}: Sim`);
                                 }
-                                continue; // não imprimir "Arrumacao Json: {...}"
+                                continue;
                             }
 
-                            // Materiais_*_qtd → lista
+                            // Materiais_*_qtd
                             const m = key.match(/^materiais_(.+?)_qtd$/i);
                             if (m) {
                                 const nome = titleCaseFromSnake(m[1]);
@@ -558,8 +558,7 @@ export default function HistoricoSepultamentosPage() {
                             }
 
                             // Campos simples
-                            if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue; // não imprime objetos genéricos
-
+                            if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
@@ -570,7 +569,6 @@ export default function HistoricoSepultamentosPage() {
                         }
                     }
                 } catch {
-                    // Detalhes como string: remover qualquer "Arrumacao Json: {...}"
                     let detalhesRaw = String(raw || "");
                     detalhesRaw = detalhesRaw.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
                     detalhesRaw = detalhesRaw.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
@@ -742,7 +740,6 @@ export default function HistoricoSepultamentosPage() {
     useEffect(() => {
         if (!analiseOpen || dadosAnalise.length === 0) return;
         carregarLogsParaAnalise(dadosAnalise);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [analiseOpen, dadosAnalise, aDe, aAte]);
 
     function dataDia(s?: string) {
@@ -1163,7 +1160,6 @@ export default function HistoricoSepultamentosPage() {
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3 sm:p-6"
                     role="dialog"
                     aria-modal="true"
-                    aria-label="Análise Geral"
                     onClick={(e) => {
                         if (e.target === e.currentTarget) setAnaliseOpen(false);
                     }}
