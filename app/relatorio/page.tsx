@@ -34,14 +34,14 @@ interface LogItem {
 interface RegistroAnalise {
     id?: number | string;
     sepultamento_id?: string;
-    data?: string; // data de criação
+    data?: string;
     data_inicio_velorio?: string;
     data_fim_velorio?: string;
-    assistencia?: string; // "Sim" | "Não" | ""
-    tanato?: string; // "Sim" | "Não" | ""
+    assistencia?: string;
+    tanato?: string;
     materiais_json?: string;
     arrumacao_json?: string;
-    [key: string]: any; // também recebemos materiais_*_qtd
+    [key: string]: any;
 }
 
 /* ========================= Mapeamentos & utils ======================== */
@@ -77,7 +77,7 @@ function iconeAcao(acao?: string, statusNovo?: string) {
     return "📝";
 }
 
-/** Datas no formato brasileiro (UI: com hora; PDF: só data) */
+/** Datas */
 function formataDataHora(str?: string) {
     if (!str) return "";
     const dt = new Date(str.replace(" ", "T"));
@@ -104,26 +104,15 @@ function formataDataDia(str?: string) {
         timeZone: "America/Sao_Paulo",
     });
 }
-
-/** Detecta texto ISO (YYYY-MM-DD[ HH:mm[:ss]]) e formata para pt-BR */
 function formataSeDataIso(v?: string) {
     if (!v) return v;
     const s = String(v).trim();
-
-    // ISO só data
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
         const dt = new Date(s + "T00:00:00");
         if (!Number.isNaN(dt.getTime())) {
-            return dt.toLocaleDateString("pt-BR", {
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-                timeZone: "America/Sao_Paulo",
-            });
+            return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
         }
     }
-
-    // ISO com hora
     if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(s)) {
         const dt = new Date(s.replace(" ", "T"));
         if (!Number.isNaN(dt.getTime())) {
@@ -139,7 +128,6 @@ function formataSeDataIso(v?: string) {
             });
         }
     }
-
     return v;
 }
 
@@ -231,7 +219,6 @@ type AllItemKey = MaterialKey | ArrKey | "assistencia_sim" | "assistencia_nao" |
 const ALL_ITEMS: AllItemKey[] = [...MATERIAL_KEYS, ...ARR_KEYS, "assistencia_sim", "assistencia_nao", "tanato_sim", "tanato_nao"];
 
 const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
-    // Materiais
     cadeiras: MATERIAL_LABELS.cadeiras,
     bebedouros: MATERIAL_LABELS.bebedouros,
     suporte_coroa: MATERIAL_LABELS.suporte_coroa,
@@ -240,7 +227,6 @@ const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
     tenda: MATERIAL_LABELS.tenda,
     placa: MATERIAL_LABELS.placa,
     paramentacao: MATERIAL_LABELS.paramentacao,
-    // Arrumação
     luvas: ARR_LABELS.luvas,
     palha: ARR_LABELS.palha,
     tamponamento: ARR_LABELS.tamponamento,
@@ -253,7 +239,6 @@ const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
     formol: ARR_LABELS.formol,
     mascara: ARR_LABELS.mascara,
     invol: ARR_LABELS.invol,
-    // Assistência / Tanato
     assistencia_sim: "Assistência (Sim)",
     assistencia_nao: "Assistência (Não)",
     tanato_sim: "Tanatopraxia (Sim)",
@@ -334,7 +319,7 @@ export default function HistoricoSepultamentosPage() {
     // Cache de data de criação por registro (para mostrar na lista e filtrar)
     const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
 
-    // jsPDF via CDN (mantido)
+    // jsPDF via CDN
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
         if ((window as any)[KEY]) return;
@@ -345,7 +330,7 @@ export default function HistoricoSepultamentosPage() {
         document.body.appendChild(script);
     }, []);
 
-    // Carregar lista de falecidos
+    // Carregar lista
     const carregarFalecidos = useCallback(async () => {
         try {
             setLoadingLista(true);
@@ -362,7 +347,6 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // 🔁 Sem polling: recarrega ao abrir/voltar para a aba
     useEffect(() => {
         carregarFalecidos();
         const onVis = () => {
@@ -372,7 +356,6 @@ export default function HistoricoSepultamentosPage() {
         return () => document.removeEventListener("visibilitychange", onVis);
     }, [carregarFalecidos]);
 
-    // Página atual (para prefetch da criação)
     const paginaDados = useMemo(() => {
         const ini = (pagina - 1) * porPagina;
         return (lista || []).slice(ini, ini + porPagina);
@@ -397,7 +380,6 @@ export default function HistoricoSepultamentosPage() {
         paginaDados.forEach((it) => prefetchCriacao(String(it.sepultamento_id)));
     }, [paginaDados, prefetchCriacao]);
 
-    // Filtro + paginação (usa data de criação quando disponível)
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
         return (lista || []).filter((reg) => {
@@ -421,7 +403,6 @@ export default function HistoricoSepultamentosPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [totalPaginas]);
 
-    // Seleção + carregamento do log (também cacheia a criação)
     const selecionarRegistro = useCallback(async (item: FalecidoItem) => {
         setSelecionado(item);
         setLog([]);
@@ -445,7 +426,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Nunito no jsPDF (com fallback)
+    // Nunito no jsPDF
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -453,7 +434,6 @@ export default function HistoricoSepultamentosPage() {
         try {
             const regularUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
             const boldUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
-
             async function fetchTTF(u: string) {
                 const r = await fetch(u);
                 if (!r.ok) throw new Error("Fonte não encontrada");
@@ -463,13 +443,11 @@ export default function HistoricoSepultamentosPage() {
                 for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
                 return btoa(binary);
             }
-
             const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
             doc.addFileToVFS("Nunito-Regular.ttf", regB64);
             doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
             doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
             doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
-
             nunitoStateRef.current = "ok";
             return true;
         } catch {
@@ -478,7 +456,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // Exportar PDF (NOME EM MAIÚSCULAS)
+    // Exportar PDF
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
 
@@ -551,19 +529,23 @@ export default function HistoricoSepultamentosPage() {
                         for (const key of Object.keys(obj)) {
                             if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                            // ARRUMAÇÃO: apenas itens marcados → "Item: Sim"
-                            if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
-                                // aceita variações como "arrumacao", "arrumacao_json", "arrumacao json"
-                                if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
-                                    const o = obj[key] || {};
-                                    for (const [k, v] of Object.entries(o)) {
-                                        if (asBool(v)) {
-                                            detalhesLines.push(`${titleCaseFromSnake(k)}: Sim`);
-                                        }
+                            // >>> ARRUMAÇÃO: tratar SEMPRE (objeto OU string JSON)
+                            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
+                                let aobj: any = {};
+                                const val = obj[key];
+                                if (typeof val === "string") {
+                                    try {
+                                        aobj = JSON.parse(val);
+                                    } catch {
+                                        aobj = {};
                                     }
+                                } else if (typeof val === "object" && val) {
+                                    aobj = val;
                                 }
-                                // não imprime objetos diretamente
-                                continue;
+                                for (const [k, v] of Object.entries(aobj)) {
+                                    if (asBool(v)) detalhesLines.push(`${titleCaseFromSnake(k)}: Sim`);
+                                }
+                                continue; // não imprimir "Arrumacao Json: {...}"
                             }
 
                             // Materiais_*_qtd → lista
@@ -576,6 +558,8 @@ export default function HistoricoSepultamentosPage() {
                             }
 
                             // Campos simples
+                            if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue; // não imprime objetos genéricos
+
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
@@ -586,14 +570,11 @@ export default function HistoricoSepultamentosPage() {
                         }
                     }
                 } catch {
-                    // Detalhes vieram como string: removemos qualquer linha "Arrumacao Json: {...}"
+                    // Detalhes como string: remover qualquer "Arrumacao Json: {...}"
                     let detalhesRaw = String(raw || "");
-                    // remove bloco "Arrumacao Json: { ... }" (mesmo que quebre linha)
                     detalhesRaw = detalhesRaw.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
-                    // remove variantes simples
                     detalhesRaw = detalhesRaw.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
                     detalhesRaw = detalhesRaw.replace(/materiais\s*:\s*\[[^\]]*\]/gi, "");
-                    // traduz códigos de fase
                     Object.keys(FASES_NOMES).forEach((cod) => {
                         const faseNome = FASES_NOMES[cod];
                         const regEx = new RegExp(cod, "g");
@@ -603,7 +584,6 @@ export default function HistoricoSepultamentosPage() {
                 }
 
                 if (materiaisLines.length) {
-                    // Título "Materiais:" e bullets
                     detalhesLines.unshift("Materiais:");
                     for (const l of materiaisLines) detalhesLines.push(`• ${l}`);
                 }
@@ -631,7 +611,7 @@ export default function HistoricoSepultamentosPage() {
                 const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
 
                 const innerHeight = (hData ? hData + hUsuario + hDetalhes + 3 : hUsuario + hDetalhes + 3) + hAcao;
-                const cardH = innerHeight + cardPadY * 2;
+                const cardH = innerHeight + 2 * cardPadY;
 
                 if (y + cardH + 8 > pageH) {
                     doc.addPage();
@@ -672,7 +652,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }, [selecionado, log, criacaoSelecionado]);
 
-    /* =========================== ANÁLISE GERAL (TABELA) =========================== */
+    /* =========================== ANÁLISE GERAL =========================== */
     const [analiseOpen, setAnaliseOpen] = useState(false);
     const [loadingAnalise, setLoadingAnalise] = useState(false);
     const [dadosAnalise, setDadosAnalise] = useState<RegistroAnalise[]>([]);
@@ -680,9 +660,7 @@ export default function HistoricoSepultamentosPage() {
     const [aAte, setAAte] = useState("");
     type SelectedItem = "ALL" | AllItemKey;
     const [selectedItem, setSelectedItem] = useState<SelectedItem>("ALL");
-
     const [somenteTanato, setSomenteTanato] = useState(false);
-
     const [logsCache, setLogsCache] = useState<Record<string, LogItem[]>>({});
 
     const abrirAnalise = useCallback(async () => {
@@ -736,9 +714,7 @@ export default function HistoricoSepultamentosPage() {
     }
 
     async function carregarLogsParaAnalise(regs: RegistroAnalise[], maxConc = 5) {
-        const ids = regs
-            .map((r) => String(r.id ?? (r as any).sepultamento_id ?? ""))
-            .filter(Boolean);
+        const ids = regs.map((r) => String(r.id ?? (r as any).sepultamento_id ?? "")).filter(Boolean);
         const pendentes = ids.filter((id) => !logsCache[id]);
         if (pendentes.length === 0) return;
 
@@ -1074,7 +1050,8 @@ export default function HistoricoSepultamentosPage() {
                                     const raw = ent.detalhes as any;
 
                                     try {
-                                        const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
+                                        const obj =
+                                            raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
 
                                         if (obj && typeof obj === "object") {
                                             const chips: string[] = [];
