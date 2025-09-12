@@ -332,6 +332,9 @@ export default function HistoricoSepultamentosPage() {
     // data/hora de criação (primeiro log) do registro selecionado
     const [criacaoSelecionado, setCriacaoSelecionado] = useState<string>("");
 
+    // Cache de data de criação por registro (para mostrar na lista e filtrar)
+    const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
+
     // jsPDF via CDN (mantido)
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
@@ -353,7 +356,7 @@ export default function HistoricoSepultamentosPage() {
             if (json && json.sucesso && json.dados) arr = json.dados;
             else if (Array.isArray(json)) arr = json;
             setLista(arr);
-            // ⚠️ não resetar página aqui (evita "voltar para 1" ao auto-refresh)
+            // não resetar página (mantém UX)
         } catch {
             setLista([]);
         } finally {
@@ -361,30 +364,59 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
+    // 🔁 REMOVIDO POLLING. Revalida apenas ao abrir/voltar para a aba.
     useEffect(() => {
-        carregarFalecidos();
-        const t = setInterval(carregarFalecidos, 20000);
-        return () => clearInterval(t);
+        carregarFalecidos(); // primeira carga
+        const onVis = () => {
+            if (!document.hidden) carregarFalecidos();
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => document.removeEventListener("visibilitychange", onVis);
     }, [carregarFalecidos]);
 
-    // Filtro + paginação
+    // Pré-carregar data de criação para os itens visíveis na página
+    const paginaDados = useMemo(() => {
+        const ini = (pagina - 1) * porPagina;
+        return (lista || []).slice(ini, ini + porPagina);
+    }, [lista, pagina]);
+
+    const prefetchCriacao = useCallback(async (id: string) => {
+        if (criacaoMap[id]) return;
+        try {
+            const res = await fetch(`${LOG_POR_ID(id)}&_nocache=${Date.now()}`, { cache: "no-store" });
+            const json = await res.json();
+            const arr: LogItem[] = json && json.sucesso && json.dados ? json.dados : Array.isArray(json) ? json : [];
+            const ord = (arr || []).slice().sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+            const primeiro = ord[0]?.datahora || "";
+            if (primeiro) {
+                setCriacaoMap((prev) => ({ ...prev, [id]: primeiro }));
+            }
+        } catch {
+            // silencioso
+        }
+    }, [criacaoMap]);
+
+    useEffect(() => {
+        paginaDados.forEach((it) => prefetchCriacao(String(it.sepultamento_id)));
+    }, [paginaDados, prefetchCriacao]);
+
+    // Filtro + paginação (usa a data de criação quando disponível)
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
         return (lista || []).filter((reg) => {
             let ok = true;
             if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) ok = false;
-            const dataReg = reg.ultima_datahora ? reg.ultima_datahora.substring(0, 10) : "";
-            if (filtroDe && dataReg && dataReg < filtroDe) ok = false;
-            if (filtroAte && dataReg && dataReg > filtroAte) ok = false;
+
+            const id = String(reg.sepultamento_id);
+            const dataBase = (criacaoMap[id] || reg.ultima_datahora || "").substring(0, 10);
+
+            if (filtroDe && dataBase && dataBase < filtroDe) ok = false;
+            if (filtroAte && dataBase && dataBase > filtroAte) ok = false;
             return ok;
         });
-    }, [lista, filtroNome, filtroDe, filtroAte]);
+    }, [lista, filtroNome, filtroDe, filtroAte, criacaoMap]);
 
     const totalPaginas = Math.max(1, Math.ceil(filtrados.length / porPagina));
-    const paginaDados = useMemo(() => {
-        const ini = (pagina - 1) * porPagina;
-        return filtrados.slice(ini, ini + porPagina);
-    }, [filtrados, pagina]);
 
     // 🔧 manter página válida quando total muda
     useEffect(() => {
@@ -393,7 +425,7 @@ export default function HistoricoSepultamentosPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [totalPaginas]);
 
-    // Seleção + carregamento do log
+    // Seleção + carregamento do log (e grava no cache a criação)
     const selecionarRegistro = useCallback(async (item: FalecidoItem) => {
         setSelecionado(item);
         setLog([]);
@@ -410,6 +442,7 @@ export default function HistoricoSepultamentosPage() {
             const ord = (arr || []).slice().sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
             const primeiro = ord[0]?.datahora || "";
             setCriacaoSelecionado(primeiro);
+            if (primeiro) setCriacaoMap((prev) => ({ ...prev, [String(item.sepultamento_id)]: primeiro }));
             setLog(arr || []);
         } catch {
             setLog([]);
@@ -451,7 +484,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // Exportar PDF
+    // Exportar PDF (NOME EM MAIÚSCULAS, sem underscores)
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
 
@@ -628,9 +661,8 @@ export default function HistoricoSepultamentosPage() {
                 y += cardH + 8;
             }
 
-            const filename = `historico_sepultamento_${(sanitize(selecionado.falecido) || "")
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "_")}.pdf`;
+            // >>> NOME DO FALecido EM MAIÚSCULAS, sem underscores
+            const filename = `${String(selecionado.falecido || "").toUpperCase()}.pdf`;
             doc.save(filename);
         } catch (err) {
             console.error("Falha ao gerar PDF:", err);
@@ -969,20 +1001,26 @@ export default function HistoricoSepultamentosPage() {
                             <div className="p-4 text-center text-sm text-muted-foreground">Nenhum registro encontrado.</div>
                         ) : (
                             <ul className="flex flex-col">
-                                {paginaDados.map((item) => (
-                                    <li key={item.sepultamento_id}>
-                                        <button
-                                            type="button"
-                                            onClick={() => selecionarRegistro(item)}
-                                            className={`group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition hover:bg-muted/40 ${selecionado?.sepultamento_id === item.sepultamento_id ? "border-primary/60 bg-primary/5" : ""
-                                                }`}
-                                        >
-                                            <span className="font-medium">{item.falecido}</span>
-                                            {/* mantemos ultima_datahora aqui; criação aparece na coluna da direita */}
-                                            <span className="text-xs text-muted-foreground">{formataDataHora(item.ultima_datahora)}</span>
-                                        </button>
-                                    </li>
-                                ))}
+                                {filtrados.slice((pagina - 1) * porPagina, (pagina - 1) * porPagina + porPagina).map((item) => {
+                                    const id = String(item.sepultamento_id);
+                                    const criacao = criacaoMap[id];
+                                    return (
+                                        <li key={item.sepultamento_id}>
+                                            <button
+                                                type="button"
+                                                onClick={() => selecionarRegistro(item)}
+                                                className={`group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition hover:bg-muted/40 ${selecionado?.sepultamento_id === item.sepultamento_id ? "border-primary/60 bg-primary/5" : ""
+                                                    }`}
+                                            >
+                                                <span className="font-medium">{item.falecido}</span>
+                                                {/* DIREITA: DATA DE CRIAÇÃO (primeiro log) */}
+                                                <span className="text-xs text-muted-foreground">
+                                                    {criacao ? formataDataHora(criacao) : "—"}
+                                                </span>
+                                            </button>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
 
@@ -1182,8 +1220,7 @@ export default function HistoricoSepultamentosPage() {
                             <div>
                                 <h3 className="text-lg font-semibold">Análise Geral</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    A análise soma consumo pelos <b>eventos de log</b> no período selecionado (materiais por <i>deltas</i> e arrumação por{" "}
-                                    <i>ativações</i>). Você pode restringir aos serviços com Tanatopraxia.
+                                    A análise soma consumo pelos <b>eventos de log</b> no período selecionado (materiais por <i>deltas</i> e arrumação por <i>ativações</i>). Você pode restringir aos serviços com Tanatopraxia.
                                 </p>
                             </div>
                             <button className="rounded-md border p-2 text-sm hover:bg-muted" onClick={() => setAnaliseOpen(false)} title="Fechar">
