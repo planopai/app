@@ -588,6 +588,71 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
+    // === Helpers de desenho para o PDF ===
+    function ensurePageSpace(doc: any, y: number, needed: number, marginTop = 22) {
+        const pageH = doc.internal.pageSize.getHeight();
+        if (y + needed > pageH - 20) {
+            doc.addPage();
+            return marginTop;
+        }
+        return y;
+    }
+
+    function textHeight(doc: any, text: string | string[], maxWidth: number, lineGap = 4) {
+        const lines = Array.isArray(text) ? text : doc.splitTextToSize(String(text || ""), maxWidth);
+        const h = lines.length * lineGap;
+        return { lines, h };
+    }
+
+    function drawCard(
+        doc: any,
+        x: number,
+        y: number,
+        w: number,
+        label: string,
+        value: string,
+        fonts: { normal: [string, string]; title: [string, string] }
+    ) {
+        const padX = 4;
+        const padY = 4;
+
+        // rótulo (letra pequena)
+        doc.setFont(fonts.normal[0], fonts.normal[1]);
+        doc.setFontSize(8.5);
+        const { lines: labelLines, h: hLabel } = textHeight(doc, label, w - padX * 2, 3.8);
+
+        // valor (destaque)
+        doc.setFont(fonts.title[0], fonts.title[1]);
+        doc.setFontSize(11);
+        const { lines: valueLines, h: hValue } = textHeight(doc, value, w - padX * 2, 5);
+
+        const innerH = hLabel + 2 + hValue;
+        const cardH = innerH + padY * 2;
+
+        // container
+        doc.setDrawColor(210);
+        doc.setFillColor(248, 250, 252); // bg bem clarinho
+        (doc as any).roundedRect(x, y, w, cardH, 2.5, 2.5, "DF");
+
+        // conteúdo
+        let yy = y + padY;
+
+        doc.setTextColor(120);
+        doc.setFont(fonts.normal[0], fonts.normal[1]);
+        doc.setFontSize(8.5);
+        doc.text(labelLines, x + padX, yy + 3.5);
+        yy += hLabel + 2;
+
+        doc.setTextColor(20);
+        doc.setFont(fonts.title[0], fonts.title[1]);
+        doc.setFontSize(11);
+        doc.text(valueLines, x + padX, yy + 4.5);
+
+        // retorna altura usada
+        return cardH;
+    }
+
+
     // Exportar PDF
     const exportarPdf = useCallback(async () => {
         if (!selecionado || log.length === 0) return;
@@ -633,42 +698,74 @@ export default function HistoricoSepultamentosPage() {
                 y += 6;
             }
 
-            // >>> Novo: Resumo Final no PDF (se finalizado)
+            // >>> Novo: Resumo Final no PDF (se finalizado) — estilo de cards em grade
             const fin = estaFinalizado(log);
             const resumo = fin ? montarResumoFinalDoLog(log) : null;
+
             if (resumo && Object.keys(resumo).length) {
+                // título da seção
                 doc.setFont(titleFont[0], titleFont[1]);
-                doc.setFontSize(12);
-                doc.text("Relatório Final", marginL, y);
+                doc.setFontSize(12.5);
+                doc.text("Resumo Final", marginL, y);
                 y += 5;
 
-                doc.setFont(normalFont[0], normalFont[1]);
-                doc.setFontSize(10);
-
-                // ordem priorizada
+                // prepara pares (ordem priorizada + demais)
                 const pairs: Array<[string, string]> = [];
                 for (const k of RESUMO_ORDER) {
                     const v = resumo[k];
-                    if (v) pairs.push([overrideCampoNome(k, titleCaseFromSnake(k)), v]);
+                    if (v) pairs.push([substituirRotuloVisual(overrideCampoNome(k, titleCaseFromSnake(k))).toUpperCase(), String(v)]);
                 }
-                // demais campos
                 for (const [k, v] of Object.entries(resumo)) {
-                    if (!RESUMO_ORDER.includes(k as ResumoKey)) {
-                        pairs.push([overrideCampoNome(k, titleCaseFromSnake(k)), v]);
+                    if (!RESUMO_ORDER.includes(k as ResumoKey) && v) {
+                        pairs.push([substituirRotuloVisual(overrideCampoNome(k, titleCaseFromSnake(k))).toUpperCase(), String(v)]);
                     }
                 }
 
-                for (const [label, value] of pairs) {
-                    const line = `${substituirRotuloVisual(label)}: ${value}`;
-                    const wrapped = doc.splitTextToSize(line, contentW);
-                    if (y + wrapped.length * 5 > pageH - 20) {
-                        doc.addPage();
-                        y = 22;
+                // grade 2 colunas (igual à UI)
+                const gap = 4;
+                const colW = (contentW - gap) / 2;
+
+                // varre e desenha cartões
+                doc.setFont(normalFont[0], normalFont[1]); // base
+                let cursorX = marginL;
+                let cursorY = y;
+
+                for (let i = 0; i < pairs.length; i++) {
+                    const [label, value] = pairs[i];
+
+                    // calcula altura do card para esta coluna
+                    doc.setFont(normalFont[0], normalFont[1]); doc.setFontSize(8.5);
+                    const labelH = textHeight(doc, label, colW - 8, 3.8).h;
+                    doc.setFont(titleFont[0], titleFont[1]); doc.setFontSize(11);
+                    const valueH = textHeight(doc, value, colW - 8, 5).h;
+
+                    const cardH = labelH + 2 + valueH + 8; // pads
+                    cursorY = ensurePageSpace(doc, cursorY, cardH);
+
+                    // desenha card
+                    const used = drawCard(
+                        doc,
+                        cursorX,
+                        cursorY,
+                        colW,
+                        label,
+                        value,
+                        { normal: normalFont, title: titleFont }
+                    );
+
+                    // avança coluna/linha
+                    if (cursorX === marginL) {
+                        cursorX = marginL + colW + gap; // vai pra 2ª coluna
+                    } else {
+                        cursorX = marginL;              // volta pra 1ª
+                        cursorY += used + 3;            // nova linha
                     }
-                    doc.text(wrapped, marginL, y);
-                    y += wrapped.length * 5;
                 }
-                y += 4;
+
+                // se terminamos na 2ª coluna, desce um pouco
+                if (cursorX !== marginL) cursorY += 8;
+
+                y = cursorY + 4; // espaço depois da grade
             }
 
             const cardPadX = 6;
