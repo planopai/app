@@ -119,8 +119,8 @@ function formataDataDia(str?: string) {
         timeZone: "America/Sao_Paulo",
     });
 }
-function formataSeDataIso(v?: string) {
-    if (!v) return v;
+function formataSeDataIso(v?: string): string {
+    if (!v) return ""; // <— garante string
     const s = String(v).trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
         const dt = new Date(s + "T00:00:00");
@@ -143,7 +143,7 @@ function formataSeDataIso(v?: string) {
             });
         }
     }
-    return v;
+    return s; // devolve a string original (não undefined)
 }
 
 function sanitize(txt?: string) {
@@ -639,7 +639,7 @@ export default function HistoricoSepultamentosPage() {
             if (resumo && Object.keys(resumo).length) {
                 doc.setFont(titleFont[0], titleFont[1]);
                 doc.setFontSize(12);
-                doc.text("Resumo Final", marginL, y);
+                doc.text("Relatório Final", marginL, y);
                 y += 5;
 
                 doc.setFont(normalFont[0], normalFont[1]);
@@ -1328,7 +1328,7 @@ export default function HistoricoSepultamentosPage() {
                                 {/* ==== RESUMO FINAL VISUAL (exibido somente quando finalizado) ==== */}
                                 {finalizado && Object.keys(resumoFinal).length > 0 && (
                                     <div className="rounded-xl border bg-emerald-50/60 p-4">
-                                        <div className="mb-2 text-sm font-semibold text-emerald-900">Resumo Final (após Material Recolhido)</div>
+                                        <div className="mb-2 text-sm font-semibold text-emerald-900">Relatório Final (Após Conclusão do Serviço)</div>
                                         <div className="grid gap-2 sm:grid-cols-2">
                                             {/* Ordem priorizada */}
                                             {RESUMO_ORDER.map((k) => {
