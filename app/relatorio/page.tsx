@@ -60,6 +60,22 @@ const FASES_NOMES: Record<string, string> = {
 };
 const traduzirFase = (fase?: string) => (fase ? FASES_NOMES[fase] || fase : "");
 
+/** === Override VISUAL de rótulos ===
+ * Requisito: onde aparecia "Hora Fim Velório", exibir "Horário do Sepultamento"
+ * Os dados permanecem os mesmos (ex.: campo/coluna 'hora_fim_velorio').
+ */
+function overrideCampoNome(originalKey: string, nomeAtual: string) {
+    const k = (originalKey || "").toLowerCase().replace(/\s+/g, "_");
+    if (k === "hora_fim_velorio") return "Horário do Sepultamento";
+    return nomeAtual;
+}
+/** Substitui rótulos em textos livres vindos do backend */
+function substituirRotuloVisual(texto: string) {
+    if (!texto) return texto;
+    // Troca variações com ou sem acento/espaços
+    return texto.replace(/hora\s*fim\s*vel[óo]rio/gi, "Horário do Sepultamento");
+}
+
 function iconeAcao(acao?: string, statusNovo?: string) {
     const a = (acao || "").toLowerCase();
     if (a.includes("criou")) return "🟢";
@@ -551,7 +567,8 @@ export default function HistoricoSepultamentosPage() {
                             // Materiais_*_qtd
                             const m = key.match(/^materiais_(.+?)_qtd$/i);
                             if (m) {
-                                const nome = titleCaseFromSnake(m[1]);
+                                const nomeBase = titleCaseFromSnake(m[1]);
+                                const nome = overrideCampoNome(m[1], nomeBase);
                                 const qtd = obj[key];
                                 if (qtd != null && String(qtd).trim() !== "") materiaisLines.push(`${nome}: ${String(qtd)}`);
                                 continue;
@@ -562,9 +579,14 @@ export default function HistoricoSepultamentosPage() {
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+                            // Aplicar override do rótulo visual
+                            nome = overrideCampoNome(key, nome);
                             v = String(v);
                             if (v.startsWith("fase") && FASES_NOMES[v]) v = FASES_NOMES[v];
                             v = formataSeDataIso(v);
+                            // Substitui rótulo em strings livres (se vierem concatenadas)
+                            nome = substituirRotuloVisual(nome);
+                            v = substituirRotuloVisual(v);
                             detalhesLines.push(`${nome}: ${v}`);
                         }
                     }
@@ -578,6 +600,8 @@ export default function HistoricoSepultamentosPage() {
                         const regEx = new RegExp(cod, "g");
                         detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                     });
+                    // Substitui o rótulo visual em texto bruto
+                    detalhesRaw = substituirRotuloVisual(detalhesRaw);
                     if (detalhesRaw.trim()) detalhesLines.push(detalhesRaw.trim());
                 }
 
@@ -1067,12 +1091,13 @@ export default function HistoricoSepultamentosPage() {
                                                 if (m) {
                                                     const valRaw = obj[key];
                                                     if (valRaw != null && String(valRaw).trim() !== "") {
-                                                        const nome = titleCaseFromSnake(m[1]);
-                                                        const val = formataSeDataIso(String(valRaw));
+                                                        const nomeBase = titleCaseFromSnake(m[1]);
+                                                        const nome = overrideCampoNome(m[1], nomeBase);
+                                                        const valFmt = formataSeDataIso(String(valRaw));
                                                         chips.push(
-                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(
-                                                                String(val)
-                                                            )}</span>`
+                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
+                                                                nome
+                                                            )}:</b> ${sanitize(String(valFmt))}</span>`
                                                         );
                                                     }
                                                     continue;
@@ -1083,10 +1108,16 @@ export default function HistoricoSepultamentosPage() {
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+                                                // Override visual do rótulo
+                                                nome = overrideCampoNome(key, nome);
                                                 val = String(val);
                                                 if (val.startsWith("fase") && FASES_NOMES[val]) val = FASES_NOMES[val];
 
                                                 val = formataSeDataIso(val);
+
+                                                // Substituição em textos livres
+                                                nome = substituirRotuloVisual(nome);
+                                                val = substituirRotuloVisual(val);
 
                                                 chips.push(
                                                     `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`
@@ -1115,6 +1146,8 @@ export default function HistoricoSepultamentosPage() {
                                             const regEx = new RegExp(cod, "g");
                                             detalhesRaw = detalhesRaw.replace(regEx, faseNome);
                                         });
+                                        // Substituição em texto bruto
+                                        detalhesRaw = substituirRotuloVisual(detalhesRaw);
                                         if (detalhesRaw.trim()) {
                                             detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
                                         }
@@ -1169,7 +1202,8 @@ export default function HistoricoSepultamentosPage() {
                             <div>
                                 <h3 className="text-lg font-semibold">Análise Geral</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    A análise soma consumo pelos <b>eventos de log</b> no período selecionado (materiais por <i>deltas</i> e arrumação por <i>ativações</i>). Você pode restringir aos serviços com Tanatopraxia.
+                                    A análise soma consumo pelos <b>eventos de log</b> no período selecionado (materiais por <i>deltas</i> e arrumação por{" "}
+                                    <i>ativações</i>). Você pode restringir aos serviços com Tanatopraxia.
                                 </p>
                             </div>
                             <button className="rounded-md border p-2 text-sm hover:bg-muted" onClick={() => setAnaliseOpen(false)} title="Fechar">
