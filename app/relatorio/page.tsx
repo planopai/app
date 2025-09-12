@@ -706,7 +706,7 @@ export default function HistoricoSepultamentosPage() {
                 // título da seção
                 doc.setFont(titleFont[0], titleFont[1]);
                 doc.setFontSize(12.5);
-                doc.text("Resumo Final", marginL, y);
+                doc.text("Relatório Final", marginL, y);
                 y += 5;
 
                 // prepara pares (ordem priorizada + demais)
