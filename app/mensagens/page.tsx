@@ -265,25 +265,27 @@ export default function MensagensPage() {
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
         if (nunitoStateRef.current === "fail") return false;
+
         try {
-            const regularUrl =
-                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
-            const boldUrl =
-                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
-            async function fetchTTF(u: string) {
-                const r = await fetch(u);
-                if (!r.ok) throw new Error("Fonte não encontrada");
-                const b = await r.arrayBuffer();
-                let binary = "";
-                const bytes = new Uint8Array(b);
-                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                return btoa(binary);
-            }
-            const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-            doc.addFileToVFS("Nunito-Regular.ttf", regB64);
-            doc.addFont("Nunito-Regular.ttf", "Nunito", "normal");
-            doc.addFileToVFS("Nunito-Bold.ttf", boldB64);
-            doc.addFont("Nunito-Bold.ttf", "Nunito", "bold");
+            // TTF variável (colchetes escapados)
+            const nunitoUrl =
+                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito%5Bwght%5D.ttf";
+
+            const r = await fetch(nunitoUrl);
+            if (!r.ok) throw new Error("Fonte Nunito não encontrada");
+            const buf = await r.arrayBuffer();
+
+            // arrayBuffer -> base64
+            let binary = "";
+            const bytes = new Uint8Array(buf);
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            const b64 = btoa(binary);
+
+            // Registra a mesma fonte para normal e bold (o variável cobre ambos)
+            doc.addFileToVFS("Nunito.ttf", b64);
+            doc.addFont("Nunito.ttf", "Nunito", "normal");
+            doc.addFont("Nunito.ttf", "Nunito", "bold");
+
             nunitoStateRef.current = "ok";
             return true;
         } catch {
@@ -369,8 +371,10 @@ export default function MensagensPage() {
 
             const nunitoOk = await ensureNunito(doc);
             const dejaOk = await ensureDejaVu(doc);
-            const CONTENT_FONT = dejaOk ? "Nunito" : "helvetica";
-            const COVER_FONT = nunitoOk ? "Nunito" : "helvetica";
+
+            // Fallback inteligente: Nunito -> DejaVu -> Helvetica
+            const CONTENT_FONT = nunitoOk ? "Nunito" : dejaOk ? "DejaVuSans" : "helvetica";
+            const COVER_FONT = nunitoOk ? "Nunito" : dejaOk ? "DejaVuSans" : "helvetica";
 
             setProgress(15);
             setProgressMsg("Carregando imagens de capa…");
@@ -382,7 +386,7 @@ export default function MensagensPage() {
             doc.setFont(COVER_FONT, "bold");
             doc.setFontSize(NAME_SIZE);
             const maxTitleW = pageW * 0.8;
-            const nameLines = doc.splitTextToSize(meta.nome, maxTitleW) as string[];
+            const nameLines = doc.splitTextToSize(sanitizeForPdf(meta.nome), maxTitleW) as string[];
             const mmPerPt = 0.352777778;
             const nameLH = NAME_SIZE * 1.15 * mmPerPt;
             const blockH = nameLH * nameLines.length;
@@ -477,25 +481,28 @@ export default function MensagensPage() {
                     textX,
                     textTop,
                     textMaxW,
-                    "Nunito",
+                    CONTENT_FONT,
                     "bold",
                     titleSize,
                     false
                 );
 
+                // Declara bodySize antes de usar
                 let bodySize = bodyStart;
+
                 let body = wrapText(
                     doc,
                     m.text || "",
                     textX,
                     textTop + nameH + nameBodyGap,
                     textMaxW,
-                    "Nunito",
+                    CONTENT_FONT,
                     "normal",
                     bodySize,
                     false
                 );
 
+                // Ajuste de tamanho até caber no cartão
                 while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
                     bodySize -= 0.5;
                     body = wrapText(
@@ -504,19 +511,20 @@ export default function MensagensPage() {
                         textX,
                         textTop + nameH + nameBodyGap,
                         textMaxW,
-                        "Nunito",
+                        CONTENT_FONT,
                         "normal",
                         bodySize,
                         false
                     );
                 }
 
+                // Se ainda passar, trunca com "…"
                 if (nameH + nameBodyGap + body.height > maxH) {
                     const mmPerPt2 = 0.352777778;
                     const lh = bodySize * 1.15 * mmPerPt2;
                     const maxBodyH = maxH - nameH - nameBodyGap;
                     const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
-                    let clean = (sanitizeForPdf(m.text || "") || "");
+                    let clean = sanitizeForPdf(m.text || "") || "";
                     let lines = (doc.splitTextToSize(clean, textMaxW) as string[]).slice(0, maxLines);
                     if (lines.length && maxLines > 0) {
                         lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
@@ -524,8 +532,9 @@ export default function MensagensPage() {
                     body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
                 }
 
-                wrapText(doc, m.name || "", textX, textTop, textMaxW, "Nunito", "bold", titleSize, true);
-                doc.setFont("Nunito", "normal");
+                // Desenha título e corpo
+                wrapText(doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, true);
+                doc.setFont(CONTENT_FONT, "normal");
                 doc.setFontSize(bodySize);
                 let y = textTop + nameH + nameBodyGap;
                 for (const ln of body.lines) {
