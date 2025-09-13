@@ -348,7 +348,7 @@ export default function MensagensPage() {
         return `${d}/${m}/${y}`;
     };
 
-    // ------- Exportar PDF -------
+    // ------- Exportar o PDF Para a Geração Das Homenagens -------
     const runExport = useCallback(
         async (meta: { nome: string; nasc: string; obito: string }) => {
             const w: any = window as any;
@@ -644,7 +644,7 @@ export default function MensagensPage() {
                 </div>
             </div>
 
-            {/* Salas */}
+            {/* Todas As Salas Disponiveis  */}
             <div className="mb-5 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <RoomButton label="Sala 01" active={room === 1} onClick={() => setRoom(1)} />
@@ -665,7 +665,7 @@ export default function MensagensPage() {
                 </div>
             )}
 
-            {/* Recebidas */}
+            {/* Todas As Mensagens Que Foram Recebidas Dos Familiares e Amigos Durante o Velório */}
             <section className="mb-6">
                 <div className="mb-3 flex items-center gap-2">
                     <IconMessageCircle2 className="size-5 text-muted-foreground" />
@@ -708,7 +708,7 @@ export default function MensagensPage() {
                 )}
             </section>
 
-            {/* Aprovadas */}
+            {/* Mensgens Que Foram Aprovadas Pelos Usuarios Durante o Velorio  */}
             <section>
                 <div className="mb-3 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -757,7 +757,7 @@ export default function MensagensPage() {
                 )}
             </section>
 
-            {/* MODAL – Gerar Livro */}
+            {/* MODAL – Gerar Livro de Homenagens ( Abre a Função Para Gerar Os Livros de Homenagens Para As Familias dos Falecidos ) */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3">
                     <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">

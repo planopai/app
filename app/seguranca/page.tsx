@@ -148,7 +148,7 @@ export default function SegurancaPage() {
                 </div>
             </div>
 
-            {/* Card: Escolher sala */}
+            {/* Card: Escolhe Uma Sala Para Realizar Alterações */}
             <div className="mb-5 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
                 <div className="mb-2 flex items-center gap-2">
                     <IconLock className="size-5 text-muted-foreground" />

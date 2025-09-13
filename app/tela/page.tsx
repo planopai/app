@@ -656,7 +656,7 @@ export default function PainelTV() {
         playsInline
       />
 
-      {/* Nunito aplicada globalmente */}
+      {/* Nunito aplicada globalmente em todos os pontos */}
       <style jsx global>{`
         html,
         body,

@@ -53,7 +53,7 @@ export default function MemorialPage() {
                 </div>
             </header>
 
-            {/* Grid com 4 itens */}
+            {/* Grid 4  */}
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {items.map(({ title, href, desc, icon: Icon }) => (
                     <Link

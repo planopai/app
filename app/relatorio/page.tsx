@@ -294,7 +294,7 @@ function normSimNao(s?: string) {
 }
 
 /* ======================== RESUMO FINAL (helpers) ======================= */
-/** Campos priorizados na exibição do Resumo Final (ordem). */
+/** Campos na exibição do Resumo Final  (ordem). */
 const RESUMO_ORDER = [
     "falecido",
     "contato",

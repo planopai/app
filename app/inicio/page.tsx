@@ -112,7 +112,7 @@ export default function HomePage() {
                     </Link>
                 ))}
 
-                {/* Único card para o Memorial */}
+                {/* Único card para o Memorial -  */}
                 <Link href="/memorial" className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
                     <div className="flex items-start gap-3">
                         <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
