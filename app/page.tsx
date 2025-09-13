@@ -151,8 +151,8 @@ export default function HomePage() {
       <section className="mt-6 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur">
         <h4 className="mb-1 text-sm font-semibold">Dicas rápidas</h4>
         <ul className="text-sm text-muted-foreground">
-          <li className="mb-1">• Caso seu backend esteja em outro domínio, use um proxy (ex.: <b>/api/php/…</b>) para evitar CORS.</li>
-          <li>• Em produção, prefira <b>HTTPS</b> para todas as chamadas.</li>
+          <li className="mb-1">• Em casos de problemas com ações não realizadas, saia e faça novamente o login.</li>
+          <li>• Problemas Gerais: Feche o Aplicativo, desligue e ligue novamente a conexão de internet.</li>
         </ul>
       </section>
     </div>
