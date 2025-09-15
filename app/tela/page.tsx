@@ -4,7 +4,7 @@ import Head from "next/head";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /* =========================
-   Tipos
+   Tipos De Registros
    ========================= */
 type Registro = {
   data?: string;
@@ -19,7 +19,7 @@ type Registro = {
 type Aviso = { usuario?: string; mensagem?: string };
 
 /* =========================
-   Utilidades
+   Utilidades Do Sistema 
    ========================= */
 const etapasCampos: (string | string[])[][] = [
   ["falecido", "contato", "religiao", "convenio"],
@@ -109,18 +109,18 @@ const formatDateBr = (d?: string) =>
     ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
     : d;
 
-// chaves estáveis para detectar “novos”
+// Chaves Estáveis Para Detectar “Novos”
 const keyOfRegistro = (r: Registro) =>
   `${r.data || ""}|${(r.falecido || "").toLowerCase()}|${(r.local_velorio || "").toLowerCase()}`;
 const keyOfAviso = (a: Aviso) =>
   `${(a.usuario || "").toLowerCase()}|${(a.mensagem || "").toLowerCase()}`;
 
 /* =========================
-   Ticker (marquee) — mais rápido
+   Ticker (Marquee) — Mais Rápido
    ========================= */
 function Ticker({ items }: { items: Aviso[] }) {
   const innerRef = useRef<HTMLDivElement>(null);
-  const [duration, setDuration] = useState(8); // valor inicial (será recalculado)
+  const [duration, setDuration] = useState(8); // Valor Inicial (Será Recalculado)
 
   const text = useMemo(() => {
     if (!items?.length) return "Nenhum aviso no momento.";
@@ -137,7 +137,7 @@ function Ticker({ items }: { items: Aviso[] }) {
   useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    // aceleração: ~420 px/s
+    // Aceleração: ~420 px/s
     const contentWidth = el.scrollWidth;
     const speed = 420; // px/seg
     const base = Math.max(4, Math.round(contentWidth / speed)); // mínimo 4s
@@ -164,7 +164,7 @@ function Ticker({ items }: { items: Aviso[] }) {
           >
             <span dangerouslySetInnerHTML={{ __html: sanitize(text) }} />
             <span className="mx-8">•</span>
-            {/* duplicação para loop contínuo */}
+            {/* Duplicação Para Loop Contínuo */}
             <span dangerouslySetInnerHTML={{ __html: sanitize(text) }} />
           </div>
         </div>
@@ -200,7 +200,7 @@ export default function PainelTV() {
   const [avisos, setAvisos] = useState<Aviso[]>([]);
   const [connErr, setConnErr] = useState<string | null>(null);
 
-  // som
+  // Som
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("soundEnabled") === "1";
@@ -214,7 +214,7 @@ export default function PainelTV() {
   const audioRegRef = useRef<HTMLAudioElement | null>(null);
   const audioAvisoRef = useRef<HTMLAudioElement | null>(null);
 
-  // “Desbloqueia” áudio na 1ª interação do usuário (além do botão)
+  // “Desbloqueia” Audio Na 1ª Interação Do Usuário (Além do Botão)
   useEffect(() => {
     if (soundEnabled) return;
     const unlock = () => {
@@ -241,7 +241,7 @@ export default function PainelTV() {
     };
   }, [soundEnabled]);
 
-  // pré-carrega
+  // Pré-Carrega
   useEffect(() => {
     audioRegRef.current?.load();
     audioAvisoRef.current?.load();
@@ -270,6 +270,7 @@ export default function PainelTV() {
   // conjuntos de vistos para detectar novidades (sem depender do render)
   const seenReg = useRef<Set<string>>(new Set());
   const firstRegLoad = useRef(true);
+  
 
   const seenAviso = useRef<Set<string>>(new Set());
   const firstAvisoLoad = useRef(true);
