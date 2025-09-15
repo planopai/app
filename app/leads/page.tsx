@@ -105,7 +105,7 @@ function LeadCard({
     );
 }
 
-/* ===== paginação simples ===== */
+/* ===== Paginação Simples ===== */
 function Pager({
     page,
     pages,
@@ -257,7 +257,7 @@ export default function LeadsPage() {
                 </div>
             </div>
 
-            {/* Barra de busca + ações */}
+            {/* Barra de Busca + Ações */}
             <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="col-span-2 lg:col-span-1">
                     <div className="relative">
@@ -289,7 +289,7 @@ export default function LeadsPage() {
                 </div>
             </div>
 
-            {/* Seleção rápida visível / limpar */}
+            {/* Seleção Rápida Visível / Limpar */}
             <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
                 <button onClick={selectVisible} className="underline underline-offset-4">
                     Selecionar itens desta página

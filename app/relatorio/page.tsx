@@ -449,7 +449,7 @@ export default function HistoricoSepultamentosPage() {
         document.body.appendChild(script);
     }, []);
 
-    // Carregar lista
+    // Carregar Lista
     const carregarFalecidos = useCallback(async () => {
         try {
             setLoadingLista(true);
@@ -540,7 +540,7 @@ export default function HistoricoSepultamentosPage() {
             if (primeiro) setCriacaoMap((prev) => ({ ...prev, [String(item.sepultamento_id)]: primeiro }));
             setLog(arr || []);
 
-            // >>> Novo: calcula resumo e flag de finalização
+            // >>> Novo: Calcula Resumo e Flag de Finalização
             const fin = estaFinalizado(arr || []);
             setFinalizado(fin);
             setResumoFinal(fin ? montarResumoFinalDoLog(arr || []) : {});
@@ -551,14 +551,14 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Mantém resumo atualizado se o log mudar (por alguma atualização dinâmica)
+    // Mantém Resumo Atualizado Se o Log Mudar (Por Alguma Atualização Dinâmica)
     useEffect(() => {
         const fin = estaFinalizado(log || []);
         setFinalizado(fin);
         setResumoFinal(fin ? montarResumoFinalDoLog(log || []) : {});
     }, [log]);
 
-    // Nunito no jsPDF
+    // Nunito No jsPDF
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -588,7 +588,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // === Helpers de desenho para o PDF ===
+    // === Helpers De Desenho Para o PDF ===
     function ensurePageSpace(doc: any, y: number, needed: number, marginTop = 22) {
         const pageH = doc.internal.pageSize.getHeight();
         if (y + needed > pageH - 20) {
@@ -616,7 +616,6 @@ export default function HistoricoSepultamentosPage() {
         const padX = 4;
         const padY = 4;
 
-        // rótulo (letra pequena)
         doc.setFont(fonts.normal[0], fonts.normal[1]);
         doc.setFontSize(8.5);
         const { lines: labelLines, h: hLabel } = textHeight(doc, label, w - padX * 2, 3.8);
@@ -703,13 +702,13 @@ export default function HistoricoSepultamentosPage() {
             const resumo = fin ? montarResumoFinalDoLog(log) : null;
 
             if (resumo && Object.keys(resumo).length) {
-                // título da seção
+                // Título Da Seção
                 doc.setFont(titleFont[0], titleFont[1]);
                 doc.setFontSize(12.5);
                 doc.text("Relatório Final", marginL, y);
                 y += 5;
 
-                // prepara pares (ordem priorizada + demais)
+                // Prepara Pares (Ordem Priorizada + Demais)
                 const pairs: Array<[string, string]> = [];
                 for (const k of RESUMO_ORDER) {
                     const v = resumo[k];
@@ -721,11 +720,11 @@ export default function HistoricoSepultamentosPage() {
                     }
                 }
 
-                // grade 2 colunas (igual à UI)
+                // Grade 2 Colunas (Igual à UI)
                 const gap = 4;
                 const colW = (contentW - gap) / 2;
 
-                // varre e desenha cartões
+                // Varre e Desenha Cartões
                 doc.setFont(normalFont[0], normalFont[1]); // base
                 let cursorX = marginL;
                 let cursorY = y;
@@ -733,7 +732,7 @@ export default function HistoricoSepultamentosPage() {
                 for (let i = 0; i < pairs.length; i++) {
                     const [label, value] = pairs[i];
 
-                    // calcula altura do card para esta coluna
+                    // Calcula Altura do Card Para Esta Coluna
                     doc.setFont(normalFont[0], normalFont[1]); doc.setFontSize(8.5);
                     const labelH = textHeight(doc, label, colW - 8, 3.8).h;
                     doc.setFont(titleFont[0], titleFont[1]); doc.setFontSize(11);
@@ -742,7 +741,7 @@ export default function HistoricoSepultamentosPage() {
                     const cardH = labelH + 2 + valueH + 8; // pads
                     cursorY = ensurePageSpace(doc, cursorY, cardH);
 
-                    // desenha card
+                    // Desenha Card
                     const used = drawCard(
                         doc,
                         cursorX,
@@ -753,12 +752,12 @@ export default function HistoricoSepultamentosPage() {
                         { normal: normalFont, title: titleFont }
                     );
 
-                    // avança coluna/linha
+                    // Avança Coluna/Linha
                     if (cursorX === marginL) {
-                        cursorX = marginL + colW + gap; // vai pra 2ª coluna
+                        cursorX = marginL + colW + gap; // Vai Pra 2ª Coluna
                     } else {
-                        cursorX = marginL;              // volta pra 1ª
-                        cursorY += used + 3;            // nova linha
+                        cursorX = marginL;              // Volta Pra 1ª
+                        cursorY += used + 3;            // Nova Linha
                     }
                 }
 
