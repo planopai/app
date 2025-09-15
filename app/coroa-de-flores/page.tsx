@@ -39,7 +39,8 @@ type WcOrder = {
         phone?: string;
     };
     shipping?: {
-        falecido_nome?: string; // Falecido(a)
+        /** ⚠️ Mantemos first_name como fallback para pedidos antigos/padrão Woo */
+        first_name?: string;
         last_name?: string;
         address_1?: string;
         address_2?: string;
@@ -154,7 +155,13 @@ function buildWhatsAppText(order: WcOrderFull) {
     const phone = onlyDigits(order.billing?.phone);
     const valor = formatCurrency(order.total, order.currency || "BRL");
     const localEntrega = [order.shipping?.address_1, order.shipping?.address_2].filter(Boolean).join(" - ");
-    const falecido = order.shipping?.falecido_nome || "";
+    const falecido =
+        findMetaValue(order.meta_data, [
+            "shipping_falecido_nome", // campo criado no Checkout Field Editor (Shipping)
+            "falecido_nome",
+            "nome_falecido",
+            "nome_do_falecido",
+        ]) || order.shipping?.first_name || "";
 
     const frase =
         findMetaValue(order.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
@@ -237,7 +244,9 @@ async function convertToJpegWithWhiteBg(blob: Blob): Promise<Blob> {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const out: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.92)!);
+        const out: Blob = await new Promise((resolve) =>
+            canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.92)!
+        );
         return out;
     } finally {
         URL.revokeObjectURL(imgUrl);
@@ -461,7 +470,9 @@ export default function Page() {
             <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-6">
                 <div>
                     <h1 className="text-xl font-semibold">Pedidos — Coroas de Flores</h1>
-                    <p className="text-sm text-muted-foreground">Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.</p>
+                    <p className="text-sm text-muted-foreground">
+                        Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.
+                    </p>
                 </div>
                 <button
                     className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
@@ -556,7 +567,8 @@ export default function Page() {
             <div className="px-4 pb-6 lg:px-6 md:hidden">
                 <div className="space-y-3">
                     {orders.map((o) => {
-                        const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                        const cliente =
+                            `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                         const disabled = !canNotifyRow(o);
                         return (
                             <div key={o.id} className="rounded-lg border bg-card p-3">
@@ -575,7 +587,9 @@ export default function Page() {
 
                                 <div className="mt-2 text-sm">
                                     <div className="font-medium leading-tight">{cliente}</div>
-                                    <div className="text-muted-foreground mt-1">{formatCurrency(o.total, o.currency || "BRL")}</div>
+                                    <div className="text-muted-foreground mt-1">
+                                        {formatCurrency(o.total, o.currency || "BRL")}
+                                    </div>
                                 </div>
 
                                 <div className="mt-3 flex items-center gap-2">
@@ -591,7 +605,9 @@ export default function Page() {
                                         className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-50"
                                         onClick={() => notifyWhatsApp(o.id)}
                                         disabled={disabled}
-                                        title={disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp"}
+                                        title={
+                                            disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp"
+                                        }
                                     >
                                         <IconSend className="size-4" />
                                         Notificar
@@ -621,7 +637,9 @@ export default function Page() {
                         </button>
                         <button
                             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                            onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
+                            onClick={() =>
+                                setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))
+                            }
                             disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
                         >
                             Próxima
@@ -656,7 +674,8 @@ export default function Page() {
                                 )}
 
                                 {orders.map((o) => {
-                                    const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                                    const cliente =
+                                        `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                                     const disabled = !canNotifyRow(o);
                                     const reason = disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp";
                                     return (
@@ -726,7 +745,9 @@ export default function Page() {
                             </button>
                             <button
                                 className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
+                                onClick={() =>
+                                    setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))
+                                }
                                 disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
                             >
                                 Próxima
@@ -801,7 +822,13 @@ export default function Page() {
                                         {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}
                                     </div>
                                     <div>
-                                            <b>Falecido(a):</b> {detail.shipping?.falecido_nome || "—"}
+                                        <b>Falecido(a):</b>{" "}
+                                        {findMetaValue(detail.meta_data, [
+                                            "shipping_falecido_nome",
+                                            "falecido_nome",
+                                            "nome_falecido",
+                                            "nome_do_falecido",
+                                        ]) || detail.shipping?.first_name || "—"}
                                     </div>
                                     <div>
                                         <b>Frase da Coroa:</b>{" "}
@@ -846,8 +873,7 @@ export default function Page() {
                                     </div>
 
                                     <div className="text-sm text-muted-foreground">
-                                        Criado em {formatDate(detail.date_created)} — Total{" "}
-                                        <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
+                                        Criado em {formatDate(detail.date_created)} — Total <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
                                     </div>
                                 </div>
 
@@ -868,11 +894,7 @@ export default function Page() {
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
                                         onClick={shareDetailPhoto}
                                         disabled={!detailImage}
-                                        title={
-                                            detailImage
-                                                ? "Abrir compartilhamento com a foto do produto"
-                                                : "Este pedido não tem imagem de produto"
-                                        }
+                                        title={detailImage ? "Abrir compartilhamento com a foto do produto" : "Este pedido não tem imagem de produto"}
                                     >
                                         <IconPhoto className="size-4" />
                                         Compartilhar Foto
