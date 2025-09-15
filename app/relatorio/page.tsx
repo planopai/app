@@ -588,7 +588,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // === Helpers De Desenho Para o PDF ===
+    // === Helpers De Desenho Para o PDF Que é Impresso Depois do Relatórip ===
     function ensurePageSpace(doc: any, y: number, needed: number, marginTop = 22) {
         const pageH = doc.internal.pageSize.getHeight();
         if (y + needed > pageH - 20) {

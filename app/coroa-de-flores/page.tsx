@@ -39,7 +39,7 @@ type WcOrder = {
         phone?: string;
     };
     shipping?: {
-        first_name?: string; // Falecido(a)
+        falecido_nome?: string; // Falecido(a)
         last_name?: string;
         address_1?: string;
         address_2?: string;
@@ -154,7 +154,7 @@ function buildWhatsAppText(order: WcOrderFull) {
     const phone = onlyDigits(order.billing?.phone);
     const valor = formatCurrency(order.total, order.currency || "BRL");
     const localEntrega = [order.shipping?.address_1, order.shipping?.address_2].filter(Boolean).join(" - ");
-    const falecido = order.shipping?.first_name || "";
+    const falecido = order.shipping?.falecido_nome || "";
 
     const frase =
         findMetaValue(order.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
@@ -710,7 +710,7 @@ export default function Page() {
                         {error && <div className="px-3 pb-3 text-sm text-rose-600">{error}</div>}
                     </div>
 
-                    {/* Paginação (desktop) */}
+                    {/* Paginação (desktop)  */}
                     <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
                         <div className="text-xs text-muted-foreground">
                             Página {meta.page} de {meta.totalPages} — {meta.total} pedidos
@@ -801,7 +801,7 @@ export default function Page() {
                                         {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}
                                     </div>
                                     <div>
-                                        <b>Falecido(a):</b> {detail.shipping?.first_name || "—"}
+                                            <b>Falecido(a):</b> {detail.shipping?.falecido_nome || "—"}
                                     </div>
                                     <div>
                                         <b>Frase da Coroa:</b>{" "}
