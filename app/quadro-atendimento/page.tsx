@@ -29,6 +29,11 @@ type Registro = {
     roupa?: string;
     assistencia?: string;
     tanato?: string;
+
+    // >>> NOVOS CAMPOS <<<
+    ornamentacao?: string;       // coluna existente no BD
+    ornamentacao_tipo?: string;  // "natural" | "artificial" (ou semelhante)
+
     local?: string;
     local_sepultamento?: string;
     materiais?: string;
@@ -169,6 +174,7 @@ const LABELS: Record<string, string> = {
     roupa: "Roupa",
     assistencia: "Assistência",
     tanato: "Tanatopraxia",
+    // Mantemos os labels clássicos usados nas pendências das etapas
     local_velorio: "Local do Velório",
     data_inicio_velorio: "Data Início Velório",
     data_fim_velorio: "Data Fim Velório",
@@ -207,11 +213,19 @@ function etapasPreenchidas(registro: Registro) {
 }
 
 /* =========================
-   Texto para copiar (mantido)
+   Texto para copiar (mantido + Ornamentação)
    ========================= */
 function buildClipboardText(r: Registro) {
     const v = (k: string) => String(r?.[k] ?? "").trim();
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
+
+    // Normaliza tipo exibindo algo legível
+    const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
+    const ornTipo =
+        ornTipoRaw
+            ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
+            : "A DEFINIR";
+
     const lines = [
         `*ATENDIMENTO ${atend}*`,
         `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
@@ -221,6 +235,8 @@ function buildClipboardText(r: Registro) {
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
+        // >>> NOVA LINHA: Ornamentação
+        `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
         `*Local do Velório:* ${v("local_velorio") || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
@@ -402,7 +418,11 @@ export default function QuadroAtendimentoPage() {
                                         <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
                                             <td>{dateOr(r.data)}</td>
                                             <td>
-                                                <button className="font-semibold underline-offset-2 hover:underline" onClick={() => showDetail(r)} title="Ver detalhes">
+                                                <button
+                                                    className="font-semibold underline-offset-2 hover:underline"
+                                                    onClick={() => showDetail(r)}
+                                                    title="Ver detalhes"
+                                                >
                                                     {shown(r.falecido)}
                                                 </button>
                                             </td>
@@ -410,7 +430,9 @@ export default function QuadroAtendimentoPage() {
                                             <td>{timeOr(r.hora_fim_velorio)}</td>
                                             <td>{shown(r.agente)}</td>
                                             <td>
-                                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}>
+                                                <span
+                                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}
+                                                >
                                                     {capStatus(r.status) || "a definir"}
                                                 </span>
                                             </td>
@@ -443,7 +465,11 @@ export default function QuadroAtendimentoPage() {
                             <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
                                 {/* Linha 1: Título + Data */}
                                 <div className="flex items-start justify-between gap-3">
-                                    <button className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline" onClick={() => showDetail(r)} title="Ver detalhes">
+                                    <button
+                                        className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
+                                        onClick={() => showDetail(r)}
+                                        title="Ver detalhes"
+                                    >
                                         {shown(r.falecido)}
                                     </button>
                                     <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
@@ -452,8 +478,15 @@ export default function QuadroAtendimentoPage() {
                                 {/* Linha 2: Chips + Agente */}
                                 <div className="mt-2 flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
-                                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>{statusTxt}</span>
-                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(convKind)}`} title="Convênio">
+                                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
+                                            {statusTxt}
+                                        </span>
+                                        <span
+                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
+                                                convKind
+                                            )}`}
+                                            title="Convênio"
+                                        >
                                             {convKind}
                                         </span>
                                     </div>
@@ -538,13 +571,21 @@ export default function QuadroAtendimentoPage() {
                                 </div>
 
                                 <div className="flex shrink-0 items-center gap-2">
-                                    <span className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(detail.status)}`} title="Status">
+                                    <span
+                                        className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(detail.status)}`}
+                                        title="Status"
+                                    >
                                         {capStatus(detail.status)}
                                     </span>
                                     <span className="hidden sm:inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         ATENDIMENTO {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                     </span>
-                                    <button onClick={handleCopy} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Copiar" title="Copiar informações">
+                                    <button
+                                        onClick={handleCopy}
+                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                        aria-label="Copiar"
+                                        title="Copiar informações"
+                                    >
                                         {copied ? "Copiado!" : "Copiar"}
                                     </button>
                                     <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
@@ -555,8 +596,12 @@ export default function QuadroAtendimentoPage() {
 
                             {/* badges no mobile */}
                             <div className="mt-2 flex gap-2 sm:hidden">
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>{capStatus(detail.status)}</span>
-                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}</span>
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
+                                    {capStatus(detail.status)}
+                                </span>
+                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                    ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
+                                </span>
                             </div>
                         </div>
 
@@ -570,7 +615,6 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
                                     {/* Observação da etapa */}
                                     <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
-
                                 </div>
                             </Topic>
 
@@ -580,10 +624,18 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                    <Field label="Materiais" value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")} className="sm:col-span-2" />
+                                    {/* >>> NOVO CAMPO VISÍVEL NA SEÇÃO ITENS <<< */}
+                                    <Field
+                                        label="Ornamentação"
+                                        value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
+                                    />
+                                    <Field
+                                        label="Materiais"
+                                        value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")}
+                                        className="sm:col-span-2"
+                                    />
                                     {/* Observação da etapa */}
                                     <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
-
                                 </div>
                             </Topic>
 
@@ -595,10 +647,8 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    {/* Removido: <Field label="Fim Velório" value={timeOr(detail.hora_fim_velorio)} /> */}
                                     {/* Observação da etapa */}
                                     <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
-
                                 </div>
                             </Topic>
 
