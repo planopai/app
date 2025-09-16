@@ -33,7 +33,7 @@ export default function ArrumacaoModal({
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Arrumação do Corpo" maxWidth={520}>
-            <h3 className="text-lg font-semibold">Arrumação do Corpo</h3>
+            <h3 className="text-lg font-semibold">Conservação do Corpo</h3>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {campos.map((o) => (
