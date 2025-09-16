@@ -172,6 +172,13 @@ function asBool(v: any): boolean {
     return false;
 }
 
+// >>> IGNORAR LOGS SEM ALTERAÇÕES
+function isNoChangeKey(k: string) {
+    // aceita "sem_alteracoes", "sem alteracoes", "sem alterações", etc.
+    return /^sem[\s_]*alterac(?:o|oe)es?$/i.test((k || "").trim());
+}
+
+
 /* ===== Materiais (análise) ===== */
 const MATERIAL_KEYS = [
     "cadeiras",
@@ -332,6 +339,7 @@ function extrairParesDoDetalhe(raw: any): Record<string, string> {
                 if (/^materiais_.+?_qtd$/i.test(key)) continue;
 
                 const val = (obj as any)[key];
+                if (isNoChangeKey(key) && asBool(val)) continue;
                 if (val == null) continue;
                 if (typeof val === "object") continue;
 
@@ -828,6 +836,7 @@ export default function HistoricoSepultamentosPage() {
                             if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
+                            if (isNoChangeKey(key) && asBool(v)) continue;
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                             nome = overrideCampoNome(key, nome);
                             v = String(v);
@@ -840,6 +849,7 @@ export default function HistoricoSepultamentosPage() {
                     }
                 } catch {
                     let detalhesRaw = String(raw || "");
+                    detalhesRaw = detalhesRaw.replace(/sem[\s_]*alterac(?:o|oe)es?\s*:\s*true/gi, "");
                     detalhesRaw = detalhesRaw.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
                     detalhesRaw = detalhesRaw.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
                     detalhesRaw = detalhesRaw.replace(/materiais\s*:\s*\[[^\]]*\]/gi, "");
@@ -1355,6 +1365,7 @@ export default function HistoricoSepultamentosPage() {
                                                 if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
                                                 let val = obj[key];
                                                 if (val == null || String(val).trim() === "") continue;
+                                                if (isNoChangeKey(key) && asBool(val)) continue;
                                                 let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                                                 nome = overrideCampoNome(key, nome);
                                                 val = String(val);
@@ -1362,6 +1373,7 @@ export default function HistoricoSepultamentosPage() {
                                                 val = formataSeDataIso(val);
                                                 nome = substituirRotuloVisual(nome);
                                                 val = substituirRotuloVisual(val);
+                                                
 
                                                 chips.push(
                                                     `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(nome)}:</b> ${sanitize(val)}</span>`
@@ -1381,6 +1393,7 @@ export default function HistoricoSepultamentosPage() {
                                         }
                                     } catch {
                                         let detalhesRaw = String(raw || "");
+                                        detalhesRaw = detalhesRaw.replace(/sem[\s_]*alterac(?:o|oe)es?\s*:\s*true/gi, "");
                                         detalhesRaw = detalhesRaw.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
                                         detalhesRaw = detalhesRaw.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
                                         detalhesRaw = detalhesRaw.replace(/materiais\s*:\s*\[[^\]]*\]/gi, "");
