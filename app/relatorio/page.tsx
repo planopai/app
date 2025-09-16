@@ -60,10 +60,7 @@ const FASES_NOMES: Record<string, string> = {
 };
 const traduzirFase = (fase?: string) => (fase ? FASES_NOMES[fase] || fase : "");
 
-/** === Override VISUAL de rótulos ===
- * Requisito: onde aparecia "Hora Fim Velório", exibir "Horário do Sepultamento"
- * Os dados permanecem os mesmos (ex.: campo/coluna 'hora_fim_velorio').
- */
+/** === Override VISUAL de rótulos === */
 function overrideCampoNome(originalKey: string, nomeAtual: string) {
     const k = (originalKey || "").toLowerCase().replace(/\s+/g, "_");
     if (k === "hora_fim_velorio") return "Horário do Sepultamento";
@@ -143,7 +140,7 @@ function formataSeDataIso(v?: string): string {
             });
         }
     }
-    return s; // devolve a string original (não undefined)
+    return s;
 }
 
 function sanitize(txt?: string) {
@@ -177,7 +174,6 @@ function isNoChangeKey(k: string) {
     // aceita "sem_alteracoes", "sem alteracoes", "sem alterações", etc.
     return /^sem[\s_]*alterac(?:o|oe)es?$/i.test((k || "").trim());
 }
-
 
 /* ===== Materiais (análise) ===== */
 const MATERIAL_KEYS = [
@@ -301,7 +297,6 @@ function normSimNao(s?: string) {
 }
 
 /* ======================== RESUMO FINAL (helpers) ======================= */
-/** Campos na exibição do Resumo Final  (ordem). */
 const RESUMO_ORDER = [
     "falecido",
     "contato",
@@ -315,7 +310,7 @@ const RESUMO_ORDER = [
     "local_velorio",
     "data_inicio_velorio",
     "hora_inicio_velorio",
-    "hora_fim_velorio", // exibido como "Horário do Sepultamento"
+    "hora_fim_velorio",
     "data_fim_velorio",
 ] as const;
 type ResumoKey = (typeof RESUMO_ORDER)[number];
@@ -339,7 +334,7 @@ function extrairParesDoDetalhe(raw: any): Record<string, string> {
                 if (/^materiais_.+?_qtd$/i.test(key)) continue;
 
                 const val = (obj as any)[key];
-                if (isNoChangeKey(key) && asBool(val)) continue;
+                if (isNoChangeKey(key) && asBool(val)) continue; // << IGNORA "Sem Alterações: true"
                 if (val == null) continue;
                 if (typeof val === "object") continue;
 
@@ -358,11 +353,13 @@ function extrairParesDoDetalhe(raw: any): Record<string, string> {
         }
     } catch {
         // Fallback: parse "Label: Valor" em texto
-        const txt = substituirRotuloVisual(String(raw));
+        const cleaned = String(raw).replace(/sem[\s_]*alterac(?:o|oe)es?\s*:\s*true/gi, ""); // << remove texto cru
+        const txt = substituirRotuloVisual(cleaned);
         const regex = /([\p{L}\d _/.-]+):\s*([^\n]+)/giu;
         let m: RegExpExecArray | null;
         while ((m = regex.exec(txt))) {
             const rot = m[1]?.trim() || "";
+            if (isNoChangeKey(rot)) continue; // segurança
             const val = (m[2] || "").trim();
             if (!rot || !val) continue;
             const nomeVis = overrideCampoNome(rot, rot.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()));
@@ -383,7 +380,6 @@ function montarResumoFinalDoLog(log: LogItem[]) {
         for (const [k, v] of Object.entries(pares)) resumo[k] = v;
     }
 
-    // Normalização final de chaves/rótulos
     const result: Record<string, string> = {};
     for (const [k, v] of Object.entries(resumo)) {
         const nomeVis = overrideCampoNome(k, titleCaseFromSnake(k));
@@ -548,7 +544,6 @@ export default function HistoricoSepultamentosPage() {
             if (primeiro) setCriacaoMap((prev) => ({ ...prev, [String(item.sepultamento_id)]: primeiro }));
             setLog(arr || []);
 
-            // >>> Novo: Calcula Resumo e Flag de Finalização
             const fin = estaFinalizado(arr || []);
             setFinalizado(fin);
             setResumoFinal(fin ? montarResumoFinalDoLog(arr || []) : {});
@@ -559,14 +554,13 @@ export default function HistoricoSepultamentosPage() {
         }
     }, []);
 
-    // Mantém Resumo Atualizado Se o Log Mudar (Por Alguma Atualização Dinâmica)
     useEffect(() => {
         const fin = estaFinalizado(log || []);
         setFinalizado(fin);
         setResumoFinal(fin ? montarResumoFinalDoLog(log || []) : {});
     }, [log]);
 
-    // Nunito No jsPDF
+    // Nunito no jsPDF
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
@@ -596,7 +590,7 @@ export default function HistoricoSepultamentosPage() {
         }
     }
 
-    // === Helpers De Desenho Para o PDF Que é Impresso Depois do Relatórip ===
+    // === Helpers de desenho para o PDF ===
     function ensurePageSpace(doc: any, y: number, needed: number, marginTop = 22) {
         const pageH = doc.internal.pageSize.getHeight();
         if (y + needed > pageH - 20) {
@@ -638,7 +632,7 @@ export default function HistoricoSepultamentosPage() {
 
         // container
         doc.setDrawColor(210);
-        doc.setFillColor(248, 250, 252); // bg bem clarinho
+        doc.setFillColor(248, 250, 252);
         (doc as any).roundedRect(x, y, w, cardH, 2.5, 2.5, "DF");
 
         // conteúdo
@@ -655,10 +649,8 @@ export default function HistoricoSepultamentosPage() {
         doc.setFontSize(11);
         doc.text(valueLines, x + padX, yy + 4.5);
 
-        // retorna altura usada
         return cardH;
     }
-
 
     // Exportar PDF
     const exportarPdf = useCallback(async () => {
@@ -705,18 +697,16 @@ export default function HistoricoSepultamentosPage() {
                 y += 6;
             }
 
-            // >>> Novo: Resumo Final no PDF (se finalizado) — estilo de cards em grade
+            // Resumo Final (se finalizado)
             const fin = estaFinalizado(log);
             const resumo = fin ? montarResumoFinalDoLog(log) : null;
 
             if (resumo && Object.keys(resumo).length) {
-                // Título Da Seção
                 doc.setFont(titleFont[0], titleFont[1]);
                 doc.setFontSize(12.5);
                 doc.text("Relatório Final", marginL, y);
                 y += 5;
 
-                // Prepara Pares (Ordem Priorizada + Demais)
                 const pairs: Array<[string, string]> = [];
                 for (const k of RESUMO_ORDER) {
                     const v = resumo[k];
@@ -728,51 +718,39 @@ export default function HistoricoSepultamentosPage() {
                     }
                 }
 
-                // Grade 2 Colunas (Igual à UI)
                 const gap = 4;
                 const colW = (contentW - gap) / 2;
 
-                // Varre e Desenha Cartões
-                doc.setFont(normalFont[0], normalFont[1]); // base
+                doc.setFont(normalFont[0], normalFont[1]);
                 let cursorX = marginL;
                 let cursorY = y;
 
                 for (let i = 0; i < pairs.length; i++) {
                     const [label, value] = pairs[i];
 
-                    // Calcula Altura do Card Para Esta Coluna
-                    doc.setFont(normalFont[0], normalFont[1]); doc.setFontSize(8.5);
+                    doc.setFont(normalFont[0], normalFont[1]);
+                    doc.setFontSize(8.5);
                     const labelH = textHeight(doc, label, colW - 8, 3.8).h;
-                    doc.setFont(titleFont[0], titleFont[1]); doc.setFontSize(11);
+                    doc.setFont(titleFont[0], titleFont[1]);
+                    doc.setFontSize(11);
                     const valueH = textHeight(doc, value, colW - 8, 5).h;
 
-                    const cardH = labelH + 2 + valueH + 8; // pads
+                    const cardH = labelH + 2 + valueH + 8;
                     cursorY = ensurePageSpace(doc, cursorY, cardH);
 
-                    // Desenha Card
-                    const used = drawCard(
-                        doc,
-                        cursorX,
-                        cursorY,
-                        colW,
-                        label,
-                        value,
-                        { normal: normalFont, title: titleFont }
-                    );
+                    const used = drawCard(doc, cursorX, cursorY, colW, label, value, { normal: normalFont, title: titleFont });
 
-                    // Avança Coluna/Linha
                     if (cursorX === marginL) {
-                        cursorX = marginL + colW + gap; // Vai Pra 2ª Coluna
+                        cursorX = marginL + colW + gap;
                     } else {
-                        cursorX = marginL;              // Volta Pra 1ª
-                        cursorY += used + 3;            // Nova Linha
+                        cursorX = marginL;
+                        cursorY += used + 3;
                     }
                 }
 
-                // se terminamos na 2ª coluna, desce um pouco
                 if (cursorX !== marginL) cursorY += 8;
 
-                y = cursorY + 4; // espaço depois da grade
+                y = cursorY + 4;
             }
 
             const cardPadX = 6;
@@ -803,7 +781,7 @@ export default function HistoricoSepultamentosPage() {
                         for (const key of Object.keys(obj)) {
                             if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                            // ARRUMAÇÃO (objeto ou string JSON)
+                            // Arrumação
                             if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
                                 let aobj: any = {};
                                 const val = obj[key];
@@ -836,7 +814,10 @@ export default function HistoricoSepultamentosPage() {
                             if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
                             let v = obj[key];
                             if (v == null || String(v).trim() === "") continue;
+
+                            // IGNORAR "Sem Alterações: true"
                             if (isNoChangeKey(key) && asBool(v)) continue;
+
                             let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                             nome = overrideCampoNome(key, nome);
                             v = String(v);
@@ -849,10 +830,10 @@ export default function HistoricoSepultamentosPage() {
                     }
                 } catch {
                     let detalhesRaw = String(raw || "");
-                    detalhesRaw = detalhesRaw.replace(/sem[\s_]*alterac(?:o|oe)es?\s*:\s*true/gi, "");
                     detalhesRaw = detalhesRaw.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
                     detalhesRaw = detalhesRaw.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
                     detalhesRaw = detalhesRaw.replace(/materiais\s*:\s*\[[^\]]*\]/gi, "");
+                    detalhesRaw = detalhesRaw.replace(/sem[\s_]*alterac(?:o|oe)es?\s*:\s*true/gi, ""); // << remove texto cru
                     Object.keys(FASES_NOMES).forEach((cod) => {
                         const faseNome = FASES_NOMES[cod];
                         const regEx = new RegExp(cod, "g");
