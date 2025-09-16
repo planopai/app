@@ -125,7 +125,7 @@ export default function Wizard({
                                         className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
                                         onClick={() => setArrumacaoOpen(true)}
                                     >
-                                        Abrir Conservação do Corpo
+                                        Selecionar Materiais
                                     </button>
                                     <span className="text-sm text-muted-foreground">
                                         {arrumacaoSelecionadaResumo || "Nenhum item selecionado"}
