@@ -86,7 +86,7 @@ export default function Wizard({
                                         type="button"
                                         className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
                                         onClick={() => setArrumacaoOpen(true)}
-                                        title="Arrumação do Corpo"
+                                        title="Conservação do Corpo"
                                     >
                                         Selecionar Itens
                                     </button>

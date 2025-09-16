@@ -73,7 +73,7 @@ export const steps = [
 
     // NOVO: Arrumação do Corpo → sempre disponível
     {
-        label: "Arrumação do Corpo",
+        label: "Conservação do Corpo",
         id: "arrumacao",
         type: "custom", // você trata no Wizard/InfoModal para abrir ArrumacaoModal
     },
