@@ -44,7 +44,7 @@ interface RegistroAnalise {
     [key: string]: any;
 }
 
-/* ========================= Mapeamentos & utilitarios ======================== */
+/* ========================= Mapeamentos & utilitarios Que Vem Das Funções de Ações ======================== */
 const FASES_NOMES: Record<string, string> = {
     fase01: "Indo Retirar o Óbito",
     fase02: "Corpo na Clínica",
@@ -72,6 +72,8 @@ function overrideCampoNome(originalKey: string, nomeAtual: string) {
 
     const MAP: Record<string, string> = {
         // —— campos com acento e textos “bonitos”
+        assistencia: "Assistência",
+        ornamentacao_tipo: "Ornamentação",
         religiao: "Religião",
         convenio: "Convênio",
         local_velorio: "Local do Velório",
