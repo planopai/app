@@ -1,8 +1,17 @@
 "use client";
-import React from "react";
+
+import React, { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
-import FieldLabel from "./FieldLabel";
-import TextFeedback from "./TextFeedback";
+import { Registro } from "./types";
+
+type Step = {
+    label: string;
+    id: string;
+    type: "input" | "select" | "textarea" | "date" | "time" | "datalist" | "custom";
+    options?: string[];
+    placeholder?: string;
+    datalist?: string[];
+};
 
 export default function Wizard({
     open,
@@ -17,14 +26,17 @@ export default function Wizard({
     steps,
     wizardStepIndexes,
     wizardStepTitles,
+
     assistenciaVal,
     setAssistenciaVal,
     tanatoVal,
     setTanatoVal,
+
     materiaisSelecionadosResumo,
     arrumacaoSelecionadaResumo,
     setMateriaisOpen,
     setArrumacaoOpen,
+
     salvarGrupoWizard,
     concluirWizard,
 }: {
@@ -32,258 +44,367 @@ export default function Wizard({
     onClose: () => void;
     wizardTitle: string;
     wizardStep: number;
-    setWizardStep: React.Dispatch<React.SetStateAction<number>>;
+    setWizardStep: (n: number) => void;
     wizardRestrictGroup: number | null;
-    wizardData: any;
-    setWizardData: React.Dispatch<React.SetStateAction<any>>;
+    wizardData: Registro;
+    setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     obrigatorios: string[];
-    steps: readonly any[];
+    steps: readonly Step[];
     wizardStepIndexes: number[][];
     wizardStepTitles: string[];
+
     assistenciaVal: string;
     setAssistenciaVal: (v: string) => void;
     tanatoVal: string;
     setTanatoVal: (v: string) => void;
+
     materiaisSelecionadosResumo: string;
     arrumacaoSelecionadaResumo: string;
     setMateriaisOpen: (b: boolean) => void;
     setArrumacaoOpen: (b: boolean) => void;
-    salvarGrupoWizard: () => any | null;
-    concluirWizard: () => Promise<void>;
+
+    salvarGrupoWizard: () => Registro | null;
+    concluirWizard: () => void;
 }) {
+    // ✅ controle local só para visibilidade do "Tipo de Ornamentação"
+    const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
+
+    useEffect(() => {
+        setOrnamentacaoVal(String(wizardData.ornamentacao ?? ""));
+    }, [open, wizardData.ornamentacao]);
+
+    const grupoIndices = wizardStepIndexes[wizardStep] || [];
+    const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
+
+    const isLastStep = wizardStep === wizardStepIndexes.length - 1;
+    const isRestrito = typeof wizardRestrictGroup === "number";
+
+    const goPrev = () => setWizardStep(Math.max(0, wizardStep - 1));
+    const goNext = () => {
+        const ok = salvarGrupoWizard();
+        if (!ok) return;
+        if (!isLastStep) setWizardStep(wizardStep + 1);
+    };
+
+    const isRequired = (id: string) => obrigatorios.includes(id);
+
+    if (!open) return null;
+
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Novo registro">
+        <Modal open={open} onClose={onClose} ariaLabel="Wizard" maxWidth={740}>
             <h2 className="text-xl font-semibold">{wizardTitle}</h2>
 
-            <form
-                className="mt-4"
-                onSubmit={(e) => {
-                    e.preventDefault();
-                    concluirWizard();
-                }}
-            >
-                <div className="grid gap-4">
-                    {wizardStepIndexes[wizardStep].map((i) => {
-                        const s = steps[i] as any;
-                        const val = (wizardData as any)[s.id] ?? "";
-                        const id = "wizard-" + s.id;
+            {/* Abas informativas */}
+            <div className="mt-3 flex flex-wrap gap-2">
+                {wizardStepTitles.map((t, i) => (
+                    <span
+                        key={t}
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
+                            }`}
+                    >
+                        {t}
+                    </span>
+                ))}
+            </div>
 
-                        // 🔸 PASSO ESPECIAL: ARRUMAÇÃO DO CORPO (sempre disponível e independente)
-                        if (s.id === "arrumacao") {
-                            return (
-                                <div key={id}>
-                                    <FieldLabel>{s.label}</FieldLabel>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {grupoSteps.map((step) => {
+                    // 👉 mostra "Tipo de Ornamentação" somente quando Ornamentação = "Sim"
+                    if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") {
+                        return null;
+                    }
 
-                                    {/* Resumo em texto (somente leitura) */}
-                                    <div className="text-xs text-muted-foreground mb-2">
-                                        {arrumacaoSelecionadaResumo
-                                            ? <>Selecionados (Arrumação): {arrumacaoSelecionadaResumo}</>
-                                            : "Nenhum item selecionado"}
-                                    </div>
-
-                                    {/* Botão para abrir o modal */}
+                    // Campo custom (abre Arrumação)
+                    if (step.type === "custom" && step.id === "arrumacao") {
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                                     <button
                                         type="button"
                                         className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
                                         onClick={() => setArrumacaoOpen(true)}
-                                        title="Conservação do Corpo"
                                     >
-                                        Selecionar Itens
+                                        Abrir Conservação do Corpo
                                     </button>
+                                    <span className="text-sm text-muted-foreground">
+                                        {arrumacaoSelecionadaResumo || "Nenhum item selecionado"}
+                                    </span>
                                 </div>
-                            );
-                        }
+                                <input id="wizard-arrumacao" type="hidden" defaultValue="__custom__" />
+                            </div>
+                        );
+                    }
 
-                        if (s.type === "input" || s.type === "date" || s.type === "time") {
-                            return (
-                                <div key={id}>
-                                    <FieldLabel>
-                                        {s.label}
-                                        {obrigatorios.includes(s.id) ? " *" : ""}
-                                    </FieldLabel>
-                                    <input
-                                        id={id}
-                                        name={s.id}
-                                        type={s.type}
-                                        defaultValue={val}
-                                        placeholder={s.placeholder || ""}
-                                        className="w-full rounded-md border px-3 py-2 text-sm"
-                                    />
-                                </div>
-                            );
-                        }
-
-                        if (s.type === "select") {
-                            if (s.id === "assistencia") {
-                                return (
-                                    <div key={id}>
-                                        <FieldLabel>
-                                            {s.label}
-                                            {obrigatorios.includes(s.id) ? " *" : ""}
-                                        </FieldLabel>
-
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <select
-                                                id={id}
-                                                name={s.id}
-                                                value={assistenciaVal || val}
-                                                onChange={(e) => setAssistenciaVal(e.target.value)}
-                                                className="w-full max-w-[320px] rounded-md border px-3 py-2 text-sm"
-                                            >
-                                                {s.options.map((opt: string) => (
-                                                    <option key={opt} value={opt}>
-                                                        {opt}
-                                                    </option>
-                                                ))}
-                                            </select>
-
-                                            {(assistenciaVal || val) === "Sim" && (
-                                                <button
-                                                    type="button"
-                                                    className="whitespace-nowrap rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                                    onClick={() => setMateriaisOpen(true)}
-                                                    title="Selecionar materiais"
-                                                >
-                                                    Materiais
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {(assistenciaVal || val) === "Sim" && materiaisSelecionadosResumo && (
-                                            <div className="mt-2 text-xs text-muted-foreground">
-                                                Selecionados (Materiais): {materiaisSelecionadosResumo}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            }
-
-                            if (s.id === "tanato") {
-                                return (
-                                    <div key={id}>
-                                        <FieldLabel>
-                                            {s.label}
-                                            {obrigatorios.includes(s.id) ? " *" : ""}
-                                        </FieldLabel>
-                                        <select
-                                            id={id}
-                                            name={s.id}
-                                            value={tanatoVal || val}
-                                            onChange={(e) => setTanatoVal(e.target.value)}
-                                            className="w-full rounded-md border px-3 py-2 text-sm"
-                                        >
-                                            {s.options.map((opt: string) => (
-                                                <option key={opt} value={opt}>
-                                                    {opt}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                );
-                            }
-
-                            return (
-                                <div key={id}>
-                                    <FieldLabel>
-                                        {s.label}
-                                        {obrigatorios.includes(s.id) ? " *" : ""}
-                                    </FieldLabel>
-                                    <select
-                                        id={id}
-                                        name={s.id}
-                                        defaultValue={val}
-                                        className="w-full rounded-md border px-3 py-2 text-sm"
-                                    >
-                                        {s.options.map((opt: string) => (
-                                            <option key={opt} value={opt}>
-                                                {opt}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            );
-                        }
-
-                        if (s.type === "datalist") {
-                            return (
-                                <div key={id}>
-                                    <FieldLabel>{s.label}</FieldLabel>
-                                    <input
-                                        id={id}
-                                        name={s.id}
-                                        list={`datalist-${s.id}`}
-                                        defaultValue={val}
-                                        placeholder={s.placeholder || ""}
-                                        className="w-full rounded-md border px-3 py-2 text-sm"
-                                    />
-                                    <datalist id={`datalist-${s.id}`}>
-                                        {s.datalist.map((opt: string) => (
-                                            <option key={opt} value={opt} />
-                                        ))}
-                                    </datalist>
-                                </div>
-                            );
-                        }
-
-                        // 🔸 Default para textarea (OBSERVAÇÕES etc.) — nunca cai aqui para "arrumacao"
+                    // Assistência (com Materiais)
+                    if (step.id === "assistencia" && step.type === "select") {
                         return (
-                            <div key={id}>
-                                <FieldLabel>{s.label}</FieldLabel>
-                                <textarea
-                                    id={id}
-                                    name={s.id}
-                                    defaultValue={val}
-                                    placeholder={s.placeholder || ""}
-                                    className="min-h-28 w-full rounded-md border px-3 py-2 text-sm"
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    value={assistenciaVal}
+                                    onChange={(e) => setAssistenciaVal(e.target.value)}
+                                >
+                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {assistenciaVal === "Sim" && (
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+                                            onClick={() => setMateriaisOpen(true)}
+                                        >
+                                            Selecionar Materiais…
+                                        </button>
+                                        <span className="text-xs text-muted-foreground">
+                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
+
+                    // Tanato
+                    if (step.id === "tanato" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    value={tanatoVal}
+                                    onChange={(e) => setTanatoVal(e.target.value)}
+                                >
+                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    }
+
+                    // Ornamentação (controla "tipo")
+                    if (step.id === "ornamentacao" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    value={ornamentacaoVal}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setOrnamentacaoVal(v);
+                                        if (v !== "Sim") {
+                                            const el = document.getElementById(
+                                                "wizard-ornamentacao_tipo"
+                                            ) as HTMLSelectElement | null;
+                                            if (el) el.value = "";
+                                        }
+                                    }}
+                                >
+                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    }
+
+                    // Tipo de Ornamentação (aparece só quando Sim)
+                    if (step.id === "ornamentacao_tipo" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <select
+                                    id="wizard-ornamentacao_tipo"
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    defaultValue={String(wizardData.ornamentacao_tipo ?? "")}
+                                >
+                                    {(step.options || ["", "Natural", "Artificial"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    }
+
+                    // Campos básicos
+                    if (step.type === "input") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+                                <input
+                                    id={`wizard-${step.id}`}
+                                    type="text"
+                                    placeholder={step.placeholder || ""}
+                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
                                 />
                             </div>
                         );
-                    })}
+                    }
+
+                    if (step.type === "textarea") {
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <textarea
+                                    id={`wizard-${step.id}`}
+                                    placeholder={step.placeholder || ""}
+                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    rows={3}
+                                />
+                            </div>
+                        );
+                    }
+
+                    if (step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                >
+                                    {(step.options || [""]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    }
+
+                    if (step.type === "date") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <input
+                                    id={`wizard-${step.id}`}
+                                    type="date"
+                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                />
+                            </div>
+                        );
+                    }
+
+                    if (step.type === "time") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <input
+                                    id={`wizard-${step.id}`}
+                                    type="time"
+                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                />
+                            </div>
+                        );
+                    }
+
+                    if (step.type === "datalist") {
+                        const listId = `dl-${step.id}`;
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <input
+                                    id={`wizard-${step.id}`}
+                                    list={listId}
+                                    placeholder={step.placeholder || ""}
+                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                />
+                                <datalist id={listId}>
+                                    {(step.datalist || []).map((op) => (
+                                        <option key={op} value={op} />
+                                    ))}
+                                </datalist>
+                            </div>
+                        );
+                    }
+
+                    return null;
+                })}
+            </div>
+
+            {/* Rodapé */}
+            <div className="mt-6 flex items-center justify-between">
+                <div className="text-xs text-muted-foreground">
+                    {isRestrito && (
+                        <>Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b></>
+                    )}
                 </div>
 
-                {/* Navegação */}
-                <div className="mt-5 flex items-center gap-2">
-                    {wizardRestrictGroup == null && (
-                        <button
-                            type="button"
-                            className="rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-                            disabled={wizardStep <= 0}
-                            onClick={() => setWizardStep((s) => Math.max(0, s - 1))}
-                        >
-                            Voltar
-                        </button>
-                    )}
-
-                    {wizardRestrictGroup == null && wizardStep < wizardStepIndexes.length - 1 && (
-                        <button
-                            type="button"
-                            className="rounded-md border px-3 py-2 text-sm"
-                            onClick={() => {
-                                const ok = salvarGrupoWizard();
-                                if (ok) setWizardStep((s) => Math.min(s + 1, wizardStepIndexes.length - 1));
-                            }}
-                        >
-                            Avançar
-                        </button>
-                    )}
-
-                    <button
-                        type="button"
-                        className="ml-auto rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                        onClick={concluirWizard}
-                    >
-                        {wizardRestrictGroup == null && wizardStep === wizardStepIndexes.length - 1
-                            ? "Concluir"
-                            : "Salvar"}
+                <div className="flex gap-2">
+                    <button className="rounded-md border px-3 py-2 text-sm" onClick={onClose}>
+                        Cancelar
                     </button>
-                </div>
 
-                <div className="mt-2 text-sm opacity-80">
-                    {wizardRestrictGroup != null
-                        ? `Editar: ${wizardStepTitles[wizardStep]}`
-                        : `Etapa ${wizardStep + 1} de ${wizardStepTitles.length}: ${wizardStepTitles[wizardStep]}`}
+                    {/* ✅ QUANDO EDITAR UM ÚNICO GRUPO: exibe apenas SALVAR */}
+                    {isRestrito ? (
+                        <button
+                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                            onClick={concluirWizard}
+                        >
+                            Salvar
+                        </button>
+                    ) : (
+                        <>
+                            {wizardStep > 0 && (
+                                <button className="rounded-md border px-3 py-2 text-sm" onClick={goPrev}>
+                                    Anterior
+                                </button>
+                            )}
+                            {isLastStep ? (
+                                <button
+                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                                    onClick={concluirWizard}
+                                >
+                                    Concluir
+                                </button>
+                            ) : (
+                                <button
+                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                                    onClick={goNext}
+                                >
+                                    Próximo
+                                </button>
+                            )}
+                        </>
+                    )}
                 </div>
-            </form>
+            </div>
         </Modal>
     );
 }

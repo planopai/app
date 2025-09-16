@@ -1,19 +1,26 @@
+"use client";
 import type { MaterialKey } from "./types";
 
 export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamento"];
 
+/**
+ * ✅ ATUALIZADO: dois campos foram adicionados após “tanato”,
+ * então os índices seguintes andam +2.
+ */
 export const wizardStepIndexes = [
-    // Atendimento → agora observação do atendimento é índice 15
-    [0, 1, 2, 3, 15],
+    // Atendimento → observação agora no índice 17
+    [0, 1, 2, 3, 17],
 
-    // Itens → inclui Assistência (6), Tanato (7), Arrumação (8) e observação de itens virou 16
-    [4, 5, 6, 7, 8, 16],
+    // Itens:
+    // Urna(4), Roupa(5), Assistência(6), Tanato(7),
+    // Ornamentação(8), Tipo(9), Conservação do Corpo(10), Obs Itens(18)
+    [4, 5, 6, 7, 8, 9, 10, 18],
 
-    // Velório 01 → indices +1 depois da inserção, observação virou 17
-    [9, 10, 11, 17],
+    // Velório 01 → Local(11), Local Velório(12), Data Início(13), Obs(19)
+    [11, 12, 13, 19],
 
-    // Velório 02 → indices +1 depois da inserção, observação virou 18
-    [12, 13, 14, 18],
+    // Velório 02 → Data Fim(14), Hora Início(15), Hora Fim(16), Obs(20)
+    [14, 15, 16, 20],
 ];
 
 export const steps = [
@@ -60,7 +67,7 @@ export const steps = [
         ],
     },
 
-    // Assistência → renomeada para só materiais
+    // Assistência
     {
         label: "Assistência (Materiais)",
         id: "assistencia",
@@ -68,14 +75,23 @@ export const steps = [
         options: ["", "Sim", "Não"],
     },
 
-    // Tanatopraxia → mantida
+    // Tanatopraxia
     { label: "Tanatopraxia", id: "tanato", type: "select", options: ["", "Sim", "Não"] },
 
-    // NOVO: Arrumação do Corpo → sempre disponível
+    // ✅ NOVOS CAMPOS
+    { label: "Ornamentação", id: "ornamentacao", type: "select", options: ["", "Sim", "Não"] },
+    {
+        label: "Tipo de Ornamentação",
+        id: "ornamentacao_tipo",
+        type: "select",
+        options: ["", "Natural", "Artificial"],
+    },
+
+    // Conservação do Corpo (custom abre modal)
     {
         label: "Conservação do Corpo",
         id: "arrumacao",
-        type: "custom", // você trata no Wizard/InfoModal para abrir ArrumacaoModal
+        type: "custom",
     },
 
     {

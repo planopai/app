@@ -15,9 +15,10 @@ export default function Modal({
     maxWidth?: number;
 }) {
     if (!open) return null;
+
     return (
         <div
-            className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
             role="dialog"
             aria-modal="true"
             aria-label={ariaLabel}
@@ -25,8 +26,9 @@ export default function Modal({
                 if (e.target === e.currentTarget) onClose();
             }}
         >
+            {/* ✅ container com altura limitada e rolagem interna */}
             <div
-                className="w-full rounded-xl bg-white p-5 shadow-xl outline-none"
+                className="w-full rounded-xl bg-white p-5 shadow-xl outline-none max-h-[90vh] overflow-y-auto overscroll-contain"
                 style={{ maxWidth: maxWidth ?? 720 }}
             >
                 {children}
