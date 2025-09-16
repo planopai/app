@@ -1,5 +1,3 @@
-"use client";
-
 export type MaterialKey =
     | "cadeiras"
     | "bebedouros"
@@ -43,14 +41,8 @@ export type Registro = {
     convenio?: string;
     urna?: string;
     roupa?: string;
-
     assistencia?: string; // "Sim" | "Não"
-    tanato?: string;      // "Sim" | "Não"
-
-    /** ✅ NOVOS CAMPOS */
-    ornamentacao?: string;       // "Sim" | "Não"
-    ornamentacao_tipo?: string;  // "Natural" | "Artificial"
-
+    tanato?: string; // "Sim" | "Não"
     local?: string;
     local_velorio?: string;
     data_inicio_velorio?: string;
