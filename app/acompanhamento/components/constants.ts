@@ -117,16 +117,16 @@ export const steps = [
         placeholder: "Digite observações de itens (opcional)",
     },
     {
-        label: "Observações do Velório 01",
+        label: "Observações do Velório e Sepultamento",
         id: "observacao_velorio01",
         type: "textarea",
-        placeholder: "Digite observações do velório 01 (opcional)",
+        placeholder: "Digite Aqui As Observações (opcional)",
     },
     {
-        label: "Observações do Velório 02",
+        label: "Observações do Velório e Sepultamento",
         id: "observacao_velorio02",
         type: "textarea",
-        placeholder: "Digite observações do velório 02 (opcional)",
+        placeholder: "Digite Aqui As Observações (opcional)",
     },
 ] as const;
 
