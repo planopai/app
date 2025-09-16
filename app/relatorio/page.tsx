@@ -175,6 +175,69 @@ function isNoChangeKey(k: string) {
     return /^sem[\s_]*alterac(?:o|oe)es?$/i.test((k || "").trim());
 }
 
+/** Descobre se o log é "edição sem alterações" (para ocultar) */
+function isNoChangeEntry(ent: LogItem): boolean {
+    const ac = (ent.acao || "").toLowerCase();
+    // só ocultamos edições; criação/atualização de fase continuam visíveis
+    if (!ac.includes("editou")) return false;
+
+    const raw = ent.detalhes as any;
+    if (!raw) return true;
+
+    try {
+        const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!obj || typeof obj !== "object") return true;
+
+        // 1) flag explícita
+        if (asBool((obj as any).sem_alteracoes)) return true;
+        if (isNoChangeKey("sem_alteracoes") && asBool((obj as any)["sem_alteracoes"])) return true;
+
+        // 2) varre campos e procura algo realmente informativo
+        for (const key of Object.keys(obj)) {
+            if (["id", "acao"].includes(key)) continue;
+
+            // arrumacao_json: se houver algum true, houve mudança
+            if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
+                let aobj: any = obj[key];
+                if (typeof aobj === "string") {
+                    try { aobj = JSON.parse(aobj); } catch { aobj = {}; }
+                }
+                if (aobj && typeof aobj === "object") {
+                    for (const v of Object.values(aobj)) if (asBool(v)) return false;
+                }
+                continue;
+            }
+
+            // materiais_*_qtd: quantidade (>0) indica mudança
+            const m = key.match(/^materiais_(.+?)_qtd$/i);
+            if (m) {
+                const qtd = obj[key];
+                if (qtd != null && String(qtd).trim() !== "" && Number(qtd) > 0) return false;
+                continue;
+            }
+
+            // campos simples
+            const v = obj[key];
+            if (v == null) continue;
+            if (typeof v === "object") continue;
+            if (isNoChangeKey(key) && asBool(v)) continue;
+            if (String(v).trim() !== "") return false;
+        }
+
+        return true; // nada relevante
+    } catch {
+        // Detalhes em texto: limpa marcadores e vê se sobra algo
+        let s = String(raw || "");
+        s = s.replace(/sem[\s_]*alterac(?:o|oe)es?\s*:\s*true/gi, "");
+        s = s.replace(/Arruma[cç][aã]o\s*Json\s*:\s*\{[\s\S]*?\}/gi, "");
+        s = s.replace(/arruma[cç][aã]o\s*json\s*:[^\n]*/gi, "");
+        s = s.replace(/materiais\s*:\s*\[[^\]]*\]/gi, "");
+        s = s.trim();
+        return s === "";
+    }
+}
+
+
 /* ===== Materiais (análise) ===== */
 const MATERIAL_KEYS = [
     "cadeiras",
@@ -428,6 +491,10 @@ export default function HistoricoSepultamentosPage() {
 
     const [selecionado, setSelecionado] = useState<FalecidoItem | null>(null);
     const [log, setLog] = useState<LogItem[]>([]);
+    // Logs que realmente têm alterações (esconde "editou" sem mudança)
+    const logVisiveis = useMemo(() => {
+        return (log || []).filter((ent) => !isNoChangeEntry(ent));
+    }, [log]);
     const [loadingLog, setLoadingLog] = useState(false);
 
     const [gerandoPdf, setGerandoPdf] = useState(false);
@@ -654,7 +721,7 @@ export default function HistoricoSepultamentosPage() {
 
     // Exportar PDF
     const exportarPdf = useCallback(async () => {
-        if (!selecionado || log.length === 0) return;
+        if (!selecionado || logVisiveis.length === 0) return;
 
         setGerandoPdf(true);
         try {
@@ -763,7 +830,7 @@ export default function HistoricoSepultamentosPage() {
                 else doc.text(text, x, yy);
             };
 
-            for (const ent of log) {
+            for (const ent of logVisiveis) {
                 const dataLine = formataDataHora(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
@@ -910,7 +977,7 @@ export default function HistoricoSepultamentosPage() {
         } finally {
             setGerandoPdf(false);
         }
-    }, [selecionado, log, criacaoSelecionado]);
+    }, [selecionado, logVisiveis, criacaoSelecionado]);
 
     /* =========================== ANÁLISE GERAL =========================== */
     const [analiseOpen, setAnaliseOpen] = useState(false);
@@ -1284,7 +1351,7 @@ export default function HistoricoSepultamentosPage() {
                         <button
                             type="button"
                             onClick={exportarPdf}
-                            disabled={!selecionado || log.length === 0 || gerandoPdf}
+                            disabled={!selecionado || logVisiveis.length === 0 || gerandoPdf}
                             className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold border-primary text-primary hover:bg-primary/5 disabled:opacity-50"
                             title="Baixar PDF"
                         >
@@ -1299,12 +1366,12 @@ export default function HistoricoSepultamentosPage() {
                                 Selecione um registro para visualizar o histórico completo.
                             </div>
                         ) : loadingLog ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Carregando histórico...</div>
-                        ) : log.length === 0 ? (
+                                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Carregando histórico...</div>
+                        ) : logVisiveis.length === 0 ? (
                             <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum log encontrado para este registro.</div>
                         ) : (
                             <div className="space-y-3">
-                                {log.map((ent, i) => {
+                                {logVisiveis.map((ent, i) => {
                                     // Render dos detalhes (JSON ou texto)
                                     let detalhesHtml = "";
                                     const raw = ent.detalhes as any;
