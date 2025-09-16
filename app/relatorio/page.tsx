@@ -73,7 +73,8 @@ function overrideCampoNome(originalKey: string, nomeAtual: string) {
     const MAP: Record<string, string> = {
         // —— campos com acento e textos “bonitos”
         assistencia: "Assistência",
-        ornamentacao_tipo: "Ornamentação",
+        ornamentaca: "Ornamentação",
+        ornamentacao_tipo: "Tipo de Ornamentação",
         religiao: "Religião",
         convenio: "Convênio",
         local_velorio: "Local do Velório",
