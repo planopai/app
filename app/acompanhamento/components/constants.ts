@@ -1,6 +1,6 @@
 import type { MaterialKey } from "./types";
 
-export const wizardStepTitles = ["Atendimento", "Itens", "Velório 01", "Velório 02"];
+export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamento"];
 
 export const wizardStepIndexes = [
     // Atendimento → agora observação do atendimento é índice 15
