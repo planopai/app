@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogItem } from "./TiposHistorico";
 import { RESUMO_ORDER } from "./ConstantesResumo";
-import { formataDataHora, formataSeDataIso, formataDataDia } from "./UtilDatas";
+import { formataDataHora, formataSeDataIso } from "./UtilDatas";
 import { overrideCampoNome, substituirRotuloVisual, titleCaseFromSnake, capitalize } from "./UtilTexto";
 import { traduzirFase } from "./ConstantesFases";
 import { asBool } from "./Normalizadores";
@@ -177,45 +177,30 @@ function drawLabelValueLine(
     fonts: { normal: [string, string]; bold: [string, string] },
     size = 11
 ) {
-    // escreve "Label: " em negrito e o valor normal, tudo na mesma linha com quebra quando precisar
     const labelTxt = `${label}: `;
     doc.setFont(fonts.bold[0], fonts.bold[1]); doc.setFontSize(size);
     const labelW = doc.getTextWidth(labelTxt);
     if (labelW >= maxWidth) {
-        // quebra o label se for gigantesco (improvável)
         const used = drawParagraph(doc, labelTxt, x, y, maxWidth, fonts.bold, size);
         doc.setFont(fonts.normal[0], fonts.normal[1]);
         const used2 = drawParagraph(doc, value, x, y + used, maxWidth, fonts.normal, size);
         return used + used2 + 2;
     }
-    // cabe label: e parte do valor na mesma linha — mas como o valor pode quebrar,
-    // começamos o valor logo após o label (x + labelW)
     doc.text(labelTxt, x, y);
     const vLines = doc.splitTextToSize(value || "", maxWidth - labelW);
     doc.setFont(fonts.normal[0], fonts.normal[1]);
-    // primeira linha na mesma linha do label
     if (vLines.length) doc.text(vLines[0], x + labelW, y);
-    // demais linhas abaixo, alinhadas ao início do valor
-    for (let i = 1; i < vLines.length; i++) {
-        doc.text(vLines[i], x, y + i * 6);
-    }
-    return (vLines.length - 1) * 6 + 6; // altura usada
+    for (let i = 1; i < vLines.length; i++) doc.text(vLines[i], x, y + i * 6);
+    return (vLines.length - 1) * 6 + 6;
 }
 
-function drawBulletWrapped(
-    doc: any,
-    x: number,
-    y: number,
-    text: string,
-    maxWidth: number
-) {
-    // Sem checkbox; usa "– " como marcador e espaçamento maior.
+function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidth: number) {
     const marker = "– ";
     const mW = doc.getTextWidth(marker);
     doc.text(marker, x, y);
     const lines = doc.splitTextToSize(text, maxWidth - mW);
     doc.text(lines, x + mW, y);
-    return (lines.length - 1) * 7.5 + 8; // ~8px de altura por item
+    return (lines.length - 1) * 7.5 + 8;
 }
 
 /* =============== Página 1 extra: Termo de Recebimento (usa data do velório) =============== */
@@ -237,7 +222,6 @@ function desenharTermoRecebimento(doc: any, params: {
     doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, { align: "center" });
     y += 12;
 
-    // Bloco superior com os campos importantes em negrito
     y += drawLabelValueLine(doc, margin, y, "Responsável", params.responsavel || "________________________", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Entregue por (Agente)", params.agente || "________________________", maxW, params.fonts, 11);
@@ -247,12 +231,10 @@ function desenharTermoRecebimento(doc: any, params: {
         margin, y, maxW, params.fonts.normal, 11
     ) + 6;
 
-    // Itens
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]); doc.setFontSize(12);
     doc.text("Itens:", margin, y); y += 8;
     doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
 
-    // Ordena alfabeticamente por rótulo para estabilidade
     const itens = [...params.materiais].sort((a, b) => a.rotulo.localeCompare(b.rotulo));
     if (itens.length === 0) {
         y += drawParagraph(doc, "— Nenhum item selecionado na assistência —", margin, y, maxW, params.fonts.normal, 11);
@@ -264,14 +246,12 @@ function desenharTermoRecebimento(doc: any, params: {
         }
     }
 
-    // Rodapé assinatura/data
     y = Math.max(y, 230);
     doc.setLineWidth(0.3);
     doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
     doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
     doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
 
-    // Data do velório em negrito
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y + 18);
 }
@@ -423,6 +403,8 @@ export default function BotaoExportarPdf({
             for (const ent of logVisiveis) {
                 const dataLine = formataDataHora(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
+                the: {
+                }
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
@@ -449,7 +431,7 @@ export default function BotaoExportarPdf({
                                 continue;
                             }
 
-                            // Materiais_*_qtd (apenas para mostrar no LOG; páginas extras usam só materiais_json)
+                            // Materiais_*_qtd (no LOG apenas)
                             const m = key.match(/^materiais_(.+?)_qtd$/i);
                             if (m) {
                                 const nomeBase = titleCaseFromSnake(m[1]);
@@ -523,7 +505,7 @@ export default function BotaoExportarPdf({
             const materiais = extrairMateriaisAssistencia(logVisiveis); // somente materiais_json
             const agente = pegarAgenteEntrega(logVisiveis);
 
-            // 1) Termo — data do velório (usar INÍCIO do velório)
+            // 1) Termo — **data do velório** (usa INÍCIO do velório do resumo)
             doc.addPage();
             const dataVelorio =
                 (resumoFinal?.data_inicio_velorio && formataSeDataIso(resumoFinal.data_inicio_velorio)) || "";
@@ -536,7 +518,7 @@ export default function BotaoExportarPdf({
                 fonts
             });
 
-            // 2) Requisição — data/hora do sepultamento (usar FIM/hora_fim)
+            // 2) Requisição — **data e hora do sepultamento** (usa FIM/hora_fim do resumo)
             doc.addPage();
             const dataSep =
                 (resumoFinal?.data_fim_velorio && formataSeDataIso(resumoFinal.data_fim_velorio)) || "";
