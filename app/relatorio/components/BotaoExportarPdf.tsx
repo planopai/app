@@ -214,7 +214,7 @@ function desenharTermoRecebimento(doc: any, params: {
     doc.setFontSize(11);
     const linha1 = `Eu, ${params.responsavel || "________________________"}, confirmo`;
     const linha2 = `o recebimento do material para o velório do(a) ${params.falecido || "________________________"}`;
-    const linha3 = `entregue pela pessoa de ${params.agente || "________________________"}.`;
+    const linha3 = `entregue pela pessoa de ${params.agente || "________________________"} representante do PAI - Plano Assistencial Integrado. Atesto o recebimento e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:`;
     doc.text(linha1, 14, y); y += 6;
     doc.text(linha2, 14, y); y += 6;
     doc.text(linha3, 14, y); y += 10;
@@ -270,7 +270,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     doc.text(t2, 14, y); y += 6;
     doc.text(t3, 14, y); y += 12;
 
-    doc.text("Estou ciente de que este pedido deve ser realizado com antecedência mínima de 5 (cinco) horas.", 14, y);
+    doc.text("Desde de já , tenho conhecimento que esse pedido deve ser realizado com antecedência mínima de 5 (cinco) horas. E caso ocorra fora desse horário a empresa está isenta de responsabilidades por qualquer contratempo.", 14, y);
     y += 24;
 
     doc.setLineWidth(0.3);
