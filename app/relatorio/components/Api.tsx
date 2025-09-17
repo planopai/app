@@ -25,6 +25,7 @@ async function fetchJson<T = any>(url: string): Promise<T> {
 export async function listarFalecidos(): Promise<FalecidoItem[]> {
     try {
         const json = await fetchJson<any>(LISTAR_FALECIDOS);
+        // Backend pode retornar {sucesso, dados: []} ou [] diretamente
         if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as FalecidoItem[];
         if (Array.isArray(json)) return json as FalecidoItem[];
         return [];
