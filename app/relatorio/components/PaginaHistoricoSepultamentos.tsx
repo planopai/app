@@ -3,9 +3,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import BarraFiltros from "./BarraFiltros";
 import ListaRegistros from "./ListaRegistros";
 import ModalAnaliseGeral from "./ModalAnaliseGeral";
-import { listarFalecidos } from "./Api";
-import { FalecidoItem } from "./TiposHistorico";
 import ModalDetalheRegistro from "./ModalDetalheRegistro";
+import { listarFalecidos, listarLogPorId } from "./Api";
+import { FalecidoItem } from "./TiposHistorico";
 
 export default function PaginaHistoricoSepultamentos() {
     const [lista, setLista] = useState<FalecidoItem[]>([]);
@@ -21,8 +21,11 @@ export default function PaginaHistoricoSepultamentos() {
     const [modalAberto, setModalAberto] = useState(false);
     const [registroSelecionado, setRegistroSelecionado] = useState<FalecidoItem | null>(null);
 
-    // modal de análise geral (permanece como está)
+    // análise geral
     const [analiseOpen, setAnaliseOpen] = useState(false);
+
+    // mapa de criação por registro
+    const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
 
     useEffect(() => {
         (async () => {
@@ -42,7 +45,6 @@ export default function PaginaHistoricoSepultamentos() {
         const nome = filtroNome.trim().toLowerCase();
         return (lista || []).filter((reg) => {
             if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) return false;
-            // se quiser filtrar por data de criação, precisaria ter a data no objeto base
             if (filtroDe || filtroAte) {
                 const base = (reg.ultima_datahora || "").substring(0, 10);
                 if (filtroDe && base && base < filtroDe) return false;
@@ -55,6 +57,33 @@ export default function PaginaHistoricoSepultamentos() {
     const totalPaginas = Math.max(1, Math.ceil(filtrados.length / porPagina));
     const pageItems = filtrados.slice((pagina - 1) * porPagina, pagina * porPagina);
 
+    // prefetch da data/hora de criação (primeiro log) para os itens da página
+    useEffect(() => {
+        (async () => {
+            const pendentes = pageItems
+                .map((i) => String(i.sepultamento_id))
+                .filter((id) => !criacaoMap[id]);
+
+            if (pendentes.length === 0) return;
+
+            const novos: Record<string, string> = {};
+            for (const id of pendentes) {
+                try {
+                    const logs = await listarLogPorId(id);
+                    const primeiro = [...logs].sort((a, b) =>
+                        (a.datahora || "").localeCompare(b.datahora || "")
+                    )[0]?.datahora;
+                    if (primeiro) novos[id] = primeiro;
+                } catch {
+                    // silencia falha individual
+                }
+            }
+            if (Object.keys(novos).length) {
+                setCriacaoMap((prev) => ({ ...prev, ...novos }));
+            }
+        })();
+    }, [pageItems, criacaoMap]);
+
     function abrirModal(item: FalecidoItem) {
         setRegistroSelecionado(item);
         setModalAberto(true);
@@ -66,43 +95,31 @@ export default function PaginaHistoricoSepultamentos() {
                 filtroNome={filtroNome}
                 filtroDe={filtroDe}
                 filtroAte={filtroAte}
-                onChangeNome={(v) => {
-                    setFiltroNome(v);
-                    setPagina(1);
-                }}
-                onChangeDe={(v) => {
-                    setFiltroDe(v);
-                    setPagina(1);
-                }}
-                onChangeAte={(v) => {
-                    setFiltroAte(v);
-                    setPagina(1);
-                }}
+                onChangeNome={(v) => { setFiltroNome(v); setPagina(1); }}
+                onChangeDe={(v) => { setFiltroDe(v); setPagina(1); }}
+                onChangeAte={(v) => { setFiltroAte(v); setPagina(1); }}
                 onAbrirAnalise={() => setAnaliseOpen(true)}
             />
 
-            {/* somente a lista */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                <ListaRegistros
-                    registros={pageItems}
-                    loading={loadingLista}
-                    pagina={pagina}
-                    totalPaginas={totalPaginas}
-                    onPaginaAnterior={() => setPagina((p) => Math.max(1, p - 1))}
-                    onPaginaProxima={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-                    selecionadoId={registroSelecionado?.sepultamento_id}
-                    onSelecionar={abrirModal}
-                />
-            </div>
+            {/* LISTA em largura total */}
+            <ListaRegistros
+                registros={pageItems}
+                loading={loadingLista}
+                pagina={pagina}
+                totalPaginas={totalPaginas}
+                onPaginaAnterior={() => setPagina((p) => Math.max(1, p - 1))}
+                onPaginaProxima={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                selecionadoId={registroSelecionado?.sepultamento_id}
+                onSelecionar={abrirModal}
+                criacaoMap={criacaoMap}
+            />
 
-            {/* modal de detalhes (logs + resumo + PDF) */}
             <ModalDetalheRegistro
                 aberto={modalAberto}
                 registro={registroSelecionado}
                 onFechar={() => setModalAberto(false)}
             />
 
-            {/* modal de análise geral (sem mudanças) */}
             <ModalAnaliseGeral
                 aberto={analiseOpen}
                 onFechar={() => setAnaliseOpen(false)}

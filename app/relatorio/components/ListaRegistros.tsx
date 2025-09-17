@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { FalecidoItem } from "./TiposHistorico";
+import { formataDataHora } from "./UtilDatas";
 
 interface Props {
     registros: FalecidoItem[];
@@ -11,6 +12,7 @@ interface Props {
     onPaginaProxima: () => void;
     selecionadoId?: string;
     onSelecionar: (item: FalecidoItem) => void;
+    criacaoMap: Record<string, string>;
 }
 
 export default function ListaRegistros({
@@ -22,10 +24,11 @@ export default function ListaRegistros({
     onPaginaProxima,
     selecionadoId,
     onSelecionar,
+    criacaoMap,
 }: Props) {
     return (
-        <div className="flex flex-col border rounded overflow-hidden h-full">
-            <div className="bg-gray-100 p-2 font-semibold">Registros</div>
+        <div className="flex flex-col border rounded overflow-hidden w-full">
+            <div className="bg-gray-100 p-3 font-semibold">Registros</div>
 
             <div className="flex-1 overflow-y-auto">
                 {loading ? (
@@ -34,24 +37,37 @@ export default function ListaRegistros({
                     <div className="p-4 text-center">Nenhum registro encontrado.</div>
                 ) : (
                     <ul>
-                        {registros.map((item) => (
-                            <li key={item.sepultamento_id}>
-                                <button
-                                    type="button"
-                                    className={`w-full text-left p-2 border-b hover:bg-muted/40 ${selecionadoId === item.sepultamento_id ? "bg-blue-50" : ""
-                                        }`}
-                                    onClick={() => onSelecionar(item)}
-                                >
-                                    <div className="font-medium">{item.falecido}</div>
-                                </button>
-                            </li>
-                        ))}
+                        {registros.map((item) => {
+                            const id = String(item.sepultamento_id);
+                            const criadoEm = criacaoMap[id];
+                            return (
+                                <li key={id}>
+                                    <button
+                                        type="button"
+                                        className={`w-full p-3 border-b hover:bg-muted/40 ${selecionadoId === id ? "bg-blue-50" : ""
+                                            }`}
+                                        onClick={() => onSelecionar(item)}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="font-medium flex-1 truncate">{item.falecido}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {criadoEm ? formataDataHora(criadoEm) : "—"}
+                                            </div>
+                                        </div>
+                                    </button>
+                                </li>
+                            );
+                        })}
                     </ul>
                 )}
             </div>
 
             <div className="flex justify-between items-center p-2 border-t bg-gray-50">
-                <button onClick={onPaginaAnterior} disabled={pagina <= 1} className="px-2 py-1 border rounded disabled:opacity-50">
+                <button
+                    onClick={onPaginaAnterior}
+                    disabled={pagina <= 1}
+                    className="px-2 py-1 border rounded disabled:opacity-50"
+                >
                     ← Anterior
                 </button>
                 <span className="text-sm">
