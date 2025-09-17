@@ -1,31 +1,56 @@
 "use client";
-import React from "react";
 import { FalecidoItem, LogItem, RegistroAnalise } from "./TiposHistorico";
 
-/* ======================== Endpoints ======================== */
+/* ======================== Endpoints (iguais ao código grande) ======================== */
 
-const BASE = "/php";
+export const LISTAR_FALECIDOS =
+    "/api/php/historico_sepultamentos.php?listar_falecidos=1";
 
-export const LISTAR_FALECIDOS = `${BASE}/falecidos.php?listar=1`;
-export const LISTAR_ANALITICO = `${BASE}/informativo.php?listar=1`;
-export const LOG_POR_ID = (id: string) => `${BASE}/log.php?sepultamento_id=${id}`;
+export const LISTAR_ANALITICO =
+    "/api/php/informativo.php?listar=1";
+
+export const LOG_POR_ID = (id: string) =>
+    `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
+
+/* ======================== Helper ======================== */
+
+async function fetchJson<T = any>(url: string): Promise<T> {
+    // evita cache agressivo em produção (Vercel)
+    const res = await fetch(`${url}&_nocache=${Date.now()}`, { cache: "no-store" });
+    return res.json();
+}
 
 /* ======================== Fetchers ======================== */
 
 export async function listarFalecidos(): Promise<FalecidoItem[]> {
-    const res = await fetch(LISTAR_FALECIDOS);
-    const json = await res.json();
-    return json?.sucesso ? (json.dados as FalecidoItem[]) : [];
+    try {
+        const json = await fetchJson<any>(LISTAR_FALECIDOS);
+        if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as FalecidoItem[];
+        if (Array.isArray(json)) return json as FalecidoItem[];
+        return [];
+    } catch {
+        return [];
+    }
 }
 
 export async function listarLogPorId(id: string): Promise<LogItem[]> {
-    const res = await fetch(LOG_POR_ID(id));
-    const json = await res.json();
-    return json?.sucesso ? (json.dados as LogItem[]) : [];
+    try {
+        const json = await fetchJson<any>(LOG_POR_ID(id));
+        if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as LogItem[];
+        if (Array.isArray(json)) return json as LogItem[];
+        return [];
+    } catch {
+        return [];
+    }
 }
 
 export async function listarAnalitico(): Promise<RegistroAnalise[]> {
-    const res = await fetch(LISTAR_ANALITICO);
-    const json = await res.json();
-    return json?.sucesso ? (json.dados as RegistroAnalise[]) : [];
+    try {
+        const json = await fetchJson<any>(LISTAR_ANALITICO);
+        if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as RegistroAnalise[];
+        if (Array.isArray(json)) return json as RegistroAnalise[];
+        return [];
+    } catch {
+        return [];
+    }
 }
