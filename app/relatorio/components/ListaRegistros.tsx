@@ -44,15 +44,15 @@ export default function ListaRegistros({
                                 <li key={id}>
                                     <button
                                         type="button"
-                                        className={`w-full p-3 border-b hover:bg-muted/40 ${selecionadoId === id ? "bg-blue-50" : ""
+                                        className={`w-full p-3 border-b hover:bg-muted/40 flex items-center ${selecionadoId === id ? "bg-blue-50" : ""
                                             }`}
                                         onClick={() => onSelecionar(item)}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <div className="font-medium flex-1 truncate">{item.falecido}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {criadoEm ? formataDataHora(criadoEm) : "—"}
-                                            </div>
+                                        <div className="flex-1 text-left font-medium truncate">
+                                            {item.falecido}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground text-right">
+                                            {criadoEm ? formataDataHora(criadoEm) : "—"}
                                         </div>
                                     </button>
                                 </li>
