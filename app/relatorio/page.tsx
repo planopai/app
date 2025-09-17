@@ -268,7 +268,7 @@ function isNoChangeEntry(ent: LogItem): boolean {
                 continue;
             }
 
-            // campos simples
+            // campos simples Editavel 
             const v = obj[key];
             if (v == null) continue;
             if (typeof v === "object") continue;

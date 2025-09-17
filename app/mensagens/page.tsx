@@ -281,7 +281,7 @@ export default function MensagensPage() {
             for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
             const b64 = btoa(binary);
 
-            // Registra a mesma fonte para normal e bold (o variável cobre ambos)
+            // Registra a fonte nunito / mesma fonte para normal e bold (o variável cobre ambos)
             doc.addFileToVFS("Nunito.ttf", b64);
             doc.addFont("Nunito.ttf", "Nunito", "normal");
             doc.addFont("Nunito.ttf", "Nunito", "bold");
@@ -348,7 +348,7 @@ export default function MensagensPage() {
         return `${d}/${m}/${y}`;
     };
 
-    // ------- Exportar o PDF Para a Geração Das Homenagens toda -------
+    // ------- Exportar o PDF Para a Geração Das Homenagens Toda -------
     const runExport = useCallback(
         async (meta: { nome: string; nasc: string; obito: string }) => {
             const w: any = window as any;
@@ -372,7 +372,7 @@ export default function MensagensPage() {
             const nunitoOk = await ensureNunito(doc);
             const dejaOk = await ensureDejaVu(doc);
 
-            // Fallback inteligente: Nunito -> DejaVu -> Helvetica
+            // Fallback inteligente: Fonte Nunito -> DejaVu -> Helvetica
             const CONTENT_FONT = nunitoOk ? "Nunito" : dejaOk ? "DejaVuSans" : "helvetica";
             const COVER_FONT = nunitoOk ? "Nunito" : dejaOk ? "DejaVuSans" : "helvetica";
 
@@ -487,7 +487,7 @@ export default function MensagensPage() {
                     false
                 );
 
-                // Declara bodySize antes de usar
+                // Declara BodySize Antes de Usar
                 let bodySize = bodyStart;
 
                 let body = wrapText(
