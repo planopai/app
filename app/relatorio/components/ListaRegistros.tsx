@@ -1,7 +1,6 @@
 "use client";
 import React from "react";
 import { FalecidoItem } from "./TiposHistorico";
-import { formataDataHora } from "./UtilDatas";
 
 interface Props {
     registros: FalecidoItem[];
@@ -12,7 +11,6 @@ interface Props {
     onPaginaProxima: () => void;
     selecionadoId?: string;
     onSelecionar: (item: FalecidoItem) => void;
-    criacaoMap: Record<string, string>;
 }
 
 export default function ListaRegistros({
@@ -24,76 +22,45 @@ export default function ListaRegistros({
     onPaginaProxima,
     selecionadoId,
     onSelecionar,
-    criacaoMap,
 }: Props) {
     return (
-        <div className="rounded-2xl border bg-card/60 shadow-sm backdrop-blur h-full flex flex-col">
-            {/* Cabeçalho */}
-            <div className="border-b p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                    Registros
-                </div>
-            </div>
+        <div className="flex flex-col border rounded overflow-hidden h-full">
+            <div className="bg-gray-100 p-2 font-semibold">Registros</div>
 
-            {/* Lista */}
-            <div className="flex-1 overflow-y-auto p-2">
+            <div className="flex-1 overflow-y-auto">
                 {loading ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">Carregando...</div>
+                    <div className="p-4 text-center">Carregando...</div>
                 ) : registros.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">Nenhum registro encontrado.</div>
+                    <div className="p-4 text-center">Nenhum registro encontrado.</div>
                 ) : (
-                    <ul className="flex flex-col">
-                        {registros.map((item) => {
-                            const id = String(item.sepultamento_id);
-                            const criacao = criacaoMap[id]; // pode não existir ainda (prefetch)
-                            const selecionado = selecionadoId === item.sepultamento_id;
-
-                            return (
-                                <li key={item.sepultamento_id} className="mb-2 last:mb-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => onSelecionar(item)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" || e.key === " ") {
-                                                e.preventDefault();
-                                                onSelecionar(item);
-                                            }
-                                        }}
-                                        className={[
-                                            "group flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition",
-                                            "hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-primary/40",
-                                            selecionado ? "border-primary/60 bg-primary/5" : "",
-                                        ].join(" ")}
-                                        aria-pressed={selecionado}
-                                    >
-                                        <span className="font-medium">{item.falecido}</span>
-                                        <span className="text-xs text-muted-foreground">
-                                            {criacao ? formataDataHora(criacao) : "—"}
-                                        </span>
-                                    </button>
-                                </li>
-                            );
-                        })}
+                    <ul>
+                        {registros.map((item) => (
+                            <li key={item.sepultamento_id}>
+                                <button
+                                    type="button"
+                                    className={`w-full text-left p-2 border-b hover:bg-muted/40 ${selecionadoId === item.sepultamento_id ? "bg-blue-50" : ""
+                                        }`}
+                                    onClick={() => onSelecionar(item)}
+                                >
+                                    <div className="font-medium">{item.falecido}</div>
+                                </button>
+                            </li>
+                        ))}
                     </ul>
                 )}
             </div>
 
-            {/* Paginação */}
-            <div className="flex items-center justify-between gap-2 p-2 border-t bg-gray-50/60">
-                <button
-                    onClick={onPaginaAnterior}
-                    disabled={pagina <= 1}
-                    className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
-                >
+            <div className="flex justify-between items-center p-2 border-t bg-gray-50">
+                <button onClick={onPaginaAnterior} disabled={pagina <= 1} className="px-2 py-1 border rounded disabled:opacity-50">
                     ← Anterior
                 </button>
-                <span className="text-xs text-muted-foreground">
-                    Página <b>{pagina}</b> de <b>{totalPaginas}</b>
+                <span className="text-sm">
+                    Página {pagina} / {Math.max(1, totalPaginas)}
                 </span>
                 <button
                     onClick={onPaginaProxima}
                     disabled={pagina >= totalPaginas}
-                    className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted/50 disabled:opacity-50"
+                    className="px-2 py-1 border rounded disabled:opacity-50"
                 >
                     Próxima →
                 </button>
