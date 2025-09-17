@@ -15,3 +15,6 @@ export const RESUMO_ORDER: string[] = [
     "ornamentacao_tipo",
     "ornamentacao",
 ];
+
+/* Tipo utilitário para chaves possíveis no resumo */
+export type ResumoKey = (typeof RESUMO_ORDER)[number];
