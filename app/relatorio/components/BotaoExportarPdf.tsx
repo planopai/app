@@ -22,15 +22,10 @@ interface Props {
 function useJsPdfCdn() {
     const [ready, setReady] = useState(false);
     const once = useRef(false);
-
     useEffect(() => {
         if (once.current) return;
         once.current = true;
-
-        if ((window as any).jspdf?.jsPDF) {
-            setReady(true);
-            return;
-        }
+        if ((window as any).jspdf?.jsPDF) { setReady(true); return; }
         const script = document.createElement("script");
         script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
         script.async = true;
@@ -41,9 +36,8 @@ function useJsPdfCdn() {
     return ready;
 }
 
-/* =============== Fonte Nunito (opcional, melhora muito o layout) =============== */
+/* =============== Fonte Nunito (opcional) =============== */
 const nunitoStateRef: { current: "none" | "ok" | "fail" } = { current: "none" };
-
 async function ensureNunito(doc: any): Promise<boolean> {
     if (nunitoStateRef.current === "ok") return true;
     if (nunitoStateRef.current === "fail") return false;
@@ -75,10 +69,7 @@ async function ensureNunito(doc: any): Promise<boolean> {
 /* =============== Helpers de layout do PDF =============== */
 function ensurePageSpace(doc: any, y: number, needed: number, marginTop = 22) {
     const pageH = doc.internal.pageSize.getHeight();
-    if (y + needed > pageH - 20) {
-        doc.addPage();
-        return marginTop;
-    }
+    if (y + needed > pageH - 20) { doc.addPage(); return marginTop; }
     return y;
 }
 function textHeight(doc: any, text: string | string[], maxWidth: number, lineGap = 4) {
@@ -95,17 +86,13 @@ function drawCard(
     value: string,
     fonts: { normal: [string, string]; title: [string, string] }
 ) {
-    const padX = 4;
-    const padY = 4;
-
+    const padX = 4, padY = 4;
     doc.setFont(fonts.normal[0], fonts.normal[1]);
     doc.setFontSize(8.5);
     const { lines: labelLines, h: hLabel } = textHeight(doc, label, w - padX * 2, 3.8);
-
     doc.setFont(fonts.title[0], fonts.title[1]);
     doc.setFontSize(11);
     const { lines: valueLines, h: hValue } = textHeight(doc, value, w - padX * 2, 5);
-
     const innerH = hLabel + 2 + hValue;
     const cardH = innerH + padY * 2;
 
@@ -114,7 +101,6 @@ function drawCard(
     (doc as any).roundedRect(x, y, w, cardH, 2.5, 2.5, "DF");
 
     let yy = y + padY;
-
     doc.setTextColor(120);
     doc.setFont(fonts.normal[0], fonts.normal[1]);
     doc.setFontSize(8.5);
@@ -129,9 +115,7 @@ function drawCard(
     return cardH;
 }
 
-/* =============== Helpers extras para as 2 novas páginas (não interferem no resto) =============== */
-
-/** Rótulos amigáveis dos materiais (ajuste se quiser que casem 100% com o formulário físico). */
+/* =============== Materiais da Assistência (rótulos) =============== */
 const MATERIAL_LABELS: Record<string, string> = {
     cadeiras: "Cadeiras metálicas",
     bebedouros: "Bebedouro (20 litros)",
@@ -143,17 +127,43 @@ const MATERIAL_LABELS: Record<string, string> = {
     paramentacao: "Paramentação",
 };
 
-/** Soma os materiais a partir dos logs (compatível com *_qtd e materiais_json). */
-function extrairMateriaisDosLogs(logs: LogItem[]): Record<string, number> {
+/* =============== Extração de materiais =============== */
+/** Usa o ÚLTIMO `materiais_json` dos logs (estado atual da Assistência). Se não houver, faz fallback somando *_qtd. */
+function extrairMateriaisAssistencia(logs: LogItem[]): Record<string, number> {
+    const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    let ultimoMj: any = null;
+    for (let i = byDate.length - 1; i >= 0; i--) {
+        const det = byDate[i]?.detalhes;
+        if (!det) continue;
+        try {
+            const obj = typeof det === "string" ? JSON.parse(det) : det;
+            if (obj && obj.materiais_json) {
+                ultimoMj = typeof obj.materiais_json === "string" ? JSON.parse(obj.materiais_json) : obj.materiais_json;
+                break;
+            }
+        } catch { /* ignore */ }
+    }
+    if (ultimoMj && typeof ultimoMj === "object") {
+        const out: Record<string, number> = {};
+        Object.entries(ultimoMj).forEach(([k, v]: any) => {
+            const qtd = Number(v?.qtd ?? 0);
+            const marcado = String(v?.checked ?? "").toLowerCase();
+            if (qtd > 0 && (marcado === "true" || marcado === "1" || marcado === "sim")) {
+                out[k.toLowerCase()] = qtd;
+            }
+        });
+        return out;
+    }
+
+    // fallback
     const total: Record<string, number> = {};
     for (const l of logs) {
         const raw = l.detalhes as any;
         let obj: Record<string, any> = {};
         if (typeof raw === "string") {
             try { obj = JSON.parse(raw); } catch { obj = {}; }
-        } else if (raw && typeof raw === "object") {
-            obj = raw as Record<string, any>;
-        }
+        } else if (raw && typeof raw === "object") obj = raw;
+
         for (const key of Object.keys(obj)) {
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (m) {
@@ -161,25 +171,12 @@ function extrairMateriaisDosLogs(logs: LogItem[]): Record<string, number> {
                 const qtd = Number(obj[key] ?? 0);
                 if (Number.isFinite(qtd) && qtd > 0) total[base] = (total[base] || 0) + qtd;
             }
-            if (key === "materiais_json") {
-                try {
-                    const mj = JSON.parse(obj[key]);
-                    Object.keys(mj || {}).forEach((mk) => {
-                        const qtd = Number(mj[mk]?.qtd ?? 0);
-                        const checked = String(mj[mk]?.checked ?? "").toLowerCase();
-                        if ((checked === "true" || checked === "1" || checked === "sim") && qtd > 0) {
-                            const base = mk.toLowerCase();
-                            total[base] = (total[base] || 0) + qtd;
-                        }
-                    });
-                } catch { /* ignore */ }
-            }
         }
     }
     return total;
 }
 
-/** Tenta descobrir o agente que “entregou o corpo” (fase 08) ou usa o último usuário. */
+/** Agente (usuário) que entregou o corpo (fase 08) ou último usuário. */
 function pegarAgenteEntrega(logs: LogItem[]): string {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     const fase8 = [...byDate].reverse().find(
@@ -190,95 +187,112 @@ function pegarAgenteEntrega(logs: LogItem[]): string {
     return ult?.usuario || "";
 }
 
-/** Desenha uma checkbox ”visual” */
-function drawCheckBox(doc: any, x: number, y: number, text: string) {
-    doc.rect(x, y - 4, 4, 4);
-    doc.text(text, x + 6, y);
+/* =============== Helpers de texto com quebra automática =============== */
+function drawParagraph(doc: any, text: string, x: number, y: number, maxWidth: number, font: [string, string], size = 11) {
+    doc.setFont(font[0], font[1]);
+    doc.setFontSize(size);
+    const lines = doc.splitTextToSize(text, maxWidth);
+    doc.text(lines, x, y);
+    return lines.length * 6; // altura aproximada consumida
 }
 
-/** Página 1 extra: Termo de recebimento */
+/** Checkbox com quebra automática do texto na largura informada. Retorna altura consumida. */
+function drawCheckBoxWrapped(doc: any, x: number, y: number, text: string, maxWidth: number) {
+    doc.rect(x, y - 4, 4, 4);
+    const lines = doc.splitTextToSize(text, maxWidth);
+    doc.text(lines, x + 6, y);
+    const used = (lines.length - 1) * 6 + 7;
+    return used;
+}
+
+/* =============== Página 1 extra: Termo de recebimento (usa data do velório) =============== */
 function desenharTermoRecebimento(doc: any, params: {
-    responsavel: string;           // “Eu, ____”
-    falecido: string;              // nome do falecido
-    agente: string;                // entregue pela pessoa de ____
-    dataHoje: string;              // dd/mm/aaaa
-    materiais: Record<string, number>; // {chave: qtd}
+    responsavel: string;
+    falecido: string;
+    agente: string;
+    dataVelorio: string; // dd/mm/aaaa
+    materiais: Record<string, number>;
 }) {
     const pageW = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const maxW = pageW - margin * 2;
     let y = 18;
 
     doc.setFontSize(14);
     doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, { align: "center" });
     y += 12;
 
-    doc.setFontSize(11);
-    const linha1 = `Eu, ${params.responsavel || "________________________"}, confirmo`;
-    const linha2 = `o recebimento do material para o velório do(a) ${params.falecido || "________________________"}`;
-    const linha3 = `entregue pela pessoa de ${params.agente || "________________________"} representante do PAI - Plano Assistencial Integrado. Atesto o recebimento e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:`;
-    doc.text(linha1, 14, y); y += 6;
-    doc.text(linha2, 14, y); y += 6;
-    doc.text(linha3, 14, y); y += 10;
+    y += drawParagraph(
+        doc,
+        `Eu, ${params.responsavel || "________________________"}, confirmo o recebimento do material para o velório do(a) ${params.falecido || "________________________"}, entregue pela pessoa de ${params.agente || "________________________"} representante do PAI – Plano Assistencial Integrado. Atesto o recebimento e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:`,
+        margin, y, maxW, ["helvetica", "normal"], 11
+    ) + 4;
 
     doc.setFontSize(12);
-    doc.text("Itens:", 14, y); y += 8;
+    doc.text("Itens:", margin, y);
+    y += 8;
     doc.setFontSize(11);
 
-    const allKeys = Object.keys(MATERIAL_LABELS);
-    const colX = [14, pageW / 2 + 2];
+    const colGap = 8;
+    const colW = (maxW - colGap) / 2;
+    const colX = [margin, margin + colW + colGap];
     let col = 0;
-    let yStart = y;
-
-    for (const k of allKeys) {
+    const keys = Object.keys(MATERIAL_LABELS);
+    for (const k of keys) {
         const label = MATERIAL_LABELS[k] || k;
         const qtd = params.materiais[k] || 0;
-        const text = qtd > 0 ? `${label} — ${qtd}` : label;
-        drawCheckBox(doc, colX[col], y, text);
-        y += 7;
-        if (y > 250) {
-            if (col === 0) { col = 1; y = yStart; }
-            else { doc.addPage(); col = 0; y = yStart = 20; }
+        const text = qtd > 0 ? `${label}: ${qtd}` : label;
+
+        const used = drawCheckBoxWrapped(doc, colX[col], y, text, colW - 10);
+        y += used;
+
+        if (y > 240) { // troca de coluna/página
+            if (col === 0) { col = 1; y = 26; }
+            else { doc.addPage(); y = 20; col = 0; }
         }
     }
 
-    // rodapé assinatura/data
     y = Math.max(y, 230);
     doc.setLineWidth(0.3);
-    doc.line(20, y + 25, pageW - 20, y + 25);
+    doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
     doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
-    doc.text(`Barreiras-BA, ${params.dataHoje}`, 20, y + 18);
+    doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y + 18);
 }
 
-/** Página 2 extra: Requisição de veículo funerário */
+/* =============== Página 2 extra: Requisição de veículo (usa data/hora do sepultamento) =============== */
 function desenharRequisicaoVeiculo(doc: any, params: {
-    requerente: string;    // quem assina
+    requerente: string;
     falecido: string;
     dataSepultamento?: string; // dd/mm/aaaa
     horaSepultamento?: string; // hh:mm
 }) {
     const pageW = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const maxW = pageW - margin * 2;
     let y = 18;
 
     doc.setFontSize(14);
     doc.text("REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO", pageW / 2, y, { align: "center" });
     y += 12;
 
-    doc.setFontSize(11);
-    const t1 = `Eu, ${params.requerente || "________________________"}, solicito à empresa PAI `;
-    const t2 = "– Plano Assistencial Integrado, veículo funerário para o sepultamento do corpo de";
-    const t3 = `${params.falecido || "________________________"}, a ocorrer no dia ${params.dataSepultamento || "____/____/____"} às ${params.horaSepultamento || "____:____"}.`;
-    doc.text(t1, 14, y); y += 6;
-    doc.text(t2, 14, y); y += 6;
-    doc.text(t3, 14, y); y += 12;
+    y += drawParagraph(
+        doc,
+        `Eu, ${params.requerente || "________________________"}, solicito à empresa PAI – Plano Assistencial Integrado, veículo funerário para o sepultamento do corpo de ${params.falecido || "________________________"}, que ocorrerá no dia ${params.dataSepultamento || "____/____/____"} às ${params.horaSepultamento || "____:____"}.`,
+        margin, y, maxW, ["helvetica", "normal"], 11
+    ) + 6;
 
-    doc.text("Desde de já , tenho conhecimento que esse pedido deve ser realizado com antecedência mínima de 5 (cinco) horas. E caso ocorra fora desse horário a empresa está isenta de responsabilidades por qualquer contratempo.", 14, y);
-    y += 24;
+    y += drawParagraph(
+        doc,
+        "Desde já, tenho conhecimento de que este pedido deve ser realizado com antecedência mínima de 05 (cinco) horas e, caso ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
+        margin, y, maxW, ["helvetica", "normal"], 11
+    ) + 18;
 
     doc.setLineWidth(0.3);
-    doc.line(20, y + 25, pageW - 20, y + 25);
+    doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
     doc.text("Requerente (assinatura)", pageW / 2, y + 30, { align: "center" });
 }
 
-/* =============== Componente =============== */
+/* =============== Componente principal =============== */
 export default function BotaoExportarPdf({
     desabilitado,
     selecionadoNome,
@@ -301,8 +315,7 @@ export default function BotaoExportarPdf({
 
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
-            const marginL = 14;
-            const marginR = 14;
+            const marginL = 14, marginR = 14;
             const contentW = pageW - marginL - marginR;
 
             const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
@@ -310,13 +323,12 @@ export default function BotaoExportarPdf({
 
             let y = 22;
 
-            // Título
+            // Cabeçalho
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(18);
             doc.text("Relatório de Atendimento", pageW / 2, y, { align: "center" });
             y += 8;
 
-            // Nome
             doc.setFont(titleFont[0], titleFont[1]);
             doc.setFontSize(13);
             doc.text((selecionadoNome || "").toString(), pageW / 2, y, { align: "center" });
@@ -329,7 +341,7 @@ export default function BotaoExportarPdf({
                 y += 6;
             }
 
-            // ===== Relatório Final (quando existir) em 2 colunas de cards
+            // Relatório Final
             if (resumoFinal && Object.keys(resumoFinal).length) {
                 doc.setFont(titleFont[0], titleFont[1]);
                 doc.setFontSize(12.5);
@@ -380,15 +392,12 @@ export default function BotaoExportarPdf({
                 y = cursorY + 4;
             }
 
-            // ===== Cards de Log
-            const cardPadX = 6;
-            const cardPadY = 6;
-
+            // Cards de Log
+            const cardPadX = 6, cardPadY = 6;
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
                 doc.setFontSize(size);
-                if (Array.isArray(text)) doc.text(text, x, yy);
-                else doc.text(text, x, yy);
+                doc.text(Array.isArray(text) ? text : [text], x, yy);
             };
 
             for (const ent of logVisiveis) {
@@ -400,7 +409,6 @@ export default function BotaoExportarPdf({
 
                 const detalhesLines: string[] = [];
                 const raw = ent.detalhes as any;
-
                 const materiaisLines: string[] = [];
 
                 try {
@@ -413,11 +421,8 @@ export default function BotaoExportarPdf({
                             if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
                                 let aobj: any = {};
                                 const val = obj[key];
-                                if (typeof val === "string") {
-                                    try { aobj = JSON.parse(val); } catch { aobj = {}; }
-                                } else if (typeof val === "object" && val) {
-                                    aobj = val;
-                                }
+                                if (typeof val === "string") { try { aobj = JSON.parse(val); } catch { aobj = {}; } }
+                                else if (typeof val === "object" && val) aobj = val;
                                 for (const [k, v] of Object.entries(aobj)) {
                                     if (asBool(v)) detalhesLines.push(`${titleCaseFromSnake(k)}: Sim`);
                                 }
@@ -450,7 +455,6 @@ export default function BotaoExportarPdf({
                         }
                     }
                 } catch {
-                    // Texto puro
                     let detalhesRaw = String(raw || "");
                     detalhesRaw = substituirRotuloVisual(detalhesRaw);
                     if (detalhesRaw.trim()) detalhesLines.push(detalhesRaw.trim());
@@ -462,20 +466,16 @@ export default function BotaoExportarPdf({
                 }
 
                 // Medidas
-                doc.setFont(normalFont[0], normalFont[1]);
-                doc.setFontSize(9);
+                doc.setFont(normalFont[0], normalFont[1]); doc.setFontSize(9);
                 const dataWrapped = doc.splitTextToSize(dataLine, contentW - cardPadX * 2);
 
-                doc.setFont(titleFont[0], titleFont[1]);
-                doc.setFontSize(12);
+                doc.setFont(titleFont[0], titleFont[1]); doc.setFontSize(12);
                 const acaoWrapped = doc.splitTextToSize(acaoFull, contentW - cardPadX * 2);
 
-                doc.setFont(normalFont[0], normalFont[1]);
-                doc.setFontSize(10);
+                doc.setFont(normalFont[0], normalFont[1]); doc.setFontSize(10);
                 const usuarioWrapped = doc.splitTextToSize(usuarioLine, contentW - cardPadX * 2);
 
-                doc.setFont(normalFont[0], normalFont[1]);
-                doc.setFontSize(11);
+                doc.setFont(normalFont[0], normalFont[1]); doc.setFontSize(11);
                 const detalhesWrapped = detalhesLines.flatMap((l) => doc.splitTextToSize(l, contentW - cardPadX * 2));
 
                 const hData = dataWrapped.length ? 4 + (dataWrapped.length - 1) * 4 : 0;
@@ -486,54 +486,40 @@ export default function BotaoExportarPdf({
                 const innerHeight = (hData ? hData + hUsuario + hDetalhes + 3 : hUsuario + hDetalhes + 3) + hAcao;
                 const cardH = innerHeight + 2 * cardPadY;
 
-                if (y + cardH + 8 > pageH) {
-                    doc.addPage();
-                    y = 22;
-                }
+                if (y + cardH + 8 > pageH) { doc.addPage(); y = 22; }
 
-                doc.setDrawColor(210);
-                doc.setLineWidth(0.25);
+                doc.setDrawColor(210); doc.setLineWidth(0.25);
                 (doc as any).roundedRect(marginL, y, contentW, cardH, 3, 3);
 
                 let yy = y + cardPadY;
-
-                if (dataWrapped.length) {
-                    writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
-                    yy += 4 + (dataWrapped.length - 1) * 4 + 3;
-                }
-                writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
-                yy += hAcao;
-
-                if (usuarioWrapped.length) {
-                    writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
-                    yy += usuarioWrapped.length * 5;
-                }
-                if (detalhesWrapped.length) {
-                    writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
-                    yy += detalhesWrapped.length * 5;
-                }
+                if (dataWrapped.length) { writeLine(dataWrapped, marginL + cardPadX, yy, 9, false); yy += 4 + (dataWrapped.length - 1) * 4 + 3; }
+                writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true); yy += hAcao;
+                if (usuarioWrapped.length) { writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false); yy += usuarioWrapped.length * 5; }
+                if (detalhesWrapped.length) { writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false); yy += detalhesWrapped.length * 5; }
                 y += cardH + 8;
             }
 
-            // ====== PÁGINAS EXTRAS (NÃO INTERFEREM NO CONTEÚDO EXISTENTE) ======
-            // Página extra 1 – Termo de Recebimento
-            doc.addPage();
-            const materiais = extrairMateriaisDosLogs(logVisiveis);
+            // ====== PÁGINAS EXTRAS ======
+            // Materiais e agente
+            const materiais = extrairMateriaisAssistencia(logVisiveis);
             const agente = pegarAgenteEntrega(logVisiveis);
-            const hoje = formataDataDia(new Date().toISOString().slice(0, 10));
+
+            // 1) Termo — data do velório
+            doc.addPage();
+            const dataVelorio =
+                (resumoFinal?.data_inicio_velorio && formataSeDataIso(resumoFinal.data_inicio_velorio)) || "";
             desenharTermoRecebimento(doc, {
                 responsavel: selecionadoAssinatura || "",
                 falecido: selecionadoNome,
                 agente,
-                dataHoje: hoje,
+                dataVelorio,
                 materiais
             });
 
-            // Página extra 2 – Requisição de Veículo
+            // 2) Requisição — data e hora do sepultamento
             doc.addPage();
             const dataSep =
-                (resumoFinal?.data_fim_velorio && formataSeDataIso(resumoFinal.data_fim_velorio)) ||
-                (resumoFinal?.data_inicio_velorio && formataSeDataIso(resumoFinal.data_inicio_velorio)) || "";
+                (resumoFinal?.data_fim_velorio && formataSeDataIso(resumoFinal.data_fim_velorio)) || "";
             const horaSep =
                 (resumoFinal?.hora_fim_velorio && formataSeDataIso(resumoFinal.hora_fim_velorio)) || "";
             desenharRequisicaoVeiculo(doc, {
