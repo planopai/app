@@ -4,7 +4,7 @@ import BarraFiltros from "./BarraFiltros";
 import ListaRegistros from "./ListaRegistros";
 import ModalAnaliseGeral from "./ModalAnaliseGeral";
 import ModalDetalheRegistro from "./ModalDetalheRegistro";
-import { listarFalecidos, listarLogPorId } from "./Api";
+import { listarFalecidosComCriacao } from "./Api";
 import { FalecidoItem } from "./TiposHistorico";
 
 export default function PaginaHistoricoSepultamentos() {
@@ -19,7 +19,8 @@ export default function PaginaHistoricoSepultamentos() {
 
     // modal de detalhes
     const [modalAberto, setModalAberto] = useState(false);
-    const [registroSelecionado, setRegistroSelecionado] = useState<FalecidoItem | null>(null);
+    const [registroSelecionado, setRegistroSelecionado] =
+        useState<FalecidoItem | null>(null);
 
     // análise geral
     const [analiseOpen, setAnaliseOpen] = useState(false);
@@ -27,12 +28,14 @@ export default function PaginaHistoricoSepultamentos() {
     // mapa de criação por registro
     const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
 
+    // carregar lista já com datas de criação
     useEffect(() => {
         (async () => {
             setLoadingLista(true);
             try {
-                const dados = await listarFalecidos();
-                setLista(dados);
+                const { lista, criacaoMap } = await listarFalecidosComCriacao();
+                setLista(lista);
+                setCriacaoMap(criacaoMap);
             } finally {
                 setLoadingLista(false);
             }
@@ -44,45 +47,22 @@ export default function PaginaHistoricoSepultamentos() {
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
         return (lista || []).filter((reg) => {
-            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) return false;
+            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome))
+                return false;
             if (filtroDe || filtroAte) {
-                const base = (reg.ultima_datahora || "").substring(0, 10);
+                const base = (criacaoMap[reg.sepultamento_id] || "").substring(0, 10);
                 if (filtroDe && base && base < filtroDe) return false;
                 if (filtroAte && base && base > filtroAte) return false;
             }
             return true;
         });
-    }, [lista, filtroNome, filtroDe, filtroAte]);
+    }, [lista, filtroNome, filtroDe, filtroAte, criacaoMap]);
 
     const totalPaginas = Math.max(1, Math.ceil(filtrados.length / porPagina));
-    const pageItems = filtrados.slice((pagina - 1) * porPagina, pagina * porPagina);
-
-    // prefetch da data/hora de criação (primeiro log) para os itens da página
-    useEffect(() => {
-        (async () => {
-            const pendentes = pageItems
-                .map((i) => String(i.sepultamento_id))
-                .filter((id) => !criacaoMap[id]);
-
-            if (pendentes.length === 0) return;
-
-            const novos: Record<string, string> = {};
-            for (const id of pendentes) {
-                try {
-                    const logs = await listarLogPorId(id);
-                    const primeiro = [...logs].sort((a, b) =>
-                        (a.datahora || "").localeCompare(b.datahora || "")
-                    )[0]?.datahora;
-                    if (primeiro) novos[id] = primeiro;
-                } catch {
-                    // silencia falha individual
-                }
-            }
-            if (Object.keys(novos).length) {
-                setCriacaoMap((prev) => ({ ...prev, ...novos }));
-            }
-        })();
-    }, [pageItems, criacaoMap]);
+    const pageItems = filtrados.slice(
+        (pagina - 1) * porPagina,
+        pagina * porPagina
+    );
 
     function abrirModal(item: FalecidoItem) {
         setRegistroSelecionado(item);
@@ -95,9 +75,18 @@ export default function PaginaHistoricoSepultamentos() {
                 filtroNome={filtroNome}
                 filtroDe={filtroDe}
                 filtroAte={filtroAte}
-                onChangeNome={(v) => { setFiltroNome(v); setPagina(1); }}
-                onChangeDe={(v) => { setFiltroDe(v); setPagina(1); }}
-                onChangeAte={(v) => { setFiltroAte(v); setPagina(1); }}
+                onChangeNome={(v) => {
+                    setFiltroNome(v);
+                    setPagina(1);
+                }}
+                onChangeDe={(v) => {
+                    setFiltroDe(v);
+                    setPagina(1);
+                }}
+                onChangeAte={(v) => {
+                    setFiltroAte(v);
+                    setPagina(1);
+                }}
                 onAbrirAnalise={() => setAnaliseOpen(true)}
             />
 

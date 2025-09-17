@@ -12,20 +12,25 @@ export const LISTAR_ANALITICO =
 export const LOG_POR_ID = (id: string) =>
     `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
-/* ======================== Helper ======================== */
+/* ======================== Helpers ======================== */
 
 async function fetchJson<T = any>(url: string): Promise<T> {
-    // evita cache agressivo em produção (Vercel)
+    // evita cache agressivo (Vercel)
     const res = await fetch(`${url}&_nocache=${Date.now()}`, { cache: "no-store" });
     return res.json();
 }
 
-/* ======================== Fetchers ======================== */
+function primeiroLogDatahora(logs: LogItem[]): string {
+    if (!logs?.length) return "";
+    const ord = logs.slice().sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    return ord[0]?.datahora || "";
+}
+
+/* ======================== Fetchers básicos ======================== */
 
 export async function listarFalecidos(): Promise<FalecidoItem[]> {
     try {
         const json = await fetchJson<any>(LISTAR_FALECIDOS);
-        // Backend pode retornar {sucesso, dados: []} ou [] diretamente
         if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as FalecidoItem[];
         if (Array.isArray(json)) return json as FalecidoItem[];
         return [];
@@ -54,4 +59,53 @@ export async function listarAnalitico(): Promise<RegistroAnalise[]> {
     } catch {
         return [];
     }
+}
+
+/* ======================== Carregar CRIAÇÃO junto com a lista ======================== */
+
+export type FalecidoComCriacao = FalecidoItem & { criacao?: string };
+
+/** Busca as datas de criação (primeiro log) com limite de concorrência. */
+export async function pegarCriacoes(
+    ids: string[],
+    maxConc = 8
+): Promise<Record<string, string>> {
+    const pend = Array.from(new Set(ids.filter(Boolean)));
+    const out: Record<string, string> = {};
+    let i = 0;
+
+    async function worker() {
+        while (i < pend.length) {
+            const id = pend[i++];
+            try {
+                const logs = await listarLogPorId(id);
+                out[id] = primeiroLogDatahora(logs);
+            } catch {
+                out[id] = "";
+            }
+        }
+    }
+
+    const workers = Array.from({ length: Math.min(maxConc, pend.length) }, worker);
+    await Promise.all(workers);
+    return out;
+}
+
+/**
+ * Retorna a lista **já com** a data de criação resolvida.
+ * Use esta função na tela para evitar o “piscar” das datas.
+ */
+export async function listarFalecidosComCriacao(
+    maxConc = 8
+): Promise<{ lista: FalecidoComCriacao[]; criacaoMap: Record<string, string> }> {
+    const lista = await listarFalecidos();
+    const ids = lista.map((r) => String(r.sepultamento_id || ""));
+    const criacaoMap = await pegarCriacoes(ids, maxConc);
+
+    const listaCom = lista.map<FalecidoComCriacao>((r) => ({
+        ...r,
+        criacao: criacaoMap[String(r.sepultamento_id || "")] || r.ultima_datahora || "",
+    }));
+
+    return { lista: listaCom, criacaoMap };
 }
