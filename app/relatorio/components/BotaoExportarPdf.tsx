@@ -253,7 +253,7 @@ function desenharTermoRecebimento(doc: any, params: {
     y += drawLabelValueLine(doc, margin, y, "Entregue por (Agente)", params.agente || "________________________", maxW, params.fonts, 11);
     y += drawParagraph(
         doc,
-        "Atesto o recebimento e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:",
+        "Confirmo o recebimento do material e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:",
         margin, y, maxW, params.fonts.normal, 11
     ) + 6;
 
@@ -307,7 +307,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
 
     y += drawParagraph(
         doc,
-        "Declaro estar ciente de que o pedido deve ser realizado com antecedência mínima de 05 (cinco) horas. Caso o atendimento ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
+        "Solicito à empresa PAI - Plano Assistencial Integrado, veículo funerário para realização de sepultamento. Desde já, tenho conhecimento que esse pedido deve ser realizado com antecedência mínima de 05 (cinco) horas. Caso o atendimento ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
         margin, y, maxW, params.fonts.normal, 11
     ) + 18;
 
