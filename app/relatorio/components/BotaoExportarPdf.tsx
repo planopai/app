@@ -11,7 +11,7 @@ import { asBool } from "./Normalizadores";
 interface Props {
     desabilitado: boolean;
     selecionadoNome: string;
-    /** Opcional: nome do responsável para assinar as páginas extras. */
+    /** Opcional: nome do responsável/requerente para assinar as páginas extras. */
     selecionadoAssinatura?: string;
     criacaoSelecionado?: string;
     logVisiveis: LogItem[];
@@ -115,21 +115,9 @@ function drawCard(
     return cardH;
 }
 
-/* =============== Materiais da Assistência (rótulos) =============== */
-const MATERIAL_LABELS: Record<string, string> = {
-    cadeiras: "Cadeiras metálicas",
-    bebedouros: "Bebedouro (20 litros)",
-    kit_lanche: "Kit de Lanche",
-    placa: "Placa Luminosa",
-    suporte_coroa: "1 Coroa de flores artificiais com suporte",
-    tenda: "Barraca sanfonada 3m x 2m",
-    velas: "Velas",
-    paramentacao: "Paramentação",
-};
-
-/* =============== Extração de materiais =============== */
-/** Usa o ÚLTIMO `materiais_json` dos logs (estado atual da Assistência). Se não houver, faz fallback somando *_qtd. */
-function extrairMateriaisAssistencia(logs: LogItem[]): Record<string, number> {
+/* =============== Materiais da Assistência (APENAS materiais_json) =============== */
+/** Pega o **último** materiais_json (estado atual). Não usa *_qtd. */
+function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; qtd: number }> {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     let ultimoMj: any = null;
     for (let i = byDate.length - 1; i >= 0; i--) {
@@ -143,37 +131,20 @@ function extrairMateriaisAssistencia(logs: LogItem[]): Record<string, number> {
             }
         } catch { /* ignore */ }
     }
+    const out: Array<{ rotulo: string; qtd: number }> = [];
     if (ultimoMj && typeof ultimoMj === "object") {
-        const out: Record<string, number> = {};
         Object.entries(ultimoMj).forEach(([k, v]: any) => {
             const qtd = Number(v?.qtd ?? 0);
             const marcado = String(v?.checked ?? "").toLowerCase();
             if (qtd > 0 && (marcado === "true" || marcado === "1" || marcado === "sim")) {
-                out[k.toLowerCase()] = qtd;
+                const rot =
+                    (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
+                    overrideCampoNome(k, titleCaseFromSnake(k));
+                out.push({ rotulo: rot, qtd });
             }
         });
-        return out;
     }
-
-    // fallback
-    const total: Record<string, number> = {};
-    for (const l of logs) {
-        const raw = l.detalhes as any;
-        let obj: Record<string, any> = {};
-        if (typeof raw === "string") {
-            try { obj = JSON.parse(raw); } catch { obj = {}; }
-        } else if (raw && typeof raw === "object") obj = raw;
-
-        for (const key of Object.keys(obj)) {
-            const m = key.match(/^materiais_(.+?)_qtd$/i);
-            if (m) {
-                const base = m[1].toLowerCase();
-                const qtd = Number(obj[key] ?? 0);
-                if (Number.isFinite(qtd) && qtd > 0) total[base] = (total[base] || 0) + qtd;
-            }
-        }
-    }
-    return total;
+    return out;
 }
 
 /** Agente (usuário) que entregou o corpo (fase 08) ou último usuário. */
@@ -187,108 +158,156 @@ function pegarAgenteEntrega(logs: LogItem[]): string {
     return ult?.usuario || "";
 }
 
-/* =============== Helpers de texto com quebra automática =============== */
+/* =============== Helpers de texto com quebra e negrito =============== */
 function drawParagraph(doc: any, text: string, x: number, y: number, maxWidth: number, font: [string, string], size = 11) {
     doc.setFont(font[0], font[1]);
     doc.setFontSize(size);
     const lines = doc.splitTextToSize(text, maxWidth);
     doc.text(lines, x, y);
-    return lines.length * 6; // altura aproximada consumida
+    return lines.length * 6; // altura aproximada
 }
 
-/** Checkbox com quebra automática do texto na largura informada. Retorna altura consumida. */
-function drawCheckBoxWrapped(doc: any, x: number, y: number, text: string, maxWidth: number) {
-    doc.rect(x, y - 4, 4, 4);
-    const lines = doc.splitTextToSize(text, maxWidth);
-    doc.text(lines, x + 6, y);
-    const used = (lines.length - 1) * 6 + 7;
-    return used;
+function drawLabelValueLine(
+    doc: any,
+    x: number,
+    y: number,
+    label: string,
+    value: string,
+    maxWidth: number,
+    fonts: { normal: [string, string]; bold: [string, string] },
+    size = 11
+) {
+    // escreve "Label: " em negrito e o valor normal, tudo na mesma linha com quebra quando precisar
+    const labelTxt = `${label}: `;
+    doc.setFont(fonts.bold[0], fonts.bold[1]); doc.setFontSize(size);
+    const labelW = doc.getTextWidth(labelTxt);
+    if (labelW >= maxWidth) {
+        // quebra o label se for gigantesco (improvável)
+        const used = drawParagraph(doc, labelTxt, x, y, maxWidth, fonts.bold, size);
+        doc.setFont(fonts.normal[0], fonts.normal[1]);
+        const used2 = drawParagraph(doc, value, x, y + used, maxWidth, fonts.normal, size);
+        return used + used2 + 2;
+    }
+    // cabe label: e parte do valor na mesma linha — mas como o valor pode quebrar,
+    // começamos o valor logo após o label (x + labelW)
+    doc.text(labelTxt, x, y);
+    const vLines = doc.splitTextToSize(value || "", maxWidth - labelW);
+    doc.setFont(fonts.normal[0], fonts.normal[1]);
+    // primeira linha na mesma linha do label
+    if (vLines.length) doc.text(vLines[0], x + labelW, y);
+    // demais linhas abaixo, alinhadas ao início do valor
+    for (let i = 1; i < vLines.length; i++) {
+        doc.text(vLines[i], x, y + i * 6);
+    }
+    return (vLines.length - 1) * 6 + 6; // altura usada
 }
 
-/* =============== Página 1 extra: Termo de recebimento (usa data do velório) =============== */
+function drawBulletWrapped(
+    doc: any,
+    x: number,
+    y: number,
+    text: string,
+    maxWidth: number
+) {
+    // Sem checkbox; usa "– " como marcador e espaçamento maior.
+    const marker = "– ";
+    const mW = doc.getTextWidth(marker);
+    doc.text(marker, x, y);
+    const lines = doc.splitTextToSize(text, maxWidth - mW);
+    doc.text(lines, x + mW, y);
+    return (lines.length - 1) * 7.5 + 8; // ~8px de altura por item
+}
+
+/* =============== Página 1 extra: Termo de Recebimento (usa data do velório) =============== */
 function desenharTermoRecebimento(doc: any, params: {
     responsavel: string;
     falecido: string;
     agente: string;
-    dataVelorio: string; // dd/mm/aaaa
-    materiais: Record<string, number>;
+    dataVelorio: string;                // dd/mm/aaaa
+    materiais: Array<{ rotulo: string; qtd: number }>;
+    fonts: { normal: [string, string]; bold: [string, string] };
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
     const maxW = pageW - margin * 2;
     let y = 18;
 
+    doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(14);
     doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, { align: "center" });
     y += 12;
 
+    // Bloco superior com os campos importantes em negrito
+    y += drawLabelValueLine(doc, margin, y, "Responsável", params.responsavel || "________________________", maxW, params.fonts, 11);
+    y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
+    y += drawLabelValueLine(doc, margin, y, "Entregue por (Agente)", params.agente || "________________________", maxW, params.fonts, 11);
     y += drawParagraph(
         doc,
-        `Eu, ${params.responsavel || "________________________"}, confirmo o recebimento do material para o velório do(a) ${params.falecido || "________________________"}, entregue pela pessoa de ${params.agente || "________________________"} representante do PAI – Plano Assistencial Integrado. Atesto o recebimento e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:`,
-        margin, y, maxW, ["helvetica", "normal"], 11
-    ) + 4;
+        "Atesto o recebimento e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:",
+        margin, y, maxW, params.fonts.normal, 11
+    ) + 6;
 
-    doc.setFontSize(12);
-    doc.text("Itens:", margin, y);
-    y += 8;
-    doc.setFontSize(11);
+    // Itens
+    doc.setFont(params.fonts.bold[0], params.fonts.bold[1]); doc.setFontSize(12);
+    doc.text("Itens:", margin, y); y += 8;
+    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
 
-    const colGap = 8;
-    const colW = (maxW - colGap) / 2;
-    const colX = [margin, margin + colW + colGap];
-    let col = 0;
-    const keys = Object.keys(MATERIAL_LABELS);
-    for (const k of keys) {
-        const label = MATERIAL_LABELS[k] || k;
-        const qtd = params.materiais[k] || 0;
-        const text = qtd > 0 ? `${label}: ${qtd}` : label;
-
-        const used = drawCheckBoxWrapped(doc, colX[col], y, text, colW - 10);
-        y += used;
-
-        if (y > 240) { // troca de coluna/página
-            if (col === 0) { col = 1; y = 26; }
-            else { doc.addPage(); y = 20; col = 0; }
+    // Ordena alfabeticamente por rótulo para estabilidade
+    const itens = [...params.materiais].sort((a, b) => a.rotulo.localeCompare(b.rotulo));
+    if (itens.length === 0) {
+        y += drawParagraph(doc, "— Nenhum item selecionado na assistência —", margin, y, maxW, params.fonts.normal, 11);
+    } else {
+        for (const it of itens) {
+            const used = drawBulletWrapped(doc, margin, y, `${it.rotulo}: ${it.qtd}`, maxW);
+            y += used;
+            if (y > 260) { doc.addPage(); y = 20; }
         }
     }
 
+    // Rodapé assinatura/data
     y = Math.max(y, 230);
     doc.setLineWidth(0.3);
     doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
+    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
     doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
+
+    // Data do velório em negrito
+    doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y + 18);
 }
 
-/* =============== Página 2 extra: Requisição de veículo (usa data/hora do sepultamento) =============== */
+/* =============== Página 2 extra: Requisição de Veículo (usa data/hora do sepultamento) =============== */
 function desenharRequisicaoVeiculo(doc: any, params: {
     requerente: string;
     falecido: string;
-    dataSepultamento?: string; // dd/mm/aaaa
-    horaSepultamento?: string; // hh:mm
+    dataSepultamento?: string;   // dd/mm/aaaa
+    horaSepultamento?: string;   // hh:mm
+    fonts: { normal: [string, string]; bold: [string, string] };
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
     const maxW = pageW - margin * 2;
     let y = 18;
 
+    doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(14);
     doc.text("REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO", pageW / 2, y, { align: "center" });
     y += 12;
 
-    y += drawParagraph(
-        doc,
-        `Eu, ${params.requerente || "________________________"}, solicito à empresa PAI – Plano Assistencial Integrado, veículo funerário para o sepultamento do corpo de ${params.falecido || "________________________"}, que ocorrerá no dia ${params.dataSepultamento || "____/____/____"} às ${params.horaSepultamento || "____:____"}.`,
-        margin, y, maxW, ["helvetica", "normal"], 11
-    ) + 6;
+    y += drawLabelValueLine(doc, margin, y, "Requerente", params.requerente || "________________________", maxW, params.fonts, 11);
+    y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
+    y += drawLabelValueLine(doc, margin, y, "Data do Sepultamento", params.dataSepultamento || "____/____/____", maxW, params.fonts, 11);
+    y += drawLabelValueLine(doc, margin, y, "Horário", params.horaSepultamento || "____:____", maxW, params.fonts, 11);
 
     y += drawParagraph(
         doc,
-        "Desde já, tenho conhecimento de que este pedido deve ser realizado com antecedência mínima de 05 (cinco) horas e, caso ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
-        margin, y, maxW, ["helvetica", "normal"], 11
+        "Declaro estar ciente de que o pedido deve ser realizado com antecedência mínima de 05 (cinco) horas. Caso o atendimento ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
+        margin, y, maxW, params.fonts.normal, 11
     ) + 18;
 
     doc.setLineWidth(0.3);
     doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
+    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
     doc.text("Requerente (assinatura)", pageW / 2, y + 30, { align: "center" });
 }
 
@@ -320,6 +339,7 @@ export default function BotaoExportarPdf({
 
             const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
             const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
+            const fonts = { normal: normalFont, bold: titleFont };
 
             let y = 22;
 
@@ -392,7 +412,7 @@ export default function BotaoExportarPdf({
                 y = cursorY + 4;
             }
 
-            // Cards de Log
+            // Cards de Log (inalterado)
             const cardPadX = 6, cardPadY = 6;
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
@@ -429,7 +449,7 @@ export default function BotaoExportarPdf({
                                 continue;
                             }
 
-                            // Materiais_*_qtd
+                            // Materiais_*_qtd (apenas para mostrar no LOG; páginas extras usam só materiais_json)
                             const m = key.match(/^materiais_(.+?)_qtd$/i);
                             if (m) {
                                 const nomeBase = titleCaseFromSnake(m[1]);
@@ -500,11 +520,10 @@ export default function BotaoExportarPdf({
             }
 
             // ====== PÁGINAS EXTRAS ======
-            // Materiais e agente
-            const materiais = extrairMateriaisAssistencia(logVisiveis);
+            const materiais = extrairMateriaisAssistencia(logVisiveis); // somente materiais_json
             const agente = pegarAgenteEntrega(logVisiveis);
 
-            // 1) Termo — data do velório
+            // 1) Termo — data do velório (usar INÍCIO do velório)
             doc.addPage();
             const dataVelorio =
                 (resumoFinal?.data_inicio_velorio && formataSeDataIso(resumoFinal.data_inicio_velorio)) || "";
@@ -513,10 +532,11 @@ export default function BotaoExportarPdf({
                 falecido: selecionadoNome,
                 agente,
                 dataVelorio,
-                materiais
+                materiais,
+                fonts
             });
 
-            // 2) Requisição — data e hora do sepultamento
+            // 2) Requisição — data/hora do sepultamento (usar FIM/hora_fim)
             doc.addPage();
             const dataSep =
                 (resumoFinal?.data_fim_velorio && formataSeDataIso(resumoFinal.data_fim_velorio)) || "";
@@ -526,7 +546,8 @@ export default function BotaoExportarPdf({
                 requerente: selecionadoAssinatura || "",
                 falecido: selecionadoNome,
                 dataSepultamento: dataSep,
-                horaSepultamento: horaSep
+                horaSepultamento: horaSep,
+                fonts
             });
 
             const filename = `${String(selecionadoNome || "").toUpperCase()}.pdf`;
