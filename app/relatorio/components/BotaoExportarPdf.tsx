@@ -115,8 +115,7 @@ function drawCard(
     return cardH;
 }
 
-/* =============== Materiais da Assistência (APENAS materiais_json) =============== */
-/** Pega o **último** materiais_json (estado atual). Não usa *_qtd. */
+/* =============== Materiais (APENAS materiais_json) =============== */
 function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; qtd: number }> {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     let ultimoMj: any = null;
@@ -147,7 +146,36 @@ function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; q
     return out;
 }
 
-/** Agente (usuário) que entregou o corpo (fase 08) ou último usuário. */
+/* =============== Fallback pelos logs para datas/horas =============== */
+function normalizeKey(s: string) {
+    return (s || "")
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "_");
+}
+
+/** Pega o último valor de qualquer uma das chaves candidatas dentro dos logs. */
+function pegarUltimoValorDosLogs(logs: LogItem[], candidatas: string[]): string | undefined {
+    const normSet = candidatas.map(normalizeKey);
+    const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    for (let i = ordered.length - 1; i >= 0; i--) {
+        const det = ordered[i]?.detalhes as any;
+        if (!det) continue;
+        let obj: any;
+        try { obj = typeof det === "string" ? JSON.parse(det) : det; } catch { obj = undefined; }
+        if (!obj || typeof obj !== "object") continue;
+        for (const k of Object.keys(obj)) {
+            const nk = normalizeKey(k);
+            if (normSet.includes(nk)) {
+                const v = obj[k];
+                if (v != null && String(v).trim() !== "") return String(v);
+            }
+        }
+    }
+    return undefined;
+}
+
+/* =============== Agente =============== */
 function pegarAgenteEntrega(logs: LogItem[]): string {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     const fase8 = [...byDate].reverse().find(
@@ -158,15 +186,14 @@ function pegarAgenteEntrega(logs: LogItem[]): string {
     return ult?.usuario || "";
 }
 
-/* =============== Helpers de texto com quebra e negrito =============== */
+/* =============== Helpers de texto (quebra / negrito) =============== */
 function drawParagraph(doc: any, text: string, x: number, y: number, maxWidth: number, font: [string, string], size = 11) {
     doc.setFont(font[0], font[1]);
     doc.setFontSize(size);
     const lines = doc.splitTextToSize(text, maxWidth);
     doc.text(lines, x, y);
-    return lines.length * 6; // altura aproximada
+    return lines.length * 6;
 }
-
 function drawLabelValueLine(
     doc: any,
     x: number,
@@ -193,7 +220,6 @@ function drawLabelValueLine(
     for (let i = 1; i < vLines.length; i++) doc.text(vLines[i], x, y + i * 6);
     return (vLines.length - 1) * 6 + 6;
 }
-
 function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidth: number) {
     const marker = "– ";
     const mW = doc.getTextWidth(marker);
@@ -203,7 +229,7 @@ function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidt
     return (lines.length - 1) * 7.5 + 8;
 }
 
-/* =============== Página 1 extra: Termo de Recebimento (usa data do velório) =============== */
+/* =============== Página 1 extra: Termo de Recebimento (data do velório) =============== */
 function desenharTermoRecebimento(doc: any, params: {
     responsavel: string;
     falecido: string;
@@ -256,7 +282,7 @@ function desenharTermoRecebimento(doc: any, params: {
     doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y + 18);
 }
 
-/* =============== Página 2 extra: Requisição de Veículo (usa data/hora do sepultamento) =============== */
+/* =============== Página 2 extra: Requisição de Veículo (data/hora do sepultamento) =============== */
 function desenharRequisicaoVeiculo(doc: any, params: {
     requerente: string;
     falecido: string;
@@ -392,7 +418,7 @@ export default function BotaoExportarPdf({
                 y = cursorY + 4;
             }
 
-            // Cards de Log (inalterado)
+            // Cards de Log
             const cardPadX = 6, cardPadY = 6;
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
@@ -403,8 +429,6 @@ export default function BotaoExportarPdf({
             for (const ent of logVisiveis) {
                 const dataLine = formataDataHora(ent.datahora) || "";
                 const acao = capitalize(ent.acao || "");
-                the: {
-                }
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
@@ -431,7 +455,7 @@ export default function BotaoExportarPdf({
                                 continue;
                             }
 
-                            // Materiais_*_qtd (no LOG apenas)
+                            // Materiais_*_qtd (apenas para exibir no LOG)
                             const m = key.match(/^materiais_(.+?)_qtd$/i);
                             if (m) {
                                 const nomeBase = titleCaseFromSnake(m[1]);
@@ -505,10 +529,26 @@ export default function BotaoExportarPdf({
             const materiais = extrairMateriaisAssistencia(logVisiveis); // somente materiais_json
             const agente = pegarAgenteEntrega(logVisiveis);
 
-            // 1) Termo — **data do velório** (usa INÍCIO do velório do resumo)
+            // Fallbacks pelos logs (caso resumoFinal não traga)
+            const dataInicioVelorioRaw =
+                resumoFinal?.data_inicio_velorio ||
+                pegarUltimoValorDosLogs(logVisiveis, ["data_inicio_velorio", "data de inicio do velorio"]);
+
+            const dataFimVelorioRaw =
+                resumoFinal?.data_fim_velorio ||
+                pegarUltimoValorDosLogs(logVisiveis, ["data_fim_velorio", "data do fim do velorio", "data do sepultamento"]);
+
+            const horaFimVelorioRaw =
+                resumoFinal?.hora_fim_velorio ||
+                pegarUltimoValorDosLogs(logVisiveis, ["hora_fim_velorio", "horario do sepultamento"]);
+
+            // Formata
+            const dataVelorio = dataInicioVelorioRaw ? formataSeDataIso(String(dataInicioVelorioRaw)) : "";
+            const dataSep = dataFimVelorioRaw ? formataSeDataIso(String(dataFimVelorioRaw)) : "";
+            const horaSep = horaFimVelorioRaw ? String(horaFimVelorioRaw) : "";
+
+            // 1) Termo — data do velório (INÍCIO)
             doc.addPage();
-            const dataVelorio =
-                (resumoFinal?.data_inicio_velorio && formataSeDataIso(resumoFinal.data_inicio_velorio)) || "";
             desenharTermoRecebimento(doc, {
                 responsavel: selecionadoAssinatura || "",
                 falecido: selecionadoNome,
@@ -518,12 +558,8 @@ export default function BotaoExportarPdf({
                 fonts
             });
 
-            // 2) Requisição — **data e hora do sepultamento** (usa FIM/hora_fim do resumo)
+            // 2) Requisição — data/hora do sepultamento (FIM / hora_fim)
             doc.addPage();
-            const dataSep =
-                (resumoFinal?.data_fim_velorio && formataSeDataIso(resumoFinal.data_fim_velorio)) || "";
-            const horaSep =
-                (resumoFinal?.hora_fim_velorio && formataSeDataIso(resumoFinal.hora_fim_velorio)) || "";
             desenharRequisicaoVeiculo(doc, {
                 requerente: selecionadoAssinatura || "",
                 falecido: selecionadoNome,
