@@ -1,5 +1,4 @@
 "use client";
-import React from "react";
 
 /* ================================ Tipos ================================ */
 
@@ -19,7 +18,7 @@ export interface LogItem {
     [key: string]: any;
 }
 
-/** Registros Que Vem do Banco de Dados e Vai Para Análise Geral (VEM DO PHP: informativo.php?listar=1) */
+/** Registros que vêm do PHP (informativo.php?listar=1) para a Análise Geral */
 export interface RegistroAnalise {
     id?: number | string;
     sepultamento_id?: string;
@@ -33,4 +32,8 @@ export interface RegistroAnalise {
     [key: string]: any;
 }
 
-export type { FalecidoItem as TFalecidoItem, LogItem as TLogItem, RegistroAnalise as TRegistroAnalise };
+export type {
+    FalecidoItem as TFalecidoItem,
+    LogItem as TLogItem,
+    RegistroAnalise as TRegistroAnalise,
+};

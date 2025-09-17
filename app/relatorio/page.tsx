@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import PaginaHistoricoSepultamentos from "./components/PaginaHistoricoSepultamentos";
 
 export default function Page() {

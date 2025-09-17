@@ -1,7 +1,11 @@
 "use client";
 import React from "react";
 import { RESUMO_ORDER } from "./ConstantesResumo";
-import { overrideCampoNome, substituirRotuloVisual, titleCaseFromSnake } from "./UtilTexto";
+import {
+    overrideCampoNome,
+    substituirRotuloVisual,
+    titleCaseFromSnake,
+} from "./UtilTexto";
 
 interface Props {
     visivel: boolean;
@@ -17,20 +21,25 @@ export default function ResumoFinal({ visivel, resumo }: Props) {
     ];
 
     return (
-        <div className="border rounded mt-4">
-            <div className="bg-gray-100 p-2 font-semibold">Relatório Final</div>
-            <div className="p-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                {chaves.map((k) => (
-                    <div
-                        key={k}
-                        className="border p-2 rounded bg-white shadow-sm text-sm"
-                    >
-                        <div className="font-medium">
-                            {overrideCampoNome(k, titleCaseFromSnake(k))}
+        <div className="mt-4 rounded-2xl border bg-card/60 shadow-sm backdrop-blur">
+            <div className="border-b p-3 font-semibold">Relatório Final</div>
+            <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {chaves.map((k) => {
+                    const valor = substituirRotuloVisual(resumo[k] ?? "");
+                    if (!valor) return null; // não mostra vazio
+
+                    return (
+                        <div
+                            key={k}
+                            className="rounded-xl border bg-white/50 p-3 shadow-sm"
+                        >
+                            <div className="font-medium">
+                                {overrideCampoNome(k, titleCaseFromSnake(k))}
+                            </div>
+                            <div className="text-sm text-muted-foreground mt-1">{valor}</div>
                         </div>
-                        <div>{substituirRotuloVisual(resumo[k])}</div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
