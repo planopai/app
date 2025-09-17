@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-/* ======================== Materiais (análise) ======================== */
+/* ===== Materiais (análise) — exatamente como no original ===== */
 export const MATERIAL_KEYS = [
     "cadeiras",
     "bebedouros",
@@ -25,7 +25,7 @@ export const MATERIAL_LABELS: Record<MaterialKey, string> = {
     paramentacao: "Paramentação",
 };
 
-/* ======================== Arrumação (análise) ======================== */
+/* ===== Arrumação (análise) — exatamente como no original ===== */
 export const ARR_KEYS = [
     "luvas",
     "palha",
@@ -57,23 +57,9 @@ export const ARR_LABELS: Record<ArrKey, string> = {
     invol: "Invol",
 };
 
-/* ======================== Combinações ======================== */
-export type AllItemKey =
-    | MaterialKey
-    | ArrKey
-    | "assistencia_sim"
-    | "assistencia_nao"
-    | "tanato_sim"
-    | "tanato_nao";
-
-export const ALL_ITEMS: AllItemKey[] = [
-    ...MATERIAL_KEYS,
-    ...ARR_KEYS,
-    "assistencia_sim",
-    "assistencia_nao",
-    "tanato_sim",
-    "tanato_nao",
-];
+/* ===== Combinações ===== */
+export type AllItemKey = MaterialKey | ArrKey | "assistencia_sim" | "assistencia_nao" | "tanato_sim" | "tanato_nao";
+export const ALL_ITEMS: AllItemKey[] = [...MATERIAL_KEYS, ...ARR_KEYS, "assistencia_sim", "assistencia_nao", "tanato_sim", "tanato_nao"];
 
 export const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
     cadeiras: MATERIAL_LABELS.cadeiras,
@@ -102,10 +88,7 @@ export const ALL_ITEM_LABELS: Record<AllItemKey, string> = {
     tanato_nao: "Tanatopraxia (Não)",
 };
 
-export const ALL_ITEM_TIPO: Record<
-    AllItemKey,
-    "Material" | "Arrumação" | "Assistência" | "Tanatopraxia"
-> = {
+export const ALL_ITEM_TIPO: Record<AllItemKey, "Material" | "Arrumação" | "Assistência" | "Tanatopraxia"> = {
     cadeiras: "Material",
     bebedouros: "Material",
     suporte_coroa: "Material",
@@ -132,66 +115,45 @@ export const ALL_ITEM_TIPO: Record<
     tanato_nao: "Tanatopraxia",
 };
 
-/* ======================== Helpers (iguais ao código grande) ======================== */
-
-// booleano tolerante a "1/true/sim/on"
-export function asBool(v: any): boolean {
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v === 1;
-    if (typeof v === "string") {
-        const s = v.trim().toLowerCase();
-        return s === "1" || s === "true" || s === "sim" || s === "on";
-    }
-    return false;
-}
-
-/** Normaliza "sim"/"nao" (string) como no código grande */
-export function normSimNao(s?: string): "sim" | "nao" | "" {
+/* ===== Helpers usados na Análise Geral (iguais ao original) ===== */
+export function normSimNao(s?: string) {
     const v = (s || "").trim().toLowerCase();
     if (v === "sim") return "sim";
     if (v === "não" || v === "nao") return "nao";
     return "";
 }
 
-/** Extrai estado de materiais de um objeto de detalhes (respeitando materiais_json e colunas *_qtd) */
+/** Lê estado de materiais de um objeto de log/registro */
 export function extrairEstadoMateriais(obj: any): Record<string, number> {
     const out: Record<string, number> = {};
-
     if (obj?.materiais_json) {
         try {
             const mj = JSON.parse(obj.materiais_json);
             for (const k of Object.keys(mj || {})) {
                 const it = mj[k];
                 const qtd = Number(it?.qtd || 0);
-                const checked = asBool(it?.checked);
+                const checked = !!it?.checked;
                 if (checked && qtd > 0) out[k] = (out[k] || 0) + qtd;
             }
-        } catch {
-            /* ignore */
-        }
+        } catch { }
     }
-
     for (const k of MATERIAL_KEYS) {
         const col = obj?.[`materiais_${k}_qtd`];
         const qtd = Number(col || 0);
         if (qtd > 0) out[k] = (out[k] || 0) + qtd;
     }
-
     return out;
 }
 
-/** Extrai estado de arrumação (booleans) a partir de arrumacao_json */
+/** Lê estado de arrumação (booleans) de um objeto de log/registro */
 export function extrairEstadoArrumacao(obj: any): Record<string, boolean> {
     const out: Record<string, boolean> = {} as any;
     for (const k of ARR_KEYS) out[k] = false;
-
     if (obj?.arrumacao_json) {
         try {
             const a = JSON.parse(obj.arrumacao_json);
-            for (const k of ARR_KEYS) out[k] = asBool(a?.[k]);
-        } catch {
-            /* ignore */
-        }
+            for (const k of ARR_KEYS) out[k] = !!a?.[k];
+        } catch { }
     }
     return out;
 }
