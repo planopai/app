@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogItem } from "./TiposHistorico";
 import { RESUMO_ORDER } from "./ConstantesResumo";
-import { formataDataHora, formataSeDataIso } from "./UtilDatas";
+import { formataDataHora, formataSeDataIso, formataDataDia } from "./UtilDatas";
 import { overrideCampoNome, substituirRotuloVisual, titleCaseFromSnake, capitalize } from "./UtilTexto";
 import { traduzirFase } from "./ConstantesFases";
 import { asBool } from "./Normalizadores";
@@ -11,6 +11,8 @@ import { asBool } from "./Normalizadores";
 interface Props {
     desabilitado: boolean;
     selecionadoNome: string;
+    /** Opcional: nome do responsável para assinar as páginas extras. */
+    selecionadoAssinatura?: string;
     criacaoSelecionado?: string;
     logVisiveis: LogItem[];
     resumoFinal?: Record<string, string>;
@@ -127,10 +129,160 @@ function drawCard(
     return cardH;
 }
 
+/* =============== Helpers extras para as 2 novas páginas (não interferem no resto) =============== */
+
+/** Rótulos amigáveis dos materiais (ajuste se quiser que casem 100% com o formulário físico). */
+const MATERIAL_LABELS: Record<string, string> = {
+    cadeiras: "Cadeiras metálicas",
+    bebedouros: "Bebedouro (20 litros)",
+    kit_lanche: "Kit de Lanche",
+    placa: "Placa Luminosa",
+    suporte_coroa: "1 Coroa de flores artificiais com suporte",
+    tenda: "Barraca sanfonada 3m x 2m",
+    velas: "Velas",
+    paramentacao: "Paramentação",
+};
+
+/** Soma os materiais a partir dos logs (compatível com *_qtd e materiais_json). */
+function extrairMateriaisDosLogs(logs: LogItem[]): Record<string, number> {
+    const total: Record<string, number> = {};
+    for (const l of logs) {
+        const raw = l.detalhes as any;
+        let obj: Record<string, any> = {};
+        if (typeof raw === "string") {
+            try { obj = JSON.parse(raw); } catch { obj = {}; }
+        } else if (raw && typeof raw === "object") {
+            obj = raw as Record<string, any>;
+        }
+        for (const key of Object.keys(obj)) {
+            const m = key.match(/^materiais_(.+?)_qtd$/i);
+            if (m) {
+                const base = m[1].toLowerCase();
+                const qtd = Number(obj[key] ?? 0);
+                if (Number.isFinite(qtd) && qtd > 0) total[base] = (total[base] || 0) + qtd;
+            }
+            if (key === "materiais_json") {
+                try {
+                    const mj = JSON.parse(obj[key]);
+                    Object.keys(mj || {}).forEach((mk) => {
+                        const qtd = Number(mj[mk]?.qtd ?? 0);
+                        const checked = String(mj[mk]?.checked ?? "").toLowerCase();
+                        if ((checked === "true" || checked === "1" || checked === "sim") && qtd > 0) {
+                            const base = mk.toLowerCase();
+                            total[base] = (total[base] || 0) + qtd;
+                        }
+                    });
+                } catch { /* ignore */ }
+            }
+        }
+    }
+    return total;
+}
+
+/** Tenta descobrir o agente que “entregou o corpo” (fase 08) ou usa o último usuário. */
+function pegarAgenteEntrega(logs: LogItem[]): string {
+    const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    const fase8 = [...byDate].reverse().find(
+        (l) => ((l.status_novo || "").toLowerCase() === "fase08") || /entrega.*corpo/i.test(l.status_novo || "")
+    );
+    if (fase8?.usuario) return fase8.usuario;
+    const ult = byDate.at(-1);
+    return ult?.usuario || "";
+}
+
+/** Desenha uma checkbox ”visual” */
+function drawCheckBox(doc: any, x: number, y: number, text: string) {
+    doc.rect(x, y - 4, 4, 4);
+    doc.text(text, x + 6, y);
+}
+
+/** Página 1 extra: Termo de recebimento */
+function desenharTermoRecebimento(doc: any, params: {
+    responsavel: string;           // “Eu, ____”
+    falecido: string;              // nome do falecido
+    agente: string;                // entregue pela pessoa de ____
+    dataHoje: string;              // dd/mm/aaaa
+    materiais: Record<string, number>; // {chave: qtd}
+}) {
+    const pageW = doc.internal.pageSize.getWidth();
+    let y = 18;
+
+    doc.setFontSize(14);
+    doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, { align: "center" });
+    y += 12;
+
+    doc.setFontSize(11);
+    const linha1 = `Eu, ${params.responsavel || "________________________"}, confirmo`;
+    const linha2 = `o recebimento do material para o velório do(a) ${params.falecido || "________________________"}`;
+    const linha3 = `entregue pela pessoa de ${params.agente || "________________________"}.`;
+    doc.text(linha1, 14, y); y += 6;
+    doc.text(linha2, 14, y); y += 6;
+    doc.text(linha3, 14, y); y += 10;
+
+    doc.setFontSize(12);
+    doc.text("Itens:", 14, y); y += 8;
+    doc.setFontSize(11);
+
+    const allKeys = Object.keys(MATERIAL_LABELS);
+    const colX = [14, pageW / 2 + 2];
+    let col = 0;
+    let yStart = y;
+
+    for (const k of allKeys) {
+        const label = MATERIAL_LABELS[k] || k;
+        const qtd = params.materiais[k] || 0;
+        const text = qtd > 0 ? `${label} — ${qtd}` : label;
+        drawCheckBox(doc, colX[col], y, text);
+        y += 7;
+        if (y > 250) {
+            if (col === 0) { col = 1; y = yStart; }
+            else { doc.addPage(); col = 0; y = yStart = 20; }
+        }
+    }
+
+    // rodapé assinatura/data
+    y = Math.max(y, 230);
+    doc.setLineWidth(0.3);
+    doc.line(20, y + 25, pageW - 20, y + 25);
+    doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
+    doc.text(`Barreiras-BA, ${params.dataHoje}`, 20, y + 18);
+}
+
+/** Página 2 extra: Requisição de veículo funerário */
+function desenharRequisicaoVeiculo(doc: any, params: {
+    requerente: string;    // quem assina
+    falecido: string;
+    dataSepultamento?: string; // dd/mm/aaaa
+    horaSepultamento?: string; // hh:mm
+}) {
+    const pageW = doc.internal.pageSize.getWidth();
+    let y = 18;
+
+    doc.setFontSize(14);
+    doc.text("REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO", pageW / 2, y, { align: "center" });
+    y += 12;
+
+    doc.setFontSize(11);
+    const t1 = `Eu, ${params.requerente || "________________________"}, solicito à empresa PAI `;
+    const t2 = "– Plano Assistencial Integrado, veículo funerário para o sepultamento do corpo de";
+    const t3 = `${params.falecido || "________________________"}, a ocorrer no dia ${params.dataSepultamento || "____/____/____"} às ${params.horaSepultamento || "____:____"}.`;
+    doc.text(t1, 14, y); y += 6;
+    doc.text(t2, 14, y); y += 6;
+    doc.text(t3, 14, y); y += 12;
+
+    doc.text("Estou ciente de que este pedido deve ser realizado com antecedência mínima de 5 (cinco) horas.", 14, y);
+    y += 24;
+
+    doc.setLineWidth(0.3);
+    doc.line(20, y + 25, pageW - 20, y + 25);
+    doc.text("Requerente (assinatura)", pageW / 2, y + 30, { align: "center" });
+}
+
 /* =============== Componente =============== */
 export default function BotaoExportarPdf({
     desabilitado,
     selecionadoNome,
+    selecionadoAssinatura,
     criacaoSelecionado,
     logVisiveis,
     resumoFinal,
@@ -362,6 +514,34 @@ export default function BotaoExportarPdf({
                 }
                 y += cardH + 8;
             }
+
+            // ====== PÁGINAS EXTRAS (NÃO INTERFEREM NO CONTEÚDO EXISTENTE) ======
+            // Página extra 1 – Termo de Recebimento
+            doc.addPage();
+            const materiais = extrairMateriaisDosLogs(logVisiveis);
+            const agente = pegarAgenteEntrega(logVisiveis);
+            const hoje = formataDataDia(new Date().toISOString().slice(0, 10));
+            desenharTermoRecebimento(doc, {
+                responsavel: selecionadoAssinatura || "",
+                falecido: selecionadoNome,
+                agente,
+                dataHoje: hoje,
+                materiais
+            });
+
+            // Página extra 2 – Requisição de Veículo
+            doc.addPage();
+            const dataSep =
+                (resumoFinal?.data_fim_velorio && formataSeDataIso(resumoFinal.data_fim_velorio)) ||
+                (resumoFinal?.data_inicio_velorio && formataSeDataIso(resumoFinal.data_inicio_velorio)) || "";
+            const horaSep =
+                (resumoFinal?.hora_fim_velorio && formataSeDataIso(resumoFinal.hora_fim_velorio)) || "";
+            desenharRequisicaoVeiculo(doc, {
+                requerente: selecionadoAssinatura || "",
+                falecido: selecionadoNome,
+                dataSepultamento: dataSep,
+                horaSepultamento: horaSep
+            });
 
             const filename = `${String(selecionadoNome || "").toUpperCase()}.pdf`;
             doc.save(filename);

@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 
 /* ================================ Tipos ================================ */
 
@@ -6,6 +7,8 @@ export interface FalecidoItem {
     sepultamento_id: string;
     falecido: string;
     ultima_datahora?: string;
+    /** NOVO: nome do responsável que assina o termo (“Eu, ____”) */
+    assinatura?: string;
     [key: string]: any;
 }
 
@@ -18,7 +21,7 @@ export interface LogItem {
     [key: string]: any;
 }
 
-/** Registros que vêm do PHP (informativo.php?listar=1) para a Análise Geral */
+/** Registros para a Análise Geral (informativo.php?listar=1) */
 export interface RegistroAnalise {
     id?: number | string;
     sepultamento_id?: string;
@@ -35,5 +38,5 @@ export interface RegistroAnalise {
 export type {
     FalecidoItem as TFalecidoItem,
     LogItem as TLogItem,
-    RegistroAnalise as TRegistroAnalise,
+    RegistroAnalise as TRegistroAnalise
 };
