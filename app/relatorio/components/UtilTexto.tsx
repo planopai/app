@@ -33,6 +33,8 @@ export function overrideCampoNome(originalKey: string, nomeAtual: string) {
         .replace(/^_+|_+$/g, "");                         // trim
 
     const MAP: Record<string, string> = {
+        assinatura_requerente: "o Termo de Requisição de Veículo",
+        assinatura_responsavel: "o Termo de Recebimento de Material",
         assistencia: "Assistência",
         ornamentaca: "Ornamentação",
         ornamentacao_tipo: "Tipo de Ornamentação",
