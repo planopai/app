@@ -27,7 +27,7 @@ export default function SignatureModal({
     const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [url, setUrl] = useState("");
 
-    // prepara o canvas transparente (sem fill branco)
+    // prepara o canvas transparente (sem fundo branco)
     useEffect(() => {
         if (!open) return;
         const c = canvasRef.current!;
@@ -50,7 +50,7 @@ export default function SignatureModal({
         setPaths([]);
         setMsg(null);
         setUrl("");
-        ctx.clearRect(0, 0, w, h); // mantém fundo TRANSPARENTE
+        ctx.clearRect(0, 0, w, h); // fundo transparente
     }, [open]);
 
     const redraw = () => {
@@ -85,7 +85,6 @@ export default function SignatureModal({
             const last = ps[ps.length - 1];
             last.push({ x, y });
             const next = [...ps.slice(0, -1), last];
-            // redesenha no próximo frame
             requestAnimationFrame(redraw);
             return next;
         });
@@ -122,21 +121,24 @@ export default function SignatureModal({
         try {
             setSaving(true);
             const dataUrl = canvasRef.current!.toDataURL("image/png"); // PNG com alpha
-            const res = await jsonWith401(`${API}/api/php/assinaturas.php`, {
+
+            const res = await jsonWith401(`${API}/api/php/informativo.php`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    acao: "salvar_assinatura",
                     id: String(registro.id),
-                    tipo,
-                    imagem_base64: dataUrl,
+                    tipo: tipo === "recebimento" ? "responsavel" : "requerente",
+                    base64: dataUrl,
                 }),
             });
+
             if (res?.sucesso) {
                 setMsg({ text: "Assinatura salva!", ok: true });
                 setUrl(res?.url || "");
                 onSaved(res?.url);
             } else {
-                setMsg({ text: res?.erro || "Falha ao salvar.", ok: false });
+                setMsg({ text: res?.msg || "Falha ao salvar.", ok: false });
             }
         } catch (e: any) {
             setMsg({ text: e?.message || "Erro ao salvar.", ok: false });
@@ -150,7 +152,9 @@ export default function SignatureModal({
     return (
         <Modal open={open} onClose={onClose} ariaLabel="Assinatura" maxWidth={1024}>
             <h3 className="text-lg font-semibold">
-                {tipo === "recebimento" ? "Assinar Termo de Recebimento" : "Assinar Termo de Requisição de Veículo"}
+                {tipo === "recebimento"
+                    ? "Assinar Termo de Recebimento"
+                    : "Assinar Termo de Requisição de Veículo"}
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">Assine dentro do quadro abaixo.</p>
 
@@ -166,8 +170,12 @@ export default function SignatureModal({
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
-                <button className="rounded-md border px-3 py-2 text-sm" onClick={undo}>Desfazer</button>
-                <button className="rounded-md border px-3 py-2 text-sm" onClick={clearAll}>Limpar</button>
+                <button className="rounded-md border px-3 py-2 text-sm" onClick={undo}>
+                    Desfazer
+                </button>
+                <button className="rounded-md border px-3 py-2 text-sm" onClick={clearAll}>
+                    Limpar
+                </button>
                 <button
                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
                     disabled={saving}
@@ -185,7 +193,12 @@ export default function SignatureModal({
                         Baixar Assinatura (PNG)
                     </a>
                 )}
-                <button className="ml-auto rounded-md border px-3 py-2 text-sm" onClick={onClose}>Fechar</button>
+                <button
+                    className="ml-auto rounded-md border px-3 py-2 text-sm"
+                    onClick={onClose}
+                >
+                    Fechar
+                </button>
             </div>
 
             {msg && (
