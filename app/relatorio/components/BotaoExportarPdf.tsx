@@ -426,7 +426,18 @@ export default function BotaoExportarPdf({
 
             function normalizarUrlAssinatura(url?: string) {
                 if (!url) return undefined;
-                return url.replace("https://pai.planoassistencialintegrado.com.br", "https://planoassistencialintegrado.com.br");
+                let u = String(url).trim();
+
+                // Se vier só o caminho relativo (/uploads/assinaturas/...)
+                if (u.startsWith("/uploads/")) {
+                    return "https://planoassistencialintegrado.com.br" + u;
+                }
+
+                // Se vier com o domínio errado (pai.)
+                return u.replace(
+                    "https://pai.planoassistencialintegrado.com.br",
+                    "https://planoassistencialintegrado.com.br"
+                );
             }
 
             // ...
