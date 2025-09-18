@@ -424,16 +424,25 @@ export default function BotaoExportarPdf({
             const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
             const fonts = { normal: normalFont, bold: titleFont };
 
-            // ====== Resolver URLs das assinaturas ======
-            const urlResp =
+            function normalizarUrlAssinatura(url?: string) {
+                if (!url) return undefined;
+                return url.replace("https://pai.planoassistencialintegrado.com.br", "https://planoassistencialintegrado.com.br");
+            }
+
+            // ...
+
+            const urlResp = normalizarUrlAssinatura(
                 assinaturaResponsavelUrl ||
                 assinaturaFromResumo(resumoFinal, "responsavel") ||
-                assinaturaFromLogs(logVisiveis, "responsavel");
+                assinaturaFromLogs(logVisiveis, "responsavel")
+            );
 
-            const urlReq =
+            const urlReq = normalizarUrlAssinatura(
                 assinaturaRequerenteUrl ||
                 assinaturaFromResumo(resumoFinal, "requerente") ||
-                assinaturaFromLogs(logVisiveis, "requerente");
+                assinaturaFromLogs(logVisiveis, "requerente")
+            );
+
 
             // Converter para Base64 (jsPDF precisa de dataURL)
             const assinaturaRespB64 = urlResp ? await loadImageAsBase64(urlResp) : undefined;
