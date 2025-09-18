@@ -25,6 +25,7 @@ import MateriaisModal from "./components/MateriaisModal";
 import ArrumacaoModal from "./components/ArrumacaoModal";
 import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
+import SignatureModal from "./components/SignatureModal";
 
 export default function AcompanhamentoPage() {
     // Tabela
@@ -66,6 +67,11 @@ export default function AcompanhamentoPage() {
     // Info
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoIdx, setInfoIdx] = useState<number | null>(null);
+
+    // Assinatura
+    const [signOpen, setSignOpen] = useState(false);
+    const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
+    const [signIdx, setSignIdx] = useState<number | null>(null);
 
     /* -------------------- Fetch helpers -------------------- */
 
@@ -238,6 +244,7 @@ export default function AcompanhamentoPage() {
                 setInfoOpen(false);
                 setMateriaisOpen(false);
                 setArrumacaoOpen(false);
+                setSignOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
@@ -427,18 +434,28 @@ export default function AcompanhamentoPage() {
 
                 if (json?.sucesso) {
                     setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
-                    await fetchRegistros();    // garante status/“prox” atualizados
-                    setAcaoOpen(false);        // fecha para evitar estado velho no modal
+                    await fetchRegistros(); // garante status/“prox” atualizados
+                    setAcaoOpen(false); // fecha para evitar estado velho no modal
                 } else {
                     setAcaoMsg({ text: json?.erro || "Erro ao atualizar status.", ok: false });
                 }
             } catch (e: any) {
                 setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
             } finally {
-                setAcaoSubmitting(false);      // SEMPRE reabilita os botões
+                setAcaoSubmitting(false); // SEMPRE reabilita os botões
             }
         },
         [acaoId, fetchRegistros, acaoSubmitting]
+    );
+
+    /* -------------------- Assinatura -------------------- */
+    const abrirAssinatura = useCallback(
+        (idx: number, tipo: "recebimento" | "requisicao") => {
+            setSignIdx(idx);
+            setSignTipo(tipo);
+            setSignOpen(true);
+        },
+        []
     );
 
     /* -------------------- Resumos -------------------- */
@@ -561,7 +578,26 @@ export default function AcompanhamentoPage() {
                 acaoSubmitting={acaoSubmitting}
             />
 
-            <InfoModal open={infoOpen} setOpen={setInfoOpen} infoIdx={infoIdx} abrirWizard={abrirWizard} />
+            <InfoModal
+                open={infoOpen}
+                setOpen={setInfoOpen}
+                infoIdx={infoIdx}
+                abrirWizard={abrirWizard}
+                // novos props para assinatura:
+                abrirAssinatura={(idx, tipo) => abrirAssinatura(idx, tipo)}
+                registro={infoIdx != null ? registros[infoIdx] : null}
+            />
+
+            <SignatureModal
+                open={signOpen}
+                onClose={() => setSignOpen(false)}
+                registro={signIdx != null ? registros[signIdx] : undefined}
+                tipo={signTipo}
+                onSaved={() => {
+                    // recarrega a tabela para refletir as URLs recém-salvas
+                    fetchRegistros();
+                }}
+            />
         </div>
     );
 }
