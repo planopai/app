@@ -37,7 +37,7 @@ export default function InfoModal({
                         }
                     }}
                 >
-                    Assinar Termo de Recebimento
+                    Assinar Termo de Recebimento de Material
                 </button>
 
                 {registro?.assinatura_recebimento_url && (
