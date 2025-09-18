@@ -16,6 +16,10 @@ interface Props {
     criacaoSelecionado?: string;
     logVisiveis: LogItem[];
     resumoFinal?: Record<string, string>;
+
+    /** Opcional: URLs já conhecidas das assinaturas (caso você prefira passar por props) */
+    assinaturaResponsavelUrl?: string;
+    assinaturaRequerenteUrl?: string;
 }
 
 /* =============== jsPDF via CDN =============== */
@@ -64,6 +68,56 @@ async function ensureNunito(doc: any): Promise<boolean> {
         nunitoStateRef.current = "fail";
         return false;
     }
+}
+
+/* =============== Helpers de imagem/assinatura =============== */
+function isLikelyUrl(s?: string | null) {
+    if (!s) return false;
+    const v = String(s).trim();
+    return v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/uploads/");
+}
+async function loadImageAsBase64(url: string): Promise<string> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Falha ao carregar imagem");
+    const blob = await res.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+/** Pega URL da assinatura a partir do resumo, se existir. */
+function assinaturaFromResumo(resumo?: Record<string, string>, key?: "responsavel" | "requerente") {
+    if (!resumo) return undefined;
+    const k = key === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
+    const v = resumo[k] || resumo[k.toUpperCase()] || resumo[k.replace(/_/g, " ")] || resumo[k.replace(/_/g, "-")];
+    return isLikelyUrl(v) ? String(v) : undefined;
+}
+/** Pega URL da assinatura pelos logs (procura último evento "assinou assinatura_*" ou detalhe com /uploads/assinaturas/ ). */
+function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente") {
+    const alvoCampo = tipo === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
+    const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    for (let i = ordered.length - 1; i >= 0; i--) {
+        const l = ordered[i];
+        const acao = (l.acao || "").toLowerCase();
+        const det = l.detalhes;
+        // a API de histórico grava acao "assinou assinatura_responsavel" e detalhes = url pública
+        if (acao.includes("assinou") && acao.includes(alvoCampo)) {
+            if (typeof det === "string" && isLikelyUrl(det)) return det;
+            try {
+                const d = typeof det === "string" ? JSON.parse(det) : det;
+                if (typeof d === "string" && isLikelyUrl(d)) return d;
+                if (d?.url && isLikelyUrl(d.url)) return d.url;
+            } catch { /* ignore */ }
+        }
+        // fallback: qualquer detalhe com caminho de uploads
+        if (typeof det === "string" && det.includes("/uploads/assinaturas/")) {
+            const m = det.match(/\/uploads\/assinaturas\/[A-Za-z0-9._-]+/);
+            if (m?.[0]) return m[0];
+        }
+    }
+    return undefined;
 }
 
 /* =============== Helpers de layout do PDF =============== */
@@ -153,8 +207,6 @@ function normalizeKey(s: string) {
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-z0-9]+/g, "_");
 }
-
-/** Pega o último valor de qualquer uma das chaves candidatas dentro dos logs. */
 function pegarUltimoValorDosLogs(logs: LogItem[], candidatas: string[]): string | undefined {
     const normSet = candidatas.map(normalizeKey);
     const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
@@ -229,7 +281,7 @@ function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidt
     return (lines.length - 1) * 7.5 + 8;
 }
 
-/* =============== Página 1 extra: Termo de Recebimento (data do velório) =============== */
+/* =============== Página 1: Termo de Recebimento =============== */
 function desenharTermoRecebimento(doc: any, params: {
     responsavel: string;
     falecido: string;
@@ -237,6 +289,7 @@ function desenharTermoRecebimento(doc: any, params: {
     dataVelorio: string;                // dd/mm/aaaa
     materiais: Array<{ rotulo: string; qtd: number }>;
     fonts: { normal: [string, string]; bold: [string, string] };
+    assinaturaResponsavelB64?: string;  // dataURL (PNG)
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -273,22 +326,35 @@ function desenharTermoRecebimento(doc: any, params: {
     }
 
     y = Math.max(y, 230);
-    doc.setLineWidth(0.3);
-    doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
-    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
-    doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
+
+    // assinatura (imagem, se houver) ou linha
+    if (params.assinaturaResponsavelB64) {
+        const imgW = 60, imgH = 30;
+        const x = pageW / 2 - imgW / 2;
+        doc.addImage(params.assinaturaResponsavelB64, "PNG", x, y, imgW, imgH);
+        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
+        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + imgH + 8, { align: "center" });
+        y += imgH + 12;
+    } else {
+        doc.setLineWidth(0.3);
+        doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
+        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
+        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
+        y += 32;
+    }
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
-    doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y + 18);
+    doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y - 14);
 }
 
-/* =============== Página 2 extra: Requisição de Veículo (data/hora do sepultamento) =============== */
+/* =============== Página 2: Requisição de Veículo =============== */
 function desenharRequisicaoVeiculo(doc: any, params: {
     requerente: string;
     falecido: string;
     dataSepultamento?: string;   // dd/mm/aaaa
     horaSepultamento?: string;   // hh:mm
     fonts: { normal: [string, string]; bold: [string, string] };
+    assinaturaRequerenteB64?: string;   // dataURL (PNG)
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -311,10 +377,19 @@ function desenharRequisicaoVeiculo(doc: any, params: {
         margin, y, maxW, params.fonts.normal, 11
     ) + 18;
 
-    doc.setLineWidth(0.3);
-    doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
-    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
-    doc.text("Requerente (assinatura)", pageW / 2, y + 30, { align: "center" });
+    // assinatura (imagem, se houver) ou linha
+    if (params.assinaturaRequerenteB64) {
+        const imgW = 60, imgH = 30;
+        const x = pageW / 2 - imgW / 2;
+        doc.addImage(params.assinaturaRequerenteB64, "PNG", x, y, imgW, imgH);
+        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
+        doc.text("Requerente (assinatura)", pageW / 2, y + imgH + 8, { align: "center" });
+    } else {
+        doc.setLineWidth(0.3);
+        doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
+        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]); doc.setFontSize(11);
+        doc.text("Requerente (assinatura)", pageW / 2, y + 30, { align: "center" });
+    }
 }
 
 /* =============== Componente principal =============== */
@@ -325,6 +400,8 @@ export default function BotaoExportarPdf({
     criacaoSelecionado,
     logVisiveis,
     resumoFinal,
+    assinaturaResponsavelUrl,
+    assinaturaRequerenteUrl,
 }: Props) {
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
@@ -346,6 +423,21 @@ export default function BotaoExportarPdf({
             const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
             const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
             const fonts = { normal: normalFont, bold: titleFont };
+
+            // ====== Resolver URLs das assinaturas ======
+            const urlResp =
+                assinaturaResponsavelUrl ||
+                assinaturaFromResumo(resumoFinal, "responsavel") ||
+                assinaturaFromLogs(logVisiveis, "responsavel");
+
+            const urlReq =
+                assinaturaRequerenteUrl ||
+                assinaturaFromResumo(resumoFinal, "requerente") ||
+                assinaturaFromLogs(logVisiveis, "requerente");
+
+            // Converter para Base64 (jsPDF precisa de dataURL)
+            const assinaturaRespB64 = urlResp ? await loadImageAsBase64(urlResp) : undefined;
+            const assinaturaReqB64 = urlReq ? await loadImageAsBase64(urlReq) : undefined;
 
             let y = 22;
 
@@ -555,7 +647,8 @@ export default function BotaoExportarPdf({
                 agente,
                 dataVelorio,
                 materiais,
-                fonts
+                fonts,
+                assinaturaResponsavelB64: assinaturaRespB64,
             });
 
             // 2) Requisição — data/hora do sepultamento (FIM / hora_fim)
@@ -565,7 +658,8 @@ export default function BotaoExportarPdf({
                 falecido: selecionadoNome,
                 dataSepultamento: dataSep,
                 horaSepultamento: horaSep,
-                fonts
+                fonts,
+                assinaturaRequerenteB64: assinaturaReqB64,
             });
 
             const filename = `${String(selecionadoNome || "").toUpperCase()}.pdf`;
