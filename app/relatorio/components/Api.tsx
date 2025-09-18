@@ -1,7 +1,7 @@
 "use client";
 import { FalecidoItem, LogItem, RegistroAnalise } from "./TiposHistorico";
 
-/* ======================== Endpoints (iguais ao código grande) ======================== */
+/* ======================== Endpoints ======================== */
 
 export const LISTAR_FALECIDOS =
     "/api/php/historico_sepultamentos.php?listar_falecidos=1";
@@ -24,6 +24,36 @@ function primeiroLogDatahora(logs: LogItem[]): string {
     if (!logs?.length) return "";
     const ord = logs.slice().sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     return ord[0]?.datahora || "";
+}
+
+/**
+ * Normaliza URLs de assinaturas para evitar erro de CORS.
+ * - Se for relativo (/uploads/assinaturas/...), converte para proxy local.
+ * - Se for do domínio errado (pai.), corrige para o principal.
+ * - Caso contrário, mantém a URL original.
+ */
+export function normalizarUrlAssinatura(url?: string): string | undefined {
+    if (!url) return undefined;
+    let u = String(url).trim();
+
+    // Se vier só o caminho relativo (/uploads/...)
+    if (u.startsWith("/uploads/")) {
+        return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(u)}`;
+    }
+
+    // Se vier do domínio principal, converte para proxy (evita CORS)
+    if (u.startsWith("https://planoassistencialintegrado.com.br/uploads/")) {
+        const path = u.replace("https://planoassistencialintegrado.com.br", "");
+        return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
+    }
+
+    // Se vier com o subdomínio pai., troca
+    u = u.replace(
+        "https://pai.planoassistencialintegrado.com.br",
+        "https://planoassistencialintegrado.com.br"
+    );
+
+    return u;
 }
 
 /* ======================== Fetchers básicos ======================== */

@@ -40,44 +40,42 @@ function useJsPdfCdn() {
     return ready;
 }
 
-/* =============== Fonte Nunito (opcional) =============== */
-const nunitoStateRef: { current: "none" | "ok" | "fail" } = { current: "none" };
-async function ensureNunito(doc: any): Promise<boolean> {
-    if (nunitoStateRef.current === "ok") return true;
-    if (nunitoStateRef.current === "fail") return false;
-    try {
-        const regularUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Regular.ttf";
-        const boldUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito-Bold.ttf";
-        async function fetchTTF(u: string) {
-            const r = await fetch(u);
-            if (!r.ok) throw new Error("Fonte não encontrada");
-            const b = await r.arrayBuffer();
-            let binary = "";
-            const bytes = new Uint8Array(b);
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-            return btoa(binary);
-        }
-        const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-        (doc as any).addFileToVFS("Nunito-Regular.ttf", regB64);
-        (doc as any).addFont("Nunito-Regular.ttf", "Nunito", "normal");
-        (doc as any).addFileToVFS("Nunito-Bold.ttf", boldB64);
-        (doc as any).addFont("Nunito-Bold.ttf", "Nunito", "bold");
-        nunitoStateRef.current = "ok";
-        return true;
-    } catch {
-        nunitoStateRef.current = "fail";
-        return false;
-    }
-}
-
 /* =============== Helpers de imagem/assinatura =============== */
 function isLikelyUrl(s?: string | null) {
     if (!s) return false;
     const v = String(s).trim();
     return v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/uploads/");
 }
+
+/** Normaliza e envia via PROXY local para evitar CORS. */
+function normalizarUrlAssinatura(url?: string) {
+    if (!url) return undefined;
+    let u = String(url).trim();
+
+    // Se vier relativo
+    if (u.startsWith("/uploads/")) {
+        return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(u)}`;
+    }
+
+    // Força domínio principal -> extrai path e usa proxy
+    try {
+        const parsed = new URL(u);
+        if (parsed.hostname.endsWith("planoassistencialintegrado.com.br")) {
+            return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(parsed.pathname + parsed.search)}`;
+        }
+        // Se vier do subdomínio pai., troca para principal e ainda assim usa proxy
+        if (parsed.hostname.startsWith("pai.")) {
+            const path = parsed.pathname + parsed.search;
+            return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
+        }
+    } catch { /* string não era uma URL absoluta */ }
+
+    // fallback: mantém original (pode ser outro host com CORS liberado)
+    return u;
+}
+
 async function loadImageAsBase64(url: string): Promise<string> {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) throw new Error("Falha ao carregar imagem");
     const blob = await res.blob();
     return new Promise((resolve, reject) => {
@@ -87,6 +85,7 @@ async function loadImageAsBase64(url: string): Promise<string> {
         reader.readAsDataURL(blob);
     });
 }
+
 /** Pega URL da assinatura a partir do resumo, se existir. */
 function assinaturaFromResumo(resumo?: Record<string, string>, key?: "responsavel" | "requerente") {
     if (!resumo) return undefined;
@@ -102,7 +101,6 @@ function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente")
         const l = ordered[i];
         const acao = (l.acao || "").toLowerCase();
         const det = l.detalhes;
-        // a API de histórico grava acao "assinou assinatura_responsavel" e detalhes = url pública
         if (acao.includes("assinou") && acao.includes(alvoCampo)) {
             if (typeof det === "string" && isLikelyUrl(det)) return det;
             try {
@@ -111,7 +109,6 @@ function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente")
                 if (d?.url && isLikelyUrl(d.url)) return d.url;
             } catch { /* ignore */ }
         }
-        // fallback: qualquer detalhe com caminho de uploads
         if (typeof det === "string" && det.includes("/uploads/assinaturas/")) {
             const m = det.match(/\/uploads\/assinaturas\/[A-Za-z0-9._-]+/);
             if (m?.[0]) return m[0];
@@ -327,7 +324,6 @@ function desenharTermoRecebimento(doc: any, params: {
 
     y = Math.max(y, 230);
 
-    // assinatura (imagem, se houver) ou linha
     if (params.assinaturaResponsavelB64) {
         const imgW = 60, imgH = 30;
         const x = pageW / 2 - imgW / 2;
@@ -377,7 +373,6 @@ function desenharRequisicaoVeiculo(doc: any, params: {
         margin, y, maxW, params.fonts.normal, 11
     ) + 18;
 
-    // assinatura (imagem, se houver) ou linha
     if (params.assinaturaRequerenteB64) {
         const imgW = 60, imgH = 30;
         const x = pageW / 2 - imgW / 2;
@@ -413,51 +408,34 @@ export default function BotaoExportarPdf({
         try {
             const { jsPDF } = (window as any).jspdf;
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-            const hasNunito = await ensureNunito(doc);
 
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
             const marginL = 14, marginR = 14;
             const contentW = pageW - marginL - marginR;
 
-            const titleFont: [string, string] = hasNunito ? ["Nunito", "bold"] : ["helvetica", "bold"];
-            const normalFont: [string, string] = hasNunito ? ["Nunito", "normal"] : ["helvetica", "normal"];
+            // fontes fixas (sem Nunito)
+            const titleFont: [string, string] = ["helvetica", "bold"];
+            const normalFont: [string, string] = ["helvetica", "normal"];
             const fonts = { normal: normalFont, bold: titleFont };
 
-            function normalizarUrlAssinatura(url?: string) {
-                if (!url) return undefined;
-                let u = String(url).trim();
-
-                // Se vier só o caminho relativo (/uploads/assinaturas/...)
-                if (u.startsWith("/uploads/")) {
-                    return "https://planoassistencialintegrado.com.br" + u;
-                }
-
-                // Se vier com o domínio errado (pai.)
-                return u.replace(
-                    "https://pai.planoassistencialintegrado.com.br",
-                    "https://planoassistencialintegrado.com.br"
-                );
-            }
-
-            // ...
-
+            // Resolver URLs das assinaturas -> proxy anti-CORS
             const urlResp = normalizarUrlAssinatura(
                 assinaturaResponsavelUrl ||
                 assinaturaFromResumo(resumoFinal, "responsavel") ||
                 assinaturaFromLogs(logVisiveis, "responsavel")
             );
-
             const urlReq = normalizarUrlAssinatura(
                 assinaturaRequerenteUrl ||
                 assinaturaFromResumo(resumoFinal, "requerente") ||
                 assinaturaFromLogs(logVisiveis, "requerente")
             );
 
-
-            // Converter para Base64 (jsPDF precisa de dataURL)
-            const assinaturaRespB64 = urlResp ? await loadImageAsBase64(urlResp) : undefined;
-            const assinaturaReqB64 = urlReq ? await loadImageAsBase64(urlReq) : undefined;
+            // Converter para Base64 (jsPDF precisa de dataURL) — tolerante a erro
+            let assinaturaRespB64: string | undefined;
+            let assinaturaReqB64: string | undefined;
+            try { if (urlResp) assinaturaRespB64 = await loadImageAsBase64(urlResp); } catch { /* ignora */ }
+            try { if (urlReq) assinaturaReqB64 = await loadImageAsBase64(urlReq); } catch { /* ignora */ }
 
             let y = 22;
 
