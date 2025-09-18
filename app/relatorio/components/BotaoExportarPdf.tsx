@@ -298,7 +298,7 @@ function desenharTermoRecebimento(doc: any, params: {
     doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, { align: "center" });
     y += 12;
 
-    y += drawLabelValueLine(doc, margin, y, "Responsável", params.responsavel || "________________________", maxW, params.fonts, 11);
+    
     y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Entregue por (Agente)", params.agente || "________________________", maxW, params.fonts, 11);
     y += drawParagraph(
@@ -362,7 +362,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     doc.text("REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO", pageW / 2, y, { align: "center" });
     y += 12;
 
-    y += drawLabelValueLine(doc, margin, y, "Requerente", params.requerente || "________________________", maxW, params.fonts, 11);
+    
     y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Data do Sepultamento", params.dataSepultamento || "____/____/____", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Horário", params.horaSepultamento || "____:____", maxW, params.fonts, 11);
