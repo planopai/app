@@ -339,7 +339,7 @@ function desenharTermoRecebimento(doc: any, params: {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
     const maxW = pageW - margin * 2;
-    let y = 18;
+    let y = 30;
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(14);
@@ -419,7 +419,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
     const maxW = pageW - margin * 2;
-    let y = 18;
+    let y = 30;
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(14);
