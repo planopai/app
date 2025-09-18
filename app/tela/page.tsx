@@ -441,7 +441,7 @@ export default function PainelTV() {
           </div>
         </header>
 
-        {/* Botão para habilitar som (política de autoplay) */}
+        {/* Botão para Habilitar Som (Política de Autoplay) */}
         {!soundEnabled && (
           <button
             onClick={() => setSoundEnabled(true)}

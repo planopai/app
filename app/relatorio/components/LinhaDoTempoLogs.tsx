@@ -21,7 +21,7 @@ export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: Props)
             {logs
                 .filter((l) => !isNoChangeEntry(l))
                 .map((ent, i) => {
-                    // Montagem visual dos chips (como no código grande)
+                    // Montagem visua)
                     let detalhesHtml = "";
                     const raw = ent.detalhes as any;
 

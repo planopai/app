@@ -566,7 +566,7 @@ export default function MensagensPage() {
         setSelectedMemorialId(null);
     };
 
-    // ====== buscar do memorial ======
+    // ====== Buscar do Memorial ======
     const loadMemorial = useCallback(async () => {
         try {
             setMemorialLoading(true);
