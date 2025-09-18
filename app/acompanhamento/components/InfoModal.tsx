@@ -37,7 +37,7 @@ export default function InfoModal({
                         }
                     }}
                 >
-                    Assinar Termo de Recebimento de Material
+                    Termo de Recebimento de Material
                 </button>
 
                 {registro?.assinatura_recebimento_url && (
@@ -60,7 +60,7 @@ export default function InfoModal({
                         }
                     }}
                 >
-                    Assinar Termo de Requisição de Veículo
+                    Termo de Requisição de Veículo
                 </button>
 
                 {registro?.assinatura_requisicao_url && (
