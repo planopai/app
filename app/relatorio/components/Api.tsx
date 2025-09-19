@@ -16,7 +16,11 @@ export const LOG_POR_ID = (id: string) =>
 
 async function fetchJson<T = any>(url: string): Promise<T> {
     // evita cache agressivo (Vercel)
-    const res = await fetch(`${url}&_nocache=${Date.now()}`, { cache: "no-store" });
+    const sep = url.includes("?") ? "&" : "?";
+    const res = await fetch(`${url}${sep}_nocache=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+    });
     return res.json();
 }
 
@@ -47,13 +51,37 @@ export function normalizarUrlAssinatura(url?: string): string | undefined {
         return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
     }
 
-    // Se vier com o subdomínio pai., troca
+    // Se vier com o subdomínio pai., troca para o principal
     u = u.replace(
         "https://pai.planoassistencialintegrado.com.br",
         "https://planoassistencialintegrado.com.br"
     );
 
     return u;
+}
+
+/* ===== NOVO: Buscar nome/cpf/url das assinaturas direto do banco ===== */
+
+export type AssinaturaInfo = {
+    sucesso?: boolean;
+    responsavel?: { url?: string; nome?: string; cpf?: string };
+    requerente?: { url?: string; nome?: string; cpf?: string };
+};
+
+/** Retorna nome/cpf/url das assinaturas para um sepultamento. */
+export async function pegarAssinaturasInfoPorId(
+    id: string | number
+): Promise<AssinaturaInfo> {
+    if (!id) return {};
+    try {
+        const url = `/api/php/proxy_assinatura.php?info=1&id=${encodeURIComponent(
+            String(id)
+        )}`;
+        const json = await fetchJson<AssinaturaInfo>(url);
+        return json || {};
+    } catch {
+        return {};
+    }
 }
 
 /* ======================== Fetchers básicos ======================== */

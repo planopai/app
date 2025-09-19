@@ -8,6 +8,12 @@ import { overrideCampoNome, substituirRotuloVisual, titleCaseFromSnake, capitali
 import { traduzirFase } from "./ConstantesFases";
 import { asBool } from "./Normalizadores";
 
+/* ==== helpers de API para pegar assinaturas e normalizar URL (import com Casing correto) ==== */
+import {
+    pegarAssinaturasInfoPorId,
+    normalizarUrlAssinatura as normAssUrl,
+} from "./Api";
+
 /* =============== Props =============== */
 interface Props {
     desabilitado: boolean;
@@ -21,6 +27,9 @@ interface Props {
     /** Opcional: URLs já conhecidas das assinaturas (caso você prefira passar por props) */
     assinaturaResponsavelUrl?: string;
     assinaturaRequerenteUrl?: string;
+
+    /** Opcional: id do sepultamento, se já estiver disponível na tela */
+    sepultamentoId?: string | number;
 }
 
 /* =============== jsPDF via CDN =============== */
@@ -49,28 +58,6 @@ function isLikelyUrl(s?: string | null) {
     if (!s) return false;
     const v = String(s).trim();
     return v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/uploads/");
-}
-
-/** Normaliza e envia via PROXY local para evitar CORS. */
-function normalizarUrlAssinatura(url?: string) {
-    if (!url) return undefined;
-    let u = String(url).trim();
-
-    if (u.startsWith("/uploads/")) {
-        return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(u)}`;
-    }
-
-    try {
-        const parsed = new URL(u);
-        if (parsed.hostname.endsWith("planoassistencialintegrado.com.br")) {
-            return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(parsed.pathname + parsed.search)}`;
-        }
-        if (parsed.hostname.startsWith("pai.")) {
-            const path = parsed.pathname + parsed.search;
-            return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
-        }
-    } catch { }
-    return u;
 }
 
 /** Carrega imagem em <img>. */
@@ -119,7 +106,7 @@ async function loadAndCompressBackground(pathOrUrl: string, maxWidth = 1240, qua
  * com FUNDO BRANCO para evitar artefatos. Também redimensiona.
  */
 async function loadSignatureImage(url: string, maxWidth = 800): Promise<string> {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { cache: "no-store", credentials: "include" });
     if (!res.ok) throw new Error("Falha ao carregar assinatura");
     const blob = await res.blob();
     const img = await loadImgFromBlob(blob);
@@ -168,7 +155,7 @@ function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente")
             try {
                 const d = typeof det === "string" ? JSON.parse(det) : det;
                 if (typeof d === "string" && isLikelyUrl(d)) return d;
-                if (d?.url && isLikelyUrl(d.url)) return d.url;
+                if ((d as any)?.url && isLikelyUrl((d as any).url)) return (d as any).url;
             } catch { }
         }
         if (typeof det === "string" && det.includes("/uploads/assinaturas/")) {
@@ -203,8 +190,7 @@ function drawCard(
     value: string,
     fonts: { normal: [string, string]; title: [string, string] }
 ) {
-    const padX = 4,
-        padY = 4;
+    const padX = 4, padY = 4;
     doc.setFont(fonts.normal[0], fonts.normal[1]);
     doc.setFontSize(8.5);
     const { lines: labelLines, h: hLabel } = textHeight(doc, label, w - padX * 2, 3.8);
@@ -420,7 +406,7 @@ function desenharTermoRecebimento(doc: any, params: {
     doc.setFontSize(11);
     doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, lineY + 7, { align: "center" });
 
-    // CPF e Nome embaixo da linha, lado a lado (como na imagem)
+    // CPF e Nome embaixo da linha, lado a lado
     doc.setFontSize(10);
     const centerX = pageW / 2;
     doc.text(params.cpfResponsavel || "____.____.____-__", centerX - 40, lineY + 14, { align: "center" });
@@ -563,6 +549,38 @@ function pegarAgenteEntrega(logs: LogItem[]): string {
     return ult?.usuario || "";
 }
 
+/* ===== Tentar descobrir o ID do sepultamento ===== */
+function inferirSepultamentoId(
+    sepultamentoId?: string | number,
+    resumoFinal?: Record<string, string>,
+    logs?: LogItem[]
+): string | undefined {
+    if (sepultamentoId != null && sepultamentoId !== "") return String(sepultamentoId);
+
+    // 1) resumoFinal: chaves comuns
+    const keys = ["id", "sepultamento_id", "atendimento_id"];
+    for (const k of keys) {
+        const v = resumoFinal?.[k] || resumoFinal?.[k.toUpperCase()] || resumoFinal?.[k.replace(/_/g, " ")];
+        if (v) return String(v);
+    }
+
+    // 2) logs: campo direto ou dentro de detalhes
+    if (logs && logs.length) {
+        for (const l of logs) {
+            // @ts-ignore: pode existir em alguns payloads
+            if ((l as any).sepultamento_id) return String((l as any).sepultamento_id);
+            const det = l.detalhes;
+            try {
+                const obj = typeof det === "string" ? JSON.parse(det) : det;
+                const cand = obj?.id || obj?.sepultamento_id || obj?.atendimento_id;
+                if (cand) return String(cand);
+            } catch { }
+        }
+    }
+
+    return undefined;
+}
+
 /* =============== Componente principal =============== */
 export default function BotaoExportarPdf({
     desabilitado,
@@ -573,6 +591,7 @@ export default function BotaoExportarPdf({
     resumoFinal,
     assinaturaResponsavelUrl,
     assinaturaRequerenteUrl,
+    sepultamentoId,
 }: Props) {
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
@@ -599,8 +618,7 @@ export default function BotaoExportarPdf({
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
             const pageW = doc.internal.pageSize.getWidth();
-            const marginL = 14,
-                marginR = 14;
+            const marginL = 14, marginR = 14;
             const contentW = pageW - marginL - marginR;
 
             const titleFont: [string, string] = ["helvetica", "bold"];
@@ -613,12 +631,22 @@ export default function BotaoExportarPdf({
             (doc as any).__drawBg = drawBg;
             drawBg(doc); // página 1
 
-            // Assinaturas (PNG com fundo branco)
-            const urlResp = normalizarUrlAssinatura(
-                assinaturaResponsavelUrl || assinaturaFromResumo(resumoFinal, "responsavel") || assinaturaFromLogs(logVisiveis, "responsavel")
+            /* ====== Buscar no banco (via proxy) nome/cpf/url das assinaturas ====== */
+            const idInferido = inferirSepultamentoId(sepultamentoId, resumoFinal, logVisiveis);
+            const assinDb = idInferido ? await pegarAssinaturasInfoPorId(idInferido) : {};
+
+            // Assinaturas (URLs) – prioriza banco; depois resumo; depois logs; depois props
+            const urlResp = normAssUrl(
+                assinaturaResponsavelUrl ||
+                (assinDb as any).responsavel?.url ||
+                assinaturaFromResumo(resumoFinal, "responsavel") ||
+                assinaturaFromLogs(logVisiveis, "responsavel")
             );
-            const urlReq = normalizarUrlAssinatura(
-                assinaturaRequerenteUrl || assinaturaFromResumo(resumoFinal, "requerente") || assinaturaFromLogs(logVisiveis, "requerente")
+            const urlReq = normAssUrl(
+                assinaturaRequerenteUrl ||
+                (assinDb as any).requerente?.url ||
+                assinaturaFromResumo(resumoFinal, "requerente") ||
+                assinaturaFromLogs(logVisiveis, "requerente")
             );
 
             let assinaturaRespB64: string | undefined;
@@ -630,9 +658,18 @@ export default function BotaoExportarPdf({
                 if (urlReq) assinaturaReqB64 = await loadSignatureImage(urlReq, 800);
             } catch { }
 
-            // Nome/CPF para páginas extras
-            const respInfo = getNomeCpfAssinatura(resumoFinal, "responsavel", selecionadoAssinatura);
-            const reqInfo = getNomeCpfAssinatura(resumoFinal, "requerente", selecionadoAssinatura);
+            // Nome/CPF para páginas extras – prioriza banco
+            const respFromResumo = getNomeCpfAssinatura(resumoFinal, "responsavel", selecionadoAssinatura);
+            const reqFromResumo = getNomeCpfAssinatura(resumoFinal, "requerente", selecionadoAssinatura);
+
+            const respInfo = {
+                nome: (assinDb as any).responsavel?.nome || respFromResumo.nome || "",
+                cpf: formatCpf((assinDb as any).responsavel?.cpf) || respFromResumo.cpf || "",
+            };
+            const reqInfo = {
+                nome: (assinDb as any).requerente?.nome || reqFromResumo.nome || "",
+                cpf: formatCpf((assinDb as any).requerente?.cpf) || reqFromResumo.cpf || "",
+            };
 
             let y = 22;
 
@@ -706,8 +743,7 @@ export default function BotaoExportarPdf({
             }
 
             // Cards de Log
-            const cardPadX = 6,
-                cardPadY = 6;
+            const cardPadX = 6, cardPadY = 6;
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
                 doc.setFontSize(size);
@@ -718,7 +754,7 @@ export default function BotaoExportarPdf({
                 const det = l.detalhes;
                 try {
                     const obj = typeof det === "string" ? JSON.parse(det) : det;
-                    if (obj && typeof obj === "object" && obj.sem_alteracoes === true) return false;
+                    if (obj && typeof obj === "object" && (obj as any).sem_alteracoes === true) return false;
                 } catch { }
                 return true;
             });
@@ -863,7 +899,8 @@ export default function BotaoExportarPdf({
                 pegarUltimoValorDosLogs(logsParaImprimir, ["data_fim_velorio", "data do fim do velorio", "data do sepultamento"]);
 
             const horaFimVelorioRaw =
-                resumoFinal?.hora_fim_velorio || pegarUltimoValorDosLogs(logsParaImprimir, ["hora_fim_velorio", "horario do sepultamento"]);
+                resumoFinal?.hora_fim_velorio ||
+                pegarUltimoValorDosLogs(logsParaImprimir, ["hora_fim_velorio", "horario do sepultamento"]);
 
             const dataVelorio = dataInicioVelorioRaw ? formataSeDataIso(String(dataInicioVelorioRaw)) : "";
             const dataSep = dataFimVelorioRaw ? formataSeDataIso(String(dataFimVelorioRaw)) : "";
