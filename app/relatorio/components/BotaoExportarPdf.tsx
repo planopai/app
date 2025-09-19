@@ -76,54 +76,83 @@ function normalizarUrlAssinatura(url?: string) {
     return u;
 }
 
-/** Carrega e **comprime** imagem (para JPEG) com largura máxima. */
-async function loadAndCompressImage(url: string, maxWidth = 1200, quality = 0.7): Promise<string> {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error("Falha ao carregar imagem");
-    const blob = await res.blob();
-
-    const bmp = await new Promise<HTMLImageElement>((resolve, reject) => {
+/** Carrega imagem em <img>. */
+function loadImgFromBlob(blob: Blob): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
         const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = URL.createObjectURL(blob);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(img);
+        };
+        img.onerror = (e) => {
+            URL.revokeObjectURL(url);
+            reject(e);
+        };
+        img.src = url;
     });
-
-    const scale = Math.min(1, maxWidth / (bmp.naturalWidth || bmp.width || maxWidth));
-    const w = Math.max(1, Math.round((bmp.naturalWidth || bmp.width) * scale));
-    const h = Math.max(1, Math.round((bmp.naturalHeight || bmp.height) * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(bmp, 0, 0, w, h);
-
-    // JPEG bem comprimido
-    const dataUrl = canvas.toDataURL("image/jpeg", quality);
-    try {
-        URL.revokeObjectURL(bmp.src);
-    } catch { }
-    return dataUrl;
 }
 
-/** Carrega imagem do /public (mesma origem) como base64 JPEG compacto. */
-async function loadPublicAsBase64(pathFromPublic: string, maxWidth = 1240, quality = 0.6): Promise<string | undefined> {
+/** Carrega + redimensiona + COMPRIME fundo como JPEG (rápido e leve). */
+async function loadAndCompressBackground(pathOrUrl: string, maxWidth = 1240, quality = 0.6): Promise<string | undefined> {
     try {
-        return await loadAndCompressImage(pathFromPublic, maxWidth, quality);
+        const res = await fetch(pathOrUrl, { cache: "no-store" });
+        if (!res.ok) return undefined;
+        const blob = await res.blob();
+        const img = await loadImgFromBlob(blob);
+
+        const scale = Math.min(1, maxWidth / (img.naturalWidth || img.width || maxWidth));
+        const w = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+        const h = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, w, h);
+
+        return canvas.toDataURL("image/jpeg", quality);
     } catch {
         return undefined;
     }
 }
 
-/** Fundo: desenha o timbrado em página inteira, reutilizando alias para não duplicar bitmap no PDF. */
+/**
+ * Carrega assinatura (geralmente PNG com transparência) e exporta **PNG**
+ * com FUNDO BRANCO para evitar o “retângulo preto” ao salvar.
+ * Também reduz para não pesar.
+ */
+async function loadSignatureImage(url: string, maxWidth = 800): Promise<string> {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("Falha ao carregar assinatura");
+    const blob = await res.blob();
+    const img = await loadImgFromBlob(blob);
+
+    const scale = Math.min(1, maxWidth / (img.naturalWidth || img.width || maxWidth));
+    const w = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+    const h = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    // pinta fundo branco (resolve transparências virando preto)
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // Exporta em PNG (traço fica nítido e leve por ser pequeno)
+    return canvas.toDataURL("image/png");
+}
+
+/** Fundo com alias para reaproveitamento em todas as páginas. */
 function makeBackgroundDrawer(doc: any, bgB64?: string) {
     const alias = "bg_timb";
     let added = false;
     return (d: any) => {
+        if (!bgB64) return;
         const w = d.internal.pageSize.getWidth();
         const h = d.internal.pageSize.getHeight();
-        if (!bgB64) return;
         if (!added) {
             d.addImage(bgB64, "JPEG", 0, 0, w, h, alias, "FAST");
             added = true;
@@ -140,7 +169,6 @@ function assinaturaFromResumo(resumo?: Record<string, string>, key?: "responsave
     const v = resumo[k] || resumo[k.toUpperCase()] || resumo[k.replace(/_/g, " ")] || resumo[k.replace(/_/g, "-")];
     return isLikelyUrl(v) ? String(v) : undefined;
 }
-
 function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente") {
     const alvoCampo = tipo === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
     const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
@@ -188,8 +216,7 @@ function drawCard(
     value: string,
     fonts: { normal: [string, string]; title: [string, string] }
 ) {
-    const padX = 4,
-        padY = 4;
+    const padX = 4, padY = 4;
     doc.setFont(fonts.normal[0], fonts.normal[1]);
     doc.setFontSize(8.5);
     const { lines: labelLines, h: hLabel } = textHeight(doc, label, w - padX * 2, 3.8);
@@ -335,10 +362,10 @@ function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidt
 }
 
 /* ===== Parâmetros de assinatura (posicionamento e tamanho) ===== */
-const SIGN_IMG_W = 60;  // largura da imagem da assinatura
-const SIGN_IMG_H = 26;  // altura (ligeiramente menor para reduzir tamanho e aproximar)
+const SIGN_IMG_W = 60;   // largura da imagem da assinatura
+const SIGN_IMG_H = 26;   // altura
 const LINE_Y_OFFSET = 232;   // altura mínima do bloco de assinatura da página
-const IMG_ABOVE_LINE_GAP = 1; // quão “colada” a imagem fica da linha (em mm)
+const IMG_ABOVE_LINE_GAP = 1; // distância da imagem para a linha (mm)
 const LINE_WIDTH = 0.35;
 
 /* =============== Página 1: Termo de Recebimento =============== */
@@ -349,7 +376,7 @@ function desenharTermoRecebimento(doc: any, params: {
     dataVelorio: string; // dd/mm/aaaa
     materiais: Array<{ rotulo: string; qtd: number }>;
     fonts: { normal: [string, string]; bold: [string, string] };
-    assinaturaResponsavelB64?: string; // dataURL (JPEG)
+    assinaturaResponsavelB64?: string; // dataURL (PNG)
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -396,22 +423,22 @@ function desenharTermoRecebimento(doc: any, params: {
         }
     }
 
-    // Posicionamento da área de assinatura
+    // Área de assinatura
     y = Math.max(y, LINE_Y_OFFSET);
 
-    // 1) linha de assinatura
-    const lineY = y + 26; // altura da linha
+    // 1) linha
+    const lineY = y + 26;
     doc.setLineWidth(LINE_WIDTH);
     doc.line(margin + 6, lineY, pageW - margin - 6, lineY);
 
-    // 2) assinatura (imagem) encostada na linha
+    // 2) imagem encostada na linha
     if (params.assinaturaResponsavelB64) {
         const x = pageW / 2 - SIGN_IMG_W / 2;
         const imgY = lineY - SIGN_IMG_H - IMG_ABOVE_LINE_GAP;
-        doc.addImage(params.assinaturaResponsavelB64, "JPEG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
+        doc.addImage(params.assinaturaResponsavelB64, "PNG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
     }
 
-    // 3) legenda abaixo da linha
+    // 3) legenda
     doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
     doc.setFontSize(11);
     doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, lineY + 7, { align: "center" });
@@ -427,7 +454,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     dataSepultamento?: string; // dd/mm/aaaa
     horaSepultamento?: string; // hh:mm
     fonts: { normal: [string, string]; bold: [string, string] };
-    assinaturaRequerenteB64?: string; // dataURL (JPEG)
+    assinaturaRequerenteB64?: string; // dataURL (PNG)
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -454,7 +481,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
             11
         ) + 18;
 
-    // Posicionamento da área de assinatura
+    // Área de assinatura
     const yBase = Math.max(y, LINE_Y_OFFSET - 8);
     const lineY = yBase + 26;
     doc.setLineWidth(LINE_WIDTH);
@@ -463,7 +490,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     if (params.assinaturaRequerenteB64) {
         const x = pageW / 2 - SIGN_IMG_W / 2;
         const imgY = lineY - SIGN_IMG_H - IMG_ABOVE_LINE_GAP;
-        doc.addImage(params.assinaturaRequerenteB64, "JPEG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
+        doc.addImage(params.assinaturaRequerenteB64, "PNG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
     }
 
     doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
@@ -522,13 +549,13 @@ export default function BotaoExportarPdf({
             const normalFont: [string, string] = ["helvetica", "normal"];
             const fonts = { normal: normalFont, bold: titleFont };
 
-            // Fundo comprimido e com alias
-            const bgB64 = await loadPublicAsBase64("/timbrado.png", 1240, 0.6);
+            // Fundo comprimido com alias e aplicado em TODAS as páginas
+            const bgB64 = await loadAndCompressBackground("/timbrado.png", 1240, 0.6);
             const drawBg = makeBackgroundDrawer(doc, bgB64);
             (doc as any).__drawBg = drawBg;
             drawBg(doc);
 
-            // Assinaturas comprimidas
+            // Assinaturas (carrega como PNG com fundo branco)
             const urlResp = normalizarUrlAssinatura(
                 assinaturaResponsavelUrl || assinaturaFromResumo(resumoFinal, "responsavel") || assinaturaFromLogs(logVisiveis, "responsavel")
             );
@@ -538,8 +565,8 @@ export default function BotaoExportarPdf({
 
             let assinaturaRespB64: string | undefined;
             let assinaturaReqB64: string | undefined;
-            try { if (urlResp) assinaturaRespB64 = await loadAndCompressImage(urlResp, 600, 0.75); } catch { }
-            try { if (urlReq) assinaturaReqB64 = await loadAndCompressImage(urlReq, 600, 0.75); } catch { }
+            try { if (urlResp) assinaturaRespB64 = await loadSignatureImage(urlResp, 800); } catch { }
+            try { if (urlReq) assinaturaReqB64 = await loadSignatureImage(urlReq, 800); } catch { }
 
             let y = 22;
 
