@@ -9,7 +9,7 @@ export default function InfoModal({
     setOpen,
     infoIdx,
     abrirWizard,
-    // 👇 novo:
+    // novo:
     abrirAssinatura,
     registro, // opcional: para mostrar “Baixar” quando já existir
 }: {
@@ -26,8 +26,26 @@ export default function InfoModal({
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Info" maxWidth={410}>
             <h2 className="text-xl font-semibold">Informações do Registro</h2>
 
-            {/* AÇÕES DE ASSINATURA */}
+            {/* Atalhos de edição por grupo (primeiro) */}
             <div className="mt-4 grid gap-2">
+                {wizardStepTitles.map((t, i) => (
+                    <button
+                        key={t}
+                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                        onClick={() => {
+                            setOpen(false);
+                            if (infoIdx != null) abrirWizard("editar", infoIdx, i);
+                        }}
+                    >
+                        {t}
+                    </button>
+                ))}
+            </div>
+
+            <div className="my-4 h-px bg-slate-200" />
+
+            {/* AÇÕES DE ASSINATURA (agora abaixo) */}
+            <div className="grid gap-2">
                 <button
                     className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
                     onClick={() => {
@@ -73,24 +91,6 @@ export default function InfoModal({
                         Baixar Termo (assinatura de requisição)
                     </a>
                 )}
-            </div>
-
-            <div className="my-4 h-px bg-slate-200" />
-
-            {/* Já existente: atalhos de edição por grupo */}
-            <div className="grid gap-2">
-                {wizardStepTitles.map((t, i) => (
-                    <button
-                        key={t}
-                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-                        onClick={() => {
-                            setOpen(false);
-                            if (infoIdx != null) abrirWizard("editar", infoIdx, i);
-                        }}
-                    >
-                        {t}
-                    </button>
-                ))}
             </div>
         </Modal>
     );
