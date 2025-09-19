@@ -13,7 +13,7 @@ export default function SignatureModal({
     open,
     onClose,
     registro,
-    tipo, // "recebimento" | "requisicao"
+    tipo,
     onSaved,
 }: {
     open: boolean;
@@ -34,7 +34,7 @@ export default function SignatureModal({
     const [drawing, setDrawing] = useState(false);
     const [paths, setPaths] = useState<Array<Array<{ x: number; y: number }>>>([]);
 
-    // abre/reset
+    // reset geral ao abrir
     useEffect(() => {
         if (!open) return;
         setStep(0);
@@ -43,9 +43,16 @@ export default function SignatureModal({
         setMsg(null);
         setUrl("");
         setPaths([]);
-        // prepara canvas transparente
-        const c = canvasRef.current!;
-        const ctx = c.getContext("2d")!;
+    }, [open]);
+
+    // inicializa o canvas SOMENTE no passo 2 (assinatura)
+    useEffect(() => {
+        if (!open || step !== 2) return;
+        const c = canvasRef.current;
+        if (!c) return; // canvas ainda não montou
+        const ctx = c.getContext("2d");
+        if (!ctx) return;
+
         const w = 960;
         const h = 240;
         const ratio = window.devicePixelRatio || 1;
@@ -54,12 +61,14 @@ export default function SignatureModal({
         c.style.width = w + "px";
         c.style.height = h + "px";
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
         ctx.lineWidth = 2;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         ctx.strokeStyle = "#000";
-        ctx.clearRect(0, 0, w, h);
-    }, [open]);
+        ctx.clearRect(0, 0, w, h); // fundo transparente
+        setPaths([]);
+    }, [open, step]);
 
     // máscara simples de CPF (###.###.###-##)
     function maskCpf(v: string) {
@@ -78,8 +87,10 @@ export default function SignatureModal({
 
     // desenho
     const redraw = () => {
-        const c = canvasRef.current!;
-        const ctx = c.getContext("2d")!;
+        const c = canvasRef.current;
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        if (!ctx) return;
         const w = c.clientWidth;
         const h = c.clientHeight;
         ctx.clearRect(0, 0, w, h);
@@ -130,7 +141,6 @@ export default function SignatureModal({
         });
     };
 
-    // salvar
     const saveSignature = async () => {
         if (!registro?.id) {
             setMsg({ text: "Registro inválido.", ok: false });
@@ -154,7 +164,7 @@ export default function SignatureModal({
 
         try {
             setSaving(true);
-            const dataUrl = canvasRef.current!.toDataURL("image/png"); // PNG com alpha
+            const dataUrl = canvasRef.current!.toDataURL("image/png");
 
             const res = await jsonWith401(`${API}/api/php/informativo.php`, {
                 method: "POST",
@@ -164,7 +174,6 @@ export default function SignatureModal({
                     id: String(registro.id),
                     tipo: tipo === "recebimento" ? "responsavel" : "requerente",
                     base64: dataUrl,
-                    // novos campos (o PHP atual pode ignorar; se quiser persistir, tratar lá)
                     nome_assinatura: nome.trim(),
                     cpf_assinatura: cpfDigits,
                 }),
@@ -194,14 +203,12 @@ export default function SignatureModal({
                     : "Assinar Termo de Requisição de Veículo"}
             </h3>
 
-            {/* Steps indicator simples */}
             <div className="mt-2 text-xs text-muted-foreground">
                 {step === 0 && "Passo 1 de 3 — Identificação: Nome"}
                 {step === 1 && "Passo 2 de 3 — Identificação: CPF"}
                 {step === 2 && "Passo 3 de 3 — Assinatura"}
             </div>
 
-            {/* STEP 0: NOME */}
             {step === 0 && (
                 <div className="mt-4">
                     <label className="mb-1 block text-sm font-medium">Nome completo</label>
@@ -227,7 +234,6 @@ export default function SignatureModal({
                 </div>
             )}
 
-            {/* STEP 1: CPF */}
             {step === 1 && (
                 <div className="mt-4">
                     <label className="mb-1 block text-sm font-medium">CPF</label>
@@ -255,12 +261,9 @@ export default function SignatureModal({
                 </div>
             )}
 
-            {/* STEP 2: ASSINATURA */}
             {step === 2 && (
                 <>
-                    <p className="mt-3 text-sm text-muted-foreground">
-                        Assine dentro do quadro abaixo.
-                    </p>
+                    <p className="mt-3 text-sm text-muted-foreground">Assine dentro do quadro abaixo.</p>
                     <div className="mt-4 overflow-auto rounded-lg border bg-white">
                         <canvas
                             ref={canvasRef}
