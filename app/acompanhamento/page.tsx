@@ -77,15 +77,18 @@ export default function AcompanhamentoPage() {
 
     const fetchRegistros = useCallback(async () => {
         try {
-            const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
-                cache: "no-store",
-                headers: {
-                    Pragma: "no-cache",
-                    Expires: "0",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                },
-                credentials: "include",
-            });
+            const r = await fetch(
+                `${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`,
+                {
+                    cache: "no-store",
+                    headers: {
+                        Pragma: "no-cache",
+                        Expires: "0",
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                    },
+                    credentials: "include",
+                }
+            );
 
             if (r.status === 401) {
                 return;

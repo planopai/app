@@ -1,11 +1,17 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases, salasMemorial } from "./constants";
-import { acaoToStatus, isTanatoNo, proximaFaseDoRegistro, normalizarStatus } from "./helpers";
+import {
+    acaoToStatus,
+    isTanatoNo,
+    proximaFaseDoRegistro,
+    normalizarStatus,
+    consultarStatusAtual,
+} from "./helpers";
 
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
@@ -27,18 +33,83 @@ export default function AcaoModal({
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
 }) {
-    // Registro selecionado — já normalizando o status para "faseXX"
-    const registroAtual = useMemo(() => {
-        const r = acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
+    // ---------- 1) Registro local (frontend) ----------
+    const registroLocal = useMemo(() => {
+        const r =
+            acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
         if (!r) return undefined;
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
+    // ---------- 2) Estado "online" vindo do backend ----------
+    const [loadingOnline, setLoadingOnline] = useState(false);
+    const [onlineError, setOnlineError] = useState<string | null>(null);
+    const [online, setOnline] = useState<{
+        id: string;
+        status: Fase;
+        local_velorio: string;
+        tanato: string;
+    } | null>(null);
+
+    // Busca o status atual direto do PHP quando abrir/mudar acaoId
+    useEffect(() => {
+        let cancel = false;
+
+        async function run() {
+            setOnline(null);
+            setOnlineError(null);
+
+            if (!open || !acaoId) return;
+            setLoadingOnline(true);
+            try {
+                const s = await consultarStatusAtual(acaoId);
+                if (cancel) return;
+                // normaliza para Fase
+                const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
+                setOnline({
+                    id: String(s.id),
+                    status: statusFix,
+                    local_velorio: s.local_velorio || "",
+                    tanato: s.tanato || "",
+                });
+            } catch (e: any) {
+                if (!cancel) setOnlineError(e?.message || "Falha ao consultar status.");
+            } finally {
+                if (!cancel) setLoadingOnline(false);
+            }
+        }
+
+        run();
+        return () => {
+            cancel = true;
+        };
+    }, [open, acaoId]);
+
+    // Dados efetivos usados na UI (prefere online; cai para local)
+    const efetivo = useMemo(() => {
+        if (online && online.id && String(online.id) === String(acaoId)) {
+            return {
+                status: online.status as Fase,
+                local_velorio: online.local_velorio,
+                tanato: online.tanato,
+            };
+        }
+        if (registroLocal) {
+            return {
+                status: (registroLocal.status as Fase) ?? ("fase00" as Fase),
+                local_velorio: registroLocal.local_velorio,
+                tanato: registroLocal.tanato,
+            };
+        }
+        return null;
+    }, [online, acaoId, registroLocal]);
+
     // Skips (iguais aos usados no cálculo)
-    const skipConservacao = !!registroAtual && isTanatoNo(registroAtual.tanato);
+    const skipConservacao =
+        !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando =
-        !!registroAtual && salasMemorial.includes((registroAtual.local_velorio || "").trim());
+        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
     // Fases visíveis (aplica os skips uma única vez)
     const fasesVisiveis = useMemo<readonly Fase[]>(
@@ -53,38 +124,49 @@ export default function AcaoModal({
 
     // Próxima fase calculada pela função centralizada (helpers)
     const prox = useMemo<Fase | null>(() => {
-        if (!registroAtual) return null;
+        if (!efetivo) return null;
         return proximaFaseDoRegistro(
             {
-                status: (registroAtual.status as string) ?? "fase00", // agora sempre "faseXX"
-                local_velorio: registroAtual.local_velorio,
-                tanato: registroAtual.tanato,
+                status: (efetivo.status as string) ?? "fase00", // sempre "faseXX"
+                local_velorio: efetivo.local_velorio,
+                tanato: efetivo.tanato,
             },
             fases as readonly string[]
         ) as Fase | null;
-    }, [registroAtual]);
+    }, [efetivo]);
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
             <h2 className="text-xl font-semibold">Registrar uma ação</h2>
 
-            {!registroAtual && (
+            {/* Linha de status de sincronização */}
+            <div className="mt-2 text-xs text-muted-foreground">
+                {loadingOnline && "Sincronizando status com o servidor…"}
+                {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
+                {!loadingOnline && onlineError && (
+                    <span className="text-red-600">
+                        {onlineError} — exibindo dados locais como fallback.
+                    </span>
+                )}
+            </div>
+
+            {!efetivo && (
                 <p className="mt-4 text-sm text-muted-foreground">
                     Nenhum registro selecionado. Selecione um registro para continuar.
                 </p>
             )}
 
-            {registroAtual && fasesVisiveis.length === 0 && (
+            {efetivo && fasesVisiveis.length === 0 && (
                 <p className="mt-4 text-sm text-muted-foreground">
                     Nenhuma etapa disponível para este registro com as condições atuais.
                 </p>
             )}
 
-            {registroAtual && fasesVisiveis.length > 0 && (
+            {efetivo && fasesVisiveis.length > 0 && (
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !acaoSubmitting;
+                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline;
                             return (
                                 <button
                                     key={f}
@@ -102,7 +184,9 @@ export default function AcaoModal({
                     </div>
 
                     {prox === null && (
-                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Fluxo concluído para este registro.
+                        </p>
                     )}
                 </>
             )}

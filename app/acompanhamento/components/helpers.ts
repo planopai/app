@@ -34,7 +34,7 @@ export function defaultArrumacao(): ArrumacaoState {
 export function redirectToLogin(loginUrl?: string, msg?: string) {
     if (IS_REDIRECTING) return;
     IS_REDIRECTING = true;
-    try { if (msg) alert(msg); } catch { }
+    try { if (msg) alert(msg); } catch { /* noop */ }
     const url = (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
     try {
         window.location.replace(url);
@@ -106,7 +106,12 @@ function normalizeKey(s: string) {
 export function normalizarStatus(status?: string): string | undefined {
     if (!status) return undefined;
     const s = String(status).trim();
-    if (s.startsWith("fase")) return s; // já está ok
+    if (s.startsWith("fase")) {
+        // garante "faseNN"
+        const digits = s.replace(/[^0-9]/g, "");
+        if (!digits) return s;
+        return `fase${digits.padStart(2, "0")}`;
+    }
     const mapeado = ROTULO_PARA_FASE[normalizeKey(s)];
     return mapeado ?? undefined;
 }
@@ -185,6 +190,34 @@ export async function enviarRegistroPHP(data: any) {
     });
 }
 
+/* -------------------- Consulta status no backend -------------------- */
+export type StatusConsulta = {
+    id: string;
+    status: string;          // sempre normalizado "faseNN"
+    local_velorio: string;
+    tanato: string;
+};
+
+/**
+ * Consulta o status atual diretamente no PHP:
+ * GET /api/php/informativo.php?status_atual=1&id=...
+ * Retorna status já normalizado em "faseNN".
+ */
+export async function consultarStatusAtual(id: number | string): Promise<StatusConsulta> {
+    const url = `${API}/api/php/informativo.php?status_atual=1&id=${encodeURIComponent(String(id))}`;
+    const data = await jsonWith401(url);
+    if (!data?.sucesso) {
+        throw new Error(data?.msg || "Falha ao consultar status.");
+    }
+    const status = normalizarStatus(data.status) ?? "fase00";
+    return {
+        id: String(data.id ?? id),
+        status,
+        local_velorio: String(data.local_velorio ?? ""),
+        tanato: String(data.tanato ?? ""),
+    };
+}
+
 /* -------------------- Próxima fase -------------------- */
 export function proximaFaseDoRegistro(
     r: { status?: string; local_velorio?: string; tanato?: string },
@@ -204,4 +237,19 @@ export function proximaFaseDoRegistro(
         return next;
     }
     return null;
+}
+
+/**
+ * (Opcional) Obtém o status mais recente do backend e calcula a próxima fase
+ * usando as mesmas regras do front.
+ */
+export async function proximaFaseOnline(
+    id: number | string,
+    fases: readonly string[]
+): Promise<string | null> {
+    const s = await consultarStatusAtual(id);
+    return proximaFaseDoRegistro(
+        { status: s.status, local_velorio: s.local_velorio, tanato: s.tanato },
+        fases
+    );
 }
