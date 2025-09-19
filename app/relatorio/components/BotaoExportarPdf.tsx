@@ -385,7 +385,7 @@ function desenharTermoRecebimento(doc: any, params: {
     y = Math.max(y, 232); // ligeiramente mais baixo
 
     // assinatura (imagem, se houver) ou linha — ligeiro deslocamento p/ baixo (~2mm)
-    const down = 4;
+    const down = 8;
     if (params.assinaturaResponsavelB64) {
         const imgW = 60, imgH = 30;
         const x = pageW / 2 - imgW / 2;
@@ -442,7 +442,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
         ) + 18;
 
     // assinatura (imagem, se houver) ou linha — ligeiro deslocamento p/ baixo (~2mm)
-    const down = 4;
+    const down = 8;
     if (params.assinaturaRequerenteB64) {
         const imgW = 60, imgH = 30;
         const x = pageW / 2 - imgW / 2;
