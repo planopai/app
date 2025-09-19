@@ -13,7 +13,7 @@ export default function SignatureModal({
     open,
     onClose,
     registro,
-    tipo,
+    tipo, // "recebimento" | "requisicao"
     onSaved,
 }: {
     open: boolean;
@@ -196,7 +196,7 @@ export default function SignatureModal({
     if (!open) return null;
 
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Assinatura" maxWidth={560}>
+        <Modal open={open} onClose={onClose} ariaLabel="Assinatura" maxWidth={1024}>
             <h3 className="text-lg font-semibold">
                 {tipo === "recebimento"
                     ? "Assinar Termo de Recebimento"
