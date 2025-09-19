@@ -47,7 +47,7 @@ export default function InfoModal({
             {/* AÇÕES DE ASSINATURA (agora abaixo) */}
             <div className="grid gap-2">
                 <button
-                    className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#059de0]/90"
                     onClick={() => {
                         if (infoIdx != null) {
                             setOpen(false);
@@ -70,7 +70,7 @@ export default function InfoModal({
                 )}
 
                 <button
-                    className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#059de0]/90"
                     onClick={() => {
                         if (infoIdx != null) {
                             setOpen(false);
