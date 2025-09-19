@@ -66,7 +66,6 @@ function normalizarUrlAssinatura(url?: string) {
         if (parsed.hostname.endsWith("planoassistencialintegrado.com.br")) {
             return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(parsed.pathname + parsed.search)}`;
         }
-        // Se vier do subdomínio pai., ainda usa proxy com o path
         if (parsed.hostname.startsWith("pai.")) {
             const path = parsed.pathname + parsed.search;
             return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
@@ -74,51 +73,67 @@ function normalizarUrlAssinatura(url?: string) {
     } catch {
         /* string não era uma URL absoluta */
     }
-
-    // fallback: mantém original (pode ser outro host com CORS liberado)
     return u;
 }
 
-async function loadImageAsBase64(url: string): Promise<string> {
+/** Carrega e **comprime** imagem (para JPEG) com largura máxima. */
+async function loadAndCompressImage(url: string, maxWidth = 1200, quality = 0.7): Promise<string> {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) throw new Error("Falha ao carregar imagem");
     const blob = await res.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
+
+    const bmp = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = URL.createObjectURL(blob);
     });
+
+    const scale = Math.min(1, maxWidth / (bmp.naturalWidth || bmp.width || maxWidth));
+    const w = Math.max(1, Math.round((bmp.naturalWidth || bmp.width) * scale));
+    const h = Math.max(1, Math.round((bmp.naturalHeight || bmp.height) * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bmp, 0, 0, w, h);
+
+    // JPEG bem comprimido
+    const dataUrl = canvas.toDataURL("image/jpeg", quality);
+    try {
+        URL.revokeObjectURL(bmp.src);
+    } catch { }
+    return dataUrl;
 }
 
-/** Carrega imagem do /public (mesma origem) como base64. */
-async function loadPublicAsBase64(pathFromPublic: string): Promise<string | undefined> {
+/** Carrega imagem do /public (mesma origem) como base64 JPEG compacto. */
+async function loadPublicAsBase64(pathFromPublic: string, maxWidth = 1240, quality = 0.6): Promise<string | undefined> {
     try {
-        const res = await fetch(pathFromPublic, { cache: "no-store" });
-        if (!res.ok) return undefined;
-        const blob = await res.blob();
-        return await new Promise<string>((resolve, reject) => {
-            const r = new FileReader();
-            r.onloadend = () => resolve(r.result as string);
-            r.onerror = reject;
-            r.readAsDataURL(blob);
-        });
+        return await loadAndCompressImage(pathFromPublic, maxWidth, quality);
     } catch {
         return undefined;
     }
 }
 
-/** Fundo: desenha o timbrado em página inteira. */
-function drawBackground(doc: any, bgB64?: string) {
-    if (!bgB64) return;
-    const w = doc.internal.pageSize.getWidth();
-    const h = doc.internal.pageSize.getHeight();
-    // desenha no (0,0), ocupando a página inteira
-    doc.addImage(bgB64, "PNG", 0, 0, w, h);
+/** Fundo: desenha o timbrado em página inteira, reutilizando alias para não duplicar bitmap no PDF. */
+function makeBackgroundDrawer(doc: any, bgB64?: string) {
+    const alias = "bg_timb";
+    let added = false;
+    return (d: any) => {
+        const w = d.internal.pageSize.getWidth();
+        const h = d.internal.pageSize.getHeight();
+        if (!bgB64) return;
+        if (!added) {
+            d.addImage(bgB64, "JPEG", 0, 0, w, h, alias, "FAST");
+            added = true;
+        } else {
+            d.addImage(alias, "JPEG", 0, 0, w, h, undefined, "FAST");
+        }
+    };
 }
 
 /* =============== Assinaturas (resumo/logs) =============== */
-/** Pega URL da assinatura a partir do resumo, se existir. */
 function assinaturaFromResumo(resumo?: Record<string, string>, key?: "responsavel" | "requerente") {
     if (!resumo) return undefined;
     const k = key === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
@@ -126,7 +141,6 @@ function assinaturaFromResumo(resumo?: Record<string, string>, key?: "responsave
     return isLikelyUrl(v) ? String(v) : undefined;
 }
 
-/** Pega URL da assinatura pelos logs (procura último evento "assinou assinatura_*" ou detalhe com /uploads/assinaturas/ ). */
 function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente") {
     const alvoCampo = tipo === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
     const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
@@ -134,18 +148,14 @@ function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente")
         const l = ordered[i];
         const acao = (l.acao || "").toLowerCase();
         const det = l.detalhes;
-        // a API de histórico grava acao "assinou assinatura_responsavel" e detalhes = url pública
         if (acao.includes("assinou") && acao.includes(alvoCampo)) {
             if (typeof det === "string" && isLikelyUrl(det)) return det;
             try {
                 const d = typeof det === "string" ? JSON.parse(det) : det;
                 if (typeof d === "string" && isLikelyUrl(d)) return d;
                 if (d?.url && isLikelyUrl(d.url)) return d.url;
-            } catch {
-                /* ignore */
-            }
+            } catch { }
         }
-        // fallback: qualquer detalhe com caminho de uploads
         if (typeof det === "string" && det.includes("/uploads/assinaturas/")) {
             const m = det.match(/\/uploads\/assinaturas\/[A-Za-z0-9._-]+/);
             if (m?.[0]) return m[0];
@@ -221,9 +231,7 @@ function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; q
                 ultimoMj = typeof obj.materiais_json === "string" ? JSON.parse(obj.materiais_json) : obj.materiais_json;
                 break;
             }
-        } catch {
-            /* ignore */
-        }
+        } catch { }
     }
     const out: Array<{ rotulo: string; qtd: number }> = [];
     if (ultimoMj && typeof ultimoMj === "object") {
@@ -326,6 +334,13 @@ function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidt
     return (lines.length - 1) * 7.5 + 8;
 }
 
+/* ===== Parâmetros de assinatura (posicionamento e tamanho) ===== */
+const SIGN_IMG_W = 60;  // largura da imagem da assinatura
+const SIGN_IMG_H = 26;  // altura (ligeiramente menor para reduzir tamanho e aproximar)
+const LINE_Y_OFFSET = 232;   // altura mínima do bloco de assinatura da página
+const IMG_ABOVE_LINE_GAP = 1; // quão “colada” a imagem fica da linha (em mm)
+const LINE_WIDTH = 0.35;
+
 /* =============== Página 1: Termo de Recebimento =============== */
 function desenharTermoRecebimento(doc: any, params: {
     responsavel: string;
@@ -334,7 +349,7 @@ function desenharTermoRecebimento(doc: any, params: {
     dataVelorio: string; // dd/mm/aaaa
     materiais: Array<{ rotulo: string; qtd: number }>;
     fonts: { normal: [string, string]; bold: [string, string] };
-    assinaturaResponsavelB64?: string; // dataURL (PNG)
+    assinaturaResponsavelB64?: string; // dataURL (JPEG)
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -375,36 +390,34 @@ function desenharTermoRecebimento(doc: any, params: {
             y += used;
             if (y > 260) {
                 doc.addPage();
-                // redesenha o fundo quando cria página
                 if ((doc as any).__drawBg) (doc as any).__drawBg(doc);
                 y = 20;
             }
         }
     }
 
-    y = Math.max(y, 232); // ligeiramente mais baixo
+    // Posicionamento da área de assinatura
+    y = Math.max(y, LINE_Y_OFFSET);
 
-    // assinatura (imagem, se houver) ou linha — ligeiro deslocamento p/ baixo (~2mm)
-    const down = 15;
+    // 1) linha de assinatura
+    const lineY = y + 26; // altura da linha
+    doc.setLineWidth(LINE_WIDTH);
+    doc.line(margin + 6, lineY, pageW - margin - 6, lineY);
+
+    // 2) assinatura (imagem) encostada na linha
     if (params.assinaturaResponsavelB64) {
-        const imgW = 60, imgH = 30;
-        const x = pageW / 2 - imgW / 2;
-        doc.addImage(params.assinaturaResponsavelB64, "PNG", x, y + down, imgW, imgH);
-        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
-        doc.setFontSize(11);
-        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + down + imgH + 8, { align: "center" });
-        y += down + imgH + 12;
-    } else {
-        doc.setLineWidth(0.3);
-        doc.line(margin + 6, y + down + 25, pageW - margin - 6, y + down + 25);
-        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
-        doc.setFontSize(11);
-        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + down + 30, { align: "center" });
-        y += down + 32;
+        const x = pageW / 2 - SIGN_IMG_W / 2;
+        const imgY = lineY - SIGN_IMG_H - IMG_ABOVE_LINE_GAP;
+        doc.addImage(params.assinaturaResponsavelB64, "JPEG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
     }
 
+    // 3) legenda abaixo da linha
+    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
+    doc.setFontSize(11);
+    doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, lineY + 7, { align: "center" });
+
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
-    doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, y - 14);
+    doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, lineY - 8);
 }
 
 /* =============== Página 2: Requisição de Veículo =============== */
@@ -414,7 +427,7 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     dataSepultamento?: string; // dd/mm/aaaa
     horaSepultamento?: string; // hh:mm
     fonts: { normal: [string, string]; bold: [string, string] };
-    assinaturaRequerenteB64?: string; // dataURL (PNG)
+    assinaturaRequerenteB64?: string; // dataURL (JPEG)
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -441,22 +454,21 @@ function desenharRequisicaoVeiculo(doc: any, params: {
             11
         ) + 18;
 
-    // assinatura (imagem, se houver) ou linha — ligeiro deslocamento p/ baixo (~2mm)
-    const down = 15;
+    // Posicionamento da área de assinatura
+    const yBase = Math.max(y, LINE_Y_OFFSET - 8);
+    const lineY = yBase + 26;
+    doc.setLineWidth(LINE_WIDTH);
+    doc.line(margin + 6, lineY, pageW - margin - 6, lineY);
+
     if (params.assinaturaRequerenteB64) {
-        const imgW = 60, imgH = 30;
-        const x = pageW / 2 - imgW / 2;
-        doc.addImage(params.assinaturaRequerenteB64, "PNG", x, y + down, imgW, imgH);
-        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
-        doc.setFontSize(11);
-        doc.text("Requerente (assinatura)", pageW / 2, y + down + imgH + 8, { align: "center" });
-    } else {
-        doc.setLineWidth(0.3);
-        doc.line(margin + 6, y + down + 25, pageW - margin - 6, y + down + 25);
-        doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
-        doc.setFontSize(11);
-        doc.text("Requerente (assinatura)", pageW / 2, y + down + 30, { align: "center" });
+        const x = pageW / 2 - SIGN_IMG_W / 2;
+        const imgY = lineY - SIGN_IMG_H - IMG_ABOVE_LINE_GAP;
+        doc.addImage(params.assinaturaRequerenteB64, "JPEG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
     }
+
+    doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
+    doc.setFontSize(11);
+    doc.text("Requerente (assinatura)", pageW / 2, lineY + 7, { align: "center" });
 }
 
 /* =============== Componente principal =============== */
@@ -506,18 +518,17 @@ export default function BotaoExportarPdf({
             const marginL = 14, marginR = 14;
             const contentW = pageW - marginL - marginR;
 
-            // fontes fixas (sem Nunito)
             const titleFont: [string, string] = ["helvetica", "bold"];
             const normalFont: [string, string] = ["helvetica", "normal"];
             const fonts = { normal: normalFont, bold: titleFont };
 
-            // Carregar fundo (timbrado.png em /public)
-            const bgB64 = await loadPublicAsBase64("/timbrado.png");
-            const drawBg = (d: any) => drawBackground(d, bgB64);
+            // Fundo comprimido e com alias
+            const bgB64 = await loadPublicAsBase64("/timbrado.png", 1240, 0.6);
+            const drawBg = makeBackgroundDrawer(doc, bgB64);
             (doc as any).__drawBg = drawBg;
             drawBg(doc);
 
-            // Resolver URLs das assinaturas -> proxy anti-CORS
+            // Assinaturas comprimidas
             const urlResp = normalizarUrlAssinatura(
                 assinaturaResponsavelUrl || assinaturaFromResumo(resumoFinal, "responsavel") || assinaturaFromLogs(logVisiveis, "responsavel")
             );
@@ -525,11 +536,10 @@ export default function BotaoExportarPdf({
                 assinaturaRequerenteUrl || assinaturaFromResumo(resumoFinal, "requerente") || assinaturaFromLogs(logVisiveis, "requerente")
             );
 
-            // Converter para Base64 (jsPDF precisa de dataURL)
             let assinaturaRespB64: string | undefined;
             let assinaturaReqB64: string | undefined;
-            try { if (urlResp) assinaturaRespB64 = await loadImageAsBase64(urlResp); } catch { }
-            try { if (urlReq) assinaturaReqB64 = await loadImageAsBase64(urlReq); } catch { }
+            try { if (urlResp) assinaturaRespB64 = await loadAndCompressImage(urlResp, 600, 0.75); } catch { }
+            try { if (urlReq) assinaturaReqB64 = await loadAndCompressImage(urlReq, 600, 0.75); } catch { }
 
             let y = 22;
 
@@ -616,7 +626,7 @@ export default function BotaoExportarPdf({
                 try {
                     const obj = typeof det === "string" ? JSON.parse(det) : det;
                     if (obj && typeof obj === "object" && obj.sem_alteracoes === true) return false;
-                } catch { /* ignore */ }
+                } catch { }
                 return true;
             });
 
@@ -648,9 +658,7 @@ export default function BotaoExportarPdf({
                     const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
                     if (obj && typeof obj === "object") {
                         // se for log de assinatura, não exibe nenhum detalhe (especialmente a URL)
-                        if (t.assinatura) {
-                            // nada
-                        } else {
+                        if (!t.assinatura) {
                             for (const key of Object.keys(obj)) {
                                 if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
 
@@ -659,11 +667,7 @@ export default function BotaoExportarPdf({
                                     let aobj: any = {};
                                     const val = obj[key];
                                     if (typeof val === "string") {
-                                        try {
-                                            aobj = JSON.parse(val);
-                                        } catch {
-                                            aobj = {};
-                                        }
+                                        try { aobj = JSON.parse(val); } catch { aobj = {}; }
                                     } else if (typeof val === "object" && val) aobj = val;
 
                                     for (const [k, v] of Object.entries(aobj)) {
@@ -704,10 +708,7 @@ export default function BotaoExportarPdf({
                     }
                 } catch {
                     let detalhesRaw = String(raw || "");
-                    // (2) oculta URL de assinatura em detalhe simples
-                    if (/\/uploads\/assinaturas\//i.test(detalhesRaw)) {
-                        detalhesRaw = "";
-                    }
+                    if (/\/uploads\/assinaturas\//i.test(detalhesRaw)) detalhesRaw = "";
                     detalhesRaw = substituirRotuloVisual(detalhesRaw);
                     if (detalhesRaw.trim()) addLine(detalhesRaw.trim());
                 }
@@ -799,7 +800,7 @@ export default function BotaoExportarPdf({
                 assinaturaResponsavelB64: assinaturaRespB64,
             });
 
-            // 2) Requisição — data/hora do sepultamento (FIM / hora_fim)
+            // 2) Requisição — data/hora do sepultamento
             doc.addPage();
             drawBg(doc);
             desenharRequisicaoVeiculo(doc, {
