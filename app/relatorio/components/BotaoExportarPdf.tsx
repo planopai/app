@@ -382,25 +382,25 @@ function desenharTermoRecebimento(doc: any, params: {
         }
     }
 
-    y = Math.max(y, 230);
+    y = Math.max(y, 232); // ligeiramente mais baixo
 
-    // assinatura (imagem, se houver) ou linha
+    // assinatura (imagem, se houver) ou linha — ligeiro deslocamento p/ baixo (~2mm)
+    const down = 2;
     if (params.assinaturaResponsavelB64) {
-        const imgW = 60,
-            imgH = 30;
+        const imgW = 60, imgH = 30;
         const x = pageW / 2 - imgW / 2;
-        doc.addImage(params.assinaturaResponsavelB64, "PNG", x, y, imgW, imgH);
+        doc.addImage(params.assinaturaResponsavelB64, "PNG", x, y + down, imgW, imgH);
         doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
         doc.setFontSize(11);
-        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + imgH + 8, { align: "center" });
-        y += imgH + 12;
+        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + down + imgH + 8, { align: "center" });
+        y += down + imgH + 12;
     } else {
         doc.setLineWidth(0.3);
-        doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
+        doc.line(margin + 6, y + down + 25, pageW - margin - 6, y + down + 25);
         doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
         doc.setFontSize(11);
-        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + 30, { align: "center" });
-        y += 32;
+        doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, y + down + 30, { align: "center" });
+        y += down + 32;
     }
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
@@ -441,21 +441,21 @@ function desenharRequisicaoVeiculo(doc: any, params: {
             11
         ) + 18;
 
-    // assinatura (imagem, se houver) ou linha
+    // assinatura (imagem, se houver) ou linha — ligeiro deslocamento p/ baixo (~2mm)
+    const down = 2;
     if (params.assinaturaRequerenteB64) {
-        const imgW = 60,
-            imgH = 30;
+        const imgW = 60, imgH = 30;
         const x = pageW / 2 - imgW / 2;
-        doc.addImage(params.assinaturaRequerenteB64, "PNG", x, y, imgW, imgH);
+        doc.addImage(params.assinaturaRequerenteB64, "PNG", x, y + down, imgW, imgH);
         doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
         doc.setFontSize(11);
-        doc.text("Requerente (assinatura)", pageW / 2, y + imgH + 8, { align: "center" });
+        doc.text("Requerente (assinatura)", pageW / 2, y + down + imgH + 8, { align: "center" });
     } else {
         doc.setLineWidth(0.3);
-        doc.line(margin + 6, y + 25, pageW - margin - 6, y + 25);
+        doc.line(margin + 6, y + down + 25, pageW - margin - 6, y + down + 25);
         doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
         doc.setFontSize(11);
-        doc.text("Requerente (assinatura)", pageW / 2, y + 30, { align: "center" });
+        doc.text("Requerente (assinatura)", pageW / 2, y + down + 30, { align: "center" });
     }
 }
 
@@ -473,6 +473,27 @@ export default function BotaoExportarPdf({
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
 
+    // Normalizador para remoção de duplicidades de linha
+    const normLine = (s: string) =>
+        s
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, " ");
+
+    // Renomeia títulos das ações de assinatura e informa se é evento de assinatura
+    function mapAcaoTitulo(acaoRaw: string) {
+        const a = (acaoRaw || "").toLowerCase();
+        if (a.includes("assinou") && a.includes("assinatura_responsavel")) {
+            return { titulo: "Assinou o Termo de Recebimento de Material", assinatura: "responsavel" as const };
+        }
+        if (a.includes("assinou") && a.includes("assinatura_requerente")) {
+            return { titulo: "Assinou o Termo de Requisição de Veículo", assinatura: "requerente" as const };
+        }
+        return { titulo: capitalize(acaoRaw || ""), assinatura: null as null };
+    }
+
     async function gerarPdf() {
         if (!jsPdfOk || logVisiveis.length === 0) return;
 
@@ -482,9 +503,7 @@ export default function BotaoExportarPdf({
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
             const pageW = doc.internal.pageSize.getWidth();
-            const pageH = doc.internal.pageSize.getHeight();
-            const marginL = 14,
-                marginR = 14;
+            const marginL = 14, marginR = 14;
             const contentW = pageW - marginL - marginR;
 
             // fontes fixas (sem Nunito)
@@ -495,9 +514,7 @@ export default function BotaoExportarPdf({
             // Carregar fundo (timbrado.png em /public)
             const bgB64 = await loadPublicAsBase64("/timbrado.png");
             const drawBg = (d: any) => drawBackground(d, bgB64);
-            // salvar em uma prop interna pra usar dentro dos helpers que não recebem a função
             (doc as any).__drawBg = drawBg;
-            // fundo da primeira página
             drawBg(doc);
 
             // Resolver URLs das assinaturas -> proxy anti-CORS
@@ -508,19 +525,11 @@ export default function BotaoExportarPdf({
                 assinaturaRequerenteUrl || assinaturaFromResumo(resumoFinal, "requerente") || assinaturaFromLogs(logVisiveis, "requerente")
             );
 
-            // Converter para Base64 (jsPDF precisa de dataURL) — tolerante a erro
+            // Converter para Base64 (jsPDF precisa de dataURL)
             let assinaturaRespB64: string | undefined;
             let assinaturaReqB64: string | undefined;
-            try {
-                if (urlResp) assinaturaRespB64 = await loadImageAsBase64(urlResp);
-            } catch {
-                /* ignora */
-            }
-            try {
-                if (urlReq) assinaturaReqB64 = await loadImageAsBase64(urlReq);
-            } catch {
-                /* ignora */
-            }
+            try { if (urlResp) assinaturaRespB64 = await loadImageAsBase64(urlResp); } catch { }
+            try { if (urlReq) assinaturaReqB64 = await loadImageAsBase64(urlReq); } catch { }
 
             let y = 22;
 
@@ -594,82 +603,118 @@ export default function BotaoExportarPdf({
             }
 
             // Cards de Log
-            const cardPadX = 6,
-                cardPadY = 6;
+            const cardPadX = 6, cardPadY = 6;
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
                 doc.setFontSize(size);
                 doc.text(Array.isArray(text) ? text : [text], x, yy);
             };
 
-            for (const ent of logVisiveis) {
+            // (3) Filtra logs “sem_alteracoes”
+            const logsParaImprimir = logVisiveis.filter((l) => {
+                const det = l.detalhes;
+                try {
+                    const obj = typeof det === "string" ? JSON.parse(det) : det;
+                    if (obj && typeof obj === "object" && obj.sem_alteracoes === true) return false;
+                } catch { /* ignore */ }
+                return true;
+            });
+
+            for (const ent of logsParaImprimir) {
                 const dataLine = formataDataHora(ent.datahora) || "";
-                const acao = capitalize(ent.acao || "");
+
+                // (2) Renomeia títulos de assinatura
+                const t = mapAcaoTitulo(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
-                const acaoFull = statusTxt ? `${acao} — ${statusTxt}` : acao;
+                const acaoFull = statusTxt ? `${t.titulo} — ${statusTxt}` : t.titulo;
+
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
 
+                // (1) Montagem de detalhes sem duplicar
                 const detalhesLines: string[] = [];
+                const ja = new Set<string>();
+                const addLine = (s: string) => {
+                    const key = normLine(s);
+                    if (key && !ja.has(key)) {
+                        ja.add(key);
+                        detalhesLines.push(s);
+                    }
+                };
+
                 const raw = ent.detalhes as any;
                 const materiaisLines: string[] = [];
 
                 try {
                     const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
                     if (obj && typeof obj === "object") {
-                        for (const key of Object.keys(obj)) {
-                            if (["materiais_json", "id", "acao"].includes(key)) continue;
+                        // se for log de assinatura, não exibe nenhum detalhe (especialmente a URL)
+                        if (t.assinatura) {
+                            // nada
+                        } else {
+                            for (const key of Object.keys(obj)) {
+                                if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
 
-                            // Arrumação
-                            if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
-                                let aobj: any = {};
-                                const val = obj[key];
-                                if (typeof val === "string") {
-                                    try {
-                                        aobj = JSON.parse(val);
-                                    } catch {
-                                        aobj = {};
+                                // Arrumação
+                                if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
+                                    let aobj: any = {};
+                                    const val = obj[key];
+                                    if (typeof val === "string") {
+                                        try {
+                                            aobj = JSON.parse(val);
+                                        } catch {
+                                            aobj = {};
+                                        }
+                                    } else if (typeof val === "object" && val) aobj = val;
+
+                                    for (const [k, v] of Object.entries(aobj)) {
+                                        if (asBool(v)) addLine(`${titleCaseFromSnake(k)}: Sim`);
                                     }
-                                } else if (typeof val === "object" && val) aobj = val;
-                                for (const [k, v] of Object.entries(aobj)) {
-                                    if (asBool(v)) detalhesLines.push(`${titleCaseFromSnake(k)}: Sim`);
+                                    continue;
                                 }
-                                continue;
+
+                                // Materiais_*_qtd (apenas para exibir no LOG)
+                                const m = key.match(/^materiais_(.+?)_qtd$/i);
+                                if (m) {
+                                    const nomeBase = titleCaseFromSnake(m[1]);
+                                    const nome = overrideCampoNome(m[1], nomeBase);
+                                    const qtd = (obj as any)[key];
+                                    if (qtd != null && String(qtd).trim() !== "") materiaisLines.push(`${nome}: ${String(qtd)}`);
+                                    continue;
+                                }
+
+                                // Campos simples
+                                if (typeof (obj as any)[key] === "object" && !Array.isArray((obj as any)[key])) continue;
+                                let v = (obj as any)[key];
+                                if (v == null || String(v).trim() === "") continue;
+
+                                let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase());
+                                nome = overrideCampoNome(key, nome);
+                                v = String(v);
+                                if (v.startsWith("fase")) v = traduzirFase(v);
+                                v = formataSeDataIso(v);
+                                nome = substituirRotuloVisual(nome);
+                                v = substituirRotuloVisual(v);
+
+                                // (2) nunca exibir caminhos de assinatura
+                                if (/\/uploads\/assinaturas\//i.test(v)) continue;
+
+                                addLine(`${nome}: ${v}`);
                             }
-
-                            // Materiais_*_qtd (apenas para exibir no LOG)
-                            const m = key.match(/^materiais_(.+?)_qtd$/i);
-                            if (m) {
-                                const nomeBase = titleCaseFromSnake(m[1]);
-                                const nome = overrideCampoNome(m[1], nomeBase);
-                                const qtd = (obj as any)[key];
-                                if (qtd != null && String(qtd).trim() !== "") materiaisLines.push(`${nome}: ${String(qtd)}`);
-                                continue;
-                            }
-
-                            // Campos simples
-                            if (typeof (obj as any)[key] === "object" && !Array.isArray((obj as any)[key])) continue;
-                            let v = (obj as any)[key];
-                            if (v == null || String(v).trim() === "") continue;
-
-                            let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase());
-                            nome = overrideCampoNome(key, nome);
-                            v = String(v);
-                            if (v.startsWith("fase")) v = traduzirFase(v);
-                            v = formataSeDataIso(v);
-                            nome = substituirRotuloVisual(nome);
-                            v = substituirRotuloVisual(v);
-                            detalhesLines.push(`${nome}: ${v}`);
                         }
                     }
                 } catch {
                     let detalhesRaw = String(raw || "");
+                    // (2) oculta URL de assinatura em detalhe simples
+                    if (/\/uploads\/assinaturas\//i.test(detalhesRaw)) {
+                        detalhesRaw = "";
+                    }
                     detalhesRaw = substituirRotuloVisual(detalhesRaw);
-                    if (detalhesRaw.trim()) detalhesLines.push(detalhesRaw.trim());
+                    if (detalhesRaw.trim()) addLine(detalhesRaw.trim());
                 }
 
-                if (materiaisLines.length) {
-                    detalhesLines.unshift("Materiais:");
-                    for (const l of materiaisLines) detalhesLines.push(`• ${l}`);
+                if (materiaisLines.length && !t.assinatura) {
+                    addLine("Materiais:");
+                    for (const l of materiaisLines) addLine(`• ${l}`);
                 }
 
                 // Medidas
@@ -722,19 +767,19 @@ export default function BotaoExportarPdf({
             }
 
             // ====== PÁGINAS EXTRAS ======
-            const materiais = extrairMateriaisAssistencia(logVisiveis); // somente materiais_json
-            const agente = pegarAgenteEntrega(logVisiveis);
+            const materiais = extrairMateriaisAssistencia(logsParaImprimir); // somente materiais_json
+            const agente = pegarAgenteEntrega(logsParaImprimir);
 
             // Fallbacks pelos logs (caso resumoFinal não traga)
             const dataInicioVelorioRaw =
-                resumoFinal?.data_inicio_velorio || pegarUltimoValorDosLogs(logVisiveis, ["data_inicio_velorio", "data de inicio do velorio"]);
+                resumoFinal?.data_inicio_velorio || pegarUltimoValorDosLogs(logsParaImprimir, ["data_inicio_velorio", "data de inicio do velorio"]);
 
             const dataFimVelorioRaw =
                 resumoFinal?.data_fim_velorio ||
-                pegarUltimoValorDosLogs(logVisiveis, ["data_fim_velorio", "data do fim do velorio", "data do sepultamento"]);
+                pegarUltimoValorDosLogs(logsParaImprimir, ["data_fim_velorio", "data do fim do velorio", "data do sepultamento"]);
 
             const horaFimVelorioRaw =
-                resumoFinal?.hora_fim_velorio || pegarUltimoValorDosLogs(logVisiveis, ["hora_fim_velorio", "horario do sepultamento"]);
+                resumoFinal?.hora_fim_velorio || pegarUltimoValorDosLogs(logsParaImprimir, ["hora_fim_velorio", "horario do sepultamento"]);
 
             // Formata
             const dataVelorio = dataInicioVelorioRaw ? formataSeDataIso(String(dataInicioVelorioRaw)) : "";
