@@ -151,8 +151,8 @@ export default function HomePage() {
       <section className="mt-6 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur">
         <h4 className="mb-1 text-sm font-semibold">Dicas Rápidas Para Usuários</h4>
         <ul className="text-sm text-muted-foreground">
-          <li className="mb-1">• Em casos de problemas com ações não realizadas, saia e faça novamente o login.</li>
-          <li>• Problemas Gerais: Feche o Aplicativo, desligue e ligue novamente a conexão de internet.</li>
+          <li className="mb-1">• Reiniciar sua sessão pode corrigir eventuais problemas.</li>
+          <li>• Desative e ative novamente sua conexão para restaurar a estabilidade.</li>
         </ul>
       </section>
     </div>
