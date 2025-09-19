@@ -55,12 +55,10 @@ function normalizarUrlAssinatura(url?: string) {
     if (!url) return undefined;
     let u = String(url).trim();
 
-    // Se vier relativo
     if (u.startsWith("/uploads/")) {
         return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(u)}`;
     }
 
-    // Força domínio principal -> extrai path e usa proxy
     try {
         const parsed = new URL(u);
         if (parsed.hostname.endsWith("planoassistencialintegrado.com.br")) {
@@ -70,9 +68,7 @@ function normalizarUrlAssinatura(url?: string) {
             const path = parsed.pathname + parsed.search;
             return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
         }
-    } catch {
-        /* string não era uma URL absoluta */
-    }
+    } catch { }
     return u;
 }
 
@@ -119,8 +115,7 @@ async function loadAndCompressBackground(pathOrUrl: string, maxWidth = 1240, qua
 
 /**
  * Carrega assinatura (geralmente PNG com transparência) e exporta **PNG**
- * com FUNDO BRANCO para evitar o “retângulo preto” ao salvar.
- * Também reduz para não pesar.
+ * com FUNDO BRANCO para evitar artefatos. Também redimensiona.
  */
 async function loadSignatureImage(url: string, maxWidth = 800): Promise<string> {
     const res = await fetch(url, { cache: "no-store" });
@@ -136,29 +131,20 @@ async function loadSignatureImage(url: string, maxWidth = 800): Promise<string> 
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d")!;
-    // pinta fundo branco (resolve transparências virando preto)
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);
 
-    // Exporta em PNG (traço fica nítido e leve por ser pequeno)
     return canvas.toDataURL("image/png");
 }
 
-/** Fundo com alias para reaproveitamento em todas as páginas. */
+/** Fundo que redesenha SEM alias (garante em todas as páginas). */
 function makeBackgroundDrawer(doc: any, bgB64?: string) {
-    const alias = "bg_timb";
-    let added = false;
     return (d: any) => {
         if (!bgB64) return;
         const w = d.internal.pageSize.getWidth();
         const h = d.internal.pageSize.getHeight();
-        if (!added) {
-            d.addImage(bgB64, "JPEG", 0, 0, w, h, alias, "FAST");
-            added = true;
-        } else {
-            d.addImage(alias, "JPEG", 0, 0, w, h, undefined, "FAST");
-        }
+        d.addImage(bgB64, "JPEG", 0, 0, w, h, undefined, "FAST");
     };
 }
 
@@ -197,7 +183,7 @@ function ensurePageSpace(doc: any, y: number, needed: number, drawBg?: (doc: any
     const pageH = doc.internal.pageSize.getHeight();
     if (y + needed > pageH - 20) {
         doc.addPage();
-        if (drawBg) drawBg(doc);
+        if (drawBg) drawBg(doc);         // <- redesenha o fundo sempre
         return marginTop;
     }
     return y;
@@ -362,10 +348,10 @@ function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidt
 }
 
 /* ===== Parâmetros de assinatura (posicionamento e tamanho) ===== */
-const SIGN_IMG_W = 60;   // largura da imagem da assinatura
-const SIGN_IMG_H = 26;   // altura
-const LINE_Y_OFFSET = 232;   // altura mínima do bloco de assinatura da página
-const IMG_ABOVE_LINE_GAP = 1; // distância da imagem para a linha (mm)
+const SIGN_IMG_W = 60;
+const SIGN_IMG_H = 26;
+const LINE_Y_OFFSET = 232;
+const IMG_ABOVE_LINE_GAP = 1;
 const LINE_WIDTH = 0.35;
 
 /* =============== Página 1: Termo de Recebimento =============== */
@@ -373,10 +359,10 @@ function desenharTermoRecebimento(doc: any, params: {
     responsavel: string;
     falecido: string;
     agente: string;
-    dataVelorio: string; // dd/mm/aaaa
+    dataVelorio: string;
     materiais: Array<{ rotulo: string; qtd: number }>;
     fonts: { normal: [string, string]; bold: [string, string] };
-    assinaturaResponsavelB64?: string; // dataURL (PNG)
+    assinaturaResponsavelB64?: string;
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -390,16 +376,11 @@ function desenharTermoRecebimento(doc: any, params: {
 
     y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Entregue por (Agente)", params.agente || "________________________", maxW, params.fonts, 11);
-    y +=
-        drawParagraph(
-            doc,
-            "Confirmo o recebimento do material e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:",
-            margin,
-            y,
-            maxW,
-            params.fonts.normal,
-            11
-        ) + 6;
+    y += drawParagraph(
+        doc,
+        "Confirmo o recebimento do material e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:",
+        margin, y, maxW, params.fonts.normal, 11
+    ) + 6;
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(12);
@@ -417,28 +398,24 @@ function desenharTermoRecebimento(doc: any, params: {
             y += used;
             if (y > 260) {
                 doc.addPage();
-                if ((doc as any).__drawBg) (doc as any).__drawBg(doc);
+                (doc as any).__drawBg?.(doc);   // <- fundo sempre
                 y = 20;
             }
         }
     }
 
-    // Área de assinatura
+    // assinatura
     y = Math.max(y, LINE_Y_OFFSET);
-
-    // 1) linha
     const lineY = y + 26;
     doc.setLineWidth(LINE_WIDTH);
     doc.line(margin + 6, lineY, pageW - margin - 6, lineY);
 
-    // 2) imagem encostada na linha
     if (params.assinaturaResponsavelB64) {
         const x = pageW / 2 - SIGN_IMG_W / 2;
         const imgY = lineY - SIGN_IMG_H - IMG_ABOVE_LINE_GAP;
         doc.addImage(params.assinaturaResponsavelB64, "PNG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
     }
 
-    // 3) legenda
     doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
     doc.setFontSize(11);
     doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, lineY + 7, { align: "center" });
@@ -451,10 +428,10 @@ function desenharTermoRecebimento(doc: any, params: {
 function desenharRequisicaoVeiculo(doc: any, params: {
     requerente: string;
     falecido: string;
-    dataSepultamento?: string; // dd/mm/aaaa
-    horaSepultamento?: string; // hh:mm
+    dataSepultamento?: string;
+    horaSepultamento?: string;
     fonts: { normal: [string, string]; bold: [string, string] };
-    assinaturaRequerenteB64?: string; // dataURL (PNG)
+    assinaturaRequerenteB64?: string;
 }) {
     const pageW = doc.internal.pageSize.getWidth();
     const margin = 14;
@@ -470,18 +447,12 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     y += drawLabelValueLine(doc, margin, y, "Data do Sepultamento", params.dataSepultamento || "____/____/____", maxW, params.fonts, 11);
     y += drawLabelValueLine(doc, margin, y, "Horário", params.horaSepultamento || "____:____", maxW, params.fonts, 11);
 
-    y +=
-        drawParagraph(
-            doc,
-            "Solicito à empresa PAI - Plano Assistencial Integrado, veículo funerário para realização de sepultamento. Desde já, tenho conhecimento que esse pedido deve ser realizado com antecedência mínima de 05 (cinco) horas. Caso o atendimento ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
-            margin,
-            y,
-            maxW,
-            params.fonts.normal,
-            11
-        ) + 18;
+    y += drawParagraph(
+        doc,
+        "Solicito à empresa PAI - Plano Assistencial Integrado, veículo funerário para realização de sepultamento. Desde já, tenho conhecimento que esse pedido deve ser realizado com antecedência mínima de 05 (cinco) horas. Caso o atendimento ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
+        margin, y, maxW, params.fonts.normal, 11
+    ) + 18;
 
-    // Área de assinatura
     const yBase = Math.max(y, LINE_Y_OFFSET - 8);
     const lineY = yBase + 26;
     doc.setLineWidth(LINE_WIDTH);
@@ -512,16 +483,9 @@ export default function BotaoExportarPdf({
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
 
-    // Normalizador para remoção de duplicidades de linha
     const normLine = (s: string) =>
-        s
-            .trim()
-            .toLowerCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/\s+/g, " ");
+        s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
 
-    // Renomeia títulos das ações de assinatura e informa se é evento de assinatura
     function mapAcaoTitulo(acaoRaw: string) {
         const a = (acaoRaw || "").toLowerCase();
         if (a.includes("assinou") && a.includes("assinatura_responsavel")) {
@@ -549,13 +513,13 @@ export default function BotaoExportarPdf({
             const normalFont: [string, string] = ["helvetica", "normal"];
             const fonts = { normal: normalFont, bold: titleFont };
 
-            // Fundo comprimido com alias e aplicado em TODAS as páginas
+            // Fundo comprimido e aplicado SEMPRE
             const bgB64 = await loadAndCompressBackground("/timbrado.png", 1240, 0.6);
             const drawBg = makeBackgroundDrawer(doc, bgB64);
             (doc as any).__drawBg = drawBg;
-            drawBg(doc);
+            drawBg(doc); // página 1
 
-            // Assinaturas (carrega como PNG com fundo branco)
+            // Assinaturas (PNG com fundo branco)
             const urlResp = normalizarUrlAssinatura(
                 assinaturaResponsavelUrl || assinaturaFromResumo(resumoFinal, "responsavel") || assinaturaFromLogs(logVisiveis, "responsavel")
             );
@@ -647,7 +611,6 @@ export default function BotaoExportarPdf({
                 doc.text(Array.isArray(text) ? text : [text], x, yy);
             };
 
-            // (3) Filtra logs “sem_alteracoes”
             const logsParaImprimir = logVisiveis.filter((l) => {
                 const det = l.detalhes;
                 try {
@@ -659,23 +622,16 @@ export default function BotaoExportarPdf({
 
             for (const ent of logsParaImprimir) {
                 const dataLine = formataDataHora(ent.datahora) || "";
-
-                // (2) Renomeia títulos de assinatura
                 const t = mapAcaoTitulo(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const acaoFull = statusTxt ? `${t.titulo} — ${statusTxt}` : t.titulo;
-
                 const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
 
-                // (1) Montagem de detalhes sem duplicar
                 const detalhesLines: string[] = [];
                 const ja = new Set<string>();
                 const addLine = (s: string) => {
                     const key = normLine(s);
-                    if (key && !ja.has(key)) {
-                        ja.add(key);
-                        detalhesLines.push(s);
-                    }
+                    if (key && !ja.has(key)) { ja.add(key); detalhesLines.push(s); }
                 };
 
                 const raw = ent.detalhes as any;
@@ -684,26 +640,19 @@ export default function BotaoExportarPdf({
                 try {
                     const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
                     if (obj && typeof obj === "object") {
-                        // se for log de assinatura, não exibe nenhum detalhe (especialmente a URL)
                         if (!t.assinatura) {
                             for (const key of Object.keys(obj)) {
                                 if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
 
-                                // Arrumação
                                 if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
                                     let aobj: any = {};
                                     const val = obj[key];
-                                    if (typeof val === "string") {
-                                        try { aobj = JSON.parse(val); } catch { aobj = {}; }
-                                    } else if (typeof val === "object" && val) aobj = val;
-
-                                    for (const [k, v] of Object.entries(aobj)) {
-                                        if (asBool(v)) addLine(`${titleCaseFromSnake(k)}: Sim`);
-                                    }
+                                    if (typeof val === "string") { try { aobj = JSON.parse(val); } catch { aobj = {}; } }
+                                    else if (typeof val === "object" && val) aobj = val;
+                                    for (const [k, v] of Object.entries(aobj)) if (asBool(v)) addLine(`${titleCaseFromSnake(k)}: Sim`);
                                     continue;
                                 }
 
-                                // Materiais_*_qtd (apenas para exibir no LOG)
                                 const m = key.match(/^materiais_(.+?)_qtd$/i);
                                 if (m) {
                                     const nomeBase = titleCaseFromSnake(m[1]);
@@ -713,7 +662,6 @@ export default function BotaoExportarPdf({
                                     continue;
                                 }
 
-                                // Campos simples
                                 if (typeof (obj as any)[key] === "object" && !Array.isArray((obj as any)[key])) continue;
                                 let v = (obj as any)[key];
                                 if (v == null || String(v).trim() === "") continue;
@@ -726,9 +674,7 @@ export default function BotaoExportarPdf({
                                 nome = substituirRotuloVisual(nome);
                                 v = substituirRotuloVisual(v);
 
-                                // (2) nunca exibir caminhos de assinatura
                                 if (/\/uploads\/assinaturas\//i.test(v)) continue;
-
                                 addLine(`${nome}: ${v}`);
                             }
                         }
@@ -745,7 +691,6 @@ export default function BotaoExportarPdf({
                     for (const l of materiaisLines) addLine(`• ${l}`);
                 }
 
-                // Medidas
                 doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(9);
                 const dataWrapped = doc.splitTextToSize(dataLine, contentW - cardPadX * 2);
@@ -777,28 +722,17 @@ export default function BotaoExportarPdf({
                 (doc as any).roundedRect(marginL, y, contentW, cardH, 3, 3);
 
                 let yy = y + cardPadY;
-                if (dataWrapped.length) {
-                    writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
-                    yy += 4 + (dataWrapped.length - 1) * 4 + 3;
-                }
-                writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
-                yy += hAcao;
-                if (usuarioWrapped.length) {
-                    writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
-                    yy += usuarioWrapped.length * 5;
-                }
-                if (detalhesWrapped.length) {
-                    writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
-                    yy += detalhesWrapped.length * 5;
-                }
+                if (dataWrapped.length) { writeLine(dataWrapped, marginL + cardPadX, yy, 9, false); yy += 4 + (dataWrapped.length - 1) * 4 + 3; }
+                writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true); yy += hAcao;
+                if (usuarioWrapped.length) { writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false); yy += usuarioWrapped.length * 5; }
+                if (detalhesWrapped.length) { writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false); yy += detalhesWrapped.length * 5; }
                 y += cardH + 8;
             }
 
             // ====== PÁGINAS EXTRAS ======
-            const materiais = extrairMateriaisAssistencia(logsParaImprimir); // somente materiais_json
+            const materiais = extrairMateriaisAssistencia(logsParaImprimir);
             const agente = pegarAgenteEntrega(logsParaImprimir);
 
-            // Fallbacks pelos logs (caso resumoFinal não traga)
             const dataInicioVelorioRaw =
                 resumoFinal?.data_inicio_velorio || pegarUltimoValorDosLogs(logsParaImprimir, ["data_inicio_velorio", "data de inicio do velorio"]);
 
@@ -809,14 +743,13 @@ export default function BotaoExportarPdf({
             const horaFimVelorioRaw =
                 resumoFinal?.hora_fim_velorio || pegarUltimoValorDosLogs(logsParaImprimir, ["hora_fim_velorio", "horario do sepultamento"]);
 
-            // Formata
             const dataVelorio = dataInicioVelorioRaw ? formataSeDataIso(String(dataInicioVelorioRaw)) : "";
             const dataSep = dataFimVelorioRaw ? formataSeDataIso(String(dataFimVelorioRaw)) : "";
             const horaSep = horaFimVelorioRaw ? String(horaFimVelorioRaw) : "";
 
-            // 1) Termo — data do velório (INÍCIO)
+            // 1) Termo
             doc.addPage();
-            drawBg(doc);
+            drawBg(doc); // <- fundo página 2
             desenharTermoRecebimento(doc, {
                 responsavel: selecionadoAssinatura || "",
                 falecido: selecionadoNome,
@@ -827,9 +760,9 @@ export default function BotaoExportarPdf({
                 assinaturaResponsavelB64: assinaturaRespB64,
             });
 
-            // 2) Requisição — data/hora do sepultamento
+            // 2) Requisição
             doc.addPage();
-            drawBg(doc);
+            drawBg(doc); // <- fundo página 3
             desenharRequisicaoVeiculo(doc, {
                 requerente: selecionadoAssinatura || "",
                 falecido: selecionadoNome,
