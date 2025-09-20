@@ -45,6 +45,7 @@ export default function AcompanhamentoPage() {
     const [wizardStep, setWizardStep] = useState(0);
     const [wizardData, setWizardData] = useState<Registro>({});
     const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [wizardSubmitting, setWizardSubmitting] = useState(false); // ✅ trava cliques duplos
 
     // selects
     const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -299,6 +300,7 @@ export default function AcompanhamentoPage() {
 
     const abrirWizard = useCallback(
         (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
+            setWizardSubmitting(false); // 🔁 reset da trava ao abrir
             const editing = tipo === "editar";
             setWizardEditing(editing);
             setWizardIdx(idx);
@@ -371,6 +373,7 @@ export default function AcompanhamentoPage() {
     }, [wizardData, wizardStep, materiais, arrumacao]);
 
     const concluirWizard = useCallback(async () => {
+        if (wizardSubmitting) return; // 🚫 impede clique duplo
         const dataAtualizada = salvarGrupoWizard();
         if (!dataAtualizada) return;
 
@@ -391,6 +394,7 @@ export default function AcompanhamentoPage() {
         }
 
         try {
+            setWizardSubmitting(true); // ⏳ trava e mostra “Salvando…”
             const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
             const json = await enviarRegistroPHP(payload);
             if (json?.sucesso) {
@@ -402,8 +406,10 @@ export default function AcompanhamentoPage() {
             }
         } catch (e: any) {
             setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
+        } finally {
+            setWizardSubmitting(false); // 🔓 libera novamente (caso continue aberto)
         }
-    }, [salvarGrupoWizard, wizardRestrictGroup, wizardEditing, fetchRegistros]);
+    }, [salvarGrupoWizard, wizardRestrictGroup, wizardEditing, fetchRegistros, wizardSubmitting]);
 
     /* -------------------- Ações (status) -------------------- */
 
@@ -553,6 +559,7 @@ export default function AcompanhamentoPage() {
                 setArrumacaoOpen={setArrumacaoOpen}
                 salvarGrupoWizard={salvarGrupoWizard}
                 concluirWizard={concluirWizard}
+                wizardSubmitting={wizardSubmitting} // ✅ passa o estado de “salvando…”
             />
 
             <MateriaisModal

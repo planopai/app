@@ -39,6 +39,9 @@ export default function Wizard({
 
     salvarGrupoWizard,
     concluirWizard,
+
+    /** NOVO: trava cliques duplos e mostra "Salvando…" */
+    wizardSubmitting,
 }: {
     open: boolean;
     onClose: () => void;
@@ -65,6 +68,9 @@ export default function Wizard({
 
     salvarGrupoWizard: () => Registro | null;
     concluirWizard: () => void;
+
+    /** NOVO */
+    wizardSubmitting: boolean;
 }) {
     // ✅ controle local só para visibilidade do "Tipo de Ornamentação"
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
@@ -79,8 +85,13 @@ export default function Wizard({
     const isLastStep = wizardStep === wizardStepIndexes.length - 1;
     const isRestrito = typeof wizardRestrictGroup === "number";
 
-    const goPrev = () => setWizardStep(Math.max(0, wizardStep - 1));
+    const goPrev = () => {
+        if (wizardSubmitting) return;
+        setWizardStep(Math.max(0, wizardStep - 1));
+    };
+
     const goNext = () => {
+        if (wizardSubmitting) return;
         const ok = salvarGrupoWizard();
         if (!ok) return;
         if (!isLastStep) setWizardStep(wizardStep + 1);
@@ -92,7 +103,36 @@ export default function Wizard({
 
     return (
         <Modal open={open} onClose={onClose} ariaLabel="Wizard" maxWidth={740}>
-            <h2 className="text-xl font-semibold">{wizardTitle}</h2>
+            <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold">{wizardTitle}</h2>
+                {wizardSubmitting && (
+                    <span
+                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                        aria-live="polite"
+                    >
+                        <svg
+                            className="h-3 w-3 animate-spin text-blue-600"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                        >
+                            <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                            />
+                            <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                            />
+                        </svg>
+                        Salvando…
+                    </span>
+                )}
+            </div>
 
             {/* Abas informativas */}
             <div className="mt-3 flex flex-wrap gap-2">
@@ -122,8 +162,9 @@ export default function Wizard({
                                 <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                                     <button
                                         type="button"
-                                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
                                         onClick={() => setArrumacaoOpen(true)}
+                                        disabled={wizardSubmitting}
                                     >
                                         Selecionar Materiais
                                     </button>
@@ -146,9 +187,10 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                     value={assistenciaVal}
                                     onChange={(e) => setAssistenciaVal(e.target.value)}
+                                    disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
                                         <option key={op} value={op}>
@@ -161,8 +203,9 @@ export default function Wizard({
                                     <div className="mt-2 flex items-center gap-2">
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+                                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
                                             onClick={() => setMateriaisOpen(true)}
+                                            disabled={wizardSubmitting}
                                         >
                                             Selecionar Materiais…
                                         </button>
@@ -185,9 +228,10 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                     value={tanatoVal}
                                     onChange={(e) => setTanatoVal(e.target.value)}
+                                    disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
                                         <option key={op} value={op}>
@@ -206,7 +250,7 @@ export default function Wizard({
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                     value={ornamentacaoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -218,6 +262,7 @@ export default function Wizard({
                                             if (el) el.value = "";
                                         }
                                     }}
+                                    disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
                                         <option key={op} value={op}>
@@ -236,8 +281,9 @@ export default function Wizard({
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
                                 <select
                                     id="wizard-ornamentacao_tipo"
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                     defaultValue={String(wizardData.ornamentacao_tipo ?? "")}
+                                    disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Natural", "Artificial"]).map((op) => (
                                         <option key={op} value={op}>
@@ -262,7 +308,8 @@ export default function Wizard({
                                     type="text"
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    disabled={wizardSubmitting}
                                 />
                             </div>
                         );
@@ -276,8 +323,9 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                     rows={3}
+                                    disabled={wizardSubmitting}
                                 />
                             </div>
                         );
@@ -292,8 +340,9 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    disabled={wizardSubmitting}
                                 >
                                     {(step.options || [""]).map((op) => (
                                         <option key={op} value={op}>
@@ -313,7 +362,8 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="date"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    disabled={wizardSubmitting}
                                 />
                             </div>
                         );
@@ -327,7 +377,8 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="time"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    disabled={wizardSubmitting}
                                 />
                             </div>
                         );
@@ -343,7 +394,8 @@ export default function Wizard({
                                     list={listId}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    disabled={wizardSubmitting}
                                 />
                                 <datalist id={listId}>
                                     {(step.datalist || []).map((op) => (
@@ -362,41 +414,56 @@ export default function Wizard({
             <div className="mt-6 flex items-center justify-between">
                 <div className="text-xs text-muted-foreground">
                     {isRestrito && (
-                        <>Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b></>
+                        <>
+                            Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
+                        </>
                     )}
                 </div>
 
                 <div className="flex gap-2">
-                    <button className="rounded-md border px-3 py-2 text-sm" onClick={onClose}>
+                    <button
+                        className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                        onClick={onClose}
+                        disabled={wizardSubmitting}
+                    >
                         Cancelar
                     </button>
 
                     {/* ✅ QUANDO EDITAR UM ÚNICO GRUPO: exibe apenas SALVAR */}
                     {isRestrito ? (
                         <button
-                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
                             onClick={concluirWizard}
+                            disabled={wizardSubmitting}
+                            aria-busy={wizardSubmitting}
                         >
-                            Salvar
+                            {wizardSubmitting ? "Salvando…" : "Salvar"}
                         </button>
                     ) : (
                         <>
                             {wizardStep > 0 && (
-                                <button className="rounded-md border px-3 py-2 text-sm" onClick={goPrev}>
+                                <button
+                                    className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    onClick={goPrev}
+                                    disabled={wizardSubmitting}
+                                >
                                     Anterior
                                 </button>
                             )}
                             {isLastStep ? (
                                 <button
-                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
                                     onClick={concluirWizard}
+                                    disabled={wizardSubmitting}
+                                    aria-busy={wizardSubmitting}
                                 >
-                                    Concluir
+                                    {wizardSubmitting ? "Salvando…" : "Concluir"}
                                 </button>
                             ) : (
                                 <button
-                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
                                     onClick={goNext}
+                                    disabled={wizardSubmitting}
                                 >
                                     Próximo
                                 </button>
