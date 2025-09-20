@@ -4,10 +4,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
-import { API } from "./constants";
+import { API, materiaisConfig } from "./constants";
 import { jsonWith401 } from "./helpers";
 
 type Step = 0 | 1 | 2; // 0: nome, 1: cpf, 2: assinatura
+
+type MatItem = { rotulo: string; qtd: number };
 
 export default function SignatureModal({
     open,
@@ -238,6 +240,64 @@ export default function SignatureModal({
         return yy - y + lineHeight;
     }
 
+    // ---- helpers: materiais, datas, formatações ----
+    function soDigitos(s?: string) {
+        return (s || "").replace(/\D+/g, "");
+    }
+    function formatCpf(s?: string) {
+        const d = soDigitos(s);
+        if (d.length !== 11) return s || "";
+        return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+    }
+    function formatDateISO(iso?: string) {
+        const s = String(iso || "").trim();
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+        return s;
+    }
+
+    function extrairMateriaisDoRegistro(r?: Registro): MatItem[] {
+        if (!r) return [];
+        const out: MatItem[] = [];
+
+        // 1) Se já veio estruturado
+        if (r.materiais) {
+            materiaisConfig.forEach((m) => {
+                const it = (r.materiais as any)[m.key];
+                const qtd = Number(it?.qtd ?? 0);
+                const checked = !!it?.checked;
+                if (checked && qtd > 0) out.push({ rotulo: (it?.rotulo as string) || m.label, qtd });
+            });
+            if (out.length) return out;
+        }
+
+        // 2) JSON
+        if (r.materiais_json) {
+            try {
+                const obj = JSON.parse(String(r.materiais_json));
+                materiaisConfig.forEach((m) => {
+                    const it = obj?.[m.key];
+                    const qtd = Number(it?.qtd ?? 0);
+                    const checked = String(it?.checked ?? "").toLowerCase();
+                    const ok = qtd > 0 && ["true", "1", "sim"].includes(checked);
+                    if (ok) out.push({ rotulo: (it?.rotulo as string) || m.label, qtd });
+                });
+            } catch {
+                // segue para colunas
+            }
+            if (out.length) return out;
+        }
+
+        // 3) Colunas *_qtd
+        materiaisConfig.forEach((m) => {
+            const col = (r as any)[`materiais_${m.key}_qtd`];
+            const qtd = Number(col ?? 0);
+            if (qtd > 0) out.push({ rotulo: m.label, qtd });
+        });
+
+        return out;
+    }
+
     async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png") {
         // requisitos: nome+cpf+assinatura
         if (!nome.trim() || cpfDigits.length !== 11 || (!assinaturaB64 && !url)) {
@@ -248,7 +308,14 @@ export default function SignatureModal({
             return;
         }
 
-        // Canvas no tamanho A4 aproximado (px) — 1240 x 1754 (≈ 150 DPI)
+        // dados auxiliares
+        const materiais = extrairMateriaisDoRegistro(registro);
+        const agente = registro?.agente || "";
+        const dataVelorio = formatDateISO(registro?.data_inicio_velorio);
+        const dataSepultamento = formatDateISO(registro?.data_fim_velorio);
+        const horaSepultamento = (registro?.hora_fim_velorio || "").toString();
+
+        // Canvas no tamanho A4 aproximado (px) — 1240 x 1754 (≈150 DPI)
         const W = 1240;
         const H = 1754;
         const c = document.createElement("canvas");
@@ -286,12 +353,11 @@ export default function SignatureModal({
         const maxW = W - margin * 2;
         let y = 200;
 
-        // campos comuns
+        // helper linha
         const linha = (label: string, value: string) => {
             ctx.font = "bold 22px Helvetica, Arial, sans-serif";
             const lbl = `${label}: `;
             const lblW = ctx.measureText(lbl).width;
-
             ctx.fillText(lbl, margin, y);
 
             ctx.font = "normal 22px Helvetica, Arial, sans-serif";
@@ -301,29 +367,52 @@ export default function SignatureModal({
 
         if (tipo === "recebimento") {
             linha("Responsável", nome);
-            linha("CPF", cpf);
+            linha("CPF", formatCpf(cpf));
             linha("Falecido(a)", registro?.falecido || "");
-            // breve cláusula
-            y += 10;
+            if (agente) linha("Entregue por (Agente)", agente);
+            y += 6;
             ctx.font = "normal 20px Helvetica, Arial, sans-serif";
             y += wrapText(
                 ctx,
-                "Confirmo o recebimento do material e me comprometo a zelar e devolver nas mesmas condições os itens fornecidos pela empresa.",
+                "Confirmo o recebimento do material e me comprometo a zelar e devolver nas mesmas condições os seguintes itens:",
                 margin,
                 y,
                 maxW,
                 26
             );
+
+            // itens
+            ctx.font = "normal 20px Helvetica, Arial, sans-serif";
+            if (!materiais.length) {
+                y += 8;
+                y += wrapText(ctx, "— Nenhum item selecionado —", margin, y, maxW, 26);
+            } else {
+                y += 10;
+                for (const it of materiais.sort((a, b) => a.rotulo.localeCompare(b.rotulo))) {
+                    const line = `– ${it.rotulo}: ${it.qtd}`;
+                    y += wrapText(ctx, line, margin, y, maxW, 26);
+                    y += 2;
+                }
+            }
+
+            // data
+            if (dataVelorio) {
+                y += 14;
+                ctx.font = "bold 20px Helvetica, Arial, sans-serif";
+                ctx.fillText(`Barreiras-BA, ${dataVelorio}`, margin + 6, y);
+            }
         } else {
             linha("Requerente", nome);
-            linha("CPF", cpf);
+            linha("CPF", formatCpf(cpf));
             linha("Falecido(a)", registro?.falecido || "");
-            // breve cláusula
-            y += 10;
+            if (dataSepultamento) linha("Data do Sepultamento", dataSepultamento);
+            if (horaSepultamento) linha("Horário", horaSepultamento);
+
+            y += 6;
             ctx.font = "normal 20px Helvetica, Arial, sans-serif";
             y += wrapText(
                 ctx,
-                "Solicito à empresa PAI - Plano Assistencial Integrado, veículo funerário para realização de sepultamento, ciente das condições informadas.",
+                "Solicito à empresa PAI - Plano Assistencial Integrado, veículo funerário para realização de sepultamento. Desde já, tenho conhecimento que esse pedido deve ser realizado com antecedência mínima de 05 (cinco) horas. Caso o atendimento ocorra fora desse horário, a empresa está isenta de responsabilidades por qualquer contratempo.",
                 margin,
                 y,
                 maxW,
@@ -350,7 +439,7 @@ export default function SignatureModal({
             const yImg = LINE_Y - SIGN_H - 8;
             ctx.drawImage(signImg, x, yImg, SIGN_W, SIGN_H);
         } catch {
-            // sem assinatura carregada — não deve acontecer pois validamos acima
+            // ok
         }
 
         // Rótulo abaixo da linha + Nome/CPF
@@ -364,27 +453,27 @@ export default function SignatureModal({
         ctx.fillText(rotulo, center - rotW / 2, LINE_Y + 10);
 
         ctx.font = "normal 18px Helvetica, Arial, sans-serif";
-        const cpfTxt = cpf;
+        const cpfTxt = formatCpf(cpf);
         const nomeTxt = nome;
         const gapCol = 90;
 
-        // esquerda (CPF)
         const cpfW = ctx.measureText(cpfTxt).width;
         ctx.fillText(cpfTxt, center - gapCol - cpfW, LINE_Y + 42);
-
-        // direita (Nome)
         const nomeW = ctx.measureText(nomeTxt).width;
         ctx.fillText(nomeTxt, center + gapCol, LINE_Y + 42);
 
         // Exporta para imagem
-        // Troque para "image/jpeg" se preferir JPEG.
         const dataUrl = c.toDataURL(format, format === "image/jpeg" ? 0.92 : undefined);
 
         // Baixar
         const a = document.createElement("a");
         const tipoNome = tipo === "recebimento" ? "termo-recebimento" : "termo-requisicao";
-        const base = (registro?.falecido || "documento").toString().trim().replace(/\s+/g, "_").toLowerCase();
-        a.download = `${tipoNome}-${base}.png`; // troque para .jpg se usar image/jpeg
+        const base = (registro?.falecido || "documento")
+            .toString()
+            .trim()
+            .replace(/\s+/g, "_")
+            .toLowerCase();
+        a.download = `${tipoNome}-${base}.${format === "image/png" ? "png" : "jpg"}`;
         a.href = dataUrl;
         a.click();
     }
@@ -489,7 +578,7 @@ export default function SignatureModal({
                             {saving ? "Salvando..." : "Salvar Assinatura"}
                         </button>
 
-                        {/* 🔽 BOTÃO VERDE: baixa o TERMO (imagem) já com a assinatura */}
+                        {/* ✅ Botão verde: baixa o TERMO (imagem) já com a assinatura e dados preenchidos */}
                         <button
                             className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
                             title="Baixar a página do termo assinada (PNG)"
@@ -498,27 +587,8 @@ export default function SignatureModal({
                         >
                             Baixar Termo (PNG)
                         </button>
-                        {/* Se quiser JPEG, ative também: 
-            <button
-              className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
-              disabled={!(assinaturaB64 || url) || !nome.trim() || cpfDigits.length !== 11}
-              onClick={() => baixarTermoImagem("image/jpeg")}
-            >
-              Baixar Termo (JPEG)
-            </button>
-            */}
 
-                        {/* Link antigo para baixar só a imagem da assinatura (opcional manter) */}
-                        {url && (
-                            <a
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-md bg-sky-600 px-3 py-2 text-sm text-white"
-                            >
-                                Baixar Assinatura (PNG)
-                            </a>
-                        )}
+                        {/* ❌ Botão/Link de 'Baixar Assinatura (PNG)' foi removido/desativado */}
 
                         <button className="ml-auto rounded-md border px-3 py-2 text-sm" onClick={onClose}>
                             Fechar
