@@ -10,6 +10,33 @@ import { jsonWith401 } from "./helpers";
 type Step = 0 | 1 | 2; // 0: nome, 1: cpf, 2: assinatura
 type MatItem = { rotulo: string; qtd: number };
 
+// === Base correta das assinaturas (sem o subdomínio "pai.") ===
+const UPLOADS_BASE = "https://planoassistencialintegrado.com.br";
+
+function normAssUrl(u?: string) {
+    if (!u) return "";
+    const v = String(u).trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    if (v.startsWith("/")) return `${UPLOADS_BASE}${v}`;
+    return `${UPLOADS_BASE}/${v}`;
+}
+
+async function fetchImageToDataURL(imageUrl: string): Promise<string | undefined> {
+    try {
+        const res = await fetch(imageUrl, { credentials: "include", cache: "no-store" });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        return await new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(String(fr.result || ""));
+            fr.onerror = reject;
+            fr.readAsDataURL(blob);
+        });
+    } catch {
+        return;
+    }
+}
+
 export default function SignatureModal({
     open,
     onClose,
@@ -30,7 +57,7 @@ export default function SignatureModal({
     const [saving, setSaving] = useState(false);
     const [url, setUrl] = useState("");
 
-    // assinatura atual (do canvas OU carregada do backend)
+    // assinatura atual (como dataURL) para compor o termo local em PNG
     const [assinaturaB64, setAssinaturaB64] = useState<string>("");
 
     // ---- assinatura (canvas) ----
@@ -38,58 +65,61 @@ export default function SignatureModal({
     const [drawing, setDrawing] = useState(false);
     const [paths, setPaths] = useState<Array<Array<{ x: number; y: number }>>>([]);
 
-    // reset base ao abrir
+    // ===== Prefill ao abrir: nome/cpf/url/assinatura existente =====
     useEffect(() => {
         if (!open) return;
+
         setStep(0);
-        setNome("");
-        setCpf("");
         setMsg(null);
-        setUrl("");
+        setSaving(false);
         setPaths([]);
         setAssinaturaB64("");
-    }, [open]);
+        setUrl("");
 
-    // (1) Prefill: tenta preencher nome/CPF/assinatura previamente salvos no registro
-    useEffect(() => {
-        if (!open || !registro) return;
-
-        const key = tipo === "recebimento" ? "responsavel" : "requerente";
-
-        // nome
-        const nomeExistente =
-            (registro as any)[`nome_assinatura_${key}`] ||
-            (registro as any)[`assinatura_${key}_nome`] ||
-            (registro as any)[`nome_${key}`] ||
-            "";
-
-        // cpf -> formatado
-        const cpfExistenteRaw =
-            (registro as any)[`cpf_assinatura_${key}`] ||
-            (registro as any)[`assinatura_${key}_cpf`] ||
-            (registro as any)[`cpf_${key}`] ||
-            "";
-
-        const cpfFmt = maskCpf(String(cpfExistenteRaw || ""));
-
-        // url imagem
-        const urlExistente =
+        // tenta ler dados do registro:
+        const nomeKeys =
             tipo === "recebimento"
-                ? (registro as any).assinatura_recebimento_url
-                : (registro as any).assinatura_requisicao_url;
+                ? ["nome_assinatura_responsavel", "nome_responsavel", "assinatura_responsavel_nome", "nome_responsavel_assinatura"]
+                : ["nome_assinatura_requerente", "nome_requerente", "assinatura_requerente_nome", "nome_requerente_assinatura"];
 
-        if (nomeExistente) setNome(String(nomeExistente));
-        if (cpfFmt) setCpf(cpfFmt);
-        if (urlExistente) {
-            setUrl(String(urlExistente));
-            // carrega a imagem da assinatura e mantém como base64
-            fetchImageToDataURL(String(urlExistente))
-                .then((b64) => setAssinaturaB64(b64 || ""))
+        const cpfKeys =
+            tipo === "recebimento"
+                ? ["cpf_assinatura_responsavel", "cpf_responsavel", "assinatura_responsavel_cpf", "cpf_responsavel_assinatura"]
+                : ["cpf_assinatura_requerente", "cpf_requerente", "assinatura_requerente_cpf", "cpf_requerente_assinatura"];
+
+        const urlKeys =
+            tipo === "recebimento"
+                ? ["assinatura_recebimento_url", "assinatura_responsavel_url"]
+                : ["assinatura_requisicao_url", "assinatura_requerente_url"];
+
+        const pick = (keys: string[]) => {
+            for (const k of keys) {
+                const v = (registro as any)?.[k];
+                if (v != null && String(v).trim() !== "") return String(v);
+            }
+            return "";
+        };
+
+        const nomeExist = pick(nomeKeys);
+        const cpfExist = pick(cpfKeys);
+        const urlExist = normAssUrl(pick(urlKeys));
+
+        if (nomeExist) setNome(String(nomeExist));
+        if (cpfExist) setCpf(formatCpf(String(cpfExist)));
+
+        if (urlExist) {
+            setUrl(urlExist);
+            // tenta trazer a imagem para dataURL (evita canvas "tainted")
+            fetchImageToDataURL(urlExist)
+                .then((b64) => {
+                    if (b64) setAssinaturaB64(b64);
+                })
                 .catch(() => void 0);
         }
-    }, [open, registro, tipo]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, tipo, registro?.id]);
 
-    // (2) Inicializa o canvas SOMENTE no passo 2
+    // inicializa/atualiza o canvas SOMENTE no passo 2 (assinatura)
     useEffect(() => {
         if (!open || step !== 2) return;
         const c = canvasRef.current;
@@ -106,26 +136,26 @@ export default function SignatureModal({
         c.style.height = h + "px";
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
+        // limpa
         ctx.lineWidth = 2;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         ctx.strokeStyle = "#000";
         ctx.clearRect(0, 0, w, h);
+
         setPaths([]);
 
-        // se já temos uma assinatura pré-existente, desenha como imagem de fundo do canvas
+        // ✅ Desenha a assinatura existente (se houver) como "preview"
+        // (o usuário ainda pode desenhar por cima / editar)
         if (assinaturaB64) {
             const img = new Image();
             img.onload = () => {
-                // centraliza com altura ~70% da área
-                const maxH = h * 0.7;
-                const maxW = w * 0.8;
-                const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-                const dw = img.width * scale;
-                const dh = img.height * scale;
-                const x = (w - dw) / 2;
-                const y = (h - dh) / 2;
-                ctx.drawImage(img, x, y, dw, dh);
+                const targetW = Math.min(600, img.width);
+                const scale = targetW / (img.width || 1);
+                const targetH = img.height * scale;
+                const x = (w - targetW) / 2;
+                const y = (h - targetH) / 2;
+                ctx.drawImage(img, x, y, targetW, targetH);
             };
             img.src = assinaturaB64;
         }
@@ -146,7 +176,7 @@ export default function SignatureModal({
     }
     const cpfDigits = cpf.replace(/\D+/g, "");
 
-    // desenho livre
+    // desenho livre no canvas
     const redraw = () => {
         const c = canvasRef.current;
         if (!c) return;
@@ -154,15 +184,36 @@ export default function SignatureModal({
         if (!ctx) return;
         const w = c.clientWidth;
         const h = c.clientHeight;
-        // NÃO limpa o fundo para não apagar a imagem da assinatura carregada.
-        // Apenas redesenha os paths sobrepostos.
-        ctx.save();
+        ctx.clearRect(0, 0, w, h);
+
+        // se existe assinatura prévia, redesenha o preview por baixo
+        if (assinaturaB64) {
+            const img = new Image();
+            img.onload = () => {
+                const targetW = Math.min(600, img.width);
+                const scale = targetW / (img.width || 1);
+                const targetH = img.height * scale;
+                const x = (w - targetW) / 2;
+                const y = (h - targetH) / 2;
+                ctx.drawImage(img, x, y, targetW, targetH);
+
+                // por cima, os traços atuais
+                ctx.beginPath();
+                for (const path of paths) {
+                    path.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+                }
+                ctx.stroke();
+            };
+            img.src = assinaturaB64;
+            return;
+        }
+
+        // sem imagem anterior: só os traços
         ctx.beginPath();
         for (const path of paths) {
             path.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
         }
         ctx.stroke();
-        ctx.restore();
     };
 
     const getXY = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -193,37 +244,18 @@ export default function SignatureModal({
     };
 
     const clearAll = () => {
-        // limpa desenho do usuário e a imagem base, voltando a um canvas limpo
-        const c = canvasRef.current;
-        const ctx = c?.getContext("2d");
-        if (c && ctx) ctx.clearRect(0, 0, c.width, c.height);
-        setAssinaturaB64(""); // apaga assinatura carregada
         setPaths([]);
+        setAssinaturaB64(""); // limpa também o preview antigo
+        requestAnimationFrame(redraw);
     };
     const undo = () => {
         if (!paths.length) return;
         setPaths((ps) => {
-            const next = ps.slice(0, -1);
+            const next = ps.slice(0, - 1);
             requestAnimationFrame(redraw);
             return next;
         });
     };
-
-    async function fetchImageToDataURL(imageUrl: string): Promise<string | undefined> {
-        try {
-            const res = await fetch(imageUrl, { credentials: "include", cache: "no-store" });
-            if (!res.ok) return;
-            const blob = await res.blob();
-            return await new Promise((resolve, reject) => {
-                const fr = new FileReader();
-                fr.onload = () => resolve(String(fr.result || ""));
-                fr.onerror = reject;
-                fr.readAsDataURL(blob);
-            });
-        } catch {
-            return;
-        }
-    }
 
     const saveSignature = async () => {
         if (!registro?.id) {
@@ -240,20 +272,23 @@ export default function SignatureModal({
             setStep(1);
             return;
         }
-        // Aceita: paths desenhados OU assinaturaB64 já carregada do backend
-        if (paths.length === 0 && !assinaturaB64) {
-            setMsg({ text: "Faça a assinatura (ou mantenha a já carregada).", ok: false });
+
+        // Se o usuário não redesenhou, mas já existe assinatura prévia,
+        // permitimos reenviar a mesma imagem (assinaturaB64) para "regravar".
+        const temTraçosNovos = paths.length > 0;
+        if (!temTraçosNovos && !assinaturaB64) {
+            setMsg({ text: "Faça a assinatura antes de salvar.", ok: false });
             setStep(2);
             return;
         }
 
         try {
             setSaving(true);
-            // Se o usuário desenhou algo, captura o canvas; senão usa a assinatura já carregada
-            const dataUrl =
-                paths.length > 0
-                    ? canvasRef.current!.toDataURL("image/png")
-                    : assinaturaB64;
+            let dataUrlToSend = assinaturaB64;
+            if (temTraçosNovos) {
+                dataUrlToSend = canvasRef.current!.toDataURL("image/png");
+                setAssinaturaB64(dataUrlToSend);
+            }
 
             const res = await jsonWith401(`${API}/api/php/informativo.php`, {
                 method: "POST",
@@ -262,7 +297,7 @@ export default function SignatureModal({
                     acao: "salvar_assinatura",
                     id: String(registro.id),
                     tipo: tipo === "recebimento" ? "responsavel" : "requerente",
-                    base64: dataUrl,
+                    base64: dataUrlToSend,
                     nome_assinatura: nome.trim(),
                     cpf_assinatura: cpfDigits,
                 }),
@@ -270,10 +305,9 @@ export default function SignatureModal({
 
             if (res?.sucesso) {
                 setMsg({ text: "Assinatura salva!", ok: true });
-                setUrl(res?.url || "");
-                // mantém assinaturaB64, já que pode ter sido a antiga ou a nova
-                if (!assinaturaB64 && dataUrl) setAssinaturaB64(dataUrl);
-                onSaved(res?.url);
+                const finalUrl = normAssUrl(res?.url || url);
+                setUrl(finalUrl);
+                onSaved(finalUrl);
             } else {
                 setMsg({ text: res?.msg || "Falha ao salvar.", ok: false });
             }
@@ -285,7 +319,7 @@ export default function SignatureModal({
     };
 
     // ----------------- Geração do TERMO em imagem (PNG/JPEG) -----------------
-    const TIMBRADO_PATH = "/timbrado.png"; // opcional
+    const TIMBRADO_PATH = "/timbrado.png"; // opcional; se não existir, usamos fundo branco
 
     async function loadImg(src: string): Promise<HTMLImageElement> {
         return new Promise((resolve, reject) => {
@@ -366,7 +400,9 @@ export default function SignatureModal({
                     const ok = qtd > 0 && ["true", "1", "sim"].includes(checked);
                     if (ok) out.push({ rotulo: (it?.rotulo as string) || m.label, qtd });
                 });
-            } catch {/* noop */ }
+            } catch {
+                // segue para colunas
+            }
             if (out.length) return out;
         }
 
@@ -381,9 +417,12 @@ export default function SignatureModal({
     }
 
     async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png") {
-        // precisa de nome+cpf+assinatura
-        if (!nome.trim() || cpfDigits.length !== 11 || (!assinaturaB64 && !url)) {
-            setMsg({ text: "Assine e salve primeiro para liberar o download do termo.", ok: false });
+        // requisitos: nome+cpf+assinatura
+        if (!nome.trim() || cpfDigits.length !== 11 || !(assinaturaB64 || url)) {
+            setMsg({
+                text: "Assine e salve primeiro para liberar o download do termo.",
+                ok: false,
+            });
             return;
         }
 
@@ -394,7 +433,7 @@ export default function SignatureModal({
         const dataSepultamento = formatDateISO(registro?.data_fim_velorio);
         const horaSepultamento = (registro?.hora_fim_velorio || "").toString();
 
-        // Canvas A4 (≈150 DPI)
+        // Canvas A4 aproximado (px) — 1240 x 1754 (≈150 DPI)
         const W = 1240;
         const H = 1754;
         const c = document.createElement("canvas");
@@ -404,11 +443,11 @@ export default function SignatureModal({
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, W, H);
 
-        // timbrado
+        // timbrado, se houver
         try {
             const bg = await loadImg(TIMBRADO_PATH);
             ctx.drawImage(bg, 0, 0, W, H);
-        } catch {/* opcional */ }
+        } catch { }
 
         // tipografia
         const center = W / 2;
@@ -435,6 +474,7 @@ export default function SignatureModal({
             const lbl = `${label}: `;
             const lblW = ctx.measureText(lbl).width;
             ctx.fillText(lbl, margin, y);
+
             ctx.font = "normal 22px Helvetica, Arial, sans-serif";
             const used = wrapText(ctx, value || "________________________", margin + lblW, y, maxW - lblW, 28);
             y += used + 6;
@@ -456,6 +496,7 @@ export default function SignatureModal({
                 26
             );
 
+            // itens
             ctx.font = "normal 20px Helvetica, Arial, sans-serif";
             if (!materiais.length) {
                 y += 8;
@@ -469,6 +510,7 @@ export default function SignatureModal({
                 }
             }
 
+            // data
             if (dataVelorio) {
                 y += 14;
                 ctx.font = "bold 20px Helvetica, Arial, sans-serif";
@@ -502,21 +544,21 @@ export default function SignatureModal({
         ctx.lineTo(W - margin - 40, LINE_Y);
         ctx.stroke();
 
-        // Assinatura
+        // Assinatura (centralizada acima da linha)
         try {
             const signImg = await loadImg(assinaturaB64 || url);
-            const SIGN_W = 420;
+            const SIGN_W = 420; // px
             const ratio = signImg.width ? SIGN_W / signImg.width : 1;
             const SIGN_H = signImg.height ? signImg.height * ratio : 160;
             const x = center - SIGN_W / 2;
             const yImg = LINE_Y - SIGN_H - 8;
             ctx.drawImage(signImg, x, yImg, SIGN_W, SIGN_H);
-        } catch {/* noop */ }
+        } catch { }
 
-        // Rótulo + CPF/Nome
+        // Rótulo + Nome/CPF
         ctx.font = "normal 20px Helvetica, Arial, sans-serif";
-        const rotulo =
-            tipo === "recebimento" ? "Responsável pelo recebimento (assinatura)" : "Requerente (assinatura)";
+        ctx.fillStyle = "#111";
+        const rotulo = tipo === "recebimento" ? "Responsável pelo recebimento (assinatura)" : "Requerente (assinatura)";
         const rotW = ctx.measureText(rotulo).width;
         ctx.fillText(rotulo, center - rotW / 2, LINE_Y + 10);
 
@@ -530,7 +572,7 @@ export default function SignatureModal({
         const nomeW = ctx.measureText(nomeTxt).width;
         ctx.fillText(nomeTxt, center + gapCol, LINE_Y + 42);
 
-        // Exporta para imagem
+        // Exporta
         const dataUrl = c.toDataURL(format, format === "image/jpeg" ? 0.92 : undefined);
 
         // Baixar
@@ -640,7 +682,7 @@ export default function SignatureModal({
                             {saving ? "Salvando..." : "Salvar Assinatura"}
                         </button>
 
-                        {/* ✅ Baixar página do termo preenchida e assinada */}
+                        {/* ✅ Baixa o TERMO (imagem) já com a assinatura e dados preenchidos */}
                         <button
                             className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
                             title="Baixar a página do termo assinada (PNG)"
@@ -649,8 +691,6 @@ export default function SignatureModal({
                         >
                             Baixar Termo (PNG)
                         </button>
-
-                        {/* (Sem link para baixar apenas a imagem da assinatura) */}
 
                         <button className="ml-auto rounded-md border px-3 py-2 text-sm" onClick={onClose}>
                             Fechar
