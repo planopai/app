@@ -87,10 +87,11 @@ export default function SignatureModal({
                 ? ["cpf_assinatura_responsavel", "cpf_responsavel", "assinatura_responsavel_cpf", "cpf_responsavel_assinatura"]
                 : ["cpf_assinatura_requerente", "cpf_requerente", "assinatura_requerente_cpf", "cpf_requerente_assinatura"];
 
+        // inclui tanto os campos *_url quanto os campos simples do BD (assinatura_responsavel / assinatura_requerente)
         const urlKeys =
             tipo === "recebimento"
-                ? ["assinatura_recebimento_url", "assinatura_responsavel_url"]
-                : ["assinatura_requisicao_url", "assinatura_requerente_url"];
+                ? ["assinatura_responsavel", "assinatura_recebimento_url", "assinatura_responsavel_url"]
+                : ["assinatura_requerente", "assinatura_requisicao_url", "assinatura_requerente_url"];
 
         const pick = (keys: string[]) => {
             for (const k of keys) {
@@ -146,7 +147,6 @@ export default function SignatureModal({
         setPaths([]);
 
         // ✅ Desenha a assinatura existente (se houver) como "preview"
-        // (o usuário ainda pode desenhar por cima / editar)
         if (assinaturaB64) {
             const img = new Image();
             img.onload = () => {
@@ -186,7 +186,7 @@ export default function SignatureModal({
         const h = c.clientHeight;
         ctx.clearRect(0, 0, w, h);
 
-        // se existe assinatura prévia, redesenha o preview por baixo
+        // preview por baixo
         if (assinaturaB64) {
             const img = new Image();
             img.onload = () => {
@@ -197,7 +197,6 @@ export default function SignatureModal({
                 const y = (h - targetH) / 2;
                 ctx.drawImage(img, x, y, targetW, targetH);
 
-                // por cima, os traços atuais
                 ctx.beginPath();
                 for (const path of paths) {
                     path.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
@@ -233,7 +232,7 @@ export default function SignatureModal({
         setPaths((ps) => {
             const last = ps[ps.length - 1];
             last.push({ x, y });
-            const next = [...ps.slice(0, -1), last];
+            const next = [...ps.slice(0, - 1), last];
             requestAnimationFrame(redraw);
             return next;
         });
@@ -251,7 +250,7 @@ export default function SignatureModal({
     const undo = () => {
         if (!paths.length) return;
         setPaths((ps) => {
-            const next = ps.slice(0, - 1);
+            const next = ps.slice(0, -1);
             requestAnimationFrame(redraw);
             return next;
         });
