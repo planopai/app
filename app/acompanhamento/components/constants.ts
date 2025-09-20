@@ -46,11 +46,14 @@ export const steps = [
         ],
     },
     { label: "Urna", id: "urna", type: "input", placeholder: "Digite o Modelo Da Urna" },
+
+    // 🔄 ROUPA AGORA É DATALIST (EDITÁVEL)
     {
         label: "Roupa",
         id: "roupa",
-        type: "select",
-        options: [
+        type: "datalist",
+        placeholder: "Escolha ou digite a roupa",
+        datalist: [
             "ROUPA PRÓPRIA",
             "CONJ. MASCULINO - RENASCER",
             "LA BELLE CINZA - NORMAL",
