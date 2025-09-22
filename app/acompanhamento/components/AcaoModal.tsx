@@ -16,6 +16,9 @@ import {
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
 
+// Fase final conforme seu mapeamento: 'material recolhido' => 'fase11'
+const FASE_FINAL = "fase11" as Fase;
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -111,28 +114,59 @@ export default function AcaoModal({
         !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
     // Fases visíveis (aplica os skips uma única vez)
+    // ⚠️ Nunca esconda a fase que é o status atual (para não "perder" a referência do fluxo).
     const fasesVisiveis = useMemo<readonly Fase[]>(
         () =>
             (fases as readonly Fase[]).filter((f) => {
+                if (efetivo && f === efetivo.status) return true; // mantém visível a fase atual
                 if (skipTransportando && f === "fase07") return false;
                 if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
                 return true;
             }),
-        [skipTransportando, skipConservacao]
+        [skipTransportando, skipConservacao, efetivo]
     );
 
-    // Próxima fase calculada — usa a MESMA lista filtrada (fasesVisiveis)
+    // Próxima fase calculada — robusta:
+    // 1) tenta via helper com as fases visíveis (caso status atual esteja nelas)
+    // 2) se vier null (por status atual ter sido "skipável" em outro momento), faz fallback:
+    //    procura no fluxo completo a próxima fase que esteja em fasesVisiveis.
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
-        return proximaFaseDoRegistro(
+
+        const fluxoCompleto = fases as readonly Fase[];
+        const visiveis = fasesVisiveis as readonly Fase[];
+
+        // Se já está na fase final, não há próxima
+        if (efetivo.status === FASE_FINAL) return null;
+
+        // Tenta pelo helper considerando só as visíveis
+        let p = proximaFaseDoRegistro(
             {
-                status: (efetivo.status as string) ?? "fase00", // sempre "faseXX"
+                status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
                 tanato: efetivo.tanato,
             },
-            fasesVisiveis as readonly string[]
+            visiveis as readonly string[]
         ) as Fase | null;
+
+        if (p) return p;
+
+        // Fallback: se o status atual não estiver em 'visiveis' ou se a próxima calculada
+        // for uma fase oculta, pula no fluxo completo até achar a próxima VISÍVEL
+        const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
+        if (idxAtual === -1) return null;
+
+        for (let i = idxAtual + 1; i < fluxoCompleto.length; i++) {
+            const candidato = fluxoCompleto[i];
+            if (visiveis.includes(candidato)) {
+                return candidato;
+            }
+        }
+        return null;
     }, [efetivo, fasesVisiveis]);
+
+    // Está concluído somente se a fase atual for a fase final (fase11)
+    const concluido = !!efetivo && efetivo.status === FASE_FINAL;
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
@@ -165,7 +199,7 @@ export default function AcaoModal({
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline;
+                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
                             return (
                                 <button
                                     key={f}
@@ -182,7 +216,8 @@ export default function AcaoModal({
                         })}
                     </div>
 
-                    {prox === null && (
+                    {/* Só exibe "concluído" quando realmente estiver na fase11 */}
+                    {concluido && (
                         <p className="mt-2 text-sm text-muted-foreground">
                             Fluxo concluído para este registro.
                         </p>
