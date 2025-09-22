@@ -16,9 +16,6 @@ import {
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
 
-// Fase final: 'material recolhido' => 'fase11'
-const FASE_FINAL = "fase11" as Fase;
-
 export default function AcaoModal({
     open,
     setOpen,
@@ -36,16 +33,7 @@ export default function AcaoModal({
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
 }) {
-    // ---------- 1) Registro local (frontend) ----------
-    const registroLocal = useMemo(() => {
-        const r =
-            acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
-        if (!r) return undefined;
-        const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
-        return { ...r, status: statusFix } as Registro & { status: Fase };
-    }, [acaoId, registros]);
-
-    // ---------- 2) Estado "online" vindo do backend ----------
+    // ---------- Estado vindo do backend ----------
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -55,20 +43,19 @@ export default function AcaoModal({
         tanato: string;
     } | null>(null);
 
-    // Busca o status atual direto do PHP quando abrir/mudar acaoId
+    // Busca SEMPRE o status atual no backend ao abrir/trocar acaoId
     useEffect(() => {
         let cancel = false;
 
         async function run() {
             setOnline(null);
             setOnlineError(null);
-
             if (!open || !acaoId) return;
+
             setLoadingOnline(true);
             try {
                 const s = await consultarStatusAtual(acaoId);
                 if (cancel) return;
-                // normaliza para Fase
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
                     id: String(s.id ?? acaoId),
@@ -89,37 +76,26 @@ export default function AcaoModal({
         };
     }, [open, acaoId]);
 
-    // Dados efetivos usados na UI (prefere online; cai para local)
-    // ✅ Se veio "online", usa ele SEM checar igualdade de id (evita travar quando o backend retorna outro id).
+    // Dados efetivos usados na UI: **sempre** do backend
     const efetivo = useMemo(() => {
-        if (online) {
-            return {
-                status: online.status as Fase,
-                local_velorio: online.local_velorio,
-                tanato: online.tanato,
-            };
-        }
-        if (registroLocal) {
-            return {
-                status: (registroLocal.status as Fase) ?? ("fase00" as Fase),
-                local_velorio: registroLocal.local_velorio,
-                tanato: registroLocal.tanato,
-            };
-        }
-        return null;
-    }, [online, registroLocal]);
+        if (!online) return null;
+        return {
+            status: online.status as Fase,
+            local_velorio: online.local_velorio,
+            tanato: online.tanato,
+        };
+    }, [online]);
 
-    // Skips (iguais aos usados no cálculo)
+    // Skips (iguais aos usados no cálculo/regra de negócio)
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando =
         !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
-    // Fases visíveis (aplica os skips uma única vez)
-    // ⚠️ Nunca esconda a fase que é o status atual (para não perder referência do fluxo)
+    // Fases visíveis (aplica os skips) — mantém a fase atual visível só para referência
     const fasesVisiveis = useMemo<readonly Fase[]>(
         () =>
             (fases as readonly Fase[]).filter((f) => {
-                if (efetivo && f === efetivo.status) return true; // mantém visível a fase atual
+                if (efetivo && f === efetivo.status) return true; // mantemos para referência visual
                 if (skipTransportando && f === "fase07") return false;
                 if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
                 return true;
@@ -127,17 +103,14 @@ export default function AcaoModal({
         [skipTransportando, skipConservacao, efetivo]
     );
 
-    // Próxima fase calculada — robusta
+    // Calcula **sempre** a próxima fase a partir do status atual do backend
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
 
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        // Se já está na fase final, não há próxima
-        if (efetivo.status === FASE_FINAL) return null;
-
-        // 1) tenta via helper com as fases visíveis
+        // 1) tenta via helper com a lista visível
         let p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
@@ -149,75 +122,67 @@ export default function AcaoModal({
 
         if (p) return p;
 
-        // 2) fallback: caminha no fluxo completo até achar a próxima fase visível
+        // 2) fallback: acha a próxima fase no fluxo completo que esteja nas visíveis
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
         if (idxAtual === -1) return null;
 
         for (let i = idxAtual + 1; i < fluxoCompleto.length; i++) {
             const candidato = fluxoCompleto[i];
-            if (visiveis.includes(candidato)) {
-                return candidato;
-            }
+            if (visiveis.includes(candidato)) return candidato;
         }
-        return null;
+        return null; // sem próxima (não renderizamos mensagem de 'concluído')
     }, [efetivo, fasesVisiveis]);
-
-    // Está concluído somente se a fase atual for a fase final (fase11)
-    const concluido = !!efetivo && efetivo.status === FASE_FINAL;
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
-            <h2 className="text-xl font-semibold">Registrar uma ação</h2>
+            <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold">Registrar uma ação</h2>
+                {efetivo && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                        status atual (backend): {String(efetivo.status)}
+                    </span>
+                )}
+            </div>
 
-            {/* Linha de status de sincronização */}
+            {/* Status de sincronização */}
             <div className="mt-2 text-xs text-muted-foreground">
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
                     <span className="text-red-600">
-                        {onlineError} — exibindo dados locais como fallback.
+                        {onlineError} — tente novamente.
                     </span>
                 )}
             </div>
 
             {!efetivo && (
                 <p className="mt-4 text-sm text-muted-foreground">
-                    Nenhum registro selecionado. Selecione um registro para continuar.
+                    Nenhum registro selecionado ou sem dados do servidor.
                 </p>
             )}
 
-            {efetivo && fasesVisiveis.length === 0 && (
-                <p className="mt-4 text-sm text-muted-foreground">
-                    Nenhuma etapa disponível para este registro com as condições atuais.
-                </p>
-            )}
-
-            {efetivo && fasesVisiveis.length > 0 && (
+            {efetivo && (
                 <>
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-                            return (
-                                <button
-                                    key={f}
-                                    type="button"
-                                    disabled={!habilitar}
-                                    onClick={() => registrarAcao(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
-                                        }`}
-                                    title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
-                                >
-                                    {acaoToStatus(f)}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Só exibe "concluído" quando realmente estiver na fase11 */}
-                    {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            Fluxo concluído para este registro.
-                        </p>
+                    {/* ÚNICO botão: a PRÓXIMA etapa do status atual do backend */}
+                    {prox ? (
+                        <div className="mt-4">
+                            <button
+                                type="button"
+                                disabled={acaoSubmitting || loadingOnline}
+                                onClick={() => registrarAcao(prox)}
+                                className={`rounded-md border px-4 py-3 text-sm font-medium ${!acaoSubmitting && !loadingOnline ? "hover:bg-muted" : "opacity-50 pointer-events-none"
+                                    }`}
+                                title="Confirmar próxima etapa"
+                            >
+                                {acaoToStatus(prox)}
+                            </button>
+                        </div>
+                    ) : (
+                        // Sem próxima etapa aplicável -> não mostramos “fluxo concluído” nem nada
+                        <div className="mt-4 text-xs text-muted-foreground">
+                            {/* intencionalmente em branco/baixo ruído */}
+                            {/* Se quiser, pode colocar algo discreto como: "Sem próxima etapa aplicável no momento." */}
+                        </div>
                     )}
                 </>
             )}
