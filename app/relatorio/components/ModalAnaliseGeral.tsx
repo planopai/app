@@ -2,10 +2,11 @@
 import React from "react";
 import { formataDataDia } from "./UtilDatas";
 
-/* ========= Tipos ========= */
+/* ===== Tipos recebidos do container ===== */
 type Row = { key: string; item: string; tipo: string; quantidade: number };
 type Evento = { nome: string; data: string; itemKey?: string };
 
+/* ===== Props ===== */
 interface Props {
     aberto: boolean;
     onFechar: () => void;
@@ -24,131 +25,122 @@ interface Props {
     rows: Row[];
     registrosComEventoNoPeriodo: number;
 
+    /** Para tanato: idealmente com itemKey = "tanato|Sim" */
     listaTanatoPeriodo: Evento[];
+
     loading: boolean;
     onRecarregar: () => void;
 }
 
-/* ========= Helpers ========= */
-const fmt = (n: number) =>
+/* ===== Helpers ===== */
+const fmt0 = (n: number) =>
     new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 
-const pct = (num: number, den: number) =>
+const pct1 = (num: number, den: number) =>
     den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—";
 
-/** Formata data com tolerância */
-function safeFormatDate(value: string | null | undefined): string {
+function safeFormatDate(value?: string | null): string {
     if (!value) return "-";
     try {
         return formataDataDia(value);
     } catch {
-        const v = String(value);
-        const d = new Date(v);
-        return isNaN(d.getTime()) ? v : d.toLocaleDateString();
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? value : d.toLocaleDateString();
     }
 }
 
-/* ========= Gráfico (SVG) – Top N ========= */
+function isYes(v: string) {
+    const s = (v || "").trim().toLowerCase();
+    return s === "sim" || s === "yes" || s === "true" || s === "1";
+}
+
+/* ===== Gráfico (SVG) – mais espaçado e legível ===== */
 function BarChart({
     data,
-    height = 260,
-    barGap = 8,
-    padding = 28,
+    height = 320,
+    padding = 40,
+    barW = 30,
+    gap = 18,
+    yTicks = 4,
+    title,
 }: {
     data: Array<{ label: string; value: number }>;
     height?: number;
-    barGap?: number;
     padding?: number;
+    barW?: number;
+    gap?: number;
+    yTicks?: number;
+    title?: string;
 }) {
-    // limita a 8 itens pra caber legal
-    const items = data.slice(0, 8);
+    const items = data.slice(0, 10); // até 10 barras
     const maxVal = Math.max(1, ...items.map((d) => d.value));
-    const barW = 28;
-    const width = padding * 2 + items.length * barW + (items.length - 1) * barGap;
+    const width = padding * 2 + (items.length * barW) + ((items.length - 1) * gap);
 
     return (
-        <svg
-            viewBox={`0 0 ${width} ${height}`}
-            role="img"
-            aria-label="Gráfico de barras - Top itens"
-            className="w-full h-[260px]"
-        >
-            {/* eixo Y simples */}
-            <line
-                x1={padding - 6}
-                y1={padding}
-                x2={padding - 6}
-                y2={height - padding}
-                stroke="#e5e7eb"
-            />
-            {/* barras */}
-            {items.map((d, i) => {
-                const x = padding + i * (barW + barGap);
-                const h = Math.max(2, ((height - padding * 2) * d.value) / maxVal);
-                const y = height - padding - h;
-                return (
-                    <g key={d.label}>
-                        <rect
-                            x={x}
-                            y={y}
-                            width={barW}
-                            height={h}
-                            rx={6}
-                            className="fill-blue-500 hover:opacity-80 transition-opacity"
-                        />
-                        {/* valor acima da barra */}
-                        <text
-                            x={x + barW / 2}
-                            y={y - 6}
-                            textAnchor="middle"
-                            fontSize="10"
-                            className="fill-gray-700"
-                        >
-                            {d.value}
-                        </text>
-                        {/* rótulo no eixo X */}
-                        <text
-                            x={x + barW / 2}
-                            y={height - padding + 12}
-                            textAnchor="middle"
-                            fontSize="10"
-                            className="fill-gray-600"
-                        >
-                            {d.label.length > 10 ? d.label.slice(0, 10) + "…" : d.label}
-                        </text>
-                    </g>
-                );
-            })}
-            {/* ticks % (25/50/75/100) */}
-            {[0.25, 0.5, 0.75, 1].map((t, idx) => {
-                const y = height - padding - (height - padding * 2) * t;
-                const val = Math.round(maxVal * t);
-                return (
-                    <g key={idx}>
-                        <line
-                            x1={padding - 6}
-                            y1={y}
-                            x2={width - padding}
-                            y2={y}
-                            stroke="#f3f4f6"
-                        />
-                        <text
-                            x={padding - 10}
-                            y={y + 3}
-                            textAnchor="end"
-                            fontSize="10"
-                            className="fill-gray-500"
-                        >
-                            {val}
-                        </text>
-                    </g>
-                );
-            })}
-        </svg>
+        <div className="w-full">
+            {title && (
+                <div className="px-4 pt-4 text-sm font-semibold text-gray-700">{title}</div>
+            )}
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[320px]">
+                {/* grade Y */}
+                {Array.from({ length: yTicks }, (_, i) => i + 1).map((tick) => {
+                    const t = tick / yTicks;
+                    const y = height - padding - (height - padding * 2) * t;
+                    const val = Math.round(maxVal * t);
+                    return (
+                        <g key={tick}>
+                            <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#eef2f7" />
+                            <text x={padding - 8} y={y + 3} textAnchor="end" fontSize="10" fill="#6b7280">
+                                {val}
+                            </text>
+                        </g>
+                    );
+                })}
+                {/* eixo Y */}
+                <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#e5e7eb" />
+                {/* barras */}
+                {items.map((d, i) => {
+                    const x = padding + i * (barW + gap);
+                    const h = Math.max(2, ((height - padding * 2) * d.value) / maxVal);
+                    const y = height - padding - h;
+                    return (
+                        <g key={d.label}>
+                            <rect
+                                x={x}
+                                y={y}
+                                width={barW}
+                                height={h}
+                                rx={8}
+                                className="fill-blue-500/90 hover:fill-blue-500 transition-colors"
+                            />
+                            <text
+                                x={x + barW / 2}
+                                y={y - 6}
+                                textAnchor="middle"
+                                fontSize="11"
+                                fill="#374151"
+                            >
+                                {d.value}
+                            </text>
+                            {/* rótulo (quebra simples) */}
+                            <text
+                                x={x + barW / 2}
+                                y={height - padding + 12}
+                                textAnchor="middle"
+                                fontSize="10"
+                                fill="#6b7280"
+                            >
+                                {d.label.length > 16 ? d.label.slice(0, 16) + "…" : d.label}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
     );
 }
 
-/* ========= Componente ========= */
+/* ===== Componente ===== */
 export default function ModalAnaliseGeral({
     aberto,
     onFechar,
@@ -168,69 +160,85 @@ export default function ModalAnaliseGeral({
 }: Props) {
     if (!aberto) return null;
 
-    // Reset da seleção ao trocar filtros
+    // Zera seleção quando filtros mudam
     React.useEffect(() => {
         setSelectedItem(undefined);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [aDe, aAte, somenteTanato]);
 
-    // Linhas visíveis
-    const linhasVisiveis = React.useMemo(() => {
-        if (!Array.isArray(rows)) return [] as Row[];
-        const base = rows;
-        if (!somenteTanato) return base;
-        return base.filter((r) => r.tipo?.toLowerCase().includes("tanato"));
-    }, [rows, somenteTanato]);
+    // 1) Separa TANATO (conta apenas "Sim") e ITENS (tudo que não é Tanatopraxia)
+    const {
+        itensRows,
+        totalItensUsados,
+        tanatoCount,
+        tipoTotais,
+        topItens,
+    } = React.useMemo(() => {
+        const itens: Row[] = [];
+        let tanatos = 0;
+        const porTipo = new Map<string, number>();
+        const mapTop = new Map<string, number>();
 
-    // Totais e agregações
-    const { totalGeral, porTipo, topItens } = React.useMemo(() => {
-        const total = linhasVisiveis.reduce((s, r) => s + r.quantidade, 0);
-        const mapTipo = new Map<string, number>();
-        const mapItem = new Map<string, number>();
-
-        for (const r of linhasVisiveis) {
-            mapTipo.set(r.tipo, (mapTipo.get(r.tipo) || 0) + r.quantidade);
-            // top itens considera label composto por tipo:item para evitar colisão
-            const label = `${r.tipo}: ${r.item}`;
-            mapItem.set(label, (mapItem.get(label) || 0) + r.quantidade);
+        for (const r of rows || []) {
+            const isTanato = (r.tipo || "").toLowerCase().includes("tanato");
+            if (isTanato) {
+                // NUNCA listar "Tanato Sim/Não" como item; só somar as que forem "Sim"
+                if (isYes(r.item)) tanatos += r.quantidade || 0;
+                continue;
+            }
+            // demais itens (urna, ornamentação, assistência etc.)
+            itens.push(r);
+            porTipo.set(r.tipo, (porTipo.get(r.tipo) || 0) + (r.quantidade || 0));
+            const label = `${r.tipo}: ${r.item}`; // evita colisão de nomes entre tipos
+            mapTop.set(label, (mapTop.get(label) || 0) + (r.quantidade || 0));
         }
 
-        const arrTipo = Array.from(mapTipo, ([tipo, quantidade]) => ({
+        const totalItens = itens.reduce((s, r) => s + (r.quantidade || 0), 0);
+
+        const arrTipo = Array.from(porTipo, ([tipo, quantidade]) => ({
             tipo,
             quantidade,
         })).sort((a, b) => b.quantidade - a.quantidade);
 
-        const arrTop = Array.from(mapItem, ([label, value]) => ({ label, value }))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 12);
+        const arrTop = Array.from(mapTop, ([label, value]) => ({ label, value }))
+            .sort((a, b) => b.value - a.value);
 
-        return { totalGeral: total, porTipo: arrTipo, topItens: arrTop };
-    }, [linhasVisiveis]);
+        return {
+            itensRows: itens,
+            totalItensUsados: totalItens,
+            tanatoCount: tanatos,
+            tipoTotais: arrTipo,
+            topItens: arrTop,
+        };
+    }, [rows]);
 
-    // Evento(s) do item selecionado
-    const eventosSelecionados = React.useMemo<Evento[]>(() => {
+    // Filtragem "Apenas tanatopraxia" agora só afeta os KPIs/tabela de itens (mantemos tanatoCount à parte)
+    const linhasVisiveis = React.useMemo<Row[]>(() => {
+        if (!Array.isArray(itensRows)) return [];
+        return somenteTanato ? [] : itensRows;
+    }, [itensRows, somenteTanato]);
+
+    const totalGeralTabela = linhasVisiveis.reduce((s, r) => s + (r.quantidade || 0), 0);
+
+    // Eventos do item selecionado (no momento, o container envia só para Tanato)
+    const eventosSelecionados = React.useMemo(() => {
         if (!selectedItem) return [];
-        if (!Array.isArray(listaTanatoPeriodo)) return [];
-        const possuiVinculo = listaTanatoPeriodo.some((e) => !!e.itemKey);
+        // tentamos filtrar por itemKey quando disponível
+        const possuiVinculo = Array.isArray(listaTanatoPeriodo) && listaTanatoPeriodo.some((e) => !!e.itemKey);
         if (possuiVinculo) {
             return listaTanatoPeriodo.filter((e) => e.itemKey === selectedItem);
         }
-        // sem vínculo -> mostra todos do período
-        return listaTanatoPeriodo;
+        return [];
     }, [selectedItem, listaTanatoPeriodo]);
 
     const handleLinhaClick = (k: string) => {
         setSelectedItem(selectedItem === k ? undefined : k);
     };
 
-    // KPIs
-    const itemMaisUsado = topItens[0]?.label ?? "—";
-    const maiorTipo = porTipo[0]?.tipo ?? "—";
-    const qtdMaiorTipo = porTipo[0]?.quantidade ?? 0;
-
+    /* ===== UI ===== */
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white w-[96%] md:w-[90%] lg:w-[80%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
+            <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
                 {/* Cabeçalho */}
                 <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/90 p-4 backdrop-blur">
                     <div>
@@ -256,7 +264,7 @@ export default function ModalAnaliseGeral({
                 </div>
 
                 {/* Filtros */}
-                <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Data inicial</span>
                         <input
@@ -281,10 +289,10 @@ export default function ModalAnaliseGeral({
                             checked={!!somenteTanato}
                             onChange={(e) => setSomenteTanato(e.target.checked)}
                         />
-                        <span className="text-sm">Apenas Tanatopraxia</span>
+                        <span className="text-sm">Ocultar tabela de itens</span>
                     </label>
                     <div className="text-sm text-gray-500 self-center">
-                        {registrosComEventoNoPeriodo} registro(s) encontrados
+                        {registrosComEventoNoPeriodo} registro(s) no período
                     </div>
                 </div>
 
@@ -294,172 +302,157 @@ export default function ModalAnaliseGeral({
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Carregando análise…
                         </div>
-                    ) : linhasVisiveis.length === 0 ? (
+                    ) : rows.length === 0 ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Nenhum dado para o período/filtro selecionado.
                         </div>
                     ) : (
                         <>
-                            {/* KPI Cards */}
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+                            {/* KPIs – separados e sem “Local do Velório” */}
+                            <div className="grid gap-4 lg:grid-cols-3 mb-6">
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Total de usos (itens)</div>
-                                    <div className="mt-1 text-2xl font-bold">{fmt(totalGeral)}</div>
+                                    <div className="text-xs text-gray-500">Itens usados no período</div>
+                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalItensUsados)}</div>
+                                    <div className="text-xs text-gray-500">Soma de todos os itens (sem Tanato)</div>
+                                </div>
+                                <div className="rounded-xl border p-4">
+                                    <div className="text-xs text-gray-500">Tanatopraxias realizadas</div>
+                                    <div className="mt-1 text-3xl font-bold">{fmt0(tanatoCount)}</div>
                                     <div className="text-xs text-gray-500">
-                                        em {linhasVisiveis.length} linha(s) agregadas
+                                        Contagem de “Sim” (1 por registro)
                                     </div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Tipo mais recorrente</div>
-                                    <div className="mt-1 text-lg font-semibold">{maiorTipo}</div>
-                                    <div className="text-xs text-gray-500">
-                                        {fmt(qtdMaiorTipo)} ({pct(qtdMaiorTipo, totalGeral)})
+                                    <div className="text-xs text-gray-500">Tipos mais usados (itens)</div>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {tipoTotais.slice(0, 3).map((t) => (
+                                            <span
+                                                key={t.tipo}
+                                                className="rounded-full border px-2 py-0.5 text-xs"
+                                                title={`${t.tipo}: ${fmt0(t.quantidade)} (${pct1(t.quantidade, totalItensUsados)})`}
+                                            >
+                                                {t.tipo} — {pct1(t.quantidade, totalItensUsados)}
+                                            </span>
+                                        ))}
+                                        {tipoTotais.length === 0 && (
+                                            <span className="text-xs text-gray-500">—</span>
+                                        )}
                                     </div>
-                                </div>
-                                <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Item mais usado</div>
-                                    <div className="mt-1 text-lg font-semibold">
-                                        {itemMaisUsado.replace(/^[^:]+:\s*/, "")}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                        dentro do tipo {itemMaisUsado.split(":")[0] || "—"}
-                                    </div>
-                                </div>
-                                <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Registros (sepultamentos)</div>
-                                    <div className="mt-1 text-2xl font-bold">
-                                        {fmt(registrosComEventoNoPeriodo)}
-                                    </div>
-                                    <div className="text-xs text-gray-500">no período</div>
                                 </div>
                             </div>
 
-                            {/* Gráfico: Top Itens */}
-                            <div className="rounded-2xl border overflow-hidden mb-4">
+                            {/* GRÁFICO EM CARTÃO PRÓPRIO (bem separado e espaçado) */}
+                            <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">Top Itens no Período</div>
-                                    <div className="text-xs text-gray-500">
-                                        Mostrando até 8 itens
+                                    <div className="text-sm font-semibold">Top itens do período (sem Tanato)</div>
+                                    <div className="text-xs text-gray-500">máx. 10 itens</div>
+                                </div>
+                                <div className="p-2 md:p-4">
+                                    <BarChart
+                                        data={topItens}            // já excluído tanato
+                                        height={340}
+                                        padding={48}
+                                        barW={32}
+                                        gap={24}                   // barras mais separadas
+                                        yTicks={5}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* TABELA DE ITENS (sem Tanato) */}
+                            {!somenteTanato && (
+                                <div className="rounded-2xl border overflow-hidden mb-6">
+                                    <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
+                                        Detalhamento por item (sem Tanatopraxia)
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full text-sm">
+                                            <thead>
+                                                <tr className="bg-gray-100">
+                                                    <th className="p-2 border text-left">Item</th>
+                                                    <th className="p-2 border text-left">Tipo</th>
+                                                    <th className="p-2 border text-right">Qtd.</th>
+                                                    <th className="p-2 border text-right">% do total</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {linhasVisiveis.map((r) => (
+                                                    <tr
+                                                        key={r.key}
+                                                        className={`cursor-pointer hover:bg-blue-50 ${selectedItem === r.key ? "bg-blue-100" : ""
+                                                            }`}
+                                                        onClick={() => handleLinhaClick(r.key)}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === " ")
+                                                                handleLinhaClick(r.key);
+                                                        }}
+                                                    >
+                                                        <td className="p-2 border">{r.item}</td>
+                                                        <td className="p-2 border">{r.tipo}</td>
+                                                        <td className="p-2 border text-right">{fmt0(r.quantidade)}</td>
+                                                        <td className="p-2 border text-right">
+                                                            {pct1(r.quantidade, totalGeralTabela)}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                <tr className="bg-gray-50 font-semibold">
+                                                    <td className="p-2 border" colSpan={2}>
+                                                        Total (itens)
+                                                    </td>
+                                                    <td className="p-2 border text-right">{fmt0(totalGeralTabela)}</td>
+                                                    <td className="p-2 border text-right">100%</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
-                                <div className="p-2">
-                                    <BarChart data={topItens} />
-                                </div>
-                            </div>
+                            )}
 
-                            {/* Resumo por tipo */}
-                            <div className="rounded-2xl border overflow-hidden mb-4">
-                                <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
-                                    Resumo por Tipo
-                                </div>
-                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 p-3">
-                                    {porTipo.map((t) => (
-                                        <div key={t.tipo} className="rounded-lg border p-3">
-                                            <div className="text-sm font-semibold">{t.tipo}</div>
-                                            <div className="text-xs text-gray-500">
-                                                {fmt(t.quantidade)} ({pct(t.quantidade, totalGeral)})
-                                            </div>
-                                            {/* mini barra de progresso */}
-                                            <div className="mt-2 h-2 rounded bg-gray-100">
-                                                <div
-                                                    className="h-2 rounded bg-blue-500"
-                                                    style={{
-                                                        width:
-                                                            totalGeral > 0
-                                                                ? `${(t.quantidade / totalGeral) * 100}%`
-                                                                : "0%",
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Tabela detalhada */}
+                            {/* LISTA DE TANATO — nomes dos falecidos (se o container enviar) */}
                             <div className="rounded-2xl border overflow-hidden">
                                 <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
-                                    Detalhamento por Item
+                                    Tanatopraxias no período — {fmt0(tanatoCount)}
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full text-sm">
-                                        <thead>
-                                            <tr className="bg-gray-100">
-                                                <th className="p-2 border text-left">Item</th>
-                                                <th className="p-2 border text-left">Tipo</th>
-                                                <th className="p-2 border text-right">Qtd.</th>
-                                                <th className="p-2 border text-right">% do total</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {linhasVisiveis.map((r) => (
-                                                <tr
-                                                    key={r.key}
-                                                    className={`cursor-pointer hover:bg-blue-50 ${selectedItem === r.key ? "bg-blue-100" : ""
-                                                        }`}
-                                                    onClick={() => handleLinhaClick(r.key)}
-                                                    role="button"
-                                                    tabIndex={0}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter" || e.key === " ")
-                                                            handleLinhaClick(r.key);
-                                                    }}
-                                                >
-                                                    <td className="p-2 border">{r.item}</td>
-                                                    <td className="p-2 border">{r.tipo}</td>
-                                                    <td className="p-2 border text-right">{fmt(r.quantidade)}</td>
-                                                    <td className="p-2 border text-right">
-                                                        {pct(r.quantidade, totalGeral)}
-                                                    </td>
-                                                </tr>
+                                <div className="p-4">
+                                    {listaTanatoPeriodo.length === 0 ? (
+                                        <div className="text-sm text-gray-600">
+                                            Sem eventos de tanatopraxia para o período selecionado.
+                                        </div>
+                                    ) : (
+                                        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                            {listaTanatoPeriodo.map((ev, idx) => (
+                                                <li key={`${ev.nome}-${ev.data}-${idx}`} className="rounded-md border p-2">
+                                                    <div className="text-sm font-medium truncate">{ev.nome}</div>
+                                                    <div className="text-xs text-gray-500">{safeFormatDate(ev.data)}</div>
+                                                </li>
                                             ))}
-                                            {/* totalizador */}
-                                            <tr className="bg-gray-50 font-semibold">
-                                                <td className="p-2 border" colSpan={2}>
-                                                    Total
-                                                </td>
-                                                <td className="p-2 border text-right">
-                                                    {fmt(totalGeral)}
-                                                </td>
-                                                <td className="p-2 border text-right">100%</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                        </ul>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Eventos do item selecionado */}
+                            {/* (Opcional) Área de eventos do item selecionado
+                  — hoje seu container só popula para Tanato.
+                  Mantive para quando você expandir e enviar itemKey dos outros itens. */}
                             {selectedItem && (
-                                <div className="rounded-2xl border overflow-hidden mt-4">
+                                <div className="rounded-2xl border overflow-hidden mt-6">
                                     <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
                                         Eventos — {selectedItem}
                                     </div>
                                     <div className="p-4">
                                         {eventosSelecionados.length === 0 ? (
                                             <div className="text-sm text-gray-600">
-                                                Nenhum evento para este item/período.
-                                                {!listaTanatoPeriodo.some((e) => e.itemKey) &&
-                                                    listaTanatoPeriodo.length > 0 && (
-                                                        <span className="block mt-1">
-                                                            Observação: os eventos recebidos não possuem vínculo com
-                                                            as linhas (<code>itemKey</code>). Inclua esse campo em{" "}
-                                                            <em>listaTanatoPeriodo</em> para filtrar por item.
-                                                        </span>
-                                                    )}
+                                                Sem eventos vinculados a este item (o backend ainda não envia a
+                                                lista por item). Os nomes acima listam somente tanatopraxias.
                                             </div>
                                         ) : (
                                             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                                 {eventosSelecionados.map((ev, idx) => (
-                                                    <li
-                                                        key={`${ev.nome}-${ev.data}-${idx}`}
-                                                        className="rounded-md border p-2"
-                                                    >
-                                                        <div className="text-sm font-medium truncate">
-                                                            {ev.nome}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500">
-                                                            {safeFormatDate(ev.data)}
-                                                        </div>
+                                                    <li key={`${ev.nome}-${ev.data}-${idx}`} className="rounded-md border p-2">
+                                                        <div className="text-sm font-medium truncate">{ev.nome}</div>
+                                                        <div className="text-xs text-gray-500">{safeFormatDate(ev.data)}</div>
                                                     </li>
                                                 ))}
                                             </ul>
