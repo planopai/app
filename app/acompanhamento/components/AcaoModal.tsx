@@ -106,8 +106,7 @@ export default function AcaoModal({
     }, [online, acaoId, registroLocal]);
 
     // Skips (iguais aos usados no cálculo)
-    const skipConservacao =
-        !!efetivo && isTanatoNo(efetivo.tanato);
+    const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando =
         !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
@@ -122,7 +121,7 @@ export default function AcaoModal({
         [skipTransportando, skipConservacao]
     );
 
-    // Próxima fase calculada pela função centralizada (helpers)
+    // Próxima fase calculada — usa a MESMA lista filtrada (fasesVisiveis)
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
         return proximaFaseDoRegistro(
@@ -131,9 +130,9 @@ export default function AcaoModal({
                 local_velorio: efetivo.local_velorio,
                 tanato: efetivo.tanato,
             },
-            fases as readonly string[]
+            fasesVisiveis as readonly string[]
         ) as Fase | null;
-    }, [efetivo]);
+    }, [efetivo, fasesVisiveis]);
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
