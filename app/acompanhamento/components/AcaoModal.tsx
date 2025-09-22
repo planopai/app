@@ -16,7 +16,7 @@ import {
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
 
-// Fase final conforme seu mapeamento: 'material recolhido' => 'fase11'
+// Fase final: 'material recolhido' => 'fase11'
 const FASE_FINAL = "fase11" as Fase;
 
 export default function AcaoModal({
@@ -71,7 +71,7 @@ export default function AcaoModal({
                 // normaliza para Fase
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
-                    id: String(s.id),
+                    id: String(s.id ?? acaoId),
                     status: statusFix,
                     local_velorio: s.local_velorio || "",
                     tanato: s.tanato || "",
@@ -90,8 +90,9 @@ export default function AcaoModal({
     }, [open, acaoId]);
 
     // Dados efetivos usados na UI (prefere online; cai para local)
+    // ✅ Se veio "online", usa ele SEM checar igualdade de id (evita travar quando o backend retorna outro id).
     const efetivo = useMemo(() => {
-        if (online && online.id && String(online.id) === String(acaoId)) {
+        if (online) {
             return {
                 status: online.status as Fase,
                 local_velorio: online.local_velorio,
@@ -106,7 +107,7 @@ export default function AcaoModal({
             };
         }
         return null;
-    }, [online, acaoId, registroLocal]);
+    }, [online, registroLocal]);
 
     // Skips (iguais aos usados no cálculo)
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
@@ -114,7 +115,7 @@ export default function AcaoModal({
         !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
     // Fases visíveis (aplica os skips uma única vez)
-    // ⚠️ Nunca esconda a fase que é o status atual (para não "perder" a referência do fluxo).
+    // ⚠️ Nunca esconda a fase que é o status atual (para não perder referência do fluxo)
     const fasesVisiveis = useMemo<readonly Fase[]>(
         () =>
             (fases as readonly Fase[]).filter((f) => {
@@ -126,10 +127,7 @@ export default function AcaoModal({
         [skipTransportando, skipConservacao, efetivo]
     );
 
-    // Próxima fase calculada — robusta:
-    // 1) tenta via helper com as fases visíveis (caso status atual esteja nelas)
-    // 2) se vier null (por status atual ter sido "skipável" em outro momento), faz fallback:
-    //    procura no fluxo completo a próxima fase que esteja em fasesVisiveis.
+    // Próxima fase calculada — robusta
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
 
@@ -139,7 +137,7 @@ export default function AcaoModal({
         // Se já está na fase final, não há próxima
         if (efetivo.status === FASE_FINAL) return null;
 
-        // Tenta pelo helper considerando só as visíveis
+        // 1) tenta via helper com as fases visíveis
         let p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
@@ -151,8 +149,7 @@ export default function AcaoModal({
 
         if (p) return p;
 
-        // Fallback: se o status atual não estiver em 'visiveis' ou se a próxima calculada
-        // for uma fase oculta, pula no fluxo completo até achar a próxima VISÍVEL
+        // 2) fallback: caminha no fluxo completo até achar a próxima fase visível
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
         if (idxAtual === -1) return null;
 
