@@ -5,7 +5,9 @@ import { capitalizeStatus } from "./helpers";
 
 interface Props {
     registros: Registro[];
-    onAcao: (idx: number) => void;
+    // 🔧 onAcao agora recebe o **ID** do registro
+    onAcao: (id: Registro["id"]) => void;
+    // Mantido por índice para não quebrar o InfoModal agora
     onInfo: (idx: number) => void;
 }
 
@@ -41,19 +43,9 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                     <tr>
                         <th className="w-40 px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Falecido(a)</th>
-
-                        {/* Agente: escondido no mobile, visível a partir de sm */}
-                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">
-                            Agente
-                        </th>
-
-                        {/* Ações: no mobile também renderiza o botão Info empilhado */}
+                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
                         <th className="w-36 px-3 py-2 text-left font-semibold">Ações</th>
-
-                        {/* Info: somente desktop/tablet */}
-                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">
-                            Info
-                        </th>
+                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">Info</th>
                     </tr>
                 </thead>
                 <tbody id="tb-registros">
@@ -82,20 +74,19 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                     </div>
                                 </td>
 
-                                {/* Agente: escondido no mobile, visível a partir de sm */}
                                 <td className="hidden px-3 py-2 sm:table-cell">{r.agente || ""}</td>
 
-                                {/* Ações: no mobile empilha Ações (azul escuro) e Info (azul claro) */}
                                 <td className="px-3 py-2">
                                     <div className="flex flex-col gap-2">
+                                        {/* 🔧 agora passa o **id** seguro, não o índice */}
                                         <button
                                             className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800"
-                                            onClick={() => onAcao(idx)}
+                                            onClick={() => r.id != null && onAcao(r.id)}
                                         >
                                             Ações
                                         </button>
 
-                                        {/* Info no mobile dentro da mesma coluna */}
+                                        {/* Info no mobile mantém índice para não quebrar InfoModal */}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
                                             onClick={() => onInfo(idx)}
@@ -105,7 +96,6 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                     </div>
                                 </td>
 
-                                {/* Info no desktop/tablet: coluna separada */}
                                 <td className="hidden px-3 py-2 sm:table-cell">
                                     <button
                                         className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"

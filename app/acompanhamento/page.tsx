@@ -45,7 +45,7 @@ export default function AcompanhamentoPage() {
     const [wizardStep, setWizardStep] = useState(0);
     const [wizardData, setWizardData] = useState<Registro>({});
     const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
-    const [wizardSubmitting, setWizardSubmitting] = useState(false); // ✅ trava cliques duplos
+    const [wizardSubmitting, setWizardSubmitting] = useState(false);
 
     // selects
     const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -59,17 +59,17 @@ export default function AcompanhamentoPage() {
     const [arrumacaoOpen, setArrumacaoOpen] = useState(false);
     const [arrumacao, setArrumacao] = useState<ArrumacaoState>(defaultArrumacao());
 
-    // Ações
+    // Ações (🔧 agora controladas por **ID**)
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-    // Info
+    // Info (mantido por índice para não quebrar InfoModal agora)
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoIdx, setInfoIdx] = useState<number | null>(null);
 
-    // Assinatura
+    // Assinatura (mantido por índice para não quebrar SignatureModal agora)
     const [signOpen, setSignOpen] = useState(false);
     const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
     const [signIdx, setSignIdx] = useState<number | null>(null);
@@ -102,7 +102,7 @@ export default function AcompanhamentoPage() {
             const sane: Registro[] = Array.isArray(data)
                 ? data.map((it: any) => ({
                     ...it,
-                    id: it?.id != null ? String(it.id) : it.id, // <- id como string pra evitar mismatch
+                    id: it?.id != null ? String(it.id) : it.id,
                     status: normalizarStatus(it?.status) ?? it?.status,
                 }))
                 : [];
@@ -218,13 +218,11 @@ export default function AcompanhamentoPage() {
     /* -------------------- Ciclos -------------------- */
 
     useEffect(() => {
-        // carrega na chegada
         fetchRegistros();
         fetchAvisos();
     }, [fetchRegistros, fetchAvisos]);
 
     useEffect(() => {
-        // polling — mantém registros e avisos frescos mesmo com modal aberto
         const intReg = setInterval(fetchRegistros, 10000);
         const intAv = setInterval(fetchAvisos, 3000);
 
@@ -300,7 +298,7 @@ export default function AcompanhamentoPage() {
 
     const abrirWizard = useCallback(
         (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
-            setWizardSubmitting(false); // 🔁 reset da trava ao abrir
+            setWizardSubmitting(false);
             const editing = tipo === "editar";
             setWizardEditing(editing);
             setWizardIdx(idx);
@@ -373,7 +371,7 @@ export default function AcompanhamentoPage() {
     }, [wizardData, wizardStep, materiais, arrumacao]);
 
     const concluirWizard = useCallback(async () => {
-        if (wizardSubmitting) return; // 🚫 impede clique duplo
+        if (wizardSubmitting) return;
         const dataAtualizada = salvarGrupoWizard();
         if (!dataAtualizada) return;
 
@@ -394,7 +392,7 @@ export default function AcompanhamentoPage() {
         }
 
         try {
-            setWizardSubmitting(true); // ⏳ trava e mostra “Salvando…”
+            setWizardSubmitting(true);
             const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
             const json = await enviarRegistroPHP(payload);
             if (json?.sucesso) {
@@ -407,23 +405,19 @@ export default function AcompanhamentoPage() {
         } catch (e: any) {
             setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
         } finally {
-            setWizardSubmitting(false); // 🔓 libera novamente (caso continue aberto)
+            setWizardSubmitting(false);
         }
     }, [salvarGrupoWizard, wizardRestrictGroup, wizardEditing, fetchRegistros, wizardSubmitting]);
 
     /* -------------------- Ações (status) -------------------- */
 
-    const abrirPopupAcao = useCallback(
-        (idx: number) => {
-            const r = registros[idx];
-            if (!r) return;
-            setAcaoMsg(null);
-            setAcaoId(r.id != null ? String(r.id) : null); // id normalizado para string
-            setAcaoSubmitting(false);
-            setAcaoOpen(true);
-        },
-        [registros]
-    );
+    // 🔧 agora abrimos o modal por **ID**, não por índice
+    const abrirPopupAcaoPorId = useCallback((id: Registro["id"]) => {
+        setAcaoMsg(null);
+        setAcaoId(id != null ? String(id) : null);
+        setAcaoSubmitting(false);
+        setAcaoOpen(true);
+    }, []);
 
     const registrarAcao = useCallback(
         async (acao: string) => {
@@ -443,15 +437,15 @@ export default function AcompanhamentoPage() {
 
                 if (json?.sucesso) {
                     setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
-                    await fetchRegistros(); // garante status/“prox” atualizados
-                    setAcaoOpen(false); // fecha para evitar estado velho no modal
+                    await fetchRegistros();
+                    setAcaoOpen(false);
                 } else {
                     setAcaoMsg({ text: json?.erro || "Erro ao atualizar status.", ok: false });
                 }
             } catch (e: any) {
                 setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
             } finally {
-                setAcaoSubmitting(false); // SEMPRE reabilita os botões
+                setAcaoSubmitting(false);
             }
         },
         [acaoId, fetchRegistros, acaoSubmitting]
@@ -518,7 +512,9 @@ export default function AcompanhamentoPage() {
 
             <TabelaAtendimentos
                 registros={registros}
-                onAcao={(idx: number) => abrirPopupAcao(idx)}
+                // 🔧 agora recebemos **id** aqui
+                onAcao={(id) => abrirPopupAcaoPorId(id)}
+                // mantém Info por índice para não quebrar InfoModal agora
                 onInfo={(idx: number) => {
                     setInfoIdx(idx);
                     setInfoOpen(true);
@@ -559,7 +555,7 @@ export default function AcompanhamentoPage() {
                 setArrumacaoOpen={setArrumacaoOpen}
                 salvarGrupoWizard={salvarGrupoWizard}
                 concluirWizard={concluirWizard}
-                wizardSubmitting={wizardSubmitting} // ✅ passa o estado de “salvando…”
+                wizardSubmitting={wizardSubmitting}
             />
 
             <MateriaisModal
@@ -593,7 +589,7 @@ export default function AcompanhamentoPage() {
                 setOpen={setInfoOpen}
                 infoIdx={infoIdx}
                 abrirWizard={abrirWizard}
-                // novos props para assinatura:
+                // assinatura ainda por índice (compatibilidade com InfoModal atual)
                 abrirAssinatura={(idx, tipo) => abrirAssinatura(idx, tipo)}
                 registro={infoIdx != null ? registros[infoIdx] : null}
             />
@@ -604,7 +600,6 @@ export default function AcompanhamentoPage() {
                 registro={signIdx != null ? registros[signIdx] : undefined}
                 tipo={signTipo}
                 onSaved={() => {
-                    // recarrega a tabela para refletir as URLs recém-salvas
                     fetchRegistros();
                 }}
             />
