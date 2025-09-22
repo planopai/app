@@ -2,11 +2,10 @@
 import React from "react";
 import { formataDataDia } from "./UtilDatas";
 
-/* ===== Tipos recebidos do container ===== */
+/* ===== Tipos ===== */
 type Row = { key: string; item: string; tipo: string; quantidade: number };
 type Evento = { nome: string; data: string; itemKey?: string };
 
-/* ===== Props ===== */
 interface Props {
     aberto: boolean;
     onFechar: () => void;
@@ -54,14 +53,14 @@ function isYes(v: string) {
     return s === "sim" || s === "yes" || s === "true" || s === "1";
 }
 
-/* ===== Gráfico (SVG) – mais espaçado e legível ===== */
+/* ===== Gráfico (SVG) – separado e legível ===== */
 function BarChart({
     data,
-    height = 320,
-    padding = 40,
-    barW = 30,
-    gap = 18,
-    yTicks = 4,
+    height = 340,
+    padding = 48,
+    barW = 32,
+    gap = 24,
+    yTicks = 5,
     title,
 }: {
     data: Array<{ label: string; value: number }>;
@@ -72,16 +71,19 @@ function BarChart({
     yTicks?: number;
     title?: string;
 }) {
-    const items = data.slice(0, 10); // até 10 barras
+    const items = data.slice(0, 10); // Top 10
     const maxVal = Math.max(1, ...items.map((d) => d.value));
-    const width = padding * 2 + (items.length * barW) + ((items.length - 1) * gap);
+    const width =
+        padding * 2 + items.length * barW + Math.max(0, items.length - 1) * gap;
 
     return (
         <div className="w-full">
             {title && (
-                <div className="px-4 pt-4 text-sm font-semibold text-gray-700">{title}</div>
+                <div className="px-4 pt-4 text-sm font-semibold text-gray-700">
+                    {title}
+                </div>
             )}
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[320px]">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[360px]">
                 {/* grade Y */}
                 {Array.from({ length: yTicks }, (_, i) => i + 1).map((tick) => {
                     const t = tick / yTicks;
@@ -89,15 +91,33 @@ function BarChart({
                     const val = Math.round(maxVal * t);
                     return (
                         <g key={tick}>
-                            <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#eef2f7" />
-                            <text x={padding - 8} y={y + 3} textAnchor="end" fontSize="10" fill="#6b7280">
+                            <line
+                                x1={padding}
+                                y1={y}
+                                x2={width - padding}
+                                y2={y}
+                                stroke="#eef2f7"
+                            />
+                            <text
+                                x={padding - 8}
+                                y={y + 3}
+                                textAnchor="end"
+                                fontSize="10"
+                                fill="#6b7280"
+                            >
                                 {val}
                             </text>
                         </g>
                     );
                 })}
                 {/* eixo Y */}
-                <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#e5e7eb" />
+                <line
+                    x1={padding}
+                    y1={padding}
+                    x2={padding}
+                    y2={height - padding}
+                    stroke="#e5e7eb"
+                />
                 {/* barras */}
                 {items.map((d, i) => {
                     const x = padding + i * (barW + gap);
@@ -122,7 +142,7 @@ function BarChart({
                             >
                                 {d.value}
                             </text>
-                            {/* rótulo (quebra simples) */}
+                            {/* rótulo */}
                             <text
                                 x={x + barW / 2}
                                 y={height - padding + 12}
@@ -166,7 +186,7 @@ export default function ModalAnaliseGeral({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [aDe, aAte, somenteTanato]);
 
-    // 1) Separa TANATO (conta apenas "Sim") e ITENS (tudo que não é Tanatopraxia)
+    // Separa: (A) Tanato (somente "Sim") e (B) Itens usados (todo o resto)
     const {
         itensRows,
         totalItensUsados,
@@ -182,14 +202,14 @@ export default function ModalAnaliseGeral({
         for (const r of rows || []) {
             const isTanato = (r.tipo || "").toLowerCase().includes("tanato");
             if (isTanato) {
-                // NUNCA listar "Tanato Sim/Não" como item; só somar as que forem "Sim"
+                // NÃO mostrar Tanato como item; só somar "Sim"
                 if (isYes(r.item)) tanatos += r.quantidade || 0;
                 continue;
             }
-            // demais itens (urna, ornamentação, assistência etc.)
+            // itens reais
             itens.push(r);
             porTipo.set(r.tipo, (porTipo.get(r.tipo) || 0) + (r.quantidade || 0));
-            const label = `${r.tipo}: ${r.item}`; // evita colisão de nomes entre tipos
+            const label = `${r.tipo}: ${r.item}`; // evita colisões
             mapTop.set(label, (mapTop.get(label) || 0) + (r.quantidade || 0));
         }
 
@@ -200,8 +220,9 @@ export default function ModalAnaliseGeral({
             quantidade,
         })).sort((a, b) => b.quantidade - a.quantidade);
 
-        const arrTop = Array.from(mapTop, ([label, value]) => ({ label, value }))
-            .sort((a, b) => b.value - a.value);
+        const arrTop = Array.from(mapTop, ([label, value]) => ({ label, value })).sort(
+            (a, b) => b.value - a.value
+        );
 
         return {
             itensRows: itens,
@@ -212,19 +233,23 @@ export default function ModalAnaliseGeral({
         };
     }, [rows]);
 
-    // Filtragem "Apenas tanatopraxia" agora só afeta os KPIs/tabela de itens (mantemos tanatoCount à parte)
+    // “Ocultar tabela de itens” só esconde a tabela (KPIs e gráfico ficam)
     const linhasVisiveis = React.useMemo<Row[]>(() => {
         if (!Array.isArray(itensRows)) return [];
         return somenteTanato ? [] : itensRows;
     }, [itensRows, somenteTanato]);
 
-    const totalGeralTabela = linhasVisiveis.reduce((s, r) => s + (r.quantidade || 0), 0);
+    const totalGeralTabela = linhasVisiveis.reduce(
+        (s, r) => s + (r.quantidade || 0),
+        0
+    );
 
-    // Eventos do item selecionado (no momento, o container envia só para Tanato)
+    // eventos do item selecionado (hoje o backend manda só para tanato)
     const eventosSelecionados = React.useMemo(() => {
         if (!selectedItem) return [];
-        // tentamos filtrar por itemKey quando disponível
-        const possuiVinculo = Array.isArray(listaTanatoPeriodo) && listaTanatoPeriodo.some((e) => !!e.itemKey);
+        const possuiVinculo =
+            Array.isArray(listaTanatoPeriodo) &&
+            listaTanatoPeriodo.some((e) => !!e.itemKey);
         if (possuiVinculo) {
             return listaTanatoPeriodo.filter((e) => e.itemKey === selectedItem);
         }
@@ -235,7 +260,6 @@ export default function ModalAnaliseGeral({
         setSelectedItem(selectedItem === k ? undefined : k);
     };
 
-    /* ===== UI ===== */
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
@@ -308,28 +332,43 @@ export default function ModalAnaliseGeral({
                         </div>
                     ) : (
                         <>
-                            {/* KPIs – separados e sem “Local do Velório” */}
+                            {/* KPIs */}
                             <div className="grid gap-4 lg:grid-cols-3 mb-6">
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Itens usados no período</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalItensUsados)}</div>
-                                    <div className="text-xs text-gray-500">Soma de todos os itens (sem Tanato)</div>
+                                    <div className="text-xs text-gray-500">
+                                        Itens usados no período
+                                    </div>
+                                    <div className="mt-1 text-3xl font-bold">
+                                        {fmt0(totalItensUsados)}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        Soma de todos os itens (sem Tanato)
+                                    </div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Tanatopraxias realizadas</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(tanatoCount)}</div>
+                                    <div className="text-xs text-gray-500">
+                                        Tanatopraxias realizadas
+                                    </div>
+                                    <div className="mt-1 text-3xl font-bold">
+                                        {fmt0(tanatoCount)}
+                                    </div>
                                     <div className="text-xs text-gray-500">
                                         Contagem de “Sim” (1 por registro)
                                     </div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Tipos mais usados (itens)</div>
+                                    <div className="text-xs text-gray-500">
+                                        Tipos mais usados (itens)
+                                    </div>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                         {tipoTotais.slice(0, 3).map((t) => (
                                             <span
                                                 key={t.tipo}
                                                 className="rounded-full border px-2 py-0.5 text-xs"
-                                                title={`${t.tipo}: ${fmt0(t.quantidade)} (${pct1(t.quantidade, totalItensUsados)})`}
+                                                title={`${t.tipo}: ${fmt0(t.quantidade)} (${pct1(
+                                                    t.quantidade,
+                                                    totalItensUsados
+                                                )})`}
                                             >
                                                 {t.tipo} — {pct1(t.quantidade, totalItensUsados)}
                                             </span>
@@ -341,25 +380,27 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
-                            {/* GRÁFICO EM CARTÃO PRÓPRIO (bem separado e espaçado) */}
+                            {/* GRÁFICO */}
                             <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">Top itens do período (sem Tanato)</div>
+                                    <div className="text-sm font-semibold">
+                                        Top itens do período (sem Tanato)
+                                    </div>
                                     <div className="text-xs text-gray-500">máx. 10 itens</div>
                                 </div>
                                 <div className="p-2 md:p-4">
                                     <BarChart
-                                        data={topItens}            // já excluído tanato
-                                        height={340}
-                                        padding={48}
+                                        data={topItens}
+                                        height={360}
+                                        padding={52}
                                         barW={32}
-                                        gap={24}                   // barras mais separadas
+                                        gap={26}
                                         yTicks={5}
                                     />
                                 </div>
                             </div>
 
-                            {/* TABELA DE ITENS (sem Tanato) */}
+                            {/* TABELA DE ITENS */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
@@ -391,7 +432,9 @@ export default function ModalAnaliseGeral({
                                                     >
                                                         <td className="p-2 border">{r.item}</td>
                                                         <td className="p-2 border">{r.tipo}</td>
-                                                        <td className="p-2 border text-right">{fmt0(r.quantidade)}</td>
+                                                        <td className="p-2 border text-right">
+                                                            {fmt0(r.quantidade)}
+                                                        </td>
                                                         <td className="p-2 border text-right">
                                                             {pct1(r.quantidade, totalGeralTabela)}
                                                         </td>
@@ -401,7 +444,9 @@ export default function ModalAnaliseGeral({
                                                     <td className="p-2 border" colSpan={2}>
                                                         Total (itens)
                                                     </td>
-                                                    <td className="p-2 border text-right">{fmt0(totalGeralTabela)}</td>
+                                                    <td className="p-2 border text-right">
+                                                        {fmt0(totalGeralTabela)}
+                                                    </td>
                                                     <td className="p-2 border text-right">100%</td>
                                                 </tr>
                                             </tbody>
@@ -410,7 +455,7 @@ export default function ModalAnaliseGeral({
                                 </div>
                             )}
 
-                            {/* LISTA DE TANATO — nomes dos falecidos (se o container enviar) */}
+                            {/* LISTA TANATO */}
                             <div className="rounded-2xl border overflow-hidden">
                                 <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
                                     Tanatopraxias no período — {fmt0(tanatoCount)}
@@ -423,9 +468,16 @@ export default function ModalAnaliseGeral({
                                     ) : (
                                         <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                             {listaTanatoPeriodo.map((ev, idx) => (
-                                                <li key={`${ev.nome}-${ev.data}-${idx}`} className="rounded-md border p-2">
-                                                    <div className="text-sm font-medium truncate">{ev.nome}</div>
-                                                    <div className="text-xs text-gray-500">{safeFormatDate(ev.data)}</div>
+                                                <li
+                                                    key={`${ev.nome}-${ev.data}-${idx}`}
+                                                    className="rounded-md border p-2"
+                                                >
+                                                    <div className="text-sm font-medium truncate">
+                                                        {ev.nome}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {safeFormatDate(ev.data)}
+                                                    </div>
                                                 </li>
                                             ))}
                                         </ul>
@@ -433,9 +485,7 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
-                            {/* (Opcional) Área de eventos do item selecionado
-                  — hoje seu container só popula para Tanato.
-                  Mantive para quando você expandir e enviar itemKey dos outros itens. */}
+                            {/* (Opcional) Eventos por item selecionado */}
                             {selectedItem && (
                                 <div className="rounded-2xl border overflow-hidden mt-6">
                                     <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
@@ -444,15 +494,23 @@ export default function ModalAnaliseGeral({
                                     <div className="p-4">
                                         {eventosSelecionados.length === 0 ? (
                                             <div className="text-sm text-gray-600">
-                                                Sem eventos vinculados a este item (o backend ainda não envia a
-                                                lista por item). Os nomes acima listam somente tanatopraxias.
+                                                Sem eventos vinculados a este item (o backend ainda não
+                                                envia a lista por item). Os nomes acima listam apenas
+                                                tanatopraxias.
                                             </div>
                                         ) : (
                                             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                                 {eventosSelecionados.map((ev, idx) => (
-                                                    <li key={`${ev.nome}-${ev.data}-${idx}`} className="rounded-md border p-2">
-                                                        <div className="text-sm font-medium truncate">{ev.nome}</div>
-                                                        <div className="text-xs text-gray-500">{safeFormatDate(ev.data)}</div>
+                                                    <li
+                                                        key={`${ev.nome}-${ev.data}-${idx}`}
+                                                        className="rounded-md border p-2"
+                                                    >
+                                                        <div className="text-sm font-medium truncate">
+                                                            {ev.nome}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                            {safeFormatDate(ev.data)}
+                                                        </div>
                                                     </li>
                                                 ))}
                                             </ul>
