@@ -32,9 +32,9 @@ interface Props {
     /** Lista de tanatos do período (opcional), cada “Sim” representa 1 */
     listaTanatoPeriodo: Evento[];
 
-    /** KPIs adicionais (traz do backend): */
-    totalAssistencias?: number; // 👈 total de assistências realizadas no período
-    convenios?: {                // 👈 atendimento por convênio
+    /** KPIs adicionais (vêm do backend) */
+    totalAssistencias?: number;
+    convenios?: {
         particular?: number;
         prefeitura?: number;
         associado?: number;
@@ -63,8 +63,17 @@ function safeFormatDate(value?: string | null): string {
     }
 }
 
+function normalize(s: string) {
+    return (s || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
+}
 function isYes(v: string) {
-    const s = (v || "").trim().toLowerCase();
+    const s = normalize(v);
     return s === "sim" || s === "yes" || s === "true" || s === "1";
 }
 
@@ -90,11 +99,16 @@ function BarChart({
 }) {
     const items = data.slice(0, 10);
     const maxVal = Math.max(1, ...items.map((d) => d.value));
-    const width = padding * 2 + items.length * barW + Math.max(0, items.length - 1) * gap;
+    const width =
+        padding * 2 + items.length * barW + Math.max(0, items.length - 1) * gap;
 
     return (
         <div className="w-full">
-            {title && <div className="px-4 pt-4 text-sm font-semibold text-gray-700">{title}</div>}
+            {title && (
+                <div className="px-4 pt-4 text-sm font-semibold text-gray-700">
+                    {title}
+                </div>
+            )}
             <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[360px]">
                 {Array.from({ length: yTicks }, (_, i) => i + 1).map((tick) => {
                     const t = tick / yTicks;
@@ -102,14 +116,32 @@ function BarChart({
                     const val = Math.round(maxVal * t);
                     return (
                         <g key={tick}>
-                            <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#eef2f7" />
-                            <text x={padding - 8} y={y + 3} textAnchor="end" fontSize="10" fill="#6b7280">
+                            <line
+                                x1={padding}
+                                y1={y}
+                                x2={width - padding}
+                                y2={y}
+                                stroke="#eef2f7"
+                            />
+                            <text
+                                x={padding - 8}
+                                y={y + 3}
+                                textAnchor="end"
+                                fontSize="10"
+                                fill="#6b7280"
+                            >
                                 {val}
                             </text>
                         </g>
                     );
                 })}
-                <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#e5e7eb" />
+                <line
+                    x1={padding}
+                    y1={padding}
+                    x2={padding}
+                    y2={height - padding}
+                    stroke="#e5e7eb"
+                />
                 {items.map((d, i) => {
                     const x = padding + i * (barW + gap);
                     const h = Math.max(2, ((height - padding * 2) * d.value) / maxVal);
@@ -124,7 +156,13 @@ function BarChart({
                                 rx={8}
                                 className="fill-blue-500/90 hover:fill-blue-500 transition-colors"
                             />
-                            <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="11" fill="#374151">
+                            <text
+                                x={x + barW / 2}
+                                y={y - 6}
+                                textAnchor="middle"
+                                fontSize="11"
+                                fill="#374151"
+                            >
                                 {d.value}
                             </text>
                             <text
@@ -161,8 +199,8 @@ export default function ModalAnaliseGeral({
     rows = [],
     registrosComEventoNoPeriodo = 0,
     listaTanatoPeriodo = [],
-    totalAssistencias = 0, // 👈 KPI extra
-    convenios = {},        // 👈 KPI extra
+    totalAssistencias = 0,
+    convenios = {},
     loading,
     onRecarregar,
 }: Props) {
@@ -174,81 +212,125 @@ export default function ModalAnaliseGeral({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [aDe, aAte, somenteTanato]);
 
-    // listas de referência
-    const CONSUMO_ASSISTENCIA = new Set(["velas", "kit lanche"]); // só esses contam
-    const CONSERVACAO_CORPO = new Set([
-        "luvas",
-        "palha",
-        "tamponamento",
-        "maquiagem",
-        "algodão",
-        "algodao",
-        "cordão",
-        "cordao",
-        "barba",
-        "ta-32",
-        "formol",
-        "fluído cavitário",
-        "fluido cavitario",
-        "máscara",
-        "mascara",
-        "invol",
-        "involucro",
-    ]);
+    // Conjuntos normalizados
+    const consumoAssistencia = React.useMemo(
+        () => new Set(["velas", "kit lanche"].map(normalize)),
+        []
+    );
+    const conservacaoCorpo = React.useMemo(
+        () =>
+            new Set(
+                [
+                    "luvas",
+                    "palha",
+                    "tamponamento",
+                    "maquiagem",
+                    "algodão",
+                    "algodao",
+                    "cordão",
+                    "cordao",
+                    "barba",
+                    "ta-32",
+                    "ta 32",
+                    "ta32",
+                    "formol",
+                    "fluído cavitário",
+                    "fluido cavitario",
+                    "máscara",
+                    "mascara",
+                    "invol",
+                    "invólucro",
+                    "involucro",
+                ].map(normalize)
+            ),
+        []
+    );
 
-    // Particiona/soma:
+    // Particiona/soma com normalização forte
     const {
-        itensFiltrados,     // somente consumo real (Assistência: Velas/Kit; Conservação: todos os checados)
-        totalItensUsados,   // soma das quantidades dos itens filtrados
-        tanatoCount,        // total de tanatopraxias (apenas “Sim”)
-        tipoTotais,         // totais por tipo (Assistência vs Conservação do Corpo)
-        topItens,           // top itens para o gráfico
+        itensFiltrados,
+        totalItensUsados,
+        tanatoCount,
+        tipoTotais,
+        topItens,
     } = React.useMemo(() => {
         const itens: Row[] = [];
         let tanatos = 0;
+
+        // para exibir rótulos “bonitos” quando agregamos por item
+        const displayLabel = new Map<string, string>();
 
         const somasPorTipo = new Map<string, number>();
         const somasTop = new Map<string, number>();
 
         for (const r of rows || []) {
-            const tipo = (r.tipo || "").trim();
-            const item = (r.item || "").trim();
+            const tipoRaw = (r.tipo || "").trim();
+            const itemRaw = (r.item || "").trim();
             const q = Number(r.quantidade || 0);
-            const tipoLower = tipo.toLowerCase();
-            const itemLower = item.toLowerCase();
 
-            // 1) Tanato: soma só os "Sim"
-            if (tipoLower.includes("tanato")) {
-                if (isYes(item)) tanatos += q || 0;
-                continue; // tanato não entra como "item"
+            const tipoN = normalize(tipoRaw);
+            const itemN = normalize(itemRaw);
+
+            // 1) Tanato: conta só “Sim”
+            if (tipoN.includes("tanato")) {
+                if (isYes(itemRaw)) tanatos += q || 0;
+                continue;
             }
 
-            // 2) Assistência (consumo real = apenas Velas e Kit Lanche)
-            if (tipoLower.includes("assist")) {
-                if (CONSUMO_ASSISTENCIA.has(itemLower)) {
-                    const row: Row = { key: r.key, item, tipo: "Assistência", quantidade: q || 0 };
+            // 2) Assistência – só Velas e Kit Lanche
+            if (
+                tipoN.includes("assistencia") ||
+                tipoN.includes("assistência") ||
+                tipoN.includes("materiais para assistencia") ||
+                tipoN.includes("materiais para assistência")
+            ) {
+                if (consumoAssistencia.has(itemN)) {
+                    const labelTipo = "Assistência";
+                    displayLabel.set(itemN, itemRaw || "—");
+
+                    const row: Row = {
+                        key: `${labelTipo}:${itemN}`,
+                        item: displayLabel.get(itemN)!,
+                        tipo: labelTipo,
+                        quantidade: q || 0,
+                    };
                     itens.push(row);
-                    somasPorTipo.set("Assistência", (somasPorTipo.get("Assistência") || 0) + (q || 0));
-                    const label = `${row.tipo}: ${row.item}`;
+
+                    somasPorTipo.set(labelTipo, (somasPorTipo.get(labelTipo) || 0) + (q || 0));
+                    const label = `${labelTipo}: ${row.item}`;
                     somasTop.set(label, (somasTop.get(label) || 0) + (q || 0));
                 }
-                continue; // demais materiais de assistência não contam
+                continue;
             }
 
-            // 3) Conservação do Corpo: todo item marcado vale 1 por ocorrência
-            if (tipoLower.includes("conserv") || tipoLower.includes("arrum") || tipoLower.includes("corpo")) {
-                if (CONSERVACAO_CORPO.has(itemLower)) {
-                    const val = q > 0 ? q : 1; // se não vier qtd, conta 1
-                    const row: Row = { key: r.key, item, tipo: "Conservação do Corpo", quantidade: val };
+            // 3) Conservação do Corpo – qualquer item marcado = 1 (se não vier qtd)
+            if (
+                tipoN.includes("conservacao do corpo") ||
+                tipoN.includes("conservacao") ||
+                tipoN.includes("conservação") ||
+                tipoN.includes("arrumacao") ||
+                tipoN.includes("arrumação") ||
+                tipoN.includes("corpo")
+            ) {
+                if (conservacaoCorpo.has(itemN)) {
+                    displayLabel.set(itemN, itemRaw || "—");
+                    const val = q > 0 ? q : 1;
+                    const labelTipo = "Conservação do Corpo";
+                    const row: Row = {
+                        key: `${labelTipo}:${itemN}`,
+                        item: displayLabel.get(itemN)!,
+                        tipo: labelTipo,
+                        quantidade: val,
+                    };
                     itens.push(row);
-                    somasPorTipo.set("Conservação do Corpo", (somasPorTipo.get("Conservação do Corpo") || 0) + val);
-                    const label = `${row.tipo}: ${row.item}`;
+                    somasPorTipo.set(labelTipo, (somasPorTipo.get(labelTipo) || 0) + val);
+                    const label = `${labelTipo}: ${row.item}`;
                     somasTop.set(label, (somasTop.get(label) || 0) + val);
                 }
                 continue;
             }
 
-            // 4) Demais tipos: ignorar (não são consumo)
+            // 4) Outros tipos: ignorar (não-consumo)
         }
 
         const totalItens = itens.reduce((s, r) => s + (r.quantidade || 0), 0);
@@ -258,9 +340,10 @@ export default function ModalAnaliseGeral({
             quantidade,
         })).sort((a, b) => b.quantidade - a.quantidade);
 
-        const arrTop = Array.from(somasTop, ([label, value]) => ({ label, value })).sort(
-            (a, b) => b.value - a.value
-        );
+        const arrTop = Array.from(somasTop, ([label, value]) => ({
+            label,
+            value,
+        })).sort((a, b) => b.value - a.value);
 
         return {
             itensFiltrados: itens,
@@ -269,20 +352,27 @@ export default function ModalAnaliseGeral({
             tipoTotais: arrTipo,
             topItens: arrTop,
         };
-    }, [rows]);
+    }, [rows, consumoAssistencia, conservacaoCorpo]);
 
     const linhasVisiveis = React.useMemo<Row[]>(() => {
         if (!Array.isArray(itensFiltrados)) return [];
         return somenteTanato ? [] : itensFiltrados;
     }, [itensFiltrados, somenteTanato]);
 
-    const totalGeralTabela = linhasVisiveis.reduce((s, r) => s + (r.quantidade || 0), 0);
+    const totalGeralTabela = linhasVisiveis.reduce(
+        (s, r) => s + (r.quantidade || 0),
+        0
+    );
 
     // eventos (hoje só tanato costuma vir)
     const eventosSelecionados = React.useMemo(() => {
         if (!selectedItem) return [];
-        const hasKey = Array.isArray(listaTanatoPeriodo) && listaTanatoPeriodo.some((e) => !!e.itemKey);
-        return hasKey ? listaTanatoPeriodo.filter((e) => e.itemKey === selectedItem) : [];
+        const hasKey =
+            Array.isArray(listaTanatoPeriodo) &&
+            listaTanatoPeriodo.some((e) => !!e.itemKey);
+        return hasKey
+            ? listaTanatoPeriodo.filter((e) => e.itemKey === selectedItem)
+            : [];
     }, [selectedItem, listaTanatoPeriodo]);
 
     const handleLinhaClick = (k: string) => {
@@ -296,13 +386,21 @@ export default function ModalAnaliseGeral({
                 <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/90 p-4 backdrop-blur">
                     <div>
                         <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
-                        <p className="text-xs text-gray-500">Período: {aDe || "—"} a {aAte || "—"}</p>
+                        <p className="text-xs text-gray-500">
+                            Período: {aDe || "—"} a {aAte || "—"}
+                        </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button onClick={onRecarregar} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
+                        <button
+                            onClick={onRecarregar}
+                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                        >
                             Recarregar
                         </button>
-                        <button onClick={onFechar} className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
+                        <button
+                            onClick={onFechar}
+                            className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                        >
                             Fechar
                         </button>
                     </div>
@@ -344,7 +442,9 @@ export default function ModalAnaliseGeral({
                 {/* Corpo */}
                 <div className="p-4 pt-0">
                     {loading ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">Carregando análise…</div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                            Carregando análise…
+                        </div>
                     ) : rows.length === 0 ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Nenhum dado para o período/filtro selecionado.
@@ -355,24 +455,38 @@ export default function ModalAnaliseGeral({
                             <div className="grid gap-4 lg:grid-cols-3 mb-6">
                                 <div className="rounded-xl border p-4">
                                     <div className="text-xs text-gray-500">Itens usados no período</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalItensUsados)}</div>
-                                    <div className="text-xs text-gray-500">Somatório de consumo real</div>
+                                    <div className="mt-1 text-3xl font-bold">
+                                        {fmt0(totalItensUsados)}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        Somatório de consumo real
+                                    </div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Tanatopraxias realizadas</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(tanatoCount)}</div>
+                                    <div className="text-xs text-gray-500">
+                                        Tanatopraxias realizadas
+                                    </div>
+                                    <div className="mt-1 text-3xl font-bold">
+                                        {fmt0(tanatoCount)}
+                                    </div>
                                     <div className="text-xs text-gray-500">Contagem de “Sim”</div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Assistências realizadas</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalAssistencias)}</div>
+                                    <div className="text-xs text-gray-500">
+                                        Assistências realizadas
+                                    </div>
+                                    <div className="mt-1 text-3xl font-bold">
+                                        {fmt0(totalAssistencias)}
+                                    </div>
                                     <div className="text-xs text-gray-500">Total no período</div>
                                 </div>
                             </div>
 
-                            {/* Convenios */}
+                            {/* Convênios */}
                             <div className="rounded-xl border p-4 mb-6">
-                                <div className="text-xs text-gray-500 mb-2">Atendimentos por convênio</div>
+                                <div className="text-xs text-gray-500 mb-2">
+                                    Atendimentos por convênio
+                                </div>
                                 <div className="flex flex-wrap gap-2">
                                     <span className="rounded-full border px-2 py-0.5 text-xs">
                                         Particular: <b>{fmt0(convenios.particular ?? 0)}</b>
@@ -389,11 +503,20 @@ export default function ModalAnaliseGeral({
                             {/* GRÁFICO */}
                             <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">Top itens do período (consumo real)</div>
+                                    <div className="text-sm font-semibold">
+                                        Top itens do período (consumo real)
+                                    </div>
                                     <div className="text-xs text-gray-500">máx. 10 itens</div>
                                 </div>
                                 <div className="p-2 md:p-4">
-                                    <BarChart data={topItens} height={360} padding={52} barW={32} gap={26} yTicks={5} />
+                                    <BarChart
+                                        data={topItens}
+                                        height={360}
+                                        padding={52}
+                                        barW={32}
+                                        gap={26}
+                                        yTicks={5}
+                                    />
                                 </div>
                             </div>
 
@@ -423,20 +546,27 @@ export default function ModalAnaliseGeral({
                                                         role="button"
                                                         tabIndex={0}
                                                         onKeyDown={(e) => {
-                                                            if (e.key === "Enter" || e.key === " ") handleLinhaClick(r.key);
+                                                            if (e.key === "Enter" || e.key === " ")
+                                                                handleLinhaClick(r.key);
                                                         }}
                                                     >
                                                         <td className="p-2 border">{r.item}</td>
                                                         <td className="p-2 border">{r.tipo}</td>
-                                                        <td className="p-2 border text-right">{fmt0(r.quantidade)}</td>
-                                                        <td className="p-2 border text-right">{pct1(r.quantidade, totalGeralTabela)}</td>
+                                                        <td className="p-2 border text-right">
+                                                            {fmt0(r.quantidade)}
+                                                        </td>
+                                                        <td className="p-2 border text-right">
+                                                            {pct1(r.quantidade, totalGeralTabela)}
+                                                        </td>
                                                     </tr>
                                                 ))}
                                                 <tr className="bg-gray-50 font-semibold">
                                                     <td className="p-2 border" colSpan={2}>
                                                         Total (itens)
                                                     </td>
-                                                    <td className="p-2 border text-right">{fmt0(totalGeralTabela)}</td>
+                                                    <td className="p-2 border text-right">
+                                                        {fmt0(totalGeralTabela)}
+                                                    </td>
                                                     <td className="p-2 border text-right">100%</td>
                                                 </tr>
                                             </tbody>
@@ -458,9 +588,16 @@ export default function ModalAnaliseGeral({
                                     ) : (
                                         <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                             {listaTanatoPeriodo.map((ev, idx) => (
-                                                <li key={`${ev.nome}-${ev.data}-${idx}`} className="rounded-md border p-2">
-                                                    <div className="text-sm font-medium truncate">{ev.nome}</div>
-                                                    <div className="text-xs text-gray-500">{safeFormatDate(ev.data)}</div>
+                                                <li
+                                                    key={`${ev.nome}-${ev.data}-${idx}`}
+                                                    className="rounded-md border p-2"
+                                                >
+                                                    <div className="text-sm font-medium truncate">
+                                                        {ev.nome}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {safeFormatDate(ev.data)}
+                                                    </div>
                                                 </li>
                                             ))}
                                         </ul>
@@ -475,20 +612,11 @@ export default function ModalAnaliseGeral({
                                         Eventos — {selectedItem}
                                     </div>
                                     <div className="p-4">
-                                        {eventosSelecionados.length === 0 ? (
-                                            <div className="text-sm text-gray-600">
-                                                Sem eventos vinculados a este item (o backend ainda não envia por item).
-                                            </div>
-                                        ) : (
-                                            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                                {eventosSelecionados.map((ev, idx) => (
-                                                    <li key={`${ev.nome}-${ev.data}-${idx}`} className="rounded-md border p-2">
-                                                        <div className="text-sm font-medium truncate">{ev.nome}</div>
-                                                        <div className="text-xs text-gray-500">{safeFormatDate(ev.data)}</div>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
+                                        {/* hoje o backend normalmente só envia tanato;
+                        quando enviar por item, isto vai listar */}
+                                        <div className="text-sm text-gray-600">
+                                            Sem eventos vinculados a este item.
+                                        </div>
                                     </div>
                                 </div>
                             )}
