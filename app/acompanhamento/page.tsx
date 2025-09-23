@@ -616,7 +616,7 @@ export default function AcompanhamentoPage() {
                 open={infoOpen}
                 setOpen={setInfoOpen}
                 // Agora passamos o registro pelo ID estável
-                infoIdx={null /* Teste dos mais índice aqui */}
+                infoIdx={null /* não usamos mais índice aqui */}
                 abrirWizard={abrirWizardFromInfo}
                 abrirAssinatura={(idx, tipo) => abrirAssinaturaFromInfo(idx, tipo)}
                 registro={registroInfo}
