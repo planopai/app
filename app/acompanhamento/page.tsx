@@ -549,7 +549,7 @@ export default function AcompanhamentoPage() {
                 steps={steps as any}
                 wizardStepIndexes={wizardStepIndexes}
                 wizardStepTitles={wizardStepTitles}
-                // ✅ Removido o ternário errado
+                // ✅ Removido o ternário Teste
                 assistenciaVal={assistenciaVal}
                 setAssistenciaVal={setAssistenciaVal}
                 tanatoVal={tanatoVal}
