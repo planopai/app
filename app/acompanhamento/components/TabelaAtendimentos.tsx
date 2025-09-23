@@ -5,7 +5,7 @@ import { capitalizeStatus } from "./helpers";
 
 interface Props {
     registros: Registro[];
-    // Agora ambos recebem o **ID** do registro
+    // Ambos por ID
     onAcao: (id: Registro["id"]) => void;
     onInfo: (id: Registro["id"]) => void;
 }
@@ -58,11 +58,7 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                         visiveis.map((r, idx) => (
                             <tr key={String(r.id ?? `row-${idx}`)} className="border-t">
                                 <td className="px-3 py-2">
-                                    <span
-                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBg(
-                                            r.status
-                                        )}`}
-                                    >
+                                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBg(r.status)}`}>
                                         {capitalizeStatus(r.status)}
                                     </span>
                                 </td>

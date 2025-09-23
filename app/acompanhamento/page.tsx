@@ -59,17 +59,17 @@ export default function AcompanhamentoPage() {
     const [arrumacaoOpen, setArrumacaoOpen] = useState(false);
     const [arrumacao, setArrumacao] = useState<ArrumacaoState>(defaultArrumacao());
 
-    // Ações (🔧 agora controladas por **ID**)
+    // Ações (por ID)
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-    // Info (mantido por índice para não quebrar InfoModal agora)
+    // Info (índice interno do InfoModal — convertemos ID -> índice)
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoIdx, setInfoIdx] = useState<number | null>(null);
 
-    // Assinatura (mantido por índice para não quebrar SignatureModal agora)
+    // Assinatura (índice por compatibilidade)
     const [signOpen, setSignOpen] = useState(false);
     const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
     const [signIdx, setSignIdx] = useState<number | null>(null);
@@ -91,14 +91,12 @@ export default function AcompanhamentoPage() {
                 }
             );
 
-            if (r.status === 401) {
-                return;
-            }
+            if (r.status === 401) return;
 
             const data = await r.json().catch(() => null);
             if (data?.need_login) return;
 
-            // normaliza status para faseXX
+            // normaliza status e id->string
             const sane: Registro[] = Array.isArray(data)
                 ? data.map((it: any) => ({
                     ...it,
@@ -411,7 +409,6 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Ações (status) -------------------- */
 
-    // 🔧 agora abrimos o modal por **ID**, não por índice
     const abrirPopupAcaoPorId = useCallback((id: Registro["id"]) => {
         setAcaoMsg(null);
         setAcaoId(id != null ? String(id) : null);
@@ -449,6 +446,18 @@ export default function AcompanhamentoPage() {
             }
         },
         [acaoId, fetchRegistros, acaoSubmitting]
+    );
+
+    /* -------------------- Info por ID -> índice -------------------- */
+    const abrirInfoPorId = useCallback(
+        (id: Registro["id"]) => {
+            const i = registros.findIndex((x) => String(x.id) === String(id));
+            if (i >= 0) {
+                setInfoIdx(i);
+                setInfoOpen(true);
+            }
+        },
+        [registros]
     );
 
     /* -------------------- Assinatura -------------------- */
@@ -512,13 +521,8 @@ export default function AcompanhamentoPage() {
 
             <TabelaAtendimentos
                 registros={registros}
-                // 🔧 agora recebemos **id** aqui
                 onAcao={(id) => abrirPopupAcaoPorId(id)}
-                // mantém Info por índice para não quebrar InfoModal agora
-                onInfo={(idx: number) => {
-                    setInfoIdx(idx);
-                    setInfoOpen(true);
-                }}
+                onInfo={(id) => abrirInfoPorId(id)}
             />
 
             <AvisosBox
@@ -545,6 +549,7 @@ export default function AcompanhamentoPage() {
                 steps={steps as any}
                 wizardStepIndexes={wizardStepIndexes}
                 wizardStepTitles={wizardStepTitles}
+                // ✅ Removido o ternário errado (que causava o TS2774)
                 assistenciaVal={assistenciaVal}
                 setAssistenciaVal={setAssistenciaVal}
                 tanatoVal={tanatoVal}
@@ -589,7 +594,6 @@ export default function AcompanhamentoPage() {
                 setOpen={setInfoOpen}
                 infoIdx={infoIdx}
                 abrirWizard={abrirWizard}
-                // assinatura ainda por índice (compatibilidade com InfoModal atual)
                 abrirAssinatura={(idx, tipo) => abrirAssinatura(idx, tipo)}
                 registro={infoIdx != null ? registros[infoIdx] : null}
             />
