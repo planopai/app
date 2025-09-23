@@ -5,10 +5,9 @@ import { capitalizeStatus } from "./helpers";
 
 interface Props {
     registros: Registro[];
-    // 🔧 onAcao agora recebe o **ID** do registro
+    // Agora ambos recebem o **ID** do registro
     onAcao: (id: Registro["id"]) => void;
-    // Mantido por índice para não quebrar o InfoModal agora
-    onInfo: (idx: number) => void;
+    onInfo: (id: Registro["id"]) => void;
 }
 
 const statusClasses: Record<string, string> = {
@@ -78,7 +77,7 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
 
                                 <td className="px-3 py-2">
                                     <div className="flex flex-col gap-2">
-                                        {/* 🔧 agora passa o **id** seguro, não o índice */}
+                                        {/* Ações por ID */}
                                         <button
                                             className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800"
                                             onClick={() => r.id != null && onAcao(r.id)}
@@ -86,20 +85,21 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                             Ações
                                         </button>
 
-                                        {/* Info no mobile mantém índice para não quebrar InfoModal */}
+                                        {/* Info no mobile por ID */}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
-                                            onClick={() => onInfo(idx)}
+                                            onClick={() => r.id != null && onInfo(r.id)}
                                         >
                                             Info
                                         </button>
                                     </div>
                                 </td>
 
+                                {/* Info no desktop por ID */}
                                 <td className="hidden px-3 py-2 sm:table-cell">
                                     <button
                                         className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
-                                        onClick={() => onInfo(idx)}
+                                        onClick={() => r.id != null && onInfo(r.id)}
                                     >
                                         Info
                                     </button>
