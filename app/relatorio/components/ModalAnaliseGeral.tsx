@@ -1,6 +1,10 @@
 "use client";
 import React from "react";
 import { formataDataDia } from "./UtilDatas";
+import {
+    ALL_ITEM_LABELS,
+    ALL_ITEM_TIPO,
+} from "./MateriaisArrumacao"; // << usa os mapas canônicos
 
 /* =========================
    Tipos
@@ -23,22 +27,12 @@ interface Props {
     selectedItem?: string;
     setSelectedItem: (v?: string) => void;
 
-    /** Linhas brutas vindas do backend (podem ter vários tipos) */
     rows: Row[];
-
-    /** Quantos registros (atendimentos) caem no período filtrado */
     registrosComEventoNoPeriodo: number;
-
-    /** Lista de tanatos do período (opcional), cada “Sim” representa 1 */
     listaTanatoPeriodo: Evento[];
 
-    /** KPIs adicionais (vêm do backend) */
     totalAssistencias?: number;
-    convenios?: {
-        particular?: number;
-        prefeitura?: number;
-        associado?: number;
-    };
+    convenios?: { particular?: number; prefeitura?: number; associado?: number };
 
     loading: boolean;
     onRecarregar: () => void;
@@ -63,22 +57,30 @@ function safeFormatDate(value?: string | null): string {
     }
 }
 
-function normalize(s: string) {
+function norm(s: string) {
     return (s || "")
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]+/g, " ")
-        .trim()
-        .replace(/\s+/g, " ");
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
 }
-function isYes(v: string) {
-    const s = normalize(v);
-    return s === "sim" || s === "yes" || s === "true" || s === "1";
+
+/** resolve rótulo/tipo a partir da chave (quando rows trazem `item` como key) */
+function resolveFromKey(itemKey: string): { label?: string; tipo?: string } {
+    const key = norm(itemKey);
+    const label = (ALL_ITEM_LABELS as any)[key] as string | undefined;
+    const tipo = (ALL_ITEM_TIPO as any)[key] as
+        | "Material"
+        | "Arrumação"
+        | "Assistência"
+        | "Tanatopraxia"
+        | undefined;
+    return { label, tipo };
 }
 
 /* =========================
-   Gráfico simples (SVG)
+   Gráfico (SVG simples)
    ========================= */
 function BarChart({
     data,
@@ -206,156 +208,97 @@ export default function ModalAnaliseGeral({
 }: Props) {
     if (!aberto) return null;
 
-    // limpa seleção ao trocar filtros
     React.useEffect(() => {
         setSelectedItem(undefined);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [aDe, aAte, somenteTanato]);
 
-    // Conjuntos normalizados
-    const consumoAssistencia = React.useMemo(
-        () => new Set(["velas", "kit lanche"].map(normalize)),
-        []
-    );
-    const conservacaoCorpo = React.useMemo(
-        () =>
-            new Set(
-                [
-                    "luvas",
-                    "palha",
-                    "tamponamento",
-                    "maquiagem",
-                    "algodão",
-                    "algodao",
-                    "cordão",
-                    "cordao",
-                    "barba",
-                    "ta-32",
-                    "ta 32",
-                    "ta32",
-                    "formol",
-                    "fluído cavitário",
-                    "fluido cavitario",
-                    "máscara",
-                    "mascara",
-                    "invol",
-                    "invólucro",
-                    "involucro",
-                ].map(normalize)
-            ),
-        []
-    );
-
-    // Particiona/soma com normalização forte
     const {
         itensFiltrados,
         totalItensUsados,
         tanatoCount,
-        tipoTotais,
+        totalAssistCalc,
         topItens,
     } = React.useMemo(() => {
-        const itens: Row[] = [];
+        const itens: Array<{ key: string; item: string; tipo: string; quantidade: number }> = [];
         let tanatos = 0;
+        let assistSims = 0;
 
-        // para exibir rótulos “bonitos” quando agregamos por item
-        const displayLabel = new Map<string, string>();
-
-        const somasPorTipo = new Map<string, number>();
         const somasTop = new Map<string, number>();
 
         for (const r of rows || []) {
-            const tipoRaw = (r.tipo || "").trim();
-            const itemRaw = (r.item || "").trim();
-            const q = Number(r.quantidade || 0);
+            const itemKeyOrLabel = String(r.item || "");
+            const itemKeyN = norm(itemKeyOrLabel); // tenta bater com chave
+            const res = resolveFromKey(itemKeyOrLabel); // tenta direto
+            const resByKeyN = resolveFromKey(itemKeyN); // tenta normalizado
 
-            const tipoN = normalize(tipoRaw);
-            const itemN = normalize(itemRaw);
+            const label = res.label || resByKeyN.label || itemKeyOrLabel;
+            const tipoCanon =
+                res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
 
-            // 1) Tanato: conta só “Sim”
-            if (tipoN.includes("tanato")) {
-                if (isYes(itemRaw)) tanatos += q || 0;
+            const qtd = Number(r.quantidade || 0);
+
+            // Tanato
+            if (itemKeyN === "tanato_sim") {
+                tanatos += qtd || 0;
                 continue;
             }
+            if (itemKeyN === "assistencia_sim") {
+                assistSims += qtd || 0;
+                continue; // não entra como item
+            }
 
-            // 2) Assistência – só Velas e Kit Lanche
-            if (
-                tipoN.includes("assistencia") ||
-                tipoN.includes("assistência") ||
-                tipoN.includes("materiais para assistencia") ||
-                tipoN.includes("materiais para assistência")
-            ) {
-                if (consumoAssistencia.has(itemN)) {
-                    const labelTipo = "Assistência";
-                    displayLabel.set(itemN, itemRaw || "—");
-
-                    const row: Row = {
-                        key: `${labelTipo}:${itemN}`,
-                        item: displayLabel.get(itemN)!,
-                        tipo: labelTipo,
-                        quantidade: q || 0,
-                    };
-                    itens.push(row);
-
-                    somasPorTipo.set(labelTipo, (somasPorTipo.get(labelTipo) || 0) + (q || 0));
-                    const label = `${labelTipo}: ${row.item}`;
-                    somasTop.set(label, (somasTop.get(label) || 0) + (q || 0));
+            // Consumo: Assistência => só velas/kit_lanche
+            if (tipoCanon === "Assistência" || itemKeyN.startsWith("assistencia")) {
+                if (itemKeyN === "velas" || itemKeyN === "kit_lanche") {
+                    itens.push({
+                        key: `assist_${itemKeyN}`,
+                        item: label,
+                        tipo: "Assistência",
+                        quantidade: qtd || 0,
+                    });
+                    const l = `Assistência: ${label}`;
+                    somasTop.set(l, (somasTop.get(l) || 0) + (qtd || 0));
                 }
                 continue;
             }
 
-            // 3) Conservação do Corpo – qualquer item marcado = 1 (se não vier qtd)
-            if (
-                tipoN.includes("conservacao do corpo") ||
-                tipoN.includes("conservacao") ||
-                tipoN.includes("conservação") ||
-                tipoN.includes("arrumacao") ||
-                tipoN.includes("arrumação") ||
-                tipoN.includes("corpo")
-            ) {
-                if (conservacaoCorpo.has(itemN)) {
-                    displayLabel.set(itemN, itemRaw || "—");
-                    const val = q > 0 ? q : 1;
-                    const labelTipo = "Conservação do Corpo";
-                    const row: Row = {
-                        key: `${labelTipo}:${itemN}`,
-                        item: displayLabel.get(itemN)!,
-                        tipo: labelTipo,
-                        quantidade: val,
-                    };
-                    itens.push(row);
-                    somasPorTipo.set(labelTipo, (somasPorTipo.get(labelTipo) || 0) + val);
-                    const label = `${labelTipo}: ${row.item}`;
-                    somasTop.set(label, (somasTop.get(label) || 0) + val);
-                }
+            // Consumo: Arrumação/Conservação => 1 por checado (ou qtd se vier)
+            if (tipoCanon === "Arrumação") {
+                const val = qtd > 0 ? qtd : 1;
+                itens.push({
+                    key: `arr_${itemKeyN}`,
+                    item: label,
+                    tipo: "Conservação do Corpo",
+                    quantidade: val,
+                });
+                const l = `Conservação do Corpo: ${label}`;
+                somasTop.set(l, (somasTop.get(l) || 0) + val);
                 continue;
             }
 
-            // 4) Outros tipos: ignorar (não-consumo)
+            // Materiais “gerais” (cadeiras, tenda, etc.) não contam como consumo real
         }
 
-        const totalItens = itens.reduce((s, r) => s + (r.quantidade || 0), 0);
+        const totalItens = itens.reduce((s, it) => s + (it.quantidade || 0), 0);
 
-        const arrTipo = Array.from(somasPorTipo, ([tipo, quantidade]) => ({
-            tipo,
-            quantidade,
-        })).sort((a, b) => b.quantidade - a.quantidade);
-
-        const arrTop = Array.from(somasTop, ([label, value]) => ({
-            label,
-            value,
-        })).sort((a, b) => b.value - a.value);
+        const arrTop = Array.from(somasTop, ([label, value]) => ({ label, value })).sort(
+            (a, b) => b.value - a.value
+        );
 
         return {
             itensFiltrados: itens,
             totalItensUsados: totalItens,
             tanatoCount: tanatos,
-            tipoTotais: arrTipo,
+            totalAssistCalc: assistSims,
             topItens: arrTop,
         };
-    }, [rows, consumoAssistencia, conservacaoCorpo]);
+    }, [rows]);
 
-    const linhasVisiveis = React.useMemo<Row[]>(() => {
-        if (!Array.isArray(itensFiltrados)) return [];
+    // Se o backend não mandou totalAssistencias, usa o calculado
+    const totalAssistFinal = totalAssistencias || totalAssistCalc || 0;
+
+    const linhasVisiveis = React.useMemo(() => {
         return somenteTanato ? [] : itensFiltrados;
     }, [itensFiltrados, somenteTanato]);
 
@@ -363,17 +306,6 @@ export default function ModalAnaliseGeral({
         (s, r) => s + (r.quantidade || 0),
         0
     );
-
-    // eventos (hoje só tanato costuma vir)
-    const eventosSelecionados = React.useMemo(() => {
-        if (!selectedItem) return [];
-        const hasKey =
-            Array.isArray(listaTanatoPeriodo) &&
-            listaTanatoPeriodo.some((e) => !!e.itemKey);
-        return hasKey
-            ? listaTanatoPeriodo.filter((e) => e.itemKey === selectedItem)
-            : [];
-    }, [selectedItem, listaTanatoPeriodo]);
 
     const handleLinhaClick = (k: string) => {
         setSelectedItem(selectedItem === k ? undefined : k);
@@ -466,9 +398,7 @@ export default function ModalAnaliseGeral({
                                     <div className="text-xs text-gray-500">
                                         Tanatopraxias realizadas
                                     </div>
-                                    <div className="mt-1 text-3xl font-bold">
-                                        {fmt0(tanatoCount)}
-                                    </div>
+                                    <div className="mt-1 text-3xl font-bold">{fmt0(tanatoCount)}</div>
                                     <div className="text-xs text-gray-500">Contagem de “Sim”</div>
                                 </div>
                                 <div className="rounded-xl border p-4">
@@ -476,7 +406,7 @@ export default function ModalAnaliseGeral({
                                         Assistências realizadas
                                     </div>
                                     <div className="mt-1 text-3xl font-bold">
-                                        {fmt0(totalAssistencias)}
+                                        {fmt0(totalAssistFinal)}
                                     </div>
                                     <div className="text-xs text-gray-500">Total no período</div>
                                 </div>
@@ -489,13 +419,13 @@ export default function ModalAnaliseGeral({
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     <span className="rounded-full border px-2 py-0.5 text-xs">
-                                        Particular: <b>{fmt0(convenios.particular ?? 0)}</b>
+                                        Particular: <b>{fmt0(convenios?.particular ?? 0)}</b>
                                     </span>
                                     <span className="rounded-full border px-2 py-0.5 text-xs">
-                                        Prefeitura: <b>{fmt0(convenios.prefeitura ?? 0)}</b>
+                                        Prefeitura: <b>{fmt0(convenios?.prefeitura ?? 0)}</b>
                                     </span>
                                     <span className="rounded-full border px-2 py-0.5 text-xs">
-                                        Associado: <b>{fmt0(convenios.associado ?? 0)}</b>
+                                        Associado: <b>{fmt0(convenios?.associado ?? 0)}</b>
                                     </span>
                                 </div>
                             </div>
@@ -604,22 +534,6 @@ export default function ModalAnaliseGeral({
                                     )}
                                 </div>
                             </div>
-
-                            {/* (Opcional) Eventos por item selecionado */}
-                            {selectedItem && (
-                                <div className="rounded-2xl border overflow-hidden mt-6">
-                                    <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
-                                        Eventos — {selectedItem}
-                                    </div>
-                                    <div className="p-4">
-                                        {/* hoje o backend normalmente só envia tanato;
-                        quando enviar por item, isto vai listar */}
-                                        <div className="text-sm text-gray-600">
-                                            Sem eventos vinculados a este item.
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </>
                     )}
                 </div>
