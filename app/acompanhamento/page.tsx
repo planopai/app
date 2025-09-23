@@ -78,18 +78,15 @@ export default function AcompanhamentoPage() {
 
     const fetchRegistros = useCallback(async () => {
         try {
-            const r = await fetch(
-                `${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`,
-                {
-                    cache: "no-store",
-                    headers: {
-                        Pragma: "no-cache",
-                        Expires: "0",
-                        "Cache-Control": "no-cache, no-store, must-revalidate",
-                    },
-                    credentials: "include",
-                }
-            );
+            const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+                headers: {
+                    Pragma: "no-cache",
+                    Expires: "0",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                },
+                credentials: "include",
+            });
 
             if (r.status === 401) return;
 
@@ -449,50 +446,51 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Info por ID (estável) -------------------- */
 
-    // sempre pega o registro atual pelo ID, mesmo se a lista reordenar
+    // Registro atual para o Info
     const registroInfo = useMemo(
         () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
         [registros, infoId]
     );
+
+    // Índice “compatível” para o InfoModal (enquanto ele ainda depender de índice)
+    const infoIdxResolved = useMemo(() => {
+        if (infoId == null) return null;
+        const idx = registros.findIndex((x) => String(x.id) === String(infoId));
+        return idx >= 0 ? idx : null;
+    }, [registros, infoId]);
 
     const abrirInfoPorId = useCallback((id: Registro["id"]) => {
         setInfoId(id != null ? String(id) : null);
         setInfoOpen(true);
     }, []);
 
-    // Wrappers: InfoModal pede "abrirWizard/abrirAssinatura" por índice.
-    // A gente ignora o índice que ele enviar e resolve pelo ID atual.
+    // Wrappers para manter compat com InfoModal que espera índice:
     const abrirWizardFromInfo = useCallback(
         (tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
-            if (infoId == null) return;
-            const idxReal = registros.findIndex((x) => String(x.id) === String(infoId));
-            if (idxReal >= 0) abrirWizard(tipo, idxReal, grupoStep);
+            const idx = infoIdxResolved;
+            if (idx != null) abrirWizard(tipo, idx, grupoStep);
         },
-        [infoId, registros, abrirWizard]
+        [infoIdxResolved, abrirWizard]
     );
 
     const abrirAssinaturaFromInfo = useCallback(
         (_idx: number, tipo: "recebimento" | "requisicao") => {
-            if (infoId == null) return;
-            const idxReal = registros.findIndex((x) => String(x.id) === String(infoId));
-            if (idxReal >= 0) {
-                setSignIdx(idxReal);
+            const idx = infoIdxResolved;
+            if (idx != null) {
+                setSignIdx(idx);
                 setSignTipo(tipo);
                 setSignOpen(true);
             }
         },
-        [infoId, registros]
+        [infoIdxResolved]
     );
 
     /* -------------------- Assinatura (fora do Info) -------------------- */
-    const abrirAssinatura = useCallback(
-        (idx: number, tipo: "recebimento" | "requisicao") => {
-            setSignIdx(idx);
-            setSignTipo(tipo);
-            setSignOpen(true);
-        },
-        []
-    );
+    const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
+        setSignIdx(idx);
+        setSignTipo(tipo);
+        setSignOpen(true);
+    }, []);
 
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
@@ -615,8 +613,7 @@ export default function AcompanhamentoPage() {
             <InfoModal
                 open={infoOpen}
                 setOpen={setInfoOpen}
-                // Agora passamos o registro pelo ID estável
-                infoIdx={null /* não usamos mais índice aqui */}
+                infoIdx={infoIdxResolved}
                 abrirWizard={abrirWizardFromInfo}
                 abrirAssinatura={(idx, tipo) => abrirAssinaturaFromInfo(idx, tipo)}
                 registro={registroInfo}
