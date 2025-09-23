@@ -81,7 +81,7 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                             Ações
                                         </button>
 
-                                        {/* Info no mobile por ID */}
+                                        {/* Info no mob*/}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
                                             onClick={() => r.id != null && onInfo(r.id)}
