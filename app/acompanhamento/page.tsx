@@ -549,7 +549,7 @@ export default function AcompanhamentoPage() {
                 steps={steps as any}
                 wizardStepIndexes={wizardStepIndexes}
                 wizardStepTitles={wizardStepTitles}
-                // ✅ Removido o ternário errado (que causava o TS2774)
+                // ✅ Removido o ternário errado
                 assistenciaVal={assistenciaVal}
                 setAssistenciaVal={setAssistenciaVal}
                 tanatoVal={tanatoVal}
