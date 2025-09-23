@@ -108,7 +108,7 @@ export const steps = [
             "Cemitério Jardim da Saudade",
             "Cemitério de São Desiderio",
             "Cemitério de Angical",
-            "Cemitério de Richão Das Neves",
+            "Cemitério de Richão                 Neves",
         ],
     },
     {
