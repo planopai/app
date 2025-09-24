@@ -1,10 +1,7 @@
 "use client";
 import React from "react";
 import { formataDataDia } from "./UtilDatas";
-import {
-    ALL_ITEM_LABELS,
-    ALL_ITEM_TIPO,
-} from "./MateriaisArrumacao"; // << usa os mapas canônicos
+import { ALL_ITEM_LABELS, ALL_ITEM_TIPO } from "./MateriaisArrumacao";
 
 /* =========================
    Tipos
@@ -44,9 +41,6 @@ interface Props {
 const fmt0 = (n: number) =>
     new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 
-const pct1 = (num: number, den: number) =>
-    den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—";
-
 function safeFormatDate(value?: string | null): string {
     if (!value) return "-";
     try {
@@ -80,109 +74,75 @@ function resolveFromKey(itemKey: string): { label?: string; tipo?: string } {
 }
 
 /* =========================
-   Gráfico (SVG simples)
+   Ícones simples por tipo
    ========================= */
-function BarChart({
-    data,
-    height = 340,
-    padding = 48,
-    barW = 32,
-    gap = 24,
-    yTicks = 5,
-    title,
+const ICONES_TIPO: Record<string, string> = {
+    "Assistência": "🕯️",
+    "Conservação do Corpo": "🧪",
+    "Arrumação": "🧴",
+    "Material": "📦",
+    "Tanatopraxia": "⚗️",
+};
+
+/* =========================
+   Cart do item (estilo imagem)
+   ========================= */
+function ItemCard({
+    titulo,
+    valor,
+    tipo,
+    destaque = "blue",
 }: {
-    data: Array<{ label: string; value: number }>;
-    height?: number;
-    padding?: number;
-    barW?: number;
-    gap?: number;
-    yTicks?: number;
-    title?: string;
+    titulo: string;
+    valor: number;
+    tipo?: string;
+    destaque?: "blue" | "yellow" | "sky" | "teal" | "indigo" | "rose";
 }) {
-    const items = data.slice(0, 10);
-    const maxVal = Math.max(1, ...items.map((d) => d.value));
-    const width =
-        padding * 2 + items.length * barW + Math.max(0, items.length - 1) * gap;
+    const leftBar = {
+        blue: "border-l-blue-500",
+        yellow: "border-l-yellow-400",
+        sky: "border-l-sky-500",
+        teal: "border-l-teal-500",
+        indigo: "border-l-indigo-500",
+        rose: "border-l-rose-500",
+    }[destaque];
+
+    const chipColor = {
+        blue: "bg-blue-50 text-blue-700",
+        yellow: "bg-yellow-50 text-yellow-700",
+        sky: "bg-sky-50 text-sky-700",
+        teal: "bg-teal-50 text-teal-700",
+        indigo: "bg-indigo-50 text-indigo-700",
+        rose: "bg-rose-50 text-rose-700",
+    }[destaque];
 
     return (
-        <div className="w-full">
-            {title && (
-                <div className="px-4 pt-4 text-sm font-semibold text-gray-700">
-                    {title}
+        <div className={`rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden`}>
+            <div className={`border-l-4 ${leftBar} p-4`}>
+                <div className="flex items-start justify-between">
+                    <div className="text-3xl font-extrabold leading-none">{fmt0(valor)}</div>
+                    {tipo && (
+                        <span className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}>
+                            {ICONES_TIPO[tipo] ? `${ICONES_TIPO[tipo]} ` : ""}
+                            {tipo}
+                        </span>
+                    )}
                 </div>
-            )}
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[360px]">
-                {Array.from({ length: yTicks }, (_, i) => i + 1).map((tick) => {
-                    const t = tick / yTicks;
-                    const y = height - padding - (height - padding * 2) * t;
-                    const val = Math.round(maxVal * t);
-                    return (
-                        <g key={tick}>
-                            <line
-                                x1={padding}
-                                y1={y}
-                                x2={width - padding}
-                                y2={y}
-                                stroke="#eef2f7"
-                            />
-                            <text
-                                x={padding - 8}
-                                y={y + 3}
-                                textAnchor="end"
-                                fontSize="10"
-                                fill="#6b7280"
-                            >
-                                {val}
-                            </text>
-                        </g>
-                    );
-                })}
-                <line
-                    x1={padding}
-                    y1={padding}
-                    x2={padding}
-                    y2={height - padding}
-                    stroke="#e5e7eb"
-                />
-                {items.map((d, i) => {
-                    const x = padding + i * (barW + gap);
-                    const h = Math.max(2, ((height - padding * 2) * d.value) / maxVal);
-                    const y = height - padding - h;
-                    return (
-                        <g key={d.label}>
-                            <rect
-                                x={x}
-                                y={y}
-                                width={barW}
-                                height={h}
-                                rx={8}
-                                className="fill-blue-500/90 hover:fill-blue-500 transition-colors"
-                            />
-                            <text
-                                x={x + barW / 2}
-                                y={y - 6}
-                                textAnchor="middle"
-                                fontSize="11"
-                                fill="#374151"
-                            >
-                                {d.value}
-                            </text>
-                            <text
-                                x={x + barW / 2}
-                                y={height - padding + 12}
-                                textAnchor="middle"
-                                fontSize="10"
-                                fill="#6b7280"
-                            >
-                                {d.label.length > 16 ? d.label.slice(0, 16) + "…" : d.label}
-                            </text>
-                        </g>
-                    );
-                })}
-            </svg>
+                <div className="mt-1 text-sm text-gray-600">{titulo}</div>
+            </div>
         </div>
     );
 }
+
+/* Paleta de destaques para variar os cards */
+const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> = [
+    "blue",
+    "yellow",
+    "sky",
+    "teal",
+    "indigo",
+    "rose",
+];
 
 /* =========================
    Componente
@@ -218,13 +178,15 @@ export default function ModalAnaliseGeral({
         totalItensUsados,
         tanatoCount,
         totalAssistCalc,
-        topItens,
+        itensAgrupados, // NOVO: mapa para cards
+        ordemCards,
     } = React.useMemo(() => {
         const itens: Array<{ key: string; item: string; tipo: string; quantidade: number }> = [];
         let tanatos = 0;
         let assistSims = 0;
 
-        const somasTop = new Map<string, number>();
+        // Soma total por item (para os cards)
+        const somaPorItem = new Map<string, { label: string; tipo: string; qtd: number }>();
 
         for (const r of rows || []) {
             const itemKeyOrLabel = String(r.item || "");
@@ -233,83 +195,68 @@ export default function ModalAnaliseGeral({
             const resByKeyN = resolveFromKey(itemKeyN); // tenta normalizado
 
             const label = res.label || resByKeyN.label || itemKeyOrLabel;
-            const tipoCanon =
-                res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
+            // tipo “canônico” para apresentação no chip
+            const tipoCanon = res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
 
             const qtd = Number(r.quantidade || 0);
 
-            // Tanato
+            // Tanato / Assistência (marcadores)
             if (itemKeyN === "tanato_sim") {
                 tanatos += qtd || 0;
                 continue;
             }
             if (itemKeyN === "assistencia_sim") {
                 assistSims += qtd || 0;
-                continue; // não entra como item
+                continue;
             }
 
-            // Consumo: Assistência => só velas/kit_lanche
+            // Consumo real:
+            // - Assistência => apenas velas e kit_lanche contam
             if (tipoCanon === "Assistência" || itemKeyN.startsWith("assistencia")) {
                 if (itemKeyN === "velas" || itemKeyN === "kit_lanche") {
-                    itens.push({
-                        key: `assist_${itemKeyN}`,
-                        item: label,
-                        tipo: "Assistência",
-                        quantidade: qtd || 0,
-                    });
-                    const l = `Assistência: ${label}`;
-                    somasTop.set(l, (somasTop.get(l) || 0) + (qtd || 0));
+                    const qty = qtd || 0;
+                    itens.push({ key: `assist_${itemKeyN}`, item: label, tipo: "Assistência", quantidade: qty });
+                    const k = `Assistência|${label}`;
+                    const cur = somaPorItem.get(k) || { label, tipo: "Assistência", qtd: 0 };
+                    cur.qtd += qty;
+                    somaPorItem.set(k, cur);
                 }
                 continue;
             }
 
-            // Consumo: Arrumação/Conservação => 1 por checado (ou qtd se vier)
+            // Arrumação / Conservação do Corpo => 1 por check (ou qtd se vier)
             if (tipoCanon === "Arrumação") {
                 const val = qtd > 0 ? qtd : 1;
-                itens.push({
-                    key: `arr_${itemKeyN}`,
-                    item: label,
-                    tipo: "Conservação do Corpo",
-                    quantidade: val,
-                });
-                const l = `Conservação do Corpo: ${label}`;
-                somasTop.set(l, (somasTop.get(l) || 0) + val);
+                itens.push({ key: `arr_${itemKeyN}`, item: label, tipo: "Conservação do Corpo", quantidade: val });
+                const k = `Conservação do Corpo|${label}`;
+                const cur = somaPorItem.get(k) || { label, tipo: "Conservação do Corpo", qtd: 0 };
+                cur.qtd += val;
+                somaPorItem.set(k, cur);
                 continue;
             }
 
-            // Materiais “gerais” (cadeiras, tenda, etc.) não contam como consumo real
+            // Materiais “gerais” não entram no consumo real
         }
 
         const totalItens = itens.reduce((s, it) => s + (it.quantidade || 0), 0);
 
-        const arrTop = Array.from(somasTop, ([label, value]) => ({ label, value })).sort(
-            (a, b) => b.value - a.value
-        );
+        // Ordenação para os cards: maior consumo primeiro
+        const ordenado = Array.from(somaPorItem.entries())
+            .map(([k, v]) => ({ k, ...v }))
+            .sort((a, b) => b.qtd - a.qtd);
 
         return {
             itensFiltrados: itens,
             totalItensUsados: totalItens,
             tanatoCount: tanatos,
             totalAssistCalc: assistSims,
-            topItens: arrTop,
+            itensAgrupados: somaPorItem,
+            ordemCards: ordenado,
         };
     }, [rows]);
 
     // Se o backend não mandou totalAssistencias, usa o calculado
     const totalAssistFinal = totalAssistencias || totalAssistCalc || 0;
-
-    const linhasVisiveis = React.useMemo(() => {
-        return somenteTanato ? [] : itensFiltrados;
-    }, [itensFiltrados, somenteTanato]);
-
-    const totalGeralTabela = linhasVisiveis.reduce(
-        (s, r) => s + (r.quantidade || 0),
-        0
-    );
-
-    const handleLinhaClick = (k: string) => {
-        setSelectedItem(selectedItem === k ? undefined : k);
-    };
 
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -364,7 +311,7 @@ export default function ModalAnaliseGeral({
                             checked={!!somenteTanato}
                             onChange={(e) => setSomenteTanato(e.target.checked)}
                         />
-                        <span className="text-sm">Ocultar tabela de itens</span>
+                        <span className="text-sm">Ocultar cards de itens</span>
                     </label>
                     <div className="text-sm text-gray-500 self-center">
                         {registrosComEventoNoPeriodo} registro(s) no período
@@ -387,120 +334,50 @@ export default function ModalAnaliseGeral({
                             <div className="grid gap-4 lg:grid-cols-3 mb-6">
                                 <div className="rounded-xl border p-4">
                                     <div className="text-xs text-gray-500">Itens usados no período</div>
-                                    <div className="mt-1 text-3xl font-bold">
-                                        {fmt0(totalItensUsados)}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                        Somatório de consumo real
-                                    </div>
+                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalItensUsados)}</div>
+                                    <div className="text-xs text-gray-500">Somatório de consumo real</div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">
-                                        Tanatopraxias realizadas
-                                    </div>
+                                    <div className="text-xs text-gray-500">Tanatopraxias realizadas</div>
                                     <div className="mt-1 text-3xl font-bold">{fmt0(tanatoCount)}</div>
                                     <div className="text-xs text-gray-500">Contagem de “Sim”</div>
                                 </div>
                                 <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">
-                                        Assistências realizadas
-                                    </div>
-                                    <div className="mt-1 text-3xl font-bold">
-                                        {fmt0(totalAssistFinal)}
-                                    </div>
+                                    <div className="text-xs text-gray-500">Assistências realizadas</div>
+                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalAssistFinal)}</div>
                                     <div className="text-xs text-gray-500">Total no período</div>
                                 </div>
                             </div>
 
-                            {/* Convênios */}
-                            <div className="rounded-xl border p-4 mb-6">
-                                <div className="text-xs text-gray-500 mb-2">
-                                    Atendimentos por convênio
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <span className="rounded-full border px-2 py-0.5 text-xs">
-                                        Particular: <b>{fmt0(convenios?.particular ?? 0)}</b>
-                                    </span>
-                                    <span className="rounded-full border px-2 py-0.5 text-xs">
-                                        Prefeitura: <b>{fmt0(convenios?.prefeitura ?? 0)}</b>
-                                    </span>
-                                    <span className="rounded-full border px-2 py-0.5 text-xs">
-                                        Associado: <b>{fmt0(convenios?.associado ?? 0)}</b>
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* GRÁFICO */}
-                            <div className="rounded-2xl border overflow-hidden mb-6">
-                                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">
-                                        Top itens do período (consumo real)
-                                    </div>
-                                    <div className="text-xs text-gray-500">máx. 10 itens</div>
-                                </div>
-                                <div className="p-2 md:p-4">
-                                    <BarChart
-                                        data={topItens}
-                                        height={360}
-                                        padding={52}
-                                        barW={32}
-                                        gap={26}
-                                        yTicks={5}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* TABELA DE ITENS */}
+                            {/* CARDS DE ITENS (estilo da imagem) */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
-                                    <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
-                                        Detalhamento por item (consumo real)
+                                    <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                        <div className="text-sm font-semibold">
+                                            Itens consumidos no período
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                            Ordenado por maior consumo
+                                        </div>
                                     </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="min-w-full text-sm">
-                                            <thead>
-                                                <tr className="bg-gray-100">
-                                                    <th className="p-2 border text-left">Item</th>
-                                                    <th className="p-2 border text-left">Tipo</th>
-                                                    <th className="p-2 border text-right">Qtd.</th>
-                                                    <th className="p-2 border text-right">% do total</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {linhasVisiveis.map((r) => (
-                                                    <tr
-                                                        key={r.key}
-                                                        className={`cursor-pointer hover:bg-blue-50 ${selectedItem === r.key ? "bg-blue-100" : ""
-                                                            }`}
-                                                        onClick={() => handleLinhaClick(r.key)}
-                                                        role="button"
-                                                        tabIndex={0}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter" || e.key === " ")
-                                                                handleLinhaClick(r.key);
-                                                        }}
-                                                    >
-                                                        <td className="p-2 border">{r.item}</td>
-                                                        <td className="p-2 border">{r.tipo}</td>
-                                                        <td className="p-2 border text-right">
-                                                            {fmt0(r.quantidade)}
-                                                        </td>
-                                                        <td className="p-2 border text-right">
-                                                            {pct1(r.quantidade, totalGeralTabela)}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                <tr className="bg-gray-50 font-semibold">
-                                                    <td className="p-2 border" colSpan={2}>
-                                                        Total (itens)
-                                                    </td>
-                                                    <td className="p-2 border text-right">
-                                                        {fmt0(totalGeralTabela)}
-                                                    </td>
-                                                    <td className="p-2 border text-right">100%</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+
+                                    {/* Grid responsivo de cards */}
+                                    <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                        {ordemCards.length === 0 ? (
+                                            <div className="col-span-full text-sm text-gray-600 p-3">
+                                                Sem consumo real para o período selecionado.
+                                            </div>
+                                        ) : (
+                                            ordemCards.map((it, idx) => (
+                                                <ItemCard
+                                                    key={it.k}
+                                                    titulo={it.label}
+                                                    valor={it.qtd}
+                                                    tipo={it.tipo}
+                                                    destaque={DESTAQUES[idx % DESTAQUES.length]}
+                                                />
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                             )}
