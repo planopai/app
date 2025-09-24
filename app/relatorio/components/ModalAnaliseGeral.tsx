@@ -1,7 +1,12 @@
 "use client";
 import React from "react";
 import { formataDataDia } from "./UtilDatas";
-import { ALL_ITEM_LABELS, ALL_ITEM_TIPO } from "./MateriaisArrumacao";
+import {
+    ALL_ITEM_LABELS,
+    ALL_ITEM_TIPO,
+    ARR_KEYS,
+    ARR_LABELS,
+} from "./MateriaisArrumacao";
 
 /* =========================
    Tipos
@@ -85,7 +90,7 @@ const ICONES_TIPO: Record<string, string> = {
 };
 
 /* =========================
-   Cart do item (estilo imagem)
+   Card do item (estilo cards do print)
    ========================= */
 function ItemCard({
     titulo,
@@ -117,7 +122,7 @@ function ItemCard({
     }[destaque];
 
     return (
-        <div className={`rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden`}>
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className={`border-l-4 ${leftBar} p-4`}>
                 <div className="flex items-start justify-between">
                     <div className="text-3xl font-extrabold leading-none">{fmt0(valor)}</div>
@@ -134,7 +139,7 @@ function ItemCard({
     );
 }
 
-/* Paleta de destaques para variar os cards */
+/* Paleta para variar os cards */
 const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> = [
     "blue",
     "yellow",
@@ -174,33 +179,42 @@ export default function ModalAnaliseGeral({
     }, [aDe, aAte, somenteTanato]);
 
     const {
-        itensFiltrados,
         totalItensUsados,
         tanatoCount,
         totalAssistCalc,
-        itensAgrupados, // NOVO: mapa para cards
-        ordemCards,
+        qtdArrumacaoFixas, // NOVO: mapa com as 12 chaves fixas (Luvas, Palha, ...)
     } = React.useMemo(() => {
-        const itens: Array<{ key: string; item: string; tipo: string; quantidade: number }> = [];
         let tanatos = 0;
         let assistSims = 0;
 
-        // Soma total por item (para os cards)
-        const somaPorItem = new Map<string, { label: string; tipo: string; qtd: number }>();
+        // Somatório de consumo real total (arrumação + assistência que conta)
+        let totalItens = 0;
+
+        // Quantidades para os 12 itens fixos (sempre mostram card)
+        const qtdArr: Record<string, number> = Object.fromEntries(
+            ARR_KEYS.map((k) => [k, 0])
+        ) as Record<string, number>;
+
+        // Helper para mapear label -> chave do ARR_KEYS
+        const labelToArrKey = (label: string): string | undefined => {
+            const lnorm = norm(label);
+            for (const k of ARR_KEYS) {
+                if (norm(ARR_LABELS[k]) === lnorm) return k;
+            }
+            return undefined;
+        };
 
         for (const r of rows || []) {
             const itemKeyOrLabel = String(r.item || "");
-            const itemKeyN = norm(itemKeyOrLabel); // tenta bater com chave
-            const res = resolveFromKey(itemKeyOrLabel); // tenta direto
-            const resByKeyN = resolveFromKey(itemKeyN); // tenta normalizado
-
-            const label = res.label || resByKeyN.label || itemKeyOrLabel;
-            // tipo “canônico” para apresentação no chip
+            const itemKeyN = norm(itemKeyOrLabel);
+            const res = resolveFromKey(itemKeyOrLabel);
+            const resByKeyN = resolveFromKey(itemKeyN);
             const tipoCanon = res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
+            const label = res.label || resByKeyN.label || itemKeyOrLabel;
 
             const qtd = Number(r.quantidade || 0);
 
-            // Tanato / Assistência (marcadores)
+            // marcadores
             if (itemKeyN === "tanato_sim") {
                 tanatos += qtd || 0;
                 continue;
@@ -210,52 +224,39 @@ export default function ModalAnaliseGeral({
                 continue;
             }
 
-            // Consumo real:
-            // - Assistência => apenas velas e kit_lanche contam
+            // Assistência: só conta consumo real (velas / kit_lanche) para total
             if (tipoCanon === "Assistência" || itemKeyN.startsWith("assistencia")) {
                 if (itemKeyN === "velas" || itemKeyN === "kit_lanche") {
-                    const qty = qtd || 0;
-                    itens.push({ key: `assist_${itemKeyN}`, item: label, tipo: "Assistência", quantidade: qty });
-                    const k = `Assistência|${label}`;
-                    const cur = somaPorItem.get(k) || { label, tipo: "Assistência", qtd: 0 };
-                    cur.qtd += qty;
-                    somaPorItem.set(k, cur);
+                    totalItens += qtd || 0;
                 }
                 continue;
             }
 
-            // Arrumação / Conservação do Corpo => 1 por check (ou qtd se vier)
+            // Arrumação / Conservação => 1 por checado (ou qtd)
             if (tipoCanon === "Arrumação") {
                 const val = qtd > 0 ? qtd : 1;
-                itens.push({ key: `arr_${itemKeyN}`, item: label, tipo: "Conservação do Corpo", quantidade: val });
-                const k = `Conservação do Corpo|${label}`;
-                const cur = somaPorItem.get(k) || { label, tipo: "Conservação do Corpo", qtd: 0 };
-                cur.qtd += val;
-                somaPorItem.set(k, cur);
+                totalItens += val;
+
+                // jogar para uma das 12 chaves fixas:
+                // - se a key já é uma das ARR_KEYS, usa direto
+                // - caso contrário, tenta por label
+                let kHit: string | undefined = undefined;
+                if (ARR_KEYS.includes(itemKeyN as any)) kHit = itemKeyN;
+                else kHit = labelToArrKey(label);
+
+                if (kHit) qtdArr[kHit] = (qtdArr[kHit] || 0) + val;
                 continue;
             }
-
-            // Materiais “gerais” não entram no consumo real
         }
 
-        const totalItens = itens.reduce((s, it) => s + (it.quantidade || 0), 0);
-
-        // Ordenação para os cards: maior consumo primeiro
-        const ordenado = Array.from(somaPorItem.entries())
-            .map(([k, v]) => ({ k, ...v }))
-            .sort((a, b) => b.qtd - a.qtd);
-
         return {
-            itensFiltrados: itens,
             totalItensUsados: totalItens,
             tanatoCount: tanatos,
             totalAssistCalc: assistSims,
-            itensAgrupados: somaPorItem,
-            ordemCards: ordenado,
+            qtdArrumacaoFixas: qtdArr,
         };
     }, [rows]);
 
-    // Se o backend não mandou totalAssistencias, usa o calculado
     const totalAssistFinal = totalAssistencias || totalAssistCalc || 0;
 
     return (
@@ -349,66 +350,36 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
-                            {/* CARDS DE ITENS (estilo da imagem) */}
+                            {/* CARDS FIXOS: 12 ITENS DE ARRUMAÇÃO */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                        <div className="text-sm font-semibold">
-                                            Itens consumidos no período
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                            Ordenado por maior consumo
-                                        </div>
+                                        <div className="text-sm font-semibold">Itens consumidos (Arrumação)</div>
+                                        <div className="text-xs text-gray-500">Sempre mostra os 12 itens</div>
                                     </div>
 
-                                    {/* Grid responsivo de cards */}
                                     <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                        {ordemCards.length === 0 ? (
-                                            <div className="col-span-full text-sm text-gray-600 p-3">
-                                                Sem consumo real para o período selecionado.
-                                            </div>
-                                        ) : (
-                                            ordemCards.map((it, idx) => (
-                                                <ItemCard
-                                                    key={it.k}
-                                                    titulo={it.label}
-                                                    valor={it.qtd}
-                                                    tipo={it.tipo}
-                                                    destaque={DESTAQUES[idx % DESTAQUES.length]}
-                                                />
-                                            ))
-                                        )}
+                                        {ARR_KEYS.map((k, idx) => (
+                                            <ItemCard
+                                                key={k}
+                                                titulo={ARR_LABELS[k]}
+                                                valor={qtdArrumacaoFixas[k] || 0}
+                                                tipo="Conservação do Corpo"
+                                                destaque={DESTAQUES[idx % DESTAQUES.length]}
+                                            />
+                                        ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* LISTA TANATO */}
+                            {/* LISTA TANATO — REMOVIDA A LISTAGEM DE NOMES, CONFORME PEDIDO */}
+                            {/* Mantemos apenas o cabeçalho compacto com a contagem (se quiser esconder tudo, remova este bloco). */}
                             <div className="rounded-2xl border overflow-hidden">
-                                <div className="px-4 py-3 border-b bg-gray-50 text-sm font-semibold">
+                                <div className="px-4 py-3 bg-gray-50 text-sm font-semibold">
                                     Tanatopraxias no período — {fmt0(tanatoCount)}
                                 </div>
-                                <div className="p-4">
-                                    {listaTanatoPeriodo.length === 0 ? (
-                                        <div className="text-sm text-gray-600">
-                                            Sem eventos de tanatopraxia para o período selecionado.
-                                        </div>
-                                    ) : (
-                                        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                            {listaTanatoPeriodo.map((ev, idx) => (
-                                                <li
-                                                    key={`${ev.nome}-${ev.data}-${idx}`}
-                                                    className="rounded-md border p-2"
-                                                >
-                                                    <div className="text-sm font-medium truncate">
-                                                        {ev.nome}
-                                                    </div>
-                                                    <div className="text-xs text-gray-500">
-                                                        {safeFormatDate(ev.data)}
-                                                    </div>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
+                                <div className="p-4 text-xs text-gray-500">
+                                    Listagem de nomes oculta.
                                 </div>
                             </div>
                         </>
