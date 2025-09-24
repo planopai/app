@@ -46,16 +46,6 @@ interface Props {
 const fmt0 = (n: number) =>
     new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 
-function safeFormatDate(value?: string | null): string {
-    if (!value) return "-";
-    try {
-        return formataDataDia(value);
-    } catch {
-        const d = new Date(value);
-        return isNaN(d.getTime()) ? value : d.toLocaleDateString();
-    }
-}
-
 function norm(s: string) {
     return (s || "")
         .toLowerCase()
@@ -79,7 +69,7 @@ function resolveFromKey(itemKey: string): { label?: string; tipo?: string } {
 }
 
 /* =========================
-   Ícones simples por tipo
+   Ícones por tipo
    ========================= */
 const ICONES_TIPO: Record<string, string> = {
     "Assistência": "🕯️",
@@ -88,20 +78,23 @@ const ICONES_TIPO: Record<string, string> = {
     "Material": "📦",
     "Tanatopraxia": "⚗️",
     "Convênio": "🤝",
+    "Principal": "⭐",
 };
 
 /* =========================
-   Card (estilo do print)
+   Card (estilo unificado) — agora com subtexto
    ========================= */
 function ItemCard({
     titulo,
     valor,
     tipo,
+    subtexto,
     destaque = "blue",
 }: {
     titulo: string;
     valor: number;
     tipo?: string;
+    subtexto?: string;
     destaque?: "blue" | "yellow" | "sky" | "teal" | "indigo" | "rose";
 }) {
     const leftBar = {
@@ -135,6 +128,9 @@ function ItemCard({
                     )}
                 </div>
                 <div className="mt-1 text-sm text-gray-600">{titulo}</div>
+                {subtexto && (
+                    <div className="mt-1 text-xs text-gray-500">{subtexto}</div>
+                )}
             </div>
         </div>
     );
@@ -180,19 +176,25 @@ export default function ModalAnaliseGeral({
     }, [aDe, aAte, somenteTanato]);
 
     const {
-        totalItensUsados,
         tanatoCount,
         totalAssistCalc,
         qtdArrumacaoFixas, // 12 chaves fixas
+        ornNatural,
+        ornArtificial,
     } = React.useMemo(() => {
         let tanatos = 0;
         let assistSims = 0;
-        let totalItens = 0;
 
+        // 12 itens de arrumação
         const qtdArr: Record<string, number> = Object.fromEntries(
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
+        // Ornamentação (Natural / Artificial)
+        let ornNat = 0;
+        let ornArt = 0;
+
+        // helpers
         const labelToArrKey = (label: string): string | undefined => {
             const lnorm = norm(label);
             for (const k of ARR_KEYS) {
@@ -201,15 +203,20 @@ export default function ModalAnaliseGeral({
             return undefined;
         };
 
+        const isOrn = (txt: string) => /ornamenta/i.test(txt);
+        const hasNat = (txt: string) => /natural/i.test(txt);
+        const hasArt = (txt: string) => /artificial/i.test(txt);
+
         for (const r of rows || []) {
             const itemKeyOrLabel = String(r.item || "");
             const itemKeyN = norm(itemKeyOrLabel);
             const res = resolveFromKey(itemKeyOrLabel);
             const resByKeyN = resolveFromKey(itemKeyN);
             const tipoCanon = res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
-            const label = res.label || resByKeyN.label || itemKeyOrLabel;
+            const label = (res.label || resByKeyN.label || itemKeyOrLabel) as string;
             const qtd = Number(r.quantidade || 0);
 
+            // Tanato / Assistência (marcadores)
             if (itemKeyN === "tanato_sim") {
                 tanatos += qtd || 0;
                 continue;
@@ -219,37 +226,47 @@ export default function ModalAnaliseGeral({
                 continue;
             }
 
-            if (tipoCanon === "Assistência" || itemKeyN.startsWith("assistencia")) {
-                if (itemKeyN === "velas" || itemKeyN === "kit_lanche") {
-                    totalItens += qtd || 0;
+            // Ornamentação (conta por tipo)
+            const baseTxt = `${itemKeyN} ${label}`.toLowerCase();
+            if (isOrn(baseTxt)) {
+                const val = qtd > 0 ? qtd : 1;
+                if (hasNat(baseTxt)) ornNat += val;
+                else if (hasArt(baseTxt)) ornArt += val;
+                else {
+                    // se não vier especificado, conta no total como genérico (opcional)
+                    ornNat += 0;
+                    ornArt += 0;
                 }
                 continue;
             }
 
+            // Arrumação => 1 por checado (ou qtd), para a seção de 12 itens
             if (tipoCanon === "Arrumação") {
                 const val = qtd > 0 ? qtd : 1;
-                totalItens += val;
-
                 let kHit: string | undefined = undefined;
                 if (ARR_KEYS.includes(itemKeyN as any)) kHit = itemKeyN;
                 else kHit = labelToArrKey(label);
-
                 if (kHit) qtdArr[kHit] = (qtdArr[kHit] || 0) + val;
                 continue;
             }
         }
 
         return {
-            totalItensUsados: totalItens,
             tanatoCount: tanatos,
             totalAssistCalc: assistSims,
             qtdArrumacaoFixas: qtdArr,
+            ornNatural: ornNat,
+            ornArtificial: ornArt,
         };
     }, [rows]);
 
+    // Assistências: usa o do backend se vier, senão o calculado
     const totalAssistFinal = totalAssistencias || totalAssistCalc || 0;
 
-    // Valores de convênio
+    // Ornamentações: total = natural + artificial
+    const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
+
+    // Convênios
     const convPref = convenios?.prefeitura ?? 0;
     const convPart = convenios?.particular ?? 0;
     const convAssoc = convenios?.associado ?? 0;
@@ -326,26 +343,35 @@ export default function ModalAnaliseGeral({
                         </div>
                     ) : (
                         <>
-                            {/* KPIs principais */}
-                            <div className="grid gap-4 lg:grid-cols-3 mb-6">
-                                <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Itens usados no período</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalItensUsados)}</div>
-                                    <div className="text-xs text-gray-500">Somatório de consumo real</div>
+                            {/* ====== ITENS PRINCIPAIS ====== */}
+                            <div className="rounded-2xl border overflow-hidden mb-6">
+                                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                    <div className="text-sm font-semibold">Itens principais</div>
                                 </div>
-                                <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Tanatopraxias realizadas</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(tanatoCount)}</div>
-                                    <div className="text-xs text-gray-500">Contagem de “Sim”</div>
-                                </div>
-                                <div className="rounded-xl border p-4">
-                                    <div className="text-xs text-gray-500">Assistências realizadas</div>
-                                    <div className="mt-1 text-3xl font-bold">{fmt0(totalAssistFinal)}</div>
-                                    <div className="text-xs text-gray-500">Total no período</div>
+                                <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    <ItemCard
+                                        titulo="Tanatopraxia"
+                                        valor={tanatoCount}
+                                        tipo="Principal"
+                                        destaque="indigo"
+                                    />
+                                    <ItemCard
+                                        titulo="Assistências"
+                                        valor={totalAssistFinal}
+                                        tipo="Principal"
+                                        destaque="teal"
+                                    />
+                                    <ItemCard
+                                        titulo="Ornamentações"
+                                        valor={ornTotal}
+                                        subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(ornArtificial || 0)}`}
+                                        tipo="Principal"
+                                        destaque="rose"
+                                    />
                                 </div>
                             </div>
 
-                            {/* CARDS DE CONVÊNIOS */}
+                            {/* ====== CONVÊNIOS ====== */}
                             <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                                     <div className="text-sm font-semibold">Atendimentos por convênio</div>
@@ -372,7 +398,7 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
-                            {/* CARDS FIXOS: 12 ITENS DE ARRUMAÇÃO */}
+                            {/* ====== 12 ITENS DE ARRUMAÇÃO ====== */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
@@ -392,8 +418,6 @@ export default function ModalAnaliseGeral({
                                     </div>
                                 </div>
                             )}
-
-                            {/* Seção de nomes de tanatopraxias FOI REMOVIDA conforme pedido */}
                         </>
                     )}
                 </div>
