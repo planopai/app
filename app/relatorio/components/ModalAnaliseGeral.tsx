@@ -87,10 +87,11 @@ const ICONES_TIPO: Record<string, string> = {
     "Arrumação": "🧴",
     "Material": "📦",
     "Tanatopraxia": "⚗️",
+    "Convênio": "🤝",
 };
 
 /* =========================
-   Card do item (estilo cards do print)
+   Card (estilo do print)
    ========================= */
 function ItemCard({
     titulo,
@@ -182,20 +183,16 @@ export default function ModalAnaliseGeral({
         totalItensUsados,
         tanatoCount,
         totalAssistCalc,
-        qtdArrumacaoFixas, // NOVO: mapa com as 12 chaves fixas (Luvas, Palha, ...)
+        qtdArrumacaoFixas, // 12 chaves fixas
     } = React.useMemo(() => {
         let tanatos = 0;
         let assistSims = 0;
-
-        // Somatório de consumo real total (arrumação + assistência que conta)
         let totalItens = 0;
 
-        // Quantidades para os 12 itens fixos (sempre mostram card)
         const qtdArr: Record<string, number> = Object.fromEntries(
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
-        // Helper para mapear label -> chave do ARR_KEYS
         const labelToArrKey = (label: string): string | undefined => {
             const lnorm = norm(label);
             for (const k of ARR_KEYS) {
@@ -211,10 +208,8 @@ export default function ModalAnaliseGeral({
             const resByKeyN = resolveFromKey(itemKeyN);
             const tipoCanon = res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
             const label = res.label || resByKeyN.label || itemKeyOrLabel;
-
             const qtd = Number(r.quantidade || 0);
 
-            // marcadores
             if (itemKeyN === "tanato_sim") {
                 tanatos += qtd || 0;
                 continue;
@@ -224,7 +219,6 @@ export default function ModalAnaliseGeral({
                 continue;
             }
 
-            // Assistência: só conta consumo real (velas / kit_lanche) para total
             if (tipoCanon === "Assistência" || itemKeyN.startsWith("assistencia")) {
                 if (itemKeyN === "velas" || itemKeyN === "kit_lanche") {
                     totalItens += qtd || 0;
@@ -232,14 +226,10 @@ export default function ModalAnaliseGeral({
                 continue;
             }
 
-            // Arrumação / Conservação => 1 por checado (ou qtd)
             if (tipoCanon === "Arrumação") {
                 const val = qtd > 0 ? qtd : 1;
                 totalItens += val;
 
-                // jogar para uma das 12 chaves fixas:
-                // - se a key já é uma das ARR_KEYS, usa direto
-                // - caso contrário, tenta por label
                 let kHit: string | undefined = undefined;
                 if (ARR_KEYS.includes(itemKeyN as any)) kHit = itemKeyN;
                 else kHit = labelToArrKey(label);
@@ -258,6 +248,11 @@ export default function ModalAnaliseGeral({
     }, [rows]);
 
     const totalAssistFinal = totalAssistencias || totalAssistCalc || 0;
+
+    // Valores de convênio
+    const convPref = convenios?.prefeitura ?? 0;
+    const convPart = convenios?.particular ?? 0;
+    const convAssoc = convenios?.associado ?? 0;
 
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -331,7 +326,7 @@ export default function ModalAnaliseGeral({
                         </div>
                     ) : (
                         <>
-                            {/* KPIs */}
+                            {/* KPIs principais */}
                             <div className="grid gap-4 lg:grid-cols-3 mb-6">
                                 <div className="rounded-xl border p-4">
                                     <div className="text-xs text-gray-500">Itens usados no período</div>
@@ -350,14 +345,40 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
+                            {/* CARDS DE CONVÊNIOS */}
+                            <div className="rounded-2xl border overflow-hidden mb-6">
+                                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                    <div className="text-sm font-semibold">Atendimentos por convênio</div>
+                                </div>
+                                <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    <ItemCard
+                                        titulo="Prefeitura"
+                                        valor={convPref}
+                                        tipo="Convênio"
+                                        destaque="indigo"
+                                    />
+                                    <ItemCard
+                                        titulo="Particular"
+                                        valor={convPart}
+                                        tipo="Convênio"
+                                        destaque="teal"
+                                    />
+                                    <ItemCard
+                                        titulo="Associado"
+                                        valor={convAssoc}
+                                        tipo="Convênio"
+                                        destaque="rose"
+                                    />
+                                </div>
+                            </div>
+
                             {/* CARDS FIXOS: 12 ITENS DE ARRUMAÇÃO */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                                         <div className="text-sm font-semibold">Itens consumidos (Arrumação)</div>
-                                        <div className="text-xs text-gray-500">Sempre mostra os 12 itens</div>
+                                        <div className="text-xs text-gray-500">Mostrando os 12 itens</div>
                                     </div>
-
                                     <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                         {ARR_KEYS.map((k, idx) => (
                                             <ItemCard
@@ -372,16 +393,7 @@ export default function ModalAnaliseGeral({
                                 </div>
                             )}
 
-                            {/* LISTA TANATO — REMOVIDA A LISTAGEM DE NOMES, CONFORME PEDIDO */}
-                            {/* Mantemos apenas o cabeçalho compacto com a contagem (se quiser esconder tudo, remova este bloco). */}
-                            <div className="rounded-2xl border overflow-hidden">
-                                <div className="px-4 py-3 bg-gray-50 text-sm font-semibold">
-                                    Tanatopraxias no período — {fmt0(tanatoCount)}
-                                </div>
-                                <div className="p-4 text-xs text-gray-500">
-                                    Listagem de nomes oculta.
-                                </div>
-                            </div>
+                            {/* Seção de nomes de tanatopraxias FOI REMOVIDA conforme pedido */}
                         </>
                     )}
                 </div>
