@@ -7,26 +7,91 @@ import ModalDetalheRegistro from "./ModalDetalheRegistro";
 import { listarFalecidosComCriacao, listarAnalitico } from "./Api";
 import { FalecidoItem } from "./TiposHistorico";
 
-/* ===== utils simples de data ===== */
-function toDate(d?: string | null): Date | null {
-    if (!d) return null;
-    const dt = new Date(d);
-    return isNaN(dt.getTime()) ? null : dt;
-}
-function inRange(regDate: Date | null, de?: string, ate?: string): boolean {
-    if (!regDate) return false;
-    const d0 = de ? toDate(de) : null;
-    const d1 = ate ? toDate(ate) : null;
-    if (d0 && regDate < d0) return false;
-    if (d1) {
-        const end = new Date(d1);
-        end.setHours(23, 59, 59, 999);
-        if (regDate > end) return false;
-    }
-    return true;
-}
-const norm = (v?: string | null) => (v ? String(v).trim() : "");
+/* =========================================================
+   Parsers de data robustos (BR e ISO) + helpers de intervalo
+   ========================================================= */
 
+// dd/mm/aaaa[, HH:MM[:SS]]
+function parseBrDate(s: string): Date | null {
+    const m = s
+        ?.trim()
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (!m) return null;
+    const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
+    const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+// ISO local-friendly (sem timezone vira horário local)
+function parseIsoDate(s: string): Date | null {
+    const t = s?.trim().replace(" ", "T");
+    if (!t) return null;
+
+    // aaaa-mm-dd
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+        const [, yyyy, mm, dd] = m;
+        const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    // aaaa-mm-ddTHH:MM[:SS]
+    m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (m) {
+        const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
+        const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function parseDateFlex(s?: string | null): Date | null {
+    if (!s) return null;
+    return parseBrDate(s) || parseIsoDate(s) || null;
+}
+
+/** Constrói intervalo inclusivo [start..end]. Se informar só uma data, usa só aquele dia. */
+function makeRange(de?: string, ate?: string) {
+    const hasDe = !!de;
+    const hasAte = !!ate;
+    const deStr = hasDe ? de! : hasAte ? ate! : "";
+    const ateStr = hasAte ? ate! : hasDe ? de! : "";
+
+    const start = deStr ? new Date(`${deStr}T00:00:00`) : null;
+    const end = ateStr ? new Date(`${ateStr}T23:59:59`) : null;
+
+    if (start && end && end < start) {
+        // invertido: corrige
+        return {
+            start: end,
+            end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000),
+        };
+    }
+    return { start, end };
+}
+
+/** Melhor data disponível para um item (ordenação/filtragem). */
+function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+    const id = String(item.sepultamento_id);
+    const candidatos = [
+        criacaoMap[id],
+        (item as any).created_at,
+        (item as any).data,
+        (item as any).data_inicio_velorio,
+        (item as any).data_fim_velorio,
+    ];
+    for (const c of candidatos) {
+        const d = parseDateFlex(String(c || ""));
+        if (d) return d;
+    }
+    return null;
+}
+
+/* =========================================================
+   Página
+   ========================================================= */
 export default function PaginaHistoricoSepultamentos() {
     const [lista, setLista] = useState<FalecidoItem[]>([]);
     const [loadingLista, setLoadingLista] = useState(false);
@@ -44,7 +109,7 @@ export default function PaginaHistoricoSepultamentos() {
     // ====== ESTADO DO MODAL DE ANÁLISE ======
     const [analiseOpen, setAnaliseOpen] = useState(false);
 
-    // período padrão: mês atual
+    // período padrão do modal: mês atual
     const hoje = new Date();
     const yyyy = hoje.getFullYear();
     const mm = String(hoje.getMonth() + 1).padStart(2, "0");
@@ -73,17 +138,34 @@ export default function PaginaHistoricoSepultamentos() {
 
     const porPagina = 10;
 
+    // FILTRAGEM + ORDEM (DESC)
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
-        return (lista || []).filter((reg) => {
-            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) return false;
-            if (filtroDe || filtroAte) {
-                const base = (criacaoMap[reg.sepultamento_id] || "").substring(0, 10);
-                if (filtroDe && base && base < filtroDe) return false;
-                if (filtroAte && base && base > filtroAte) return false;
+        const { start, end } = makeRange(filtroDe, filtroAte);
+
+        const base = (lista || []).filter((reg) => {
+            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) {
+                return false;
+            }
+            // filtrar por data quando informado
+            if (start || end) {
+                const d = getItemDate(reg, criacaoMap);
+                if (!d) return false;
+                if (start && d < start) return false;
+                if (end && d > end) return false;
             }
             return true;
         });
+
+        base.sort((a, b) => {
+            const da = getItemDate(a, criacaoMap);
+            const db = getItemDate(b, criacaoMap);
+            const ta = da ? da.getTime() : 0;
+            const tb = db ? db.getTime() : 0;
+            return tb - ta; // DESC (mais novo primeiro)
+        });
+
+        return base;
     }, [lista, filtroNome, filtroDe, filtroAte, criacaoMap]);
 
     const totalPaginas = Math.max(1, Math.ceil(filtrados.length / porPagina));
@@ -94,13 +176,12 @@ export default function PaginaHistoricoSepultamentos() {
         setModalAberto(true);
     }
 
-    // (opcional) se você ainda usa este carregamento para outra coisa
+    // (opcional) ainda usado pelo botão Recarregar dentro do modal
     async function carregarAnalise() {
-        // aqui você pode manter se quiser pré-carregar algo
         await listarAnalitico();
     }
 
-    // quando abrir o modal de análise, pode disparar um preload se desejar
+    // preload quando abrir o modal de análise (opcional)
     useEffect(() => {
         if (!analiseOpen) return;
         carregarAnalise();
@@ -145,7 +226,7 @@ export default function PaginaHistoricoSepultamentos() {
                 onFechar={() => setModalAberto(false)}
             />
 
-            {/* Chamada compatível com o ModalAnaliseGeral atualizado */}
+            {/* Modal de análise (usa seu próprio carregamento interno) */}
             <ModalAnaliseGeral
                 aberto={analiseOpen}
                 onFechar={() => setAnaliseOpen(false)}
