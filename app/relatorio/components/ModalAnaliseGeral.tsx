@@ -1,64 +1,19 @@
 "use client";
 import React from "react";
-import { formataDataDia } from "./UtilDatas";
 import {
-    ALL_ITEM_LABELS,
-    ALL_ITEM_TIPO,
     ARR_KEYS,
     ARR_LABELS,
-    normSimNao,             // p/ ler "sim/nao"
-    extrairEstadoArrumacao, // p/ contar itens de arrumação a partir de arrumacao_json
+    normSimNao,
+    extrairEstadoArrumacao,
 } from "./MateriaisArrumacao";
 import { listarAnalitico } from "./Api";
 import type { RegistroAnalise } from "./TiposHistorico";
-
-/* =========================
-   Tipos
-   ========================= */
-type Evento = { nome: string; data: string; itemKey?: string };
-
-interface Props {
-    aberto: boolean;
-    onFechar: () => void;
-
-    aDe: string;
-    aAte: string;
-    setADe: (v: string) => void;
-    setAAte: (v: string) => void;
-
-    somenteTanato: boolean;
-    setSomenteTanato: (v: boolean) => void;
-
-    // Os props abaixo ficam opcionais agora; o modal calcula sozinho.
-    selectedItem?: string;
-    setSelectedItem?: (v?: string) => void;
-
-    // legados (não usados mais para cálculo)
-    rows?: any[];
-    registrosComEventoNoPeriodo?: number;
-    listaTanatoPeriodo?: Evento[];
-
-    totalAssistencias?: number;
-    convenios?: { particular?: number; prefeitura?: number; associado?: number };
-
-    loading?: boolean;
-    onRecarregar?: () => void;
-}
 
 /* =========================
    Helpers visuais
    ========================= */
 const fmt0 = (n: number) =>
     new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
-
-function norm(s: string) {
-    return (s || "")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "");
-}
 
 const ICONES_TIPO: Record<string, string> = {
     "Assistência": "🕯️",
@@ -125,6 +80,77 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 ];
 
 /* =========================
+   Parsers de Data (precisos)
+   ========================= */
+
+/** dd/mm/aaaa[ , HH:MM:SS] → Date (local) */
+function parseBrDate(s: string): Date | null {
+    const m = s.trim().match(
+        /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+    if (!m) return null;
+    const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
+    const d = new Date(
+        Number(yyyy),
+        Number(mm) - 1,
+        Number(dd),
+        Number(hh),
+        Number(mi),
+        Number(ss)
+    );
+    return isNaN(d.getTime()) ? null : d;
+}
+
+/** ISO (yyyy-mm-dd[THH:MM:SS]) → Date */
+function parseIsoDate(s: string): Date | null {
+    const t = s.trim().replace(" ", "T");
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+/** Tenta BR, depois ISO. Se falhar, null. */
+function parseDateFlex(s?: string | null): Date | null {
+    if (!s) return null;
+    return parseBrDate(s) || parseIsoDate(s) || null;
+}
+
+/** Pega a melhor data do registro (ordem de preferência). */
+function getRegistroDate(r: RegistroAnalise): Date | null {
+    const candidatos = [
+        (r as any).data,
+        (r as any).data_inicio_velorio,
+        (r as any).data_fim_velorio,
+        (r as any).datahora,
+        (r as any).ultima_datahora,
+        (r as any).created_at,
+    ];
+    for (const c of candidatos) {
+        const d = parseDateFlex(String(c || ""));
+        if (d) return d;
+    }
+    return null;
+}
+
+/** Prepara o intervalo [start,end] inclusivo. Suporta “apenas um dia”. */
+function makeRange(aDe?: string, aAte?: string): { start: Date | null; end: Date | null } {
+    const hasDe = !!aDe;
+    const hasAte = !!aAte;
+
+    // se só um foi informado, usa o mesmo dia para ambos
+    const deStr = hasDe ? aDe! : hasAte ? aAte! : "";
+    const ateStr = hasAte ? aAte! : hasDe ? aDe! : "";
+
+    const start = deStr ? new Date(`${deStr}T00:00:00`) : null;
+    const end = ateStr ? new Date(`${ateStr}T23:59:59`) : null;
+
+    // se invertido, corrige
+    if (start && end && end < start) {
+        return { start: end, end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000) };
+    }
+    return { start, end };
+}
+
+/* =========================
    Componente
    ========================= */
 export default function ModalAnaliseGeral({
@@ -136,23 +162,29 @@ export default function ModalAnaliseGeral({
     setAAte,
     somenteTanato,
     setSomenteTanato,
-    selectedItem,
-    setSelectedItem,
-    loading: loadingProp,
     onRecarregar,
-}: Props) {
+}: {
+    aberto: boolean;
+    onFechar: () => void;
+    aDe: string;
+    aAte: string;
+    setADe: (v: string) => void;
+    setAAte: (v: string) => void;
+    somenteTanato: boolean;
+    setSomenteTanato: (v: boolean) => void;
+    onRecarregar?: () => void;
+}) {
     const [busy, setBusy] = React.useState(false);
     const [dados, setDados] = React.useState<RegistroAnalise[]>([]);
     const [erro, setErro] = React.useState<string | null>(null);
 
-    // Busca do analítico direto no modal
     const carregar = React.useCallback(async () => {
         try {
             setErro(null);
             setBusy(true);
             const lista = await listarAnalitico();
             setDados(Array.isArray(lista) ? lista : []);
-        } catch (e) {
+        } catch {
             setErro("Falha ao carregar dados do analítico.");
             setDados([]);
         } finally {
@@ -164,41 +196,26 @@ export default function ModalAnaliseGeral({
         if (aberto) carregar();
     }, [aberto, carregar]);
 
-    // Permite recarregar pelo botão externo (se existir)
     const handleRecarregar = React.useCallback(() => {
-        if (onRecarregar) onRecarregar();
+        onRecarregar?.();
         carregar();
     }, [onRecarregar, carregar]);
 
-    // Normaliza data do registro para filtragem
-    function pegaDataRegistro(r: RegistroAnalise): string {
-        return (
-            (r.data as string) ||
-            (r.data_inicio_velorio as string) ||
-            (r.data_fim_velorio as string) ||
-            ""
-        );
-    }
-
-    // Filtro por período
+    // Filtro por período com parser robusto
     const dadosPeriodo = React.useMemo(() => {
-        if (!aDe && !aAte) return dados;
-        const de = aDe ? new Date(aDe + "T00:00:00") : null;
-        const ate = aAte ? new Date(aAte + "T23:59:59") : null;
+        const { start, end } = makeRange(aDe, aAte);
         return (dados || []).filter((r) => {
-            const s = pegaDataRegistro(r);
-            if (!s) return false;
-            const d = new Date(s);
-            if (isNaN(d.getTime())) return false;
-            if (de && d < de) return false;
-            if (ate && d > ate) return false;
+            const d = getRegistroDate(r);
+            if (!d) return false;
+            if (start && d < start) return false;
+            if (end && d > end) return false;
             return true;
         });
     }, [dados, aDe, aAte]);
 
     const registrosComEventoNoPeriodo = dadosPeriodo.length;
 
-    // Cálculos
+    // Agregações
     const {
         tanatoCount,
         assistTotal,
@@ -211,45 +228,31 @@ export default function ModalAnaliseGeral({
     } = React.useMemo(() => {
         let tanato = 0;
         let assist = 0;
-
         let ornNat = 0;
         let ornArt = 0;
 
-        // 12 itens fixos
         const arr: Record<string, number> = Object.fromEntries(
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
-        // convênios
         let cPref = 0, cPart = 0, cAssoc = 0;
 
         for (const r of dadosPeriodo) {
-            // Tanato
-            if (normSimNao(String(r.tanato || "")) === "sim") tanato++;
+            if (normSimNao(String((r as any).tanato || "")) === "sim") tanato++;
+            if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
 
-            // Assistência (total)
-            if (normSimNao(String(r.assistencia || "")) === "sim") assist++;
-
-            // Ornamentação — tenta achar info textual
             const ornTxt = String(
                 (r as any).ornamentacao_tipo ||
                 (r as any).ornamentacao ||
                 (r as any).ornamentacao_tipo_nome ||
                 ""
             ).toLowerCase();
+            if (ornTxt.includes("natural")) ornNat++;
+            else if (ornTxt.includes("artificial")) ornArt++;
 
-            if (ornTxt) {
-                if (ornTxt.includes("natural")) ornNat++;
-                else if (ornTxt.includes("artificial")) ornArt++;
-            }
-
-            // Arrumação — booleans em arrumacao_json
             const estadosArr = extrairEstadoArrumacao(r);
-            for (const k of ARR_KEYS) {
-                if (estadosArr[k]) arr[k] = (arr[k] || 0) + 1;
-            }
+            for (const k of ARR_KEYS) if (estadosArr[k]) arr[k] = (arr[k] || 0) + 1;
 
-            // Convênio — tenta heurísticas de campo
             const convTxt = String(
                 (r as any).convenio ||
                 (r as any).tipo_convenio ||
@@ -257,11 +260,9 @@ export default function ModalAnaliseGeral({
                 (r as any).contrato ||
                 ""
             ).toLowerCase();
-
             if (convTxt.includes("prefeitura")) cPref++;
             else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
             else if (convTxt.includes("particular")) cPart++;
-            // (se vier vazio, ignora)
         }
 
         return {
@@ -278,7 +279,9 @@ export default function ModalAnaliseGeral({
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
 
-    return !aberto ? null : (
+    if (!aberto) return null;
+
+    return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
                 {/* Cabeçalho */}
@@ -290,16 +293,10 @@ export default function ModalAnaliseGeral({
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleRecarregar}
-                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                        >
+                        <button onClick={handleRecarregar} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
                             Recarregar
                         </button>
-                        <button
-                            onClick={onFechar}
-                            className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-                        >
+                        <button onClick={onFechar} className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
                             Fechar
                         </button>
                     </div>
@@ -333,18 +330,17 @@ export default function ModalAnaliseGeral({
                         />
                         <span className="text-sm">Ocultar cards de itens</span>
                     </label>
+                    <div className="text-sm text-gray-500 self-center">
+                        Se informar apenas uma data, usamos **só aquele dia**.
+                    </div>
                 </div>
 
                 {/* Corpo */}
                 <div className="p-4 pt-0">
                     {busy ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
-                            Carregando análise…
-                        </div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">Carregando análise…</div>
                     ) : erro ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">
-                            {erro}
-                        </div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">{erro}</div>
                     ) : dadosPeriodo.length === 0 ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Nenhum dado para o período/filtro selecionado.
@@ -357,18 +353,8 @@ export default function ModalAnaliseGeral({
                                     <div className="text-sm font-semibold">Itens principais</div>
                                 </div>
                                 <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard
-                                        titulo="Tanatopraxia"
-                                        valor={tanatoCount}
-                                        tipo="Principal"
-                                        destaque="indigo"
-                                    />
-                                    <ItemCard
-                                        titulo="Assistências"
-                                        valor={assistTotal}
-                                        tipo="Principal"
-                                        destaque="teal"
-                                    />
+                                    <ItemCard titulo="Tanatopraxia" valor={tanatoCount} tipo="Principal" destaque="indigo" />
+                                    <ItemCard titulo="Assistências" valor={assistTotal} tipo="Principal" destaque="teal" />
                                     <ItemCard
                                         titulo="Ornamentações"
                                         valor={ornTotal}

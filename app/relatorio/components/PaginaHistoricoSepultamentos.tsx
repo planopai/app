@@ -27,18 +27,6 @@ function inRange(regDate: Date | null, de?: string, ate?: string): boolean {
 }
 const norm = (v?: string | null) => (v ? String(v).trim() : "");
 
-/* ===== mapeamento de campos que virão do informativo.php?listar=1 =====
-   Ajuste aqui se o backend tiver nomes diferentes */
-const CAMPOS = [
-    { campo: "tanato", tipo: "Tanatopraxia", keyPrefix: "tanato" },
-    { campo: "ornamentacao", tipo: "Ornamentação", keyPrefix: "ornamentacao" },
-    { campo: "urna", tipo: "Urna", keyPrefix: "urna" },
-    { campo: "assistencia", tipo: "Assistência", keyPrefix: "assistencia" },
-    { campo: "local_velorio", tipo: "Local do Velório", keyPrefix: "local_velorio" },
-] as const;
-type Row = { key: string; item: string; tipo: string; quantidade: number };
-type Evento = { nome: string; data: string; itemKey?: string };
-
 export default function PaginaHistoricoSepultamentos() {
     const [lista, setLista] = useState<FalecidoItem[]>([]);
     const [loadingLista, setLoadingLista] = useState(false);
@@ -65,12 +53,6 @@ export default function PaginaHistoricoSepultamentos() {
     const [aDe, setADe] = useState(`${yyyy}-${mm}-01`);
     const [aAte, setAAte] = useState(`${yyyy}-${mm}-${dd}`);
     const [somenteTanato, setSomenteTanato] = useState(false);
-    const [selectedItem, setSelectedItem] = useState<string | undefined>(undefined);
-
-    const [rows, setRows] = useState<Row[]>([]);
-    const [registrosComEventoNoPeriodo, setRegistrosComEventoNoPeriodo] = useState(0);
-    const [listaTanatoPeriodo, setListaTanatoPeriodo] = useState<Evento[]>([]);
-    const [loadingAnalise, setLoadingAnalise] = useState(false);
 
     // mapa de criação por registro (lista principal)
     const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
@@ -112,65 +94,16 @@ export default function PaginaHistoricoSepultamentos() {
         setModalAberto(true);
     }
 
-    // ===== carregador do ANALÍTICO =====
+    // (opcional) se você ainda usa este carregamento para outra coisa
     async function carregarAnalise() {
-        setLoadingAnalise(true);
-        try {
-            const lista = await listarAnalitico(); // -> /api/php/informativo.php?listar=1
-            // filtra por período
-            const filtrados = (lista || []).filter((r: any) => {
-                // prioridade: r.data; se vazio, tenta data_inicio_velorio
-                const dx = norm(r.data) || norm(r.data_inicio_velorio);
-                return inRange(toDate(dx), aDe, aAte);
-            });
-
-            const counter = new Map<string, Row>();
-            const eventosTanato: Evento[] = [];
-
-            for (const r of filtrados) {
-                for (const cfg of CAMPOS) {
-                    const valor = norm(r[cfg.campo as keyof typeof r] as any);
-                    if (!valor) continue;
-                    if (somenteTanato && cfg.campo !== "tanato") continue;
-
-                    const key = `${cfg.keyPrefix}|${valor}`;
-                    const prev = counter.get(key);
-                    if (prev) prev.quantidade += 1;
-                    else counter.set(key, { key, item: valor, tipo: cfg.tipo, quantidade: 1 });
-
-                    if (cfg.campo === "tanato") {
-                        const nome = norm(r.falecido) || "(Sem nome)";
-                        const dataStr = norm(r.data) || norm(r.data_inicio_velorio) || "";
-                        eventosTanato.push({ nome, data: dataStr, itemKey: key });
-                    }
-                }
-            }
-
-            const linhas = Array.from(counter.values()).sort((a, b) => {
-                if (a.tipo !== b.tipo) return a.tipo.localeCompare(b.tipo);
-                if (b.quantidade !== a.quantidade) return b.quantidade - a.quantidade;
-                return a.item.localeCompare(b.item);
-            });
-
-            setRows(linhas);
-            setRegistrosComEventoNoPeriodo(filtrados.length);
-            setListaTanatoPeriodo(eventosTanato);
-        } catch (e) {
-            console.error("Falha ao carregar análise:", e);
-            setRows([]);
-            setRegistrosComEventoNoPeriodo(0);
-            setListaTanatoPeriodo([]);
-        } finally {
-            setLoadingAnalise(false);
-        }
+        // aqui você pode manter se quiser pré-carregar algo
+        await listarAnalitico();
     }
 
-    // quando abrir o modal e sempre que filtro do modal mudar, recarrega
+    // quando abrir o modal de análise, pode disparar um preload se desejar
     useEffect(() => {
         if (!analiseOpen) return;
-        setSelectedItem(undefined);
         carregarAnalise();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [analiseOpen, aDe, aAte, somenteTanato]);
 
     return (
@@ -212,7 +145,7 @@ export default function PaginaHistoricoSepultamentos() {
                 onFechar={() => setModalAberto(false)}
             />
 
-            {/* Agora o modal recebe DADOS de verdade */}
+            {/* Chamada compatível com o ModalAnaliseGeral atualizado */}
             <ModalAnaliseGeral
                 aberto={analiseOpen}
                 onFechar={() => setAnaliseOpen(false)}
@@ -222,12 +155,6 @@ export default function PaginaHistoricoSepultamentos() {
                 setAAte={setAAte}
                 somenteTanato={somenteTanato}
                 setSomenteTanato={setSomenteTanato}
-                selectedItem={selectedItem}
-                setSelectedItem={setSelectedItem}
-                rows={rows}
-                registrosComEventoNoPeriodo={registrosComEventoNoPeriodo}
-                listaTanatoPeriodo={listaTanatoPeriodo}
-                loading={loadingAnalise}
                 onRecarregar={carregarAnalise}
             />
         </div>
