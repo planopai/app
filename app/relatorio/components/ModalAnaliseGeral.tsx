@@ -16,13 +16,13 @@ const fmt0 = (n: number) =>
     new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 
 const ICONES_TIPO: Record<string, string> = {
-    "Assistência": "🕯️",
+    Assistência: "🕯️",
     "Conservação do Corpo": "🧪",
-    "Arrumação": "🧴",
-    "Material": "📦",
-    "Tanatopraxia": "⚗️",
+    Arrumação: "🧴",
+    Material: "📦",
+    Tanatopraxia: "⚗️",
     "Convênio": "🤝",
-    "Principal": "⭐",
+    Principal: "⭐",
 };
 
 function ItemCard({
@@ -76,7 +76,12 @@ function ItemCard({
 }
 
 const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> = [
-    "blue", "yellow", "sky", "teal", "indigo", "rose",
+    "blue",
+    "yellow",
+    "sky",
+    "teal",
+    "indigo",
+    "rose",
 ];
 
 /* =========================
@@ -85,25 +90,36 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 
 /** dd/mm/aaaa[ , HH:MM:SS] → Date (local) */
 function parseBrDate(s: string): Date | null {
-    const m = s.trim().match(
-        /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-    );
+    const m = s
+        .trim()
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
-    const d = new Date(
-        Number(yyyy),
-        Number(mm) - 1,
-        Number(dd),
-        Number(hh),
-        Number(mi),
-        Number(ss)
-    );
+    const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
     return isNaN(d.getTime()) ? null : d;
 }
 
-/** ISO (yyyy-mm-dd[THH:MM:SS]) → Date */
+/** ISO → Date (LOCAL se não houver timezone) */
 function parseIsoDate(s: string): Date | null {
     const t = s.trim().replace(" ", "T");
+
+    // Apenas data: aaaa-mm-dd → construir como LOCAL 00:00
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+        const [, yyyy, mm, dd] = m;
+        const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Data + hora sem timezone: construir como LOCAL
+    m = t.match(/^(\d{4})-(\d{2})-(\d{2})[T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (m) {
+        const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
+        const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Demais formatos (com Z ou offset) → delega para Date (já trata timezone)
     const d = new Date(t);
     return isNaN(d.getTime()) ? null : d;
 }
@@ -114,7 +130,7 @@ function parseDateFlex(s?: string | null): Date | null {
     return parseBrDate(s) || parseIsoDate(s) || null;
 }
 
-/** Pega a melhor data do registro (ordem de preferência). */
+/** Melhor data do registro (ordem de preferência). */
 function getRegistroDate(r: RegistroAnalise): Date | null {
     const candidatos = [
         (r as any).data,
@@ -131,8 +147,11 @@ function getRegistroDate(r: RegistroAnalise): Date | null {
     return null;
 }
 
-/** Prepara o intervalo [start,end] inclusivo. Suporta “apenas um dia”. */
-function makeRange(aDe?: string, aAte?: string): { start: Date | null; end: Date | null } {
+/** Intervalo inclusivo [start,end]. Se informar uma data só, usa "aquele dia". */
+function makeRange(
+    aDe?: string,
+    aAte?: string
+): { start: Date | null; end: Date | null } {
     const hasDe = !!aDe;
     const hasAte = !!aAte;
 
@@ -145,7 +164,11 @@ function makeRange(aDe?: string, aAte?: string): { start: Date | null; end: Date
 
     // se invertido, corrige
     if (start && end && end < start) {
-        return { start: end, end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000) };
+        // troca e garante fim do dia
+        return {
+            start: end,
+            end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000),
+        };
     }
     return { start, end };
 }
@@ -235,7 +258,9 @@ export default function ModalAnaliseGeral({
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
-        let cPref = 0, cPart = 0, cAssoc = 0;
+        let cPref = 0,
+            cPart = 0,
+            cAssoc = 0;
 
         for (const r of dadosPeriodo) {
             if (normSimNao(String((r as any).tanato || "")) === "sim") tanato++;
@@ -261,7 +286,8 @@ export default function ModalAnaliseGeral({
                 ""
             ).toLowerCase();
             if (convTxt.includes("prefeitura")) cPref++;
-            else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
+            else if (convTxt.includes("associado") || convTxt.includes("associação"))
+                cAssoc++;
             else if (convTxt.includes("particular")) cPart++;
         }
 
@@ -293,10 +319,16 @@ export default function ModalAnaliseGeral({
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button onClick={handleRecarregar} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
+                        <button
+                            onClick={handleRecarregar}
+                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                        >
                             Recarregar
                         </button>
-                        <button onClick={onFechar} className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
+                        <button
+                            onClick={onFechar}
+                            className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                        >
                             Fechar
                         </button>
                     </div>
@@ -331,16 +363,20 @@ export default function ModalAnaliseGeral({
                         <span className="text-sm">Ocultar cards de itens</span>
                     </label>
                     <div className="text-sm text-gray-500 self-center">
-                        Se informar apenas uma data, usamos **só aquele dia**.
+                        Se informar apenas uma data, usamos <b>só aquele dia</b>.
                     </div>
                 </div>
 
                 {/* Corpo */}
                 <div className="p-4 pt-0">
                     {busy ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">Carregando análise…</div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                            Carregando análise…
+                        </div>
                     ) : erro ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">{erro}</div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">
+                            {erro}
+                        </div>
                     ) : dadosPeriodo.length === 0 ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Nenhum dado para o período/filtro selecionado.
@@ -353,12 +389,24 @@ export default function ModalAnaliseGeral({
                                     <div className="text-sm font-semibold">Itens principais</div>
                                 </div>
                                 <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard titulo="Tanatopraxia" valor={tanatoCount} tipo="Principal" destaque="indigo" />
-                                    <ItemCard titulo="Assistências" valor={assistTotal} tipo="Principal" destaque="teal" />
+                                    <ItemCard
+                                        titulo="Tanatopraxia"
+                                        valor={tanatoCount}
+                                        tipo="Principal"
+                                        destaque="indigo"
+                                    />
+                                    <ItemCard
+                                        titulo="Assistências"
+                                        valor={assistTotal}
+                                        tipo="Principal"
+                                        destaque="teal"
+                                    />
                                     <ItemCard
                                         titulo="Ornamentações"
                                         valor={ornTotal}
-                                        subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(ornArtificial || 0)}`}
+                                        subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(
+                                            ornArtificial || 0
+                                        )}`}
                                         tipo="Principal"
                                         destaque="rose"
                                     />
