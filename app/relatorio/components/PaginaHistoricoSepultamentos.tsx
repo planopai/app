@@ -13,9 +13,9 @@ import { FalecidoItem } from "./TiposHistorico";
 
 // dd/mm/aaaa[, HH:MM[:SS]]
 function parseBrDate(s: string): Date | null {
-    const m = s
-        ?.trim()
-        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    const m = s?.trim().match(
+        /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+    );
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -52,31 +52,42 @@ function parseDateFlex(s?: string | null): Date | null {
     return parseBrDate(s) || parseIsoDate(s) || null;
 }
 
+function startOfDay(d: Date) {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+}
+function endOfDay(d: Date) {
+    const x = new Date(d);
+    x.setHours(23, 59, 59, 999);
+    return x;
+}
+
 /** Constrói intervalo inclusivo [start..end]. Se informar só uma data, usa só aquele dia. */
 function makeRange(de?: string, ate?: string) {
-    const hasDe = !!de;
-    const hasAte = !!ate;
-    const deStr = hasDe ? de! : hasAte ? ate! : "";
-    const ateStr = hasAte ? ate! : hasDe ? de! : "";
+    const d0 = de ? parseDateFlex(de) : null;
+    const d1 = ate ? parseDateFlex(ate) : null;
 
-    const start = deStr ? new Date(`${deStr}T00:00:00`) : null;
-    const end = ateStr ? new Date(`${ateStr}T23:59:59`) : null;
+    // se só um foi informado, usa aquele mesmo dia
+    const baseStart = d0 ?? d1;
+    const baseEnd = d1 ?? d0;
 
-    if (start && end && end < start) {
-        // invertido: corrige
-        return {
-            start: end,
-            end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000),
-        };
-    }
+    const start = baseStart ? startOfDay(baseStart) : null;
+    const end = baseEnd ? endOfDay(baseEnd) : null;
+
+    // se invertido, mantemos inclusivo sem quebrar
+    if (start && end && end < start) return { start: end, end: start };
     return { start, end };
 }
 
 /** Melhor data disponível para um item (ordenação/filtragem). */
-function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+function getItemDate(
+    item: FalecidoItem,
+    criacaoMap: Record<string, string>
+): Date | null {
     const id = String(item.sepultamento_id);
     const candidatos = [
-        criacaoMap[id],
+        criacaoMap[id], // normalmente "dd/mm/aaaa HH:MM:SS"
         (item as any).created_at,
         (item as any).data,
         (item as any).data_inicio_velorio,
@@ -104,7 +115,8 @@ export default function PaginaHistoricoSepultamentos() {
 
     // modal de detalhes
     const [modalAberto, setModalAberto] = useState(false);
-    const [registroSelecionado, setRegistroSelecionado] = useState<FalecidoItem | null>(null);
+    const [registroSelecionado, setRegistroSelecionado] =
+        useState<FalecidoItem | null>(null);
 
     // ====== ESTADO DO MODAL DE ANÁLISE ======
     const [analiseOpen, setAnaliseOpen] = useState(false);
