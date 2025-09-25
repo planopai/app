@@ -6,12 +6,15 @@ import {
     ALL_ITEM_TIPO,
     ARR_KEYS,
     ARR_LABELS,
+    normSimNao,             // p/ ler "sim/nao"
+    extrairEstadoArrumacao, // p/ contar itens de arrumação a partir de arrumacao_json
 } from "./MateriaisArrumacao";
+import { listarAnalitico } from "./Api";
+import type { RegistroAnalise } from "./TiposHistorico";
 
 /* =========================
    Tipos
    ========================= */
-type Row = { key: string; item: string; tipo: string; quantidade: number };
 type Evento = { nome: string; data: string; itemKey?: string };
 
 interface Props {
@@ -26,22 +29,24 @@ interface Props {
     somenteTanato: boolean;
     setSomenteTanato: (v: boolean) => void;
 
+    // Os props abaixo ficam opcionais agora; o modal calcula sozinho.
     selectedItem?: string;
-    setSelectedItem: (v?: string) => void;
+    setSelectedItem?: (v?: string) => void;
 
-    rows: Row[];
-    registrosComEventoNoPeriodo: number;
-    listaTanatoPeriodo: Evento[];
+    // legados (não usados mais para cálculo)
+    rows?: any[];
+    registrosComEventoNoPeriodo?: number;
+    listaTanatoPeriodo?: Evento[];
 
     totalAssistencias?: number;
     convenios?: { particular?: number; prefeitura?: number; associado?: number };
 
-    loading: boolean;
-    onRecarregar: () => void;
+    loading?: boolean;
+    onRecarregar?: () => void;
 }
 
 /* =========================
-   Helpers
+   Helpers visuais
    ========================= */
 const fmt0 = (n: number) =>
     new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
@@ -55,22 +60,6 @@ function norm(s: string) {
         .replace(/^_+|_+$/g, "");
 }
 
-/** resolve rótulo/tipo a partir da chave (quando rows trazem `item` como key) */
-function resolveFromKey(itemKey: string): { label?: string; tipo?: string } {
-    const key = norm(itemKey);
-    const label = (ALL_ITEM_LABELS as any)[key] as string | undefined;
-    const tipo = (ALL_ITEM_TIPO as any)[key] as
-        | "Material"
-        | "Arrumação"
-        | "Assistência"
-        | "Tanatopraxia"
-        | undefined;
-    return { label, tipo };
-}
-
-/* =========================
-   Ícones por tipo
-   ========================= */
 const ICONES_TIPO: Record<string, string> = {
     "Assistência": "🕯️",
     "Conservação do Corpo": "🧪",
@@ -81,9 +70,6 @@ const ICONES_TIPO: Record<string, string> = {
     "Principal": "⭐",
 };
 
-/* =========================
-   Card (estilo unificado) — agora com subtexto
-   ========================= */
 function ItemCard({
     titulo,
     valor,
@@ -128,22 +114,14 @@ function ItemCard({
                     )}
                 </div>
                 <div className="mt-1 text-sm text-gray-600">{titulo}</div>
-                {subtexto && (
-                    <div className="mt-1 text-xs text-gray-500">{subtexto}</div>
-                )}
+                {subtexto && <div className="mt-1 text-xs text-gray-500">{subtexto}</div>}
             </div>
         </div>
     );
 }
 
-/* Paleta para variar os cards */
 const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> = [
-    "blue",
-    "yellow",
-    "sky",
-    "teal",
-    "indigo",
-    "rose",
+    "blue", "yellow", "sky", "teal", "indigo", "rose",
 ];
 
 /* =========================
@@ -160,118 +138,147 @@ export default function ModalAnaliseGeral({
     setSomenteTanato,
     selectedItem,
     setSelectedItem,
-    rows = [],
-    registrosComEventoNoPeriodo = 0,
-    listaTanatoPeriodo = [],
-    totalAssistencias = 0,
-    convenios = {},
-    loading,
+    loading: loadingProp,
     onRecarregar,
 }: Props) {
-    if (!aberto) return null;
+    const [busy, setBusy] = React.useState(false);
+    const [dados, setDados] = React.useState<RegistroAnalise[]>([]);
+    const [erro, setErro] = React.useState<string | null>(null);
+
+    // Busca do analítico direto no modal
+    const carregar = React.useCallback(async () => {
+        try {
+            setErro(null);
+            setBusy(true);
+            const lista = await listarAnalitico();
+            setDados(Array.isArray(lista) ? lista : []);
+        } catch (e) {
+            setErro("Falha ao carregar dados do analítico.");
+            setDados([]);
+        } finally {
+            setBusy(false);
+        }
+    }, []);
 
     React.useEffect(() => {
-        setSelectedItem(undefined);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [aDe, aAte, somenteTanato]);
+        if (aberto) carregar();
+    }, [aberto, carregar]);
 
+    // Permite recarregar pelo botão externo (se existir)
+    const handleRecarregar = React.useCallback(() => {
+        if (onRecarregar) onRecarregar();
+        carregar();
+    }, [onRecarregar, carregar]);
+
+    // Normaliza data do registro para filtragem
+    function pegaDataRegistro(r: RegistroAnalise): string {
+        return (
+            (r.data as string) ||
+            (r.data_inicio_velorio as string) ||
+            (r.data_fim_velorio as string) ||
+            ""
+        );
+    }
+
+    // Filtro por período
+    const dadosPeriodo = React.useMemo(() => {
+        if (!aDe && !aAte) return dados;
+        const de = aDe ? new Date(aDe + "T00:00:00") : null;
+        const ate = aAte ? new Date(aAte + "T23:59:59") : null;
+        return (dados || []).filter((r) => {
+            const s = pegaDataRegistro(r);
+            if (!s) return false;
+            const d = new Date(s);
+            if (isNaN(d.getTime())) return false;
+            if (de && d < de) return false;
+            if (ate && d > ate) return false;
+            return true;
+        });
+    }, [dados, aDe, aAte]);
+
+    const registrosComEventoNoPeriodo = dadosPeriodo.length;
+
+    // Cálculos
     const {
         tanatoCount,
-        totalAssistCalc,
-        qtdArrumacaoFixas, // 12 chaves fixas
+        assistTotal,
         ornNatural,
         ornArtificial,
+        qtdArrumacaoFixas,
+        convPref,
+        convPart,
+        convAssoc,
     } = React.useMemo(() => {
-        let tanatos = 0;
-        let assistSims = 0;
+        let tanato = 0;
+        let assist = 0;
 
-        // 12 itens de arrumação
-        const qtdArr: Record<string, number> = Object.fromEntries(
-            ARR_KEYS.map((k) => [k, 0])
-        ) as Record<string, number>;
-
-        // Ornamentação (Natural / Artificial)
         let ornNat = 0;
         let ornArt = 0;
 
-        // helpers
-        const labelToArrKey = (label: string): string | undefined => {
-            const lnorm = norm(label);
+        // 12 itens fixos
+        const arr: Record<string, number> = Object.fromEntries(
+            ARR_KEYS.map((k) => [k, 0])
+        ) as Record<string, number>;
+
+        // convênios
+        let cPref = 0, cPart = 0, cAssoc = 0;
+
+        for (const r of dadosPeriodo) {
+            // Tanato
+            if (normSimNao(String(r.tanato || "")) === "sim") tanato++;
+
+            // Assistência (total)
+            if (normSimNao(String(r.assistencia || "")) === "sim") assist++;
+
+            // Ornamentação — tenta achar info textual
+            const ornTxt = String(
+                (r as any).ornamentacao_tipo ||
+                (r as any).ornamentacao ||
+                (r as any).ornamentacao_tipo_nome ||
+                ""
+            ).toLowerCase();
+
+            if (ornTxt) {
+                if (ornTxt.includes("natural")) ornNat++;
+                else if (ornTxt.includes("artificial")) ornArt++;
+            }
+
+            // Arrumação — booleans em arrumacao_json
+            const estadosArr = extrairEstadoArrumacao(r);
             for (const k of ARR_KEYS) {
-                if (norm(ARR_LABELS[k]) === lnorm) return k;
-            }
-            return undefined;
-        };
-
-        const isOrn = (txt: string) => /ornamenta/i.test(txt);
-        const hasNat = (txt: string) => /natural/i.test(txt);
-        const hasArt = (txt: string) => /artificial/i.test(txt);
-
-        for (const r of rows || []) {
-            const itemKeyOrLabel = String(r.item || "");
-            const itemKeyN = norm(itemKeyOrLabel);
-            const res = resolveFromKey(itemKeyOrLabel);
-            const resByKeyN = resolveFromKey(itemKeyN);
-            const tipoCanon = res.tipo || resByKeyN.tipo || (r.tipo ? String(r.tipo) : "");
-            const label = (res.label || resByKeyN.label || itemKeyOrLabel) as string;
-            const qtd = Number(r.quantidade || 0);
-
-            // Tanato / Assistência (marcadores)
-            if (itemKeyN === "tanato_sim") {
-                tanatos += qtd || 0;
-                continue;
-            }
-            if (itemKeyN === "assistencia_sim") {
-                assistSims += qtd || 0;
-                continue;
+                if (estadosArr[k]) arr[k] = (arr[k] || 0) + 1;
             }
 
-            // Ornamentação (conta por tipo)
-            const baseTxt = `${itemKeyN} ${label}`.toLowerCase();
-            if (isOrn(baseTxt)) {
-                const val = qtd > 0 ? qtd : 1;
-                if (hasNat(baseTxt)) ornNat += val;
-                else if (hasArt(baseTxt)) ornArt += val;
-                else {
-                    // se não vier especificado, conta no total como genérico (opcional)
-                    ornNat += 0;
-                    ornArt += 0;
-                }
-                continue;
-            }
+            // Convênio — tenta heurísticas de campo
+            const convTxt = String(
+                (r as any).convenio ||
+                (r as any).tipo_convenio ||
+                (r as any).plano ||
+                (r as any).contrato ||
+                ""
+            ).toLowerCase();
 
-            // Arrumação => 1 por checado (ou qtd), para a seção de 12 itens
-            if (tipoCanon === "Arrumação") {
-                const val = qtd > 0 ? qtd : 1;
-                let kHit: string | undefined = undefined;
-                if (ARR_KEYS.includes(itemKeyN as any)) kHit = itemKeyN;
-                else kHit = labelToArrKey(label);
-                if (kHit) qtdArr[kHit] = (qtdArr[kHit] || 0) + val;
-                continue;
-            }
+            if (convTxt.includes("prefeitura")) cPref++;
+            else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
+            else if (convTxt.includes("particular")) cPart++;
+            // (se vier vazio, ignora)
         }
 
         return {
-            tanatoCount: tanatos,
-            totalAssistCalc: assistSims,
-            qtdArrumacaoFixas: qtdArr,
+            tanatoCount: tanato,
+            assistTotal: assist,
             ornNatural: ornNat,
             ornArtificial: ornArt,
+            qtdArrumacaoFixas: arr,
+            convPref: cPref,
+            convPart: cPart,
+            convAssoc: cAssoc,
         };
-    }, [rows]);
+    }, [dadosPeriodo]);
 
-    // Assistências: usa o do backend se vier, senão o calculado
-    const totalAssistFinal = totalAssistencias || totalAssistCalc || 0;
-
-    // Ornamentações: total = natural + artificial
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
 
-    // Convênios
-    const convPref = convenios?.prefeitura ?? 0;
-    const convPart = convenios?.particular ?? 0;
-    const convAssoc = convenios?.associado ?? 0;
-
-    return (
+    return !aberto ? null : (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
                 {/* Cabeçalho */}
@@ -279,12 +286,12 @@ export default function ModalAnaliseGeral({
                     <div>
                         <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
                         <p className="text-xs text-gray-500">
-                            Período: {aDe || "—"} a {aAte || "—"}
+                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={onRecarregar}
+                            onClick={handleRecarregar}
                             className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
                         >
                             Recarregar
@@ -326,24 +333,25 @@ export default function ModalAnaliseGeral({
                         />
                         <span className="text-sm">Ocultar cards de itens</span>
                     </label>
-                    <div className="text-sm text-gray-500 self-center">
-                        {registrosComEventoNoPeriodo} registro(s) no período
-                    </div>
                 </div>
 
                 {/* Corpo */}
                 <div className="p-4 pt-0">
-                    {loading ? (
+                    {busy ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Carregando análise…
                         </div>
-                    ) : rows.length === 0 ? (
+                    ) : erro ? (
+                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">
+                            {erro}
+                        </div>
+                    ) : dadosPeriodo.length === 0 ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Nenhum dado para o período/filtro selecionado.
                         </div>
                     ) : (
                         <>
-                            {/* ====== ITENS PRINCIPAIS ====== */}
+                            {/* ITENS PRINCIPAIS */}
                             <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                                     <div className="text-sm font-semibold">Itens principais</div>
@@ -357,7 +365,7 @@ export default function ModalAnaliseGeral({
                                     />
                                     <ItemCard
                                         titulo="Assistências"
-                                        valor={totalAssistFinal}
+                                        valor={assistTotal}
                                         tipo="Principal"
                                         destaque="teal"
                                     />
@@ -371,34 +379,19 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
-                            {/* ====== CONVÊNIOS ====== */}
+                            {/* CONVÊNIOS */}
                             <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                                     <div className="text-sm font-semibold">Atendimentos por convênio</div>
                                 </div>
                                 <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard
-                                        titulo="Prefeitura"
-                                        valor={convPref}
-                                        tipo="Convênio"
-                                        destaque="indigo"
-                                    />
-                                    <ItemCard
-                                        titulo="Particular"
-                                        valor={convPart}
-                                        tipo="Convênio"
-                                        destaque="teal"
-                                    />
-                                    <ItemCard
-                                        titulo="Associado"
-                                        valor={convAssoc}
-                                        tipo="Convênio"
-                                        destaque="rose"
-                                    />
+                                    <ItemCard titulo="Prefeitura" valor={convPref} tipo="Convênio" destaque="indigo" />
+                                    <ItemCard titulo="Particular" valor={convPart} tipo="Convênio" destaque="teal" />
+                                    <ItemCard titulo="Associado" valor={convAssoc} tipo="Convênio" destaque="rose" />
                                 </div>
                             </div>
 
-                            {/* ====== 12 ITENS DE ARRUMAÇÃO ====== */}
+                            {/* 12 ITENS DE ARRUMAÇÃO */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
