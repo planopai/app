@@ -1,298 +1,244 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import Link from "next/link";
 import { motion } from "framer-motion";
-import {
-    HelpCircle,
-    Search,
-    MessageCircleQuestion,
-    Phone,
-    Mail,
-    BookOpenCheck,
-    LifeBuoy,
-    Download,
-    ExternalLink,
-    ChevronRight,
-    ArrowUpRight,
-} from "lucide-react";
+import { Lightbulb, Search, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"; // sem Accordion
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// ---- Configuração de conteúdo -------------------------------------------------
+// ---- Tipos --------------------------------------------------------------------
 
-type FAQ = {
+type Dica = {
     id: string;
-    categoria: string; // ex: "Leads", "Memorial"...
-    pergunta: string;
-    resposta: React.ReactNode;
-    palavrasChave?: string[]; // termos auxiliares para busca
+    categoria: string;
+    titulo: string;
+    conteudo: React.ReactNode;
+    palavrasChave?: string[];
 };
 
-const CATEGORIAS: { key: string; label: string; href?: string }[] = [
-    { key: "inicio", label: "Início", href: "/" },
-    { key: "quadro", label: "Quadro de Atendimento", href: "/quadro" },
-    { key: "acompanhamento", label: "Acompanhamento", href: "/acompanhamento" },
-    { key: "memorial", label: "Memorial", href: "/memorial" },
-    { key: "obituario", label: "Obituário", href: "/obituario" },
-    { key: "leads", label: "Leads", href: "/leads" },
-    { key: "coroa", label: "Coroa de Flores", href: "/coroa-de-flores" },
-    { key: "relatorio", label: "Relatório", href: "/relatorios" },
-];
+// ---- Dicas --------------------------------------------------------------------
 
-const FAQS: FAQ[] = [
+const DICAS: Dica[] = [
     {
-        id: "faq-acesso",
-        categoria: "Início",
-        pergunta: "Não consigo acessar minha conta. O que fazer?",
-        resposta: (
-            <div className="space-y-2">
-                <p>
-                    1) Verifique se o e-mail e a senha estão corretos. 2) Se necessário, clique em
-                    <strong> “Esqueci minha senha”</strong> na tela de login. 3) Confirme se o link de
-                    redefinição não foi para a pasta de spam. 4) Se sua organização usa SSO, tente
-                    entrar pelo botão <strong>“Entrar com a empresa”</strong>.
-                </p>
-                <p>
-                    Persistindo o problema, entre em contato com o suporte com um print do erro e o
-                    e-mail afetado.
-                </p>
-            </div>
+        id: "dica-atendimento-filtros",
+        categoria: "Atendimento",
+        titulo: "Use filtros antes de agir",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Filtre por <em>Unidade</em>, <em>Data</em> e <em>Status</em> para reduzir ruído.</li>
+                <li>Combine dois filtros (ex.: Unidade + Status) para listas menores e decisões mais rápidas.</li>
+                <li>Salve filtros frequentes com favoritos do navegador.</li>
+            </ul>
         ),
-        palavrasChave: ["login", "senha", "acesso", "autenticação", "SSO"],
+        palavrasChave: ["filtro", "status", "unidade"],
     },
     {
-        id: "faq-quadro-status",
-        categoria: "Quadro de Atendimento",
-        pergunta: "Como acompanhar o status dos atendimentos em tempo real?",
-        resposta: (
-            <div className="space-y-2">
-                <p>
-                    No menu lateral, acesse <strong>Quadro de Atendimento</strong>. Use os filtros no
-                    topo para <em>Unidade</em>, <em>Data</em> e <em>Status</em>. Os cartões são atualizados
-                    automaticamente a cada ciclo; você pode forçar a atualização com o botão
-                    <strong> Atualizar</strong>.
-                </p>
-                <ul className="list-disc pl-6">
-                    <li>Ícones indicam etapas (triagem, em atendimento, finalizado).</li>
-                    <li>Clique em um cartão para abrir detalhes e agir (mensagens, anexos, tarefas).</li>
-                </ul>
-            </div>
+        id: "dica-atendimento-prioridade",
+        categoria: "Atendimento",
+        titulo: "Priorize pelo impacto",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Atenda primeiro casos com tempo em fila maior.</li>
+                <li>Depois, priorize eventos com pendências (ex.: documentos ou confirmação de agenda).</li>
+                <li>Marque responsáveis para evitar duplicidade.</li>
+            </ul>
         ),
-        palavrasChave: ["tempo real", "filtro", "status", "andamento"],
+        palavrasChave: ["prioridade", "fila", "responsável"],
     },
     {
-        id: "faq-timeline",
+        id: "dica-acompanhamento-notas",
         categoria: "Acompanhamento",
-        pergunta: "Onde vejo a linha do tempo e as etapas do processo?",
-        resposta: (
-            <p>
-                Vá em <strong>Acompanhamento</strong>. A timeline mostra eventos do caso (criação,
-                mensagens, alterações de etapa, anexos). É possível adicionar notas internas e
-                marcar responsáveis. Use o botão <strong>+ Evento</strong> para registrar uma ação.
-            </p>
+        titulo: "Notas curtas e objetivas",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Comece com verbo: <em>Ligado para família — aguardando retorno</em>.</li>
+                <li>Inclua data e próximo passo (<em>DD/MM, enviar orçamento atualizado</em>).</li>
+                <li>Evite siglas internas sem explicação.</li>
+            </ul>
         ),
-        palavrasChave: ["linha do tempo", "timeline", "etapas", "notas"],
+        palavrasChave: ["notas", "timeline", "próximo passo"],
     },
     {
-        id: "faq-memorial",
+        id: "dica-memorial-salas",
         categoria: "Memorial",
-        pergunta: "Como reservo salas e gerencio mensagens de segurança?",
-        resposta: (
-            <div className="space-y-2">
-                <p>
-                    Em <strong>Memorial</strong>, utilize a aba <em>Salas</em> para disponibilidade e
-                    reservas. Na aba <em>Segurança</em>, configure mensagens e perfis de acesso dos
-                    participantes (familiares, equipe, fornecedores).
-                </p>
-            </div>
+        titulo: "Organize reservas de sala com antecedência",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Bloqueie horários assim que houver confirmação da família.</li>
+                <li>Adicione observações visíveis para a equipe (ex.: acessibilidade, número de cadeiras).</li>
+                <li>Revise conflitos diariamente pela manhã.</li>
+            </ul>
         ),
     },
     {
-        id: "faq-obituario",
+        id: "dica-obituario-layout",
         categoria: "Obituário",
-        pergunta: "Como criar e exportar uma peça para redes sociais?",
-        resposta: (
-            <div className="space-y-2">
-                <p>
-                    Acesse <strong>Obituário</strong> → <em>Novo</em>. Preencha os dados e escolha um
-                    modelo. Após revisar, clique em <strong>Exportar</strong> para baixar a imagem em
-                    alta resolução.
-                </p>
-                <p>Dica: adicione a logo da sua casa em Configurações → Identidade Visual.</p>
-            </div>
+        titulo: "Layout limpo funciona melhor",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Prefira fotos bem iluminadas e sem ruído.</li>
+                <li>Mantenha 2 a 3 fontes no máximo.</li>
+                <li>Deixe margem segura para posts de feed e stories.</li>
+            </ul>
         ),
-        palavrasChave: ["post", "arte", "mídia", "social"],
+        palavrasChave: ["arte", "post", "redes sociais"],
     },
     {
-        id: "faq-leads",
+        id: "dica-leads-csv",
         categoria: "Leads",
-        pergunta: "Posso importar contatos de uma planilha?",
-        resposta: (
-            <div className="space-y-2">
-                <p>
-                    Sim. Em <strong>Leads</strong> clique em <em>Importar</em> e envie um CSV com cabeçalho
-                    <code>nome,email,telefone,etapa</code>. O sistema valida e mostra pré-visualização
-                    antes de confirmar.
-                </p>
-                <p>
-                    Também é possível <em>Exportar</em> os leads filtrados para uma planilha.
-                </p>
-            </div>
+        titulo: "Importe CSV padronizado",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Colunas: <code>nome,email,telefone,etapa</code>.</li>
+                <li>Valide DDD e e-mail antes da importação.</li>
+                <li>Use <em>etapa</em> coerente com o funil (ex.: Novo, Contato, Orçamento, Fechado).</li>
+            </ul>
         ),
-        palavrasChave: ["csv", "importar", "exportar", "planilha"],
+        palavrasChave: ["csv", "importação", "funil"],
     },
     {
-        id: "faq-coroa",
+        id: "dica-coroa-catalogo",
         categoria: "Coroa de Flores",
-        pergunta: "Como gerencio o catálogo e os pedidos?",
-        resposta: (
-            <p>
-                No módulo <strong>Coroa de Flores</strong> você cria modelos, define preços e
-                acompanha pedidos por status (em produção, entregue). Integre o WhatsApp para envio
-                automático de comprovantes.
-            </p>
-        ),
-        palavrasChave: ["catálogo", "pedido", "whatsapp"],
-    },
-    {
-        id: "faq-relatorio",
-        categoria: "Relatório",
-        pergunta: "Quais indicadores estão disponíveis?",
-        resposta: (
+        titulo: "Catálogo enxuto e claro",
+        conteudo: (
             <ul className="list-disc pl-6 space-y-1">
-                <li>Atendimentos por período/unidade e tempo médio de atendimento.</li>
-                <li>Conversão de leads por origem e etapa.</li>
-                <li>Receita por serviço/modelo de coroa.</li>
-                <li>Exportação para CSV/PDF com filtros aplicados.</li>
+                <li>Mantenha poucos modelos por faixa de preço.</li>
+                <li>Fotos reais + descrição objetiva (tamanho aproximado, flores principais).</li>
+                <li>Atualize itens descontinuados para evitar re-trabalho.</li>
             </ul>
         ),
-        palavrasChave: ["métricas", "indicadores", "dashboard", "exportação"],
     },
     {
-        id: "faq-performance",
-        categoria: "Dicas Rápidas",
-        pergunta: "A tela está lenta ou instável. Como corrigir?",
-        resposta: (
+        id: "dica-relatorios-filtros",
+        categoria: "Relatórios",
+        titulo: "Relatórios: comece pelo objetivo",
+        conteudo: (
             <ul className="list-disc pl-6 space-y-1">
+                <li>Defina a pergunta antes: <em>O que quero provar/acompanhar?</em></li>
+                <li>Depois aplique filtros (período, unidade, origem) e exporte se precisar compartilhar.</li>
+                <li>Evite planilhas gigantes: use períodos menores e consolide.</li>
+            </ul>
+        ),
+        palavrasChave: ["métricas", "exportar", "período"],
+    },
+    {
+        id: "dica-performance",
+        categoria: "Performance",
+        titulo: "Se estiver lento, faça estes 4 passos",
+        conteudo: (
+            <ol className="list-decimal pl-6 space-y-1">
                 <li>Atualize a página (Ctrl/Cmd + R).</li>
-                <li>Saia e entre novamente para renovar a sessão.</li>
-                <li>Limpe cache/cookies do navegador e tente em aba anônima.</li>
-                <li>Verifique sua conexão e desative extensões que interfiram.</li>
+                <li>Entre e saia da conta para renovar a sessão.</li>
+                <li>Teste em aba anônima (isola extensões e cache).</li>
+                <li>Verifique a conexão e feche abas pesadas.</li>
+            </ol>
+        ),
+        palavrasChave: ["lento", "travando", "cache"],
+    },
+    {
+        id: "dica-seguranca",
+        categoria: "Segurança",
+        titulo: "Boas práticas de segurança",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Use senha forte e única por usuário.</li>
+                <li>Evite compartilhar contas; registre responsáveis.</li>
+                <li>Revise permissões de acesso quando alguém sair da equipe.</li>
             </ul>
         ),
-        palavrasChave: ["lento", "travando", "instável", "cache", "reiniciar"],
+        palavrasChave: ["senha", "permissão", "acesso"],
+    },
+    {
+        id: "dica-acessibilidade",
+        categoria: "Acessibilidade",
+        titulo: "Deixe o conteúdo mais acessível",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li>Use contraste adequado em peças do obituário.</li>
+                <li>Evite 100% de texto em CAPS.</li>
+                <li>Sempre descreva imagens importantes em notas internas.</li>
+            </ul>
+        ),
+        palavrasChave: ["contraste", "legibilidade"],
+    },
+    {
+        id: "dica-atalhos",
+        categoria: "Atalhos",
+        titulo: "Atalhos úteis do navegador",
+        conteudo: (
+            <ul className="list-disc pl-6 space-y-1">
+                <li><kbd>Ctrl/Cmd</kbd> + <kbd>K</kbd>: foco na busca.</li>
+                <li><kbd>Ctrl/Cmd</kbd> + <kbd>F</kbd>: localizar texto na página.</li>
+                <li><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd>: nova janela anônima para depurar.</li>
+            </ul>
+        ),
+        palavrasChave: ["atalhos", "teclado", "produtividade"],
     },
 ];
-
-const LINKS_UTEIS = [
-    { label: "Central de Ajuda", href: "#", icon: BookOpenCheck },
-    { label: "Abrir um chamado", href: "#", icon: LifeBuoy },
-    { label: "Manual em PDF", href: "#", icon: Download },
-];
-
-// ---- Componentes auxiliares ---------------------------------------------------
-
-function EmptyState({ query }: { query: string }) {
-    return (
-        <Card className="p-6 text-center">
-            <HelpCircle className="mx-auto mb-2 h-8 w-8" />
-            <p className="font-medium">Nenhum resultado para “{query}”.</p>
-            <p className="text-sm text-muted-foreground">
-                Tente termos diferentes ou filtre por categoria.
-            </p>
-        </Card>
-    );
-}
 
 // ---- Página -------------------------------------------------------------------
 
-export default function HelpPage() {
+export default function TipsPage() {
     const [tab, setTab] = useState<string>("todas");
     const [query, setQuery] = useState<string>("");
 
-    const categoriasSet = useMemo(
-        () => Array.from(new Set(FAQS.map((f) => f.categoria))),
-        []
-    );
+    const categorias = useMemo(() => Array.from(new Set(DICAS.map((d) => d.categoria))), []);
 
-    const faqsFiltradas = useMemo(() => {
+    const dicasFiltradas = useMemo(() => {
         const texto = query.trim().toLowerCase();
-        return FAQS.filter((f) => {
-            const matchTab = tab === "todas" || f.categoria.toLowerCase() === tab;
+        return DICAS.filter((d) => {
+            const matchTab = tab === "todas" || d.categoria.toLowerCase() === tab;
             if (!texto) return matchTab;
             const alvo = [
-                f.pergunta.toLowerCase(),
-                (typeof f.resposta === "string" ? f.resposta : "").toLowerCase(),
-                f.categoria.toLowerCase(),
-                ...(f.palavrasChave || []).map((p) => p.toLowerCase()),
+                d.titulo.toLowerCase(),
+                (typeof d.conteudo === "string" ? d.conteudo : "").toLowerCase(),
+                d.categoria.toLowerCase(),
+                ...(d.palavrasChave || []).map((p) => p.toLowerCase()),
             ].join(" ");
             return matchTab && alvo.includes(texto);
         });
     }, [tab, query]);
 
     return (
-        <div className="mx-auto max-w-6xl px-6 py-8">
-            {/* Hero */}
+        <div className="mx-auto max-w-5xl px-6 py-8">
+            {/* Header */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="mb-8 grid gap-6 md:grid-cols-2 md:items-center">
+                <div className="mb-6 flex items-center gap-3">
+                    <Lightbulb className="h-7 w-7" />
                     <div>
-                        <h1 className="text-3xl font-bold tracking-tight">Ajuda & Suporte</h1>
-                        <p className="mt-2 text-muted-foreground">
-                            Encontre respostas rápidas sobre Início, Quadro de Atendimento,
-                            Acompanhamento, Memorial, Obituário, Leads, Coroa de Flores e Relatórios.
-                        </p>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                            {CATEGORIAS.map((c) => (
-                                <Badge key={c.key} variant="secondary" className="gap-1">
-                                    <ChevronRight className="h-3 w-3" /> {c.label}
-                                </Badge>
-                            ))}
-                        </div>
+                        <h1 className="text-2xl font-bold tracking-tight">Dicas & Boas Práticas</h1>
+                        <p className="text-sm text-muted-foreground">Um guia rápido para trabalhar melhor no sistema — sem abrir chamados.</p>
                     </div>
-                    <Card className="p-4">
-                        <div className="flex items-center gap-2">
-                            <Search className="h-5 w-5" />
-                            <Input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Busque por palavras-chave (ex.: status, exportar, salas)"
-                                className="flex-1"
-                                aria-label="Buscar na ajuda"
-                            />
-                        </div>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            Dica: você também pode navegar por categoria abaixo.
-                        </p>
-                    </Card>
                 </div>
+
+                <Card className="mb-6 p-4">
+                    <div className="flex items-center gap-2">
+                        <Search className="h-5 w-5" />
+                        <Input
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Busque por palavras-chave (ex.: filtros, csv, lento)"
+                            className="flex-1"
+                            aria-label="Buscar dicas"
+                        />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {categorias.map((c) => (
+                            <Badge key={c} variant="secondary" className="gap-1">
+                                <ChevronRight className="h-3 w-3" /> {c}
+                            </Badge>
+                        ))}
+                    </div>
+                </Card>
             </motion.div>
 
-            {/* Ações rápidas */}
-            <div className="mb-8 grid gap-4 md:grid-cols-3">
-                {LINKS_UTEIS.map((a) => (
-                    <Link key={a.label} href={a.href} className="group">
-                        <Card className="transition hover:shadow-md">
-                            <CardHeader className="flex flex-row items-center justify-between">
-                                <CardTitle className="text-base">{a.label}</CardTitle>
-                                <a.icon className="h-5 w-5" />
-                            </CardHeader>
-                            <CardContent className="text-sm text-muted-foreground">
-                                Abrir <ArrowUpRight className="ml-1 inline h-4 w-4 align-text-top opacity-70 group-hover:opacity-100" />
-                            </CardContent>
-                        </Card>
-                    </Link>
-                ))}
-            </div>
-
-            {/* Tabs por categoria */}
-            <Tabs value={tab} onValueChange={setTab} className="mb-6">
+            {/* Tabs */}
+            <Tabs value={tab} onValueChange={setTab} className="mb-4">
                 <TabsList className="flex w-full flex-wrap">
                     <TabsTrigger value="todas">Todas</TabsTrigger>
-                    {categoriasSet.map((c) => (
+                    {categorias.map((c) => (
                         <TabsTrigger key={c.toLowerCase()} value={c.toLowerCase()}>
                             {c}
                         </TabsTrigger>
@@ -300,22 +246,19 @@ export default function HelpPage() {
                 </TabsList>
             </Tabs>
 
-            {/* Lista de FAQs sem shadcn Accordion - usando <details> */}
-            {faqsFiltradas.length === 0 ? (
-                <EmptyState query={query} />
+            {/* Lista de dicas (sem suporte/links externos) */}
+            {dicasFiltradas.length === 0 ? (
+                <Card className="p-6 text-center text-sm text-muted-foreground">Nenhum resultado para sua busca.</Card>
             ) : (
-                <div className="space-y-3">
-                    {faqsFiltradas.map((faq) => (
-                        <details key={faq.id} className="rounded-2xl border p-3 open:shadow-sm">
-                            <summary className="cursor-pointer list-none text-left text-base font-medium flex items-center justify-between">
-                                <span>{faq.pergunta}</span>
-                                <span className="text-xs text-muted-foreground ml-2">{faq.categoria}</span>
-                            </summary>
+                <div className="grid gap-3">
+                    {dicasFiltradas.map((d) => (
+                        <details key={d.id} className="rounded-2xl border p-3 open:shadow-sm">
+                            <summary className="cursor-pointer list-none text-left font-medium">{d.titulo}</summary>
                             <div className="pt-3 text-sm text-muted-foreground">
-                                {faq.resposta}
+                                {d.conteudo}
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                    <Badge variant="outline">{faq.categoria}</Badge>
-                                    {(faq.palavrasChave || []).slice(0, 3).map((t) => (
+                                    <Badge variant="outline">{d.categoria}</Badge>
+                                    {(d.palavrasChave || []).slice(0, 3).map((t) => (
                                         <Badge key={t} variant="secondary">{t}</Badge>
                                     ))}
                                 </div>
@@ -325,55 +268,9 @@ export default function HelpPage() {
                 </div>
             )}
 
-            {/* Ajuda humana */}
-            <div className="mt-10 grid gap-4 md:grid-cols-3">
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><MessageCircleQuestion className="h-5 w-5" />Fale com o Suporte</CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground space-y-2">
-                        <p>Horário comercial de segunda a sexta.</p>
-                        <div className="flex items-center gap-2"><Phone className="h-4 w-4" /> (00) 0000-0000</div>
-                        <div className="flex items-center gap-2"><Mail className="h-4 w-4" /> suporte@exemplo.com.br</div>
-                        <Button className="mt-3 w-full">Abrir chat</Button>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><BookOpenCheck className="h-5 w-5" />Boas Práticas</CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                        <ul className="list-disc pl-5 space-y-1">
-                            <li>Mantenha dados atualizados e padronizados.</li>
-                            <li>Use filtros para análises mais precisas.</li>
-                            <li>Registre notas e responsabilidades no acompanhamento.</li>
-                            <li>Faça exportações periódicas de relatórios.</li>
-                        </ul>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><LifeBuoy className="h-5 w-5" />Recursos</CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground space-y-2">
-                        <p>Materiais para treinar sua equipe e tirar dúvidas.</p>
-                        <div className="flex flex-col gap-2">
-                            <Link href="#" className="inline-flex items-center gap-2 underline">
-                                Guia Rápido <ExternalLink className="h-4 w-4" />
-                            </Link>
-                            <Link href="#" className="inline-flex items-center gap-2 underline">
-                                Vídeos Tutoriais <ExternalLink className="h-4 w-4" />
-                            </Link>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Rodapé */}
-            <div className="mt-10 text-center text-xs text-muted-foreground">
-                <p>Precisa de algo que não encontrou? Envie sua sugestão pela opção “Abrir um chamado”.</p>
+            {/* Rodapé simples */}
+            <div className="mt-8 text-center text-xs text-muted-foreground">
+                Última atualização automática das dicas: {new Date().toLocaleDateString("pt-BR")}
             </div>
         </div>
     );
