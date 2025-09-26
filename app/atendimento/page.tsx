@@ -16,7 +16,20 @@ type RegistroSala = {
     data_sepultamento?: string;
     horario_sepultamento?: string;
     local_sepultamento?: string;
+    foto_falecido?: string | null;
 };
+
+/* ============================================================
+   Utils
+============================================================ */
+function normalizarSala(s?: string | null): "Sala 01" | "Sala 02" | "Sala 03" {
+    if (!s) return "Sala 01";
+    const val = s.toLowerCase();
+    if (val.includes("sala_01") || val.includes("sala 01")) return "Sala 01";
+    if (val.includes("sala_02") || val.includes("sala 02")) return "Sala 02";
+    if (val.includes("sala_03") || val.includes("sala 03")) return "Sala 03";
+    return "Sala 01";
+}
 
 /* ============================================================
    Componentes auxiliares
@@ -38,8 +51,8 @@ function Modal({
     return (
         <div
             className="fixed inset-0 z-50 bg-black/50 
-                       overflow-y-auto flex justify-center items-start 
-                       p-4 sm:p-6"
+                 overflow-y-auto flex justify-center items-start 
+                 p-4 sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-label={ariaLabel}
@@ -49,7 +62,7 @@ function Modal({
         >
             <div
                 className="w-full rounded-xl bg-white p-5 shadow-xl outline-none
-                           max-h-[85dvh] overflow-y-auto"
+                   max-h-[85dvh] overflow-y-auto"
                 style={{
                     maxWidth: maxWidth ?? 720,
                     WebkitOverflowScrolling: "touch" as any,
@@ -84,14 +97,17 @@ function TextFeedback({
 /* helper de estilo para os botões de sala */
 const salaBtn = (active: boolean) =>
     `w-full rounded-2xl border px-6 py-3 text-base font-semibold transition
-   ${active ? "border-primary bg-primary/5 text-primary shadow-sm" : "border-muted hover:bg-muted/50"}`;
+   ${active
+        ? "border-primary bg-primary/5 text-primary shadow-sm"
+        : "border-muted hover:bg-muted/50"
+    }`;
 
 /* ============================================================
    Página
 ============================================================ */
 export default function AtendimentoPage() {
     // ----------------- Multi-step -----------------
-    const TOTAL_STEPS = 13; // 0..12 (adicionamos 2 passos)
+    const TOTAL_STEPS = 13; // 0..12
     const [step, setStep] = useState(0);
 
     // Sala com botões (substitui o <select>)
@@ -115,7 +131,11 @@ export default function AtendimentoPage() {
     const [fotoFalecido, setFotoFalecido] = useState<File | null>(null);
     const refFoto = useRef<HTMLInputElement>(null);
 
-    const [respMsg, setRespMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [respMsg, setRespMsg] = useState<{ text: string; ok: boolean } | null>(
+        null
+    );
+
+    const [submitting, setSubmitting] = useState(false); // evita clique duplo
 
     const showPrev = step > 0;
     const showNext = step < TOTAL_STEPS - 1;
@@ -145,17 +165,26 @@ export default function AtendimentoPage() {
     };
 
     const salvarInformacoes = useCallback(async () => {
+        if (submitting) return; // trava clique duplo
+        setSubmitting(true);
+
         // validação mínima
-        if (!form.nome || !form.localVelorio || !form.dataVelorio || !form.horarioInicio) {
+        if (
+            !form.nome ||
+            !form.localVelorio ||
+            !form.dataVelorio ||
+            !form.horarioInicio
+        ) {
             setRespMsg({ text: "Preencha os campos obrigatórios.", ok: false });
+            setSubmitting(false);
             return;
         }
 
         const fd = new FormData();
         fd.append("sala", salaSelecionada);
         fd.append("nome", form.nome);
-        fd.append("dataNascimento", form.dataNascimento); // NOVO
-        fd.append("dataFalecimento", form.dataFalecimento); // NOVO
+        fd.append("dataNascimento", form.dataNascimento);
+        fd.append("dataFalecimento", form.dataFalecimento);
         fd.append("localVelorio", form.localVelorio);
         fd.append("dataSepultamento", form.dataSepultamento);
         fd.append("horarioSepultamento", form.horarioSepultamento);
@@ -187,14 +216,17 @@ export default function AtendimentoPage() {
                 setStep(0);
             } else {
                 setRespMsg({
-                    text: data?.message || data?.msg || `Erro ao criar (HTTP ${res.status})`,
+                    text:
+                        data?.message || data?.msg || `Erro ao criar (HTTP ${res.status})`,
                     ok: false,
                 });
             }
         } catch {
             setRespMsg({ text: "Erro ao Criar o Atendimento.", ok: false });
+        } finally {
+            setSubmitting(false);
         }
-    }, [form, salaSelecionada, fotoFalecido]);
+    }, [form, salaSelecionada, fotoFalecido, submitting]);
 
     // ----------------- Tabela / Edição -----------------
     const [linhas, setLinhas] = useState<RegistroSala[]>([]);
@@ -202,11 +234,16 @@ export default function AtendimentoPage() {
 
     const carregarDados = useCallback(async () => {
         try {
-            const res = await fetch("/api/php/salaControle.php?action=listar&_=" + Date.now(), {
-                cache: "no-store",
-            });
+            const res = await fetch(
+                "/api/php/salaControle.php?action=listar&_=" + Date.now(),
+                {
+                    cache: "no-store",
+                }
+            );
             if (!res.ok) throw new Error(res.statusText);
-            const data = (await res.json()) as RegistroSala[] | { dados?: RegistroSala[] };
+            const data = (await res.json()) as
+                | RegistroSala[]
+                | { dados?: RegistroSala[] };
             const arr = Array.isArray(data) ? data : data?.dados ?? [];
             setLinhas(arr || []);
             setErrEdicao(null);
@@ -219,6 +256,8 @@ export default function AtendimentoPage() {
     // Edição (popup)
     const [editOpen, setEditOpen] = useState(false);
     const [edit, setEdit] = useState<RegistroSala | null>(null);
+    const [editFoto, setEditFoto] = useState<File | null>(null); // arquivo novo
+    const [removerFoto, setRemoverFoto] = useState(false); // marcar remoção
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
@@ -228,9 +267,10 @@ export default function AtendimentoPage() {
             );
             if (!res.ok) throw new Error(res.statusText);
             const d = await res.json();
+
             setEdit({
                 id: d.id,
-                sala: d.sala ?? "Sala 01",
+                sala: normalizarSala(d.sala),
                 nome_completo: d.nome_completo ?? "",
                 data_nascimento: d.data_nascimento ?? "",
                 data_falecimento: d.data_falecimento ?? "",
@@ -239,7 +279,10 @@ export default function AtendimentoPage() {
                 data_sepultamento: d.data_sepultamento ?? "",
                 horario_sepultamento: d.horario_sepultamento ?? "",
                 local_sepultamento: d.local_sepultamento ?? "",
+                foto_falecido: d.foto_falecido ?? null,
             });
+            setEditFoto(null);
+            setRemoverFoto(false);
             setEditOpen(true);
             setErrEdicao(null);
         } catch (e: any) {
@@ -251,37 +294,47 @@ export default function AtendimentoPage() {
     const salvarEdicao = useCallback(async () => {
         if (!edit) return;
         try {
-            const payload = {
-                id: edit.id,
-                sala: edit.sala,
-                nome_completo: edit.nome_completo,
-                data_nascimento: edit.data_nascimento, // NOVO
-                data_falecimento: edit.data_falecimento, // NOVO
-                horario_inicio: edit.horario_inicio,
-                horario_termino: edit.horario_termino,
-                data_sepultamento: edit.data_sepultamento,
-                horario_sepultamento: edit.horario_sepultamento,
-                local_sepultamento: edit.local_sepultamento,
-            };
+            const fd = new FormData();
+            fd.append("id", String(edit.id));
+            fd.append("sala", edit.sala);
+            fd.append("nome_completo", edit.nome_completo);
+            fd.append("data_nascimento", edit.data_nascimento ?? "");
+            fd.append("data_falecimento", edit.data_falecimento ?? "");
+            fd.append("horario_inicio", edit.horario_inicio ?? "");
+            fd.append("horario_termino", edit.horario_termino ?? "");
+            fd.append("data_sepultamento", edit.data_sepultamento ?? "");
+            fd.append("horario_sepultamento", edit.horario_sepultamento ?? "");
+            fd.append("local_sepultamento", edit.local_sepultamento ?? "");
+
+            if (editFoto) {
+                fd.append("foto_falecido", editFoto); // substitui por nova
+            } else if (removerFoto) {
+                fd.append("remove_foto", "1"); // remove foto atual
+            }
+
             const res = await fetch("/api/php/salaControle.php?action=editar", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
+                body: fd,
                 cache: "no-store",
             });
             const data = await res.json().catch(() => ({}));
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setEditOpen(false);
                 setEdit(null);
+                setEditFoto(null);
+                setRemoverFoto(false);
                 carregarDados();
             } else {
-                alert("Erro ao salvar edição: " + (data?.message || data?.msg || "Desconhecido"));
+                alert(
+                    "Erro ao salvar edição: " +
+                    (data?.message || data?.msg || "Desconhecido")
+                );
             }
         } catch (e: any) {
             setErrEdicao("Erro ao salvar edição. Verifique o console para detalhes.");
             console.error("Erro ao salvar edição:", e);
         }
-    }, [edit, carregarDados]);
+    }, [edit, editFoto, removerFoto, carregarDados]);
 
     // Exclusão (popup)
     const [delOpen, setDelOpen] = useState(false);
@@ -305,7 +358,10 @@ export default function AtendimentoPage() {
                 setDelId(null);
                 carregarDados();
             } else {
-                alert("Erro ao excluir registro: " + (data?.message || data?.msg || "Desconhecido"));
+                alert(
+                    "Erro ao excluir registro: " +
+                    (data?.message || data?.msg || "Desconhecido")
+                );
             }
         } catch (e: any) {
             setErrEdicao("Erro ao excluir registro. Verifique o console para detalhes.");
@@ -371,7 +427,7 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 2 - Data de Nascimento (NOVO) */}
+                {/* Step 2 - Data de Nascimento */}
                 <section className="step" hidden={step !== 2}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="data-nascimento" className="text-sm font-medium">
@@ -390,7 +446,7 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 3 - Data de Falecimento (NOVO) */}
+                {/* Step 3 - Data de Falecimento */}
                 <section className="step" hidden={step !== 3}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="data-falecimento" className="text-sm font-medium">
@@ -444,7 +500,9 @@ export default function AtendimentoPage() {
                             name="local_velorio"
                             required
                             value={form.localVelorio}
-                            onChange={(e) => setForm((f) => ({ ...f, localVelorio: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, localVelorio: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -462,7 +520,9 @@ export default function AtendimentoPage() {
                             name="data_sepultamento"
                             required
                             value={form.dataSepultamento}
-                            onChange={(e) => setForm((f) => ({ ...f, dataSepultamento: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, dataSepultamento: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -471,7 +531,10 @@ export default function AtendimentoPage() {
                 {/* Step 7 - Horário Sepultamento */}
                 <section className="step" hidden={step !== 7}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
-                        <label htmlFor="horario-sepultamento" className="text-sm font-medium">
+                        <label
+                            htmlFor="horario-sepultamento"
+                            className="text-sm font-medium"
+                        >
                             Horário do Sepultamento:
                         </label>
                         <input
@@ -520,7 +583,9 @@ export default function AtendimentoPage() {
                             name="data_velorio"
                             required
                             value={form.dataVelorio}
-                            onChange={(e) => setForm((f) => ({ ...f, dataVelorio: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, dataVelorio: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -538,7 +603,9 @@ export default function AtendimentoPage() {
                             name="horario_inicio"
                             required
                             value={form.horarioInicio}
-                            onChange={(e) => setForm((f) => ({ ...f, horarioInicio: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, horarioInicio: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -556,7 +623,9 @@ export default function AtendimentoPage() {
                             name="data_fim"
                             required
                             value={form.dataFim}
-                            onChange={(e) => setForm((f) => ({ ...f, dataFim: e.target.value }))}
+                            onChange={(e) =>
+                                setForm((f) => ({ ...f, dataFim: e.target.value }))
+                            }
                             className="w-full rounded-md border px-3 py-2 text-sm"
                         />
                     </fieldset>
@@ -610,28 +679,42 @@ export default function AtendimentoPage() {
                         Próximo
                     </button>
                 )}
-                {showSubmit && (
+                {showSubmit && !submitting && (
                     <button
                         type="button"
                         onClick={salvarInformacoes}
-                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
+                        className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90"
                     >
                         Salvar Informações
                     </button>
+                )}
+                {showSubmit && submitting && (
+                    <div
+                        className="inline-flex items-center gap-2 rounded-md bg-blue-600/80 px-3 py-2 text-sm text-white"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <span className="h-3 w-3 animate-pulse rounded-full bg-white"></span>
+                        Carregando...
+                    </div>
                 )}
             </div>
 
             {/* --- ÁREA DE PERSONALIZAÇÃO / EDIÇÃO --- */}
             <h1 className="mt-9 text-2xl font-semibold">Edição de Dados</h1>
-            {errEdicao && <div className="mt-2 text-sm text-red-600">{errEdicao}</div>}
+            {errEdicao && (
+                <div className="mt-2 text-sm text-red-600">{errEdicao}</div>
+            )}
 
             <div className="mt-3 overflow-x-auto rounded-2xl border">
                 <table className="min-w-full text-sm" id="salaTable">
                     <thead className="bg-muted/50">
                         <tr>
                             <th className="px-3 py-2 text-left font-semibold">Sala</th>
-                            <th className="px-3 py-2 text-left font-semibold">Nome Completo</th>
-                            <th className="w-48 px-3 py-2 text-left font-semibold">Ações</th>
+                            <th className="px-3 py-2 text-left font-semibold">
+                                Nome Completo
+                            </th>
+                            <th className="w-64 px-3 py-2 text-left font-semibold">Ações</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -644,10 +727,10 @@ export default function AtendimentoPage() {
                         )}
                         {linhas.map((item) => (
                             <tr key={String(item.id)} className="border-t">
-                                <td className="px-3 py-2">{item.sala}</td>
+                                <td className="px-3 py-2">{normalizarSala(item.sala)}</td>
                                 <td className="px-3 py-2">{item.nome_completo}</td>
                                 <td className="px-3 py-2">
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2">
                                         <button
                                             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
                                             onClick={() => abrirEditar(item.id)}
@@ -669,7 +752,11 @@ export default function AtendimentoPage() {
             </div>
 
             {/* Popup de Edição */}
-            <Modal open={editOpen} onClose={() => setEditOpen(false)} ariaLabel="Editar Registro">
+            <Modal
+                open={editOpen}
+                onClose={() => setEditOpen(false)}
+                ariaLabel="Editar Registro"
+            >
                 <div className="flex items-start justify-between">
                     <h2 className="text-xl font-semibold">Editar Registro</h2>
                     <button
@@ -693,7 +780,9 @@ export default function AtendimentoPage() {
                                     key={s}
                                     type="button"
                                     className={salaBtn(edit?.sala === s)}
-                                    onClick={() => setEdit((v) => (v ? { ...v, sala: s } : v))}
+                                    onClick={() =>
+                                        setEdit((v) => (v ? { ...v, sala: s } : v))
+                                    }
                                 >
                                     {s}
                                 </button>
@@ -702,12 +791,16 @@ export default function AtendimentoPage() {
                     </div>
 
                     <div>
-                        <label className="mb-1 block text-sm font-medium">Nome Completo</label>
+                        <label className="mb-1 block text-sm font-medium">
+                            Nome Completo
+                        </label>
                         <input
                             className="w-full rounded-md border px-3 py-2 text-sm"
                             value={edit?.nome_completo ?? ""}
                             onChange={(e) =>
-                                setEdit((v) => (v ? { ...v, nome_completo: e.target.value } : v))
+                                setEdit((v) =>
+                                    v ? { ...v, nome_completo: e.target.value } : v
+                                )
                             }
                         />
                     </div>
@@ -715,24 +808,32 @@ export default function AtendimentoPage() {
                     {/* NOVOS CAMPOS NO MODAL */}
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                            <label className="mb-1 block text-sm font-medium">Data de Nascimento</label>
+                            <label className="mb-1 block text-sm font-medium">
+                                Data de Nascimento
+                            </label>
                             <input
                                 type="date"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.data_nascimento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) => (v ? { ...v, data_nascimento: e.target.value } : v))
+                                    setEdit((v) =>
+                                        v ? { ...v, data_nascimento: e.target.value } : v
+                                    )
                                 }
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-sm font-medium">Data de Falecimento</label>
+                            <label className="mb-1 block text-sm font-medium">
+                                Data de Falecimento
+                            </label>
                             <input
                                 type="date"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.data_falecimento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) => (v ? { ...v, data_falecimento: e.target.value } : v))
+                                    setEdit((v) =>
+                                        v ? { ...v, data_falecimento: e.target.value } : v
+                                    )
                                 }
                             />
                         </div>
@@ -740,24 +841,32 @@ export default function AtendimentoPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                            <label className="mb-1 block text-sm font-medium">Horário de Início</label>
+                            <label className="mb-1 block text-sm font-medium">
+                                Horário de Início
+                            </label>
                             <input
                                 type="time"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.horario_inicio ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) => (v ? { ...v, horario_inicio: e.target.value } : v))
+                                    setEdit((v) =>
+                                        v ? { ...v, horario_inicio: e.target.value } : v
+                                    )
                                 }
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-sm font-medium">Horário de Término</label>
+                            <label className="mb-1 block text-sm font-medium">
+                                Horário de Término
+                            </label>
                             <input
                                 type="time"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.horario_termino ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) => (v ? { ...v, horario_termino: e.target.value } : v))
+                                    setEdit((v) =>
+                                        v ? { ...v, horario_termino: e.target.value } : v
+                                    )
                                 }
                             />
                         </div>
@@ -765,46 +874,108 @@ export default function AtendimentoPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                            <label className="mb-1 block text-sm font-medium">Data do Sepultamento</label>
+                            <label className="mb-1 block text-sm font-medium">
+                                Data do Sepultamento
+                            </label>
                             <input
                                 type="date"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.data_sepultamento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) => (v ? { ...v, data_sepultamento: e.target.value } : v))
+                                    setEdit((v) =>
+                                        v ? { ...v, data_sepultamento: e.target.value } : v
+                                    )
                                 }
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-sm font-medium">Horário do Sepultamento</label>
+                            <label className="mb-1 block text-sm font-medium">
+                                Horário do Sepultamento
+                            </label>
                             <input
                                 type="time"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.horario_sepultamento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) => (v ? { ...v, horario_sepultamento: e.target.value } : v))
+                                    setEdit((v) =>
+                                        v ? { ...v, horario_sepultamento: e.target.value } : v
+                                    )
                                 }
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label className="mb-1 block text-sm font-medium">Local do Sepultamento</label>
+                        <label className="mb-1 block text-sm font-medium">
+                            Local do Sepultamento
+                        </label>
                         <input
                             className="w-full rounded-md border px-3 py-2 text-sm"
                             value={edit?.local_sepultamento ?? ""}
                             onChange={(e) =>
-                                setEdit((v) => (v ? { ...v, local_sepultamento: e.target.value } : v))
+                                setEdit((v) =>
+                                    v ? { ...v, local_sepultamento: e.target.value } : v
+                                )
                             }
                         />
                     </div>
 
+                    {/* --------- Edição da IMAGEM --------- */}
+                    <div>
+                        <label className="mb-1 block text-sm font-medium">
+                            Foto do Falecido
+                        </label>
+
+                        {edit?.foto_falecido ? (
+                            <div className="mb-2 flex items-center gap-3">
+                                <img
+                                    src={edit.foto_falecido}
+                                    alt="Foto atual"
+                                    className="h-24 w-24 rounded-md object-cover"
+                                />
+                                <button
+                                    type="button"
+                                    className={`text-xs underline ${removerFoto ? "text-red-700" : "text-red-600"
+                                        }`}
+                                    onClick={() => setRemoverFoto((v) => !v)}
+                                >
+                                    {removerFoto ? "Cancelar remoção" : "Remover foto"}
+                                </button>
+                            </div>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">
+                                Nenhuma foto cadastrada.
+                            </p>
+                        )}
+
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => setEditFoto(e.target.files?.[0] ?? null)}
+                            className="mt-1 w-full rounded-md border px-3 py-2 text-sm file:mr-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5"
+                        />
+                        {editFoto && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                                Nova imagem: <b>{editFoto.name}</b>
+                            </div>
+                        )}
+                        {removerFoto && (
+                            <div className="mt-2 text-xs text-red-700">
+                                A foto atual será <b>removida</b> ao salvar.
+                            </div>
+                        )}
+                    </div>
+                    {/* ------------------------------------ */}
+
                     <div className="mt-2 flex justify-end gap-2">
-                        <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setEditOpen(false)}>
+                        <button
+                            className="rounded-md border px-3 py-2 text-sm"
+                            onClick={() => setEditOpen(false)}
+                        >
                             Cancelar
                         </button>
                         <button
-                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
+                            className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:opacity-90"
                             onClick={salvarEdicao}
                         >
                             Salvar
@@ -814,7 +985,12 @@ export default function AtendimentoPage() {
             </Modal>
 
             {/* Popup de Confirmação (Excluir) */}
-            <Modal open={delOpen} onClose={() => setDelOpen(false)} ariaLabel="Confirmar exclusão" maxWidth={480}>
+            <Modal
+                open={delOpen}
+                onClose={() => setDelOpen(false)}
+                ariaLabel="Confirmar exclusão"
+                maxWidth={480}
+            >
                 <div className="flex items-start justify-between">
                     <h2 className="text-xl font-semibold">Tem certeza?</h2>
                     <button
@@ -826,10 +1002,14 @@ export default function AtendimentoPage() {
                     </button>
                 </div>
                 <p className="mt-2 text-sm">
-                    Você está prestes a excluir este registro. Esta ação não pode ser desfeita.
+                    Você está prestes a excluir este registro. Esta ação não pode ser
+                    desfeita.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                    <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setDelOpen(false)}>
+                    <button
+                        className="rounded-md border px-3 py-2 text-sm"
+                        onClick={() => setDelOpen(false)}
+                    >
                         Cancelar
                     </button>
                     <button
