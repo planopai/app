@@ -31,6 +31,40 @@ function normalizarSala(s?: string | null): "Sala 01" | "Sala 02" | "Sala 03" {
     return "Sala 01";
 }
 
+/** Blindagem extra no front para qualquer valor de foto vindo do back */
+function fixFotoUrl(path?: string | null): string | null {
+    if (!path) return null;
+    try {
+        // Resolve contra o mesmo host (aceita absolutas/relativas/filename puro)
+        const u = new URL(path, window.location.origin);
+        let p = u.pathname.replace(/\\/g, "/");
+
+        // Normaliza /api/php/uploads/ -> /uploads/
+        p = p.replace(/\/?api\/php\/uploads\//i, "/uploads/");
+
+        // Remove duplicações "uploads/uploads/"
+        p = p.replace(/\/+uploads\/+uploads\//gi, "/uploads/");
+
+        // Se não começar com "/uploads/", prefixa
+        if (!/^\/uploads\//i.test(p)) {
+            p = "/uploads/" + p.replace(/^\/+/, "");
+        }
+
+        // Colapsa barras repetidas
+        p = p.replace(/\/{2,}/g, "/");
+
+        return p;
+    } catch {
+        // fallback: trata como relativo simples
+        let p = (path || "").replace(/\\/g, "/");
+        p = p.replace(/\/?api\/php\/uploads\//i, "/uploads/");
+        p = p.replace(/\/+uploads\/+uploads\//gi, "/uploads/");
+        if (!/^\/uploads\//i.test(p)) p = "/uploads/" + p.replace(/^\/+/, "");
+        p = p.replace(/\/{2,}/g, "/");
+        return p;
+    }
+}
+
 /* ============================================================
    Componentes auxiliares
 ============================================================ */
@@ -97,10 +131,7 @@ function TextFeedback({
 /* helper de estilo para os botões de sala */
 const salaBtn = (active: boolean) =>
     `w-full rounded-2xl border px-6 py-3 text-base font-semibold transition
-   ${active
-        ? "border-primary bg-primary/5 text-primary shadow-sm"
-        : "border-muted hover:bg-muted/50"
-    }`;
+   ${active ? "border-primary bg-primary/5 text-primary shadow-sm" : "border-muted hover:bg-muted/50"}`;
 
 /* ============================================================
    Página
@@ -110,11 +141,11 @@ export default function AtendimentoPage() {
     const TOTAL_STEPS = 13; // 0..12
     const [step, setStep] = useState(0);
 
-    // Sala com botões (substitui o <select>)
+    // Sala com botões
     const [salaSelecionada, setSalaSelecionada] =
         useState<"Sala 01" | "Sala 02" | "Sala 03">("Sala 01");
 
-    // Estado controlado do formulário
+    // Estado do formulário
     const [form, setForm] = useState({
         nome: "",
         dataNascimento: "",
@@ -135,7 +166,7 @@ export default function AtendimentoPage() {
         null
     );
 
-    const [submitting, setSubmitting] = useState(false); // evita clique duplo
+    const [submitting, setSubmitting] = useState(false);
 
     const showPrev = step > 0;
     const showNext = step < TOTAL_STEPS - 1;
@@ -165,16 +196,10 @@ export default function AtendimentoPage() {
     };
 
     const salvarInformacoes = useCallback(async () => {
-        if (submitting) return; // trava clique duplo
+        if (submitting) return;
         setSubmitting(true);
 
-        // validação mínima
-        if (
-            !form.nome ||
-            !form.localVelorio ||
-            !form.dataVelorio ||
-            !form.horarioInicio
-        ) {
+        if (!form.nome || !form.localVelorio || !form.dataVelorio || !form.horarioInicio) {
             setRespMsg({ text: "Preencha os campos obrigatórios.", ok: false });
             setSubmitting(false);
             return;
@@ -205,19 +230,16 @@ export default function AtendimentoPage() {
             let data: any = null;
             try {
                 data = await res.json();
-            } catch {
-                // ignora JSON inválido
-            }
+            } catch { }
 
             if (res.ok && (data?.success ?? data?.sucesso ?? true)) {
                 setRespMsg({ text: "Atendimento Criado Com Sucesso!", ok: true });
-                carregarDados();
+                await carregarDados();
                 limparFormulario();
                 setStep(0);
             } else {
                 setRespMsg({
-                    text:
-                        data?.message || data?.msg || `Erro ao criar (HTTP ${res.status})`,
+                    text: data?.message || data?.msg || `Erro ao criar (HTTP ${res.status})`,
                     ok: false,
                 });
             }
@@ -236,16 +258,20 @@ export default function AtendimentoPage() {
         try {
             const res = await fetch(
                 "/api/php/salaControle.php?action=listar&_=" + Date.now(),
-                {
-                    cache: "no-store",
-                }
+                { cache: "no-store" }
             );
             if (!res.ok) throw new Error(res.statusText);
-            const data = (await res.json()) as
-                | RegistroSala[]
-                | { dados?: RegistroSala[] };
-            const arr = Array.isArray(data) ? data : data?.dados ?? [];
-            setLinhas(arr || []);
+            const data = (await res.json()) as RegistroSala[] | { dados?: RegistroSala[] };
+
+            const arr = (Array.isArray(data) ? data : data?.dados ?? []) as RegistroSala[];
+
+            // Normaliza foto no front (camada extra de proteção)
+            const norm = arr.map((r) => ({
+                ...r,
+                foto_falecido: fixFotoUrl(r.foto_falecido),
+            }));
+
+            setLinhas(norm || []);
             setErrEdicao(null);
         } catch (e: any) {
             setErrEdicao("Erro ao carregar dados. Verifique o console para detalhes.");
@@ -256,8 +282,8 @@ export default function AtendimentoPage() {
     // Edição (popup)
     const [editOpen, setEditOpen] = useState(false);
     const [edit, setEdit] = useState<RegistroSala | null>(null);
-    const [editFoto, setEditFoto] = useState<File | null>(null); // arquivo novo
-    const [removerFoto, setRemoverFoto] = useState(false); // marcar remoção
+    const [editFoto, setEditFoto] = useState<File | null>(null);
+    const [removerFoto, setRemoverFoto] = useState(false);
 
     const abrirEditar = useCallback(async (id: number | string) => {
         try {
@@ -279,7 +305,7 @@ export default function AtendimentoPage() {
                 data_sepultamento: d.data_sepultamento ?? "",
                 horario_sepultamento: d.horario_sepultamento ?? "",
                 local_sepultamento: d.local_sepultamento ?? "",
-                foto_falecido: d.foto_falecido ?? null,
+                foto_falecido: fixFotoUrl(d.foto_falecido ?? null),
             });
             setEditFoto(null);
             setRemoverFoto(false);
@@ -307,9 +333,9 @@ export default function AtendimentoPage() {
             fd.append("local_sepultamento", edit.local_sepultamento ?? "");
 
             if (editFoto) {
-                fd.append("foto_falecido", editFoto); // substitui por nova
+                fd.append("foto_falecido", editFoto);
             } else if (removerFoto) {
-                fd.append("remove_foto", "1"); // remove foto atual
+                fd.append("remove_foto", "1");
             }
 
             const res = await fetch("/api/php/salaControle.php?action=editar", {
@@ -325,10 +351,7 @@ export default function AtendimentoPage() {
                 setRemoverFoto(false);
                 carregarDados();
             } else {
-                alert(
-                    "Erro ao salvar edição: " +
-                    (data?.message || data?.msg || "Desconhecido")
-                );
+                alert("Erro ao salvar edição: " + (data?.message || data?.msg || "Desconhecido"));
             }
         } catch (e: any) {
             setErrEdicao("Erro ao salvar edição. Verifique o console para detalhes.");
@@ -358,10 +381,7 @@ export default function AtendimentoPage() {
                 setDelId(null);
                 carregarDados();
             } else {
-                alert(
-                    "Erro ao excluir registro: " +
-                    (data?.message || data?.msg || "Desconhecido")
-                );
+                alert("Erro ao excluir registro: " + (data?.message || data?.msg || "Desconhecido"));
             }
         } catch (e: any) {
             setErrEdicao("Erro ao excluir registro. Verifique o console para detalhes.");
@@ -385,7 +405,7 @@ export default function AtendimentoPage() {
             <h1 className="text-2xl font-semibold">Novo Atendimento</h1>
 
             <div className="mt-4 space-y-0">
-                {/* Step 0 - Escolha da sala (3 botões) */}
+                {/* Step 0 - Escolha da sala */}
                 <section className="step" hidden={step !== 0}>
                     <fieldset className="rounded-2xl border p-4">
                         <div className="mb-2 text-sm font-semibold">Escolha a Sala</div>
@@ -531,10 +551,7 @@ export default function AtendimentoPage() {
                 {/* Step 7 - Horário Sepultamento */}
                 <section className="step" hidden={step !== 7}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
-                        <label
-                            htmlFor="horario-sepultamento"
-                            className="text-sm font-medium"
-                        >
+                        <label htmlFor="horario-sepultamento" className="text-sm font-medium">
                             Horário do Sepultamento:
                         </label>
                         <input
@@ -591,7 +608,7 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 10 - Horário Início (Velório) */}
+                {/* Step 10 - Horário Início */}
                 <section className="step" hidden={step !== 10}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="horario-inicio" className="text-sm font-medium">
@@ -611,7 +628,7 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 11 - Data Fim (Velório) */}
+                {/* Step 11 - Data Fim */}
                 <section className="step" hidden={step !== 11}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="data-fim" className="text-sm font-medium">
@@ -631,7 +648,7 @@ export default function AtendimentoPage() {
                     </fieldset>
                 </section>
 
-                {/* Step 12 - Horário Término (Velório) */}
+                {/* Step 12 - Horário Término */}
                 <section className="step" hidden={step !== 12}>
                     <fieldset className="grid gap-2 rounded-2xl border p-4">
                         <label htmlFor="horario-termino" className="text-sm font-medium">
@@ -702,18 +719,14 @@ export default function AtendimentoPage() {
 
             {/* --- ÁREA DE PERSONALIZAÇÃO / EDIÇÃO --- */}
             <h1 className="mt-9 text-2xl font-semibold">Edição de Dados</h1>
-            {errEdicao && (
-                <div className="mt-2 text-sm text-red-600">{errEdicao}</div>
-            )}
+            {errEdicao && <div className="mt-2 text-sm text-red-600">{errEdicao}</div>}
 
             <div className="mt-3 overflow-x-auto rounded-2xl border">
                 <table className="min-w-full text-sm" id="salaTable">
                     <thead className="bg-muted/50">
                         <tr>
                             <th className="px-3 py-2 text-left font-semibold">Sala</th>
-                            <th className="px-3 py-2 text-left font-semibold">
-                                Nome Completo
-                            </th>
+                            <th className="px-3 py-2 text-left font-semibold">Nome Completo</th>
                             <th className="w-64 px-3 py-2 text-left font-semibold">Ações</th>
                         </tr>
                     </thead>
@@ -752,11 +765,7 @@ export default function AtendimentoPage() {
             </div>
 
             {/* Popup de Edição */}
-            <Modal
-                open={editOpen}
-                onClose={() => setEditOpen(false)}
-                ariaLabel="Editar Registro"
-            >
+            <Modal open={editOpen} onClose={() => setEditOpen(false)} ariaLabel="Editar Registro">
                 <div className="flex items-start justify-between">
                     <h2 className="text-xl font-semibold">Editar Registro</h2>
                     <button
@@ -780,9 +789,7 @@ export default function AtendimentoPage() {
                                     key={s}
                                     type="button"
                                     className={salaBtn(edit?.sala === s)}
-                                    onClick={() =>
-                                        setEdit((v) => (v ? { ...v, sala: s } : v))
-                                    }
+                                    onClick={() => setEdit((v) => (v ? { ...v, sala: s } : v))}
                                 >
                                     {s}
                                 </button>
@@ -791,49 +798,35 @@ export default function AtendimentoPage() {
                     </div>
 
                     <div>
-                        <label className="mb-1 block text-sm font-medium">
-                            Nome Completo
-                        </label>
+                        <label className="mb-1 block text-sm font-medium">Nome Completo</label>
                         <input
                             className="w-full rounded-md border px-3 py-2 text-sm"
                             value={edit?.nome_completo ?? ""}
-                            onChange={(e) =>
-                                setEdit((v) =>
-                                    v ? { ...v, nome_completo: e.target.value } : v
-                                )
-                            }
+                            onChange={(e) => setEdit((v) => (v ? { ...v, nome_completo: e.target.value } : v))}
                         />
                     </div>
 
                     {/* NOVOS CAMPOS NO MODAL */}
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Data de Nascimento
-                            </label>
+                            <label className="mb-1 block text-sm font-medium">Data de Nascimento</label>
                             <input
                                 type="date"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.data_nascimento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) =>
-                                        v ? { ...v, data_nascimento: e.target.value } : v
-                                    )
+                                    setEdit((v) => (v ? { ...v, data_nascimento: e.target.value } : v))
                                 }
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Data de Falecimento
-                            </label>
+                            <label className="mb-1 block text-sm font-medium">Data de Falecimento</label>
                             <input
                                 type="date"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.data_falecimento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) =>
-                                        v ? { ...v, data_falecimento: e.target.value } : v
-                                    )
+                                    setEdit((v) => (v ? { ...v, data_falecimento: e.target.value } : v))
                                 }
                             />
                         </div>
@@ -841,32 +834,24 @@ export default function AtendimentoPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Horário de Início
-                            </label>
+                            <label className="mb-1 block text-sm font-medium">Horário de Início</label>
                             <input
                                 type="time"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.horario_inicio ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) =>
-                                        v ? { ...v, horario_inicio: e.target.value } : v
-                                    )
+                                    setEdit((v) => (v ? { ...v, horario_inicio: e.target.value } : v))
                                 }
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Horário de Término
-                            </label>
+                            <label className="mb-1 block text-sm font-medium">Horário de Término</label>
                             <input
                                 type="time"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.horario_termino ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) =>
-                                        v ? { ...v, horario_termino: e.target.value } : v
-                                    )
+                                    setEdit((v) => (v ? { ...v, horario_termino: e.target.value } : v))
                                 }
                             />
                         </div>
@@ -874,57 +859,43 @@ export default function AtendimentoPage() {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Data do Sepultamento
-                            </label>
+                            <label className="mb-1 block text-sm font-medium">Data do Sepultamento</label>
                             <input
                                 type="date"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.data_sepultamento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) =>
-                                        v ? { ...v, data_sepultamento: e.target.value } : v
-                                    )
+                                    setEdit((v) => (v ? { ...v, data_sepultamento: e.target.value } : v))
                                 }
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Horário do Sepultamento
-                            </label>
+                            <label className="mb-1 block text-sm font-medium">Horário do Sepultamento</label>
                             <input
                                 type="time"
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                                 value={edit?.horario_sepultamento ?? ""}
                                 onChange={(e) =>
-                                    setEdit((v) =>
-                                        v ? { ...v, horario_sepultamento: e.target.value } : v
-                                    )
+                                    setEdit((v) => (v ? { ...v, horario_sepultamento: e.target.value } : v))
                                 }
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label className="mb-1 block text-sm font-medium">
-                            Local do Sepultamento
-                        </label>
+                        <label className="mb-1 block text-sm font-medium">Local do Sepultamento</label>
                         <input
                             className="w-full rounded-md border px-3 py-2 text-sm"
                             value={edit?.local_sepultamento ?? ""}
                             onChange={(e) =>
-                                setEdit((v) =>
-                                    v ? { ...v, local_sepultamento: e.target.value } : v
-                                )
+                                setEdit((v) => (v ? { ...v, local_sepultamento: e.target.value } : v))
                             }
                         />
                     </div>
 
                     {/* --------- Edição da IMAGEM --------- */}
                     <div>
-                        <label className="mb-1 block text-sm font-medium">
-                            Foto do Falecido
-                        </label>
+                        <label className="mb-1 block text-sm font-medium">Foto do Falecido</label>
 
                         {edit?.foto_falecido ? (
                             <div className="mb-2 flex items-center gap-3">
@@ -935,17 +906,14 @@ export default function AtendimentoPage() {
                                 />
                                 <button
                                     type="button"
-                                    className={`text-xs underline ${removerFoto ? "text-red-700" : "text-red-600"
-                                        }`}
+                                    className={`text-xs underline ${removerFoto ? "text-red-700" : "text-red-600"}`}
                                     onClick={() => setRemoverFoto((v) => !v)}
                                 >
                                     {removerFoto ? "Cancelar remoção" : "Remover foto"}
                                 </button>
                             </div>
                         ) : (
-                            <p className="text-xs text-muted-foreground">
-                                Nenhuma foto cadastrada.
-                            </p>
+                            <p className="text-xs text-muted-foreground">Nenhuma foto cadastrada.</p>
                         )}
 
                         <input
@@ -968,10 +936,7 @@ export default function AtendimentoPage() {
                     {/* ------------------------------------ */}
 
                     <div className="mt-2 flex justify-end gap-2">
-                        <button
-                            className="rounded-md border px-3 py-2 text-sm"
-                            onClick={() => setEditOpen(false)}
-                        >
+                        <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setEditOpen(false)}>
                             Cancelar
                         </button>
                         <button
@@ -985,12 +950,7 @@ export default function AtendimentoPage() {
             </Modal>
 
             {/* Popup de Confirmação (Excluir) */}
-            <Modal
-                open={delOpen}
-                onClose={() => setDelOpen(false)}
-                ariaLabel="Confirmar exclusão"
-                maxWidth={480}
-            >
+            <Modal open={delOpen} onClose={() => setDelOpen(false)} ariaLabel="Confirmar exclusão" maxWidth={480}>
                 <div className="flex items-start justify-between">
                     <h2 className="text-xl font-semibold">Tem certeza?</h2>
                     <button
@@ -1002,14 +962,10 @@ export default function AtendimentoPage() {
                     </button>
                 </div>
                 <p className="mt-2 text-sm">
-                    Você está prestes a excluir este registro. Esta ação não pode ser
-                    desfeita.
+                    Você está prestes a excluir este registro. Esta ação não pode ser desfeita.
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm"
-                        onClick={() => setDelOpen(false)}
-                    >
+                    <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setDelOpen(false)}>
                         Cancelar
                     </button>
                     <button
