@@ -21,7 +21,9 @@ interface Props {
 function parseBrDate(s: string): Date | null {
     const m = s
         ?.trim()
-        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        .match(
+            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+        );
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -63,7 +65,10 @@ function parseDateFlex(s?: string | null): Date | null {
    2) item.created_at
    3) item.data / data_inicio_velorio / etc (quando existir)
 */
-function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+function getItemDate(
+    item: FalecidoItem,
+    criacaoMap: Record<string, string>
+): Date | null {
     const id = String(item.sepultamento_id);
     const candidatos = [
         criacaoMap[id],
@@ -90,9 +95,18 @@ export default function ListaRegistros({
     onSelecionar,
     criacaoMap,
 }: Props) {
-    // ordena DESC pela data calculada acima
+    // 1) Deduplica por sepultamento_id (a última ocorrência vence)
+    const semDuplicados = React.useMemo(() => {
+        const map = new Map<string, FalecidoItem>();
+        for (const it of registros || []) {
+            map.set(String(it.sepultamento_id), it);
+        }
+        return Array.from(map.values());
+    }, [registros]);
+
+    // 2) Ordena DESC pela melhor data
     const ordenados = React.useMemo(() => {
-        const arr = [...(registros || [])];
+        const arr = [...semDuplicados];
         arr.sort((a, b) => {
             const da = getItemDate(a, criacaoMap);
             const db = getItemDate(b, criacaoMap);
@@ -101,7 +115,7 @@ export default function ListaRegistros({
             return tb - ta; // DESC
         });
         return arr;
-    }, [registros, criacaoMap]);
+    }, [semDuplicados, criacaoMap]);
 
     return (
         <div className="flex flex-col border rounded overflow-hidden w-full">
@@ -116,9 +130,14 @@ export default function ListaRegistros({
                     <ul>
                         {ordenados.map((item) => {
                             const id = String(item.sepultamento_id);
-                            const criadoEm = criacaoMap[id] || (item as any).created_at || "";
+                            const criadoEm =
+                                criacaoMap[id] || (item as any).created_at || "";
+
+                            // key única e estável mesmo com registros repetidos ao longo das páginas
+                            const key = `${id}-${criadoEm || "s/created"}`;
+
                             return (
-                                <li key={id}>
+                                <li key={key}>
                                     <button
                                         type="button"
                                         className={`w-full p-3 border-b hover:bg-muted/40 flex items-center ${selecionadoId === id ? "bg-blue-50" : ""
