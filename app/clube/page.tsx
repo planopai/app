@@ -63,12 +63,13 @@ type Parceiro = {
  *  (trocar por fetch/SSR depois)
  *  ======================= */
 const CATEGORIAS: Categoria[] = [
-    { id: 'cuidados-pet', nome: 'Cuidados pet', slug: 'cuidados-pet', icon: '🐾' },
-    { id: 'diversao', nome: 'Para se divertir', slug: 'para-se-divertir', icon: '🎢' },
-    { id: 'casa', nome: 'Lar doce lar', slug: 'lar-doce-lar', icon: '🏠' },
-    { id: 'viagem', nome: 'Pé na estrada', slug: 'pe-na-estrada', icon: '🧳' },
-    { id: 'autocuidado', nome: 'Autocuidado', slug: 'autocuidado', icon: '🧖‍♀️' },
-    { id: 'alimentacao', nome: 'Comer bem', slug: 'comer-bem', icon: '🍽️' },
+    { id: 'farmacias', nome: 'Farmácias', slug: 'farmacias', icon: '💊' },
+    { id: 'mercados', nome: 'Mercados', slug: 'mercados', icon: '🛒' },
+    { id: 'academias', nome: 'Academias', slug: 'academias', icon: '🏋️' },
+    { id: 'manutencao', nome: 'Manutenção', slug: 'manutencao', icon: '🛠️' },
+    { id: 'construcao', nome: 'Construção', slug: 'construcao', icon: '🧱' },
+    { id: 'educacao', nome: 'Educação', slug: 'educacao', icon: '🎓' },
+    { id: 'gratuitos', nome: 'Gratuitos', slug: 'gratuitos', icon: '🎁' },
 ];
 
 const PARCEIROS: Parceiro[] = [
@@ -78,7 +79,7 @@ const PARCEIROS: Parceiro[] = [
         slug: 'academia-boa-forma',
         descricaoCurta: 'Planos mensais e aulas coletivas.',
         logoUrl: 'https://via.placeholder.com/160x160.png?text=Academia',
-        categorias: ['autocuidado'],
+        categorias: ['academias'],
         ativo: true,
         beneficio: {
             titulo: 'Desconto em planos',
@@ -120,7 +121,7 @@ const PARCEIROS: Parceiro[] = [
         slug: 'clinica-vet-amigo',
         descricaoCurta: 'Consultas, vacinas e banho & tosa.',
         logoUrl: 'https://via.placeholder.com/160x160.png?text=Vet',
-        categorias: ['cuidados-pet'],
+        categorias: ['manutencao'],
         ativo: true,
         beneficio: {
             titulo: 'Check-up Pet',
@@ -156,7 +157,7 @@ const PARCEIROS: Parceiro[] = [
         slug: 'pizzaria-la-nonna',
         descricaoCurta: 'Pizzas artesanais no forno a lenha.',
         logoUrl: 'https://via.placeholder.com/160x160.png?text=Pizza',
-        categorias: ['alimentacao', 'diversao'],
+        categorias: ['mercados'],
         ativo: true,
         beneficio: {
             titulo: 'Rodízio com desconto',
