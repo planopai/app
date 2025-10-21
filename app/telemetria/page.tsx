@@ -2,426 +2,332 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { API } from "../acompanhamento/components/constants";
+import MapRoute from "./MapRoute";
 
-/* -------------------- utils num/format -------------------- */
-function num(v: any): number | null {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-}
-function sum(nums: any[], key: string) {
-    return nums.reduce((acc, it) => acc + (num((it as any)[key]) ?? 0), 0);
-}
-function fmtFixed(v: any, d = 1): string {
-    const n = num(v);
-    return n === null ? "-" : n.toFixed(d);
-}
-function fmtDateTime(s?: string | null) {
-    if (!s) return "-";
-    const d = new Date(s);
-    return isNaN(d.getTime()) ? "-" : d.toLocaleString();
-}
-function secsToHMS(sec: any) {
-    const s = num(sec);
-    if (s === null) return "-";
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const ss = Math.floor(s % 60);
-    if (h) return `${h}h ${m}m`;
-    if (m) return `${m}m ${ss}s`;
-    return `${ss}s`;
-}
+/* ======================= Tipos ======================= */
+type Ponto = { lat: number; lng: number; t?: number; v?: number };
 
-/* -------------------- types -------------------- */
-type Row = {
-    id: number | string;
-    sepultamento_id: number | string;
-    tipo: "remocao" | "para_velorio" | "para_sepultamento" | string;
-    agente?: string | null;
-    falecido?: string | null;
-    veiculo_nome?: string | null;
-    veiculo_obs?: string | null;
-    inicio_ts?: string | null;
-    inicio_lat?: number | string | null;
-    inicio_lng?: number | string | null;
-    fim_ts?: string | null;
-    fim_lat?: number | string | null;
-    fim_lng?: number | string | null;
-    distancia_km?: number | string | null;
-    duracao_seg?: number | string | null;
-    vel_media_kmh?: number | string | null;
-    vel_max_kmh?: number | string | null;
-    amostras?: number | string | null;
+type TelemetriaRegistro = {
+    id: number;
+    sepultamento_id: number | null;
+    agente: string | null;
+    falecido: string | null;
+
+    inicio_iso?: string | null;
+    fim_iso?: string | null;
+
+    velocidade_max?: number | null;
+    velocidade_media?: number | null;
+    distancia_km?: number | null;
+    duracao_s?: number | null;
+
+    paradas?: number | null;
+    acel_fortes?: number | null;
+    frenagens_fortes?: number | null;
+
+    origem?: string | null;
+    observacao?: string | null;
+
     pontos_json?: string | null;
-    source_device?: string | null;
-    encerrado?: 0 | 1 | string | null;
+    eventos_json?: string | null;
+    extra_json?: string | null;
+
     criado_em?: string | null;
     atualizado_em?: string | null;
 };
 
-type Ponto = { lat: number; lng: number; t?: number; v?: number };
+/* ======================= Helpers ======================= */
+const isFiniteNum = (v: any): v is number => Number.isFinite(Number(v));
 
-/* -------------------- MiniMap (SVG, sem libs) -------------------- */
-function MiniMap({ pontos, width = 320, height = 200 }: { pontos: Ponto[]; width?: number; height?: number }) {
-    // bounds
-    const valid = pontos.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    if (valid.length < 2) {
+/** agora aceita default number | null | undefined  */
+const n = (v: any, d: number | null | undefined = 0): number =>
+    isFiniteNum(v) ? Number(v) : (d ?? 0);
+
+function fmtKm(x: any) {
+    const val = n(x, 0);
+    return `${val.toFixed(2).replace(".", ",")} km`;
+}
+function fmtKmH(x: any) {
+    const val = n(x, 0);
+    return `${val.toFixed(1).replace(".", ",")} km/h`;
+}
+function fmtDur(seg: any) {
+    const s = Math.max(0, Math.floor(n(seg, 0)));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    const pad = (v: number) => String(v).padStart(2, "0");
+    return `${pad(h)}:${pad(m)}:${pad(ss)}`;
+}
+function fmtDataHora(iso?: string | null) {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (isNaN(d as any)) return String(iso);
+    return d.toLocaleString();
+}
+
+function parsePontosJson(pontos_json?: string | null): Ponto[] {
+    if (!pontos_json) return [];
+    try {
+        const arr = JSON.parse(pontos_json);
+        if (!Array.isArray(arr)) return [];
+        return arr
+            .map((p) => ({
+                lat: Number(p?.lat),
+                lng: Number(p?.lng),
+                t: p?.t != null ? Number(p.t) : undefined,
+                v: p?.v != null ? Number(p.v) : undefined,
+            }))
+            .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    } catch {
+        return [];
+    }
+}
+
+/* ======================= UI menores ======================= */
+function KPI({
+    label,
+    value,
+    sub,
+}: {
+    label: string;
+    value: string;
+    sub?: string;
+}) {
+    return (
+        <div className="rounded-xl border p-4">
+            <div className="text-xs text-slate-500">{label}</div>
+            <div className="mt-1 text-xl font-semibold">{value}</div>
+            {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+        </div>
+    );
+}
+
+/** Mini fallback em SVG (quando houver 0 ou 1 ponto) */
+function MiniMap({ pontos }: { pontos: Ponto[] }) {
+    const [w, h, pad] = [320, 180, 10];
+    if (pontos.length === 0) {
         return (
-            <div className="flex h-[200px] w-full items-center justify-center rounded-lg bg-slate-50 text-xs text-slate-500">
-                Sem pontos…
+            <div className="flex h-[180px] w-full items-center justify-center rounded-lg border text-xs text-slate-500">
+                Sem pontos de rota
             </div>
         );
     }
-    const lats = valid.map((p) => p.lat);
-    const lngs = valid.map((p) => p.lng);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const pad = 12;
-    const W = width, H = height;
 
-    const project = (pt: Ponto) => {
-        // escala linear simples (não é projeção geográfica perfeita, mas funciona para preview)
-        const x = pad + ((pt.lng - minLng) / (maxLng - minLng || 1)) * (W - pad * 2);
-        const y = pad + ((maxLat - pt.lat) / (maxLat - minLat || 1)) * (H - pad * 2);
-        return [x, y];
+    const xs = pontos.map((p) => p.lng);
+    const ys = pontos.map((p) => p.lat);
+    const minX = Math.min(...xs),
+        maxX = Math.max(...xs),
+        minY = Math.min(...ys),
+        maxY = Math.max(...ys);
+    const dx = Math.max(1e-9, maxX - minX);
+    const dy = Math.max(1e-9, maxY - minY);
+    const sx = (w - 2 * pad) / dx;
+    const sy = (h - 2 * pad) / dy;
+    const s = Math.min(sx, sy);
+
+    const tr = (p: Ponto) => {
+        const x = pad + (p.lng - minX) * s;
+        const y = h - pad - (p.lat - minY) * s;
+        return `${x},${y}`;
     };
 
-    const d = valid.map(project).map(([x, y]) => `${x},${y}`).join(" ");
-    const start = project(valid[0]);
-    const end = project(valid[valid.length - 1]);
+    const d = pontos.map(tr).join(" ");
 
     return (
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} className="rounded-lg bg-slate-50">
-            {/* grade leve */}
-            <g stroke="#e5e7eb">
-                {[0.25, 0.5, 0.75].map((r) => (
-                    <line key={`h${r}`} x1={0} x2={W} y1={H * r} y2={H * r} />
-                ))}
-                {[0.25, 0.5, 0.75].map((r) => (
-                    <line key={`v${r}`} y1={0} y2={H} x1={W * r} x2={W * r} />
-                ))}
-            </g>
-            {/* rota */}
-            <polyline points={d} fill="none" stroke="#0ea5e9" strokeWidth={3} />
-            {/* start/end */}
-            <circle cx={start[0]} cy={start[1]} r={5} fill="#10b981" />
-            <circle cx={end[0]} cy={end[1]} r={5} fill="#ef4444" />
+        <svg viewBox={`0 0 ${w} ${h}`} className="w-full rounded-lg border bg-white">
+            <polyline
+                points={d}
+                fill="none"
+                stroke="#0ea5e9"
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            {/* início */}
+            <circle
+                cx={pad + (pontos[0].lng - minX) * s}
+                cy={h - pad - (pontos[0].lat - minY) * s}
+                r={5}
+                fill="#10b981"
+                stroke="white"
+                strokeWidth={1.5}
+            />
+            {/* fim */}
+            <circle
+                cx={pad + (pontos[pontos.length - 1].lng - minX) * s}
+                cy={h - pad - (pontos[pontos.length - 1].lat - minY) * s}
+                r={5}
+                fill="#ef4444"
+                stroke="white"
+                strokeWidth={1.5}
+            />
         </svg>
     );
 }
 
-/* -------------------- Gauge semicircular -------------------- */
-function SpeedGauge({
-    maxMark = 120,
-    media,
-    maxima,
-}: {
-    maxMark?: number;
-    media: number | null;
-    maxima: number | null;
-}) {
-    const W = 220, H = 120; // semicírculo
-    const cx = W / 2, cy = H, R = H - 8;
-    const angle = (v: number) => Math.PI * (1 + (v / maxMark)); // 180° a 360°
-    const needle = (v: number) => {
-        const a = angle(Math.max(0, Math.min(maxMark, v)));
-        return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
-    };
-
-    const mediaPt = media != null ? needle(media) : null;
-    const maxPt = maxima != null ? needle(maxima) : null;
-
-    // arcos de fundo
-    const arc = (ratio: number, color: string) => {
-        const a0 = Math.PI, a1 = Math.PI * (1 + ratio);
-        const x0 = cx + R * Math.cos(a0), y0 = cy + R * Math.sin(a0);
-        const x1 = cx + R * Math.cos(a1), y1 = cy + R * Math.sin(a1);
-        return <path d={`M ${x0} ${y0} A ${R} ${R} 0 0 1 ${x1} ${y1}`} stroke={color} strokeWidth={10} fill="none" />;
-    };
-
-    return (
-        <svg viewBox={`0 0 ${W} ${H + 10}`} width="100%" className="rounded-lg">
-            {arc(1.0, "#e5e7eb")}
-            <text x={cx} y={H - 10} fontSize="10" textAnchor="middle" fill="#64748b">0</text>
-            <text x={8} y={H - 10} fontSize="10" fill="#64748b">km/h</text>
-            <text x={W - 12} y={H - 10} fontSize="10" textAnchor="end" fill="#64748b">{maxMark}</text>
-
-            {/* ponteiros */}
-            {mediaPt && (
-                <line x1={cx} y1={cy} x2={mediaPt[0]} y2={mediaPt[1]} stroke="#0ea5e9" strokeWidth={4} />
-            )}
-            {maxPt && (
-                <line x1={cx} y1={cy} x2={maxPt[0]} y2={maxPt[1]} stroke="#ef4444" strokeWidth={4} />
-            )}
-
-            {/* legendas */}
-            <rect x={12} y={6} width={12} height={4} rx={2} fill="#0ea5e9" />
-            <text x={30} y={10} fontSize="10" fill="#0f172a">Média: {media == null ? "-" : `${media.toFixed(1)} km/h`}</text>
-            <rect x={12} y={20} width={12} height={4} rx={2} fill="#ef4444" />
-            <text x={30} y={24} fontSize="10" fill="#0f172a">Máxima: {maxima == null ? "-" : `${maxima.toFixed(1)} km/h`}</text>
-        </svg>
-    );
-}
-
-/* -------------------- Page -------------------- */
-export default function TelemetriaDashboard() {
-    const [rows, setRows] = useState<Row[]>([]);
+/* ======================= Página ======================= */
+export default function TelemetriaPage() {
+    const [rows, setRows] = useState<TelemetriaRegistro[]>([]);
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
 
-    // filtros
-    const [fSepId, setFSepId] = useState("");
-    const [fTipo, setFTipo] = useState("");
-
-    const fetchList = useCallback(async () => {
+    const fetchRows = useCallback(async () => {
         setLoading(true);
         setMsg(null);
         try {
-            const qs = new URLSearchParams({ listar: "1" });
-            if (fSepId.trim()) qs.set("sepultamento_id", fSepId.trim());
-            if (fTipo.trim()) qs.set("tipo", fTipo.trim());
-            const r = await fetch(`${API}/api/php/telemetria.php?${qs.toString()}`, {
-                credentials: "include",
-                cache: "no-store",
-                headers: {
-                    Pragma: "no-cache",
-                    Expires: "0",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                },
-            });
-            const j = await r.json();
-            if (j?.sucesso) {
-                setRows(Array.isArray(j.dados) ? j.dados : []);
-            } else {
-                setMsg(j?.msg || "Erro ao listar.");
+            const r = await fetch(
+                `${API}/api/php/telemetria.php?listar=1&_t=${Date.now()}`,
+                { credentials: "include", cache: "no-store" }
+            );
+            const data = (await r.json()) as any;
+            if (!Array.isArray(data)) {
                 setRows([]);
+                setMsg(data?.msg || "Nenhum dado.");
+            } else {
+                setRows(
+                    data.map((d: any) => ({
+                        ...d,
+                        velocidade_max: n(d.velocidade_max, null),
+                        velocidade_media: n(d.velocidade_media, null),
+                        distancia_km: n(d.distancia_km, null),
+                        duracao_s: n(d.duracao_s, null),
+                        paradas: n(d.paradas, null),
+                        acel_fortes: n(d.acel_fortes, null),
+                        frenagens_fortes: n(d.frenagens_fortes, null),
+                    }))
+                );
             }
         } catch (e: any) {
-            setMsg(e?.message || "Falha ao listar.");
+            setMsg(e?.message || "Falha ao carregar.");
             setRows([]);
         } finally {
             setLoading(false);
         }
-    }, [fSepId, fTipo]);
+    }, []);
 
     useEffect(() => {
-        fetchList();
-    }, [fetchList]);
+        fetchRows();
+    }, [fetchRows]);
 
-    /* -------- KPIs globais -------- */
-    const totalKm = useMemo(() => sum(rows as any[], "distancia_km"), [rows]);
-    const totalSeg = useMemo(() => sum(rows as any[], "duracao_seg"), [rows]);
-    const vmax = useMemo(() => {
-        let m = 0;
-        rows.forEach((r) => {
-            const v = num(r.vel_max_kmh) ?? 0;
-            if (v > m) m = v;
-        });
-        return m;
+    const resumo = useMemo(() => {
+        const total = rows.length;
+        const dist = rows.reduce((a, r) => a + n(r.distancia_km, 0), 0);
+        const dur = rows.reduce((a, r) => a + n(r.duracao_s, 0), 0);
+        const vmax = rows.reduce((m, r) => Math.max(m, n(r.velocidade_max, 0)), 0);
+        const vmed =
+            rows.length > 0
+                ? rows.reduce((a, r) => a + n(r.velocidade_media, 0), 0) / rows.length
+                : 0;
+
+        return { total, dist, dur, vmax, vmed };
     }, [rows]);
-
-    /* -------- seed para testes -------- */
-    const seedNow = useCallback(async () => {
-        setMsg(null);
-        try {
-            const r = await fetch(`${API}/api/php/telemetria.php`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ acao: "seed" }),
-            });
-            const j = await r.json();
-            if (j?.sucesso) {
-                setMsg("Seed inserido.");
-                fetchList();
-            } else setMsg(j?.msg || "Falha ao inserir seed.");
-        } catch (e: any) {
-            setMsg(e?.message || "Erro no seed.");
-        }
-    }, [fetchList]);
 
     return (
         <div className="p-6">
-            {/* header */}
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <header className="mb-6 flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-semibold">Telemetria — Painel</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Visualização moderna de deslocamentos: mini-mapa, “velocímetro” e métricas.
+                    <h1 className="text-2xl font-semibold">Relatório de Telemetria</h1>
+                    <p className="text-sm text-slate-500">
+                        Sessões registradas com rota, velocidades e estatísticas.
                     </p>
                 </div>
-                <div className="flex gap-2">
-                    <button className="rounded-md border px-3 py-2 text-sm" onClick={fetchList} disabled={loading}>
-                        Atualizar
-                    </button>
-                    <button
-                        className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white"
-                        onClick={seedNow}
-                        title="Insere dados de teste (remova em produção)"
-                    >
-                        Inserir dados de teste
-                    </button>
-                </div>
+                <button
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                    onClick={fetchRows}
+                    disabled={loading}
+                >
+                    {loading ? "Atualizando..." : "Atualizar"}
+                </button>
+            </header>
+
+            {/* KPIs gerais */}
+            <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <KPI label="Sessões" value={String(resumo.total)} />
+                <KPI label="Distância total" value={fmtKm(resumo.dist)} />
+                <KPI label="Tempo total" value={fmtDur(resumo.dur)} />
+                <KPI
+                    label="Velocidade"
+                    value={fmtKmH(resumo.vmed)}
+                    sub={`V. Máxima: ${fmtKmH(resumo.vmax)}`}
+                />
             </div>
 
-            {/* filtros */}
-            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-4">
-                <div>
-                    <label className="mb-1 block text-sm font-medium">Sepultamento ID</label>
-                    <input
-                        value={fSepId}
-                        onChange={(e) => setFSepId(e.target.value)}
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        placeholder="ex.: 101"
-                    />
-                </div>
-                <div>
-                    <label className="mb-1 block text-sm font-medium">Tipo</label>
-                    <select
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        value={fTipo}
-                        onChange={(e) => setFTipo(e.target.value)}
-                    >
-                        <option value="">Todos</option>
-                        <option value="remocao">Remoção</option>
-                        <option value="para_velorio">Para Velório</option>
-                        <option value="para_sepultamento">Para Sepultamento</option>
-                    </select>
-                </div>
-                <div className="self-end">
-                    <button className="rounded-md border px-3 py-2 text-sm" onClick={fetchList} disabled={loading}>
-                        Filtrar
-                    </button>
-                </div>
-                {msg && <div className="self-end text-sm text-red-600">{msg}</div>}
-            </div>
-
-            {/* KPIs topo */}
-            <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border p-4">
-                    <div className="text-xs text-slate-500">Distância total</div>
-                    <div className="mt-1 text-2xl font-semibold">{fmtFixed(totalKm, 2)} km</div>
-                </div>
-                <div className="rounded-xl border p-4">
-                    <div className="text-xs text-slate-500">Tempo total</div>
-                    <div className="mt-1 text-2xl font-semibold">
-                        {Math.floor(totalSeg / 3600)}h {Math.floor((totalSeg % 3600) / 60)}m
-                    </div>
-                </div>
-                <div className="rounded-xl border p-4">
-                    <div className="text-xs text-slate-500">Velocidade máxima (global)</div>
-                    <div className="mt-1 text-2xl font-semibold">{fmtFixed(vmax, 1)} km/h</div>
-                </div>
-            </div>
-
-            {/* cards por trajeto */}
-            {rows.length === 0 ? (
-                <div className="rounded-xl border p-8 text-center text-slate-500">Nenhum trajeto encontrado.</div>
-            ) : (
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    {rows.map((r) => {
-                        let pontos: Ponto[] = [];
-                        try {
-                            const arr = JSON.parse(String(r.pontos_json || "[]"));
-                            if (Array.isArray(arr)) {
-                                pontos = arr
-                                    .map((p: any) => ({
-                                        lat: Number(p.lat ?? p.latitude),
-                                        lng: Number(p.lng ?? p.longitude),
-                                        t: Number(p.ts ?? p.t),
-                                        v: Number(p.v ?? p.speed),
-                                    }))
-                                    .filter((p: Ponto) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-                            }
-                        } catch { }
-
-                        const media = num(r.vel_media_kmh);
-                        const maxima = num(r.vel_max_kmh);
-                        const dist = num(r.distancia_km);
-                        const dur = num(r.duracao_seg);
-
-                        return (
-                            <div key={String(r.id)} className="rounded-2xl border p-4 shadow-sm">
-                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium">
-                                            #{r.sepultamento_id}
-                                        </span>
-                                        <span className="text-sm font-medium">
-                                            {r.tipo === "remocao"
-                                                ? "Remoção"
-                                                : r.tipo === "para_velorio"
-                                                    ? "Para Velório"
-                                                    : r.tipo === "para_sepultamento"
-                                                        ? "Para Sepultamento"
-                                                        : String(r.tipo || "")}
-                                        </span>
-                                    </div>
-                                    <div className="text-xs text-slate-500">
-                                        ID: {r.id}
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    {/* mapa */}
-                                    <div>
-                                        <MiniMap pontos={pontos} />
-                                    </div>
-
-                                    {/* velocímetro + métricas */}
-                                    <div className="flex flex-col">
-                                        <SpeedGauge maxMark={Math.max(80, Math.ceil((maxima ?? 0) / 10) * 10)} media={media} maxima={maxima} />
-                                        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                                            <div className="rounded-lg bg-slate-50 p-3">
-                                                <div className="text-xs text-slate-500">Distância</div>
-                                                <div className="font-semibold">{fmtFixed(dist, 2)} km</div>
-                                            </div>
-                                            <div className="rounded-lg bg-slate-50 p-3">
-                                                <div className="text-xs text-slate-500">Duração</div>
-                                                <div className="font-semibold">{secsToHMS(dur)}</div>
-                                            </div>
-                                            <div className="rounded-lg bg-slate-50 p-3">
-                                                <div className="text-xs text-slate-500">Amostras</div>
-                                                <div className="font-semibold">{num(r.amostras) ?? "-"}</div>
-                                            </div>
-                                            <div className="rounded-lg bg-slate-50 p-3">
-                                                <div className="text-xs text-slate-500">Dispositivo</div>
-                                                <div className="truncate font-semibold">{r.source_device || "-"}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                                    <div className="rounded-lg border p-3">
-                                        <div className="text-xs text-slate-500">Agente</div>
-                                        <div className="font-medium">{r.agente || "-"}</div>
-                                    </div>
-                                    <div className="rounded-lg border p-3">
-                                        <div className="text-xs text-slate-500">Falecido(a)</div>
-                                        <div className="font-medium">{r.falecido || "-"}</div>
-                                    </div>
-                                    <div className="rounded-lg border p-3">
-                                        <div className="text-xs text-slate-500">Veículo</div>
-                                        <div className="font-medium">{r.veiculo_nome || "-"}</div>
-                                        {r.veiculo_obs && <div className="text-xs text-slate-500">{r.veiculo_obs}</div>}
-                                    </div>
-                                </div>
-
-                                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                                    <div className="rounded-lg border p-3">
-                                        <div className="text-xs text-slate-500">Início</div>
-                                        <div className="font-medium">{fmtDateTime(r.inicio_ts)}</div>
-                                    </div>
-                                    <div className="rounded-lg border p-3">
-                                        <div className="text-xs text-slate-500">Fim</div>
-                                        <div className="font-medium">{fmtDateTime(r.fim_ts)}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+            {msg && (
+                <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {msg}
                 </div>
             )}
+
+            {/* Lista de sessões */}
+            <div className="space-y-6">
+                {rows.map((r) => {
+                    const pontos = parsePontosJson(r.pontos_json);
+                    return (
+                        <div
+                            key={r.id}
+                            className="rounded-2xl border bg-white p-4 shadow-sm"
+                        >
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-sm text-slate-500">
+                                        #{r.id} {r.origem ? `• ${r.origem}` : ""}
+                                    </div>
+                                    <div className="text-lg font-semibold">
+                                        {r.falecido || "Falecido(a) — não informado"}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                        Agente: <b>{r.agente || "-"}</b>
+                                    </div>
+                                </div>
+                                <div className="text-right text-xs text-slate-500">
+                                    <div>Início: {fmtDataHora(r.inicio_iso)}</div>
+                                    <div>Fim: {fmtDataHora(r.fim_iso)}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                {/* Mapa */}
+                                <div className="lg:col-span-2">
+                                    {pontos.length >= 2 ? (
+                                        <MapRoute pontos={pontos} />
+                                    ) : (
+                                        <MiniMap pontos={pontos} />
+                                    )}
+                                </div>
+
+                                {/* Métricas */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <KPI label="Distância" value={fmtKm(r.distancia_km)} />
+                                    <KPI label="Duração" value={fmtDur(r.duracao_s)} />
+                                    <KPI label="V. Média" value={fmtKmH(r.velocidade_media)} />
+                                    <KPI label="V. Máxima" value={fmtKmH(r.velocidade_max)} />
+                                    <KPI label="Paradas" value={String(n(r.paradas, 0))} />
+                                    <KPI
+                                        label="Eventos"
+                                        value={`${n(r.acel_fortes, 0)} acel / ${n(
+                                            r.frenagens_fortes,
+                                            0
+                                        )} freios`}
+                                    />
+                                </div>
+                            </div>
+
+                            {r.observacao && (
+                                <div className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+                                    <b>Observação:</b> {r.observacao}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+
+                {rows.length === 0 && !loading && (
+                    <div className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">
+                        Nenhuma sessão de telemetria encontrada.
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
