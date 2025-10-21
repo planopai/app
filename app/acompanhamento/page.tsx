@@ -4,10 +4,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrumacaoState, MateriaisState, Registro, Aviso } from "./components/types";
 import {
     API,
-    obrigatorios,
-    steps,
-    wizardStepIndexes,
-    wizardStepTitles,
+    obrigatorios as obrigatoriosPadrao,
+    steps as stepsPadrao,
+    wizardStepIndexes as wizardStepIndexesPadrao,
+    wizardStepTitles as wizardStepTitlesPadrao,
 } from "./components/constants";
 import {
     defaultArrumacao,
@@ -30,6 +30,59 @@ import Modal from "./components/Modal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
+/* -------------------- utils sessão (IDs de terceiros) -------------------- */
+function addTerceiroIdToSession(id: string | number | undefined | null) {
+    try {
+        if (id == null) return;
+        const raw = sessionStorage.getItem("terceiro_ids");
+        const arr: Array<string> = raw ? JSON.parse(raw) : [];
+        const sid = String(id);
+        if (!arr.includes(sid)) {
+            arr.push(sid);
+            sessionStorage.setItem("terceiro_ids", JSON.stringify(arr));
+        }
+    } catch { }
+}
+
+/* ----------- resolve tipo a partir de um registro existente ----------- */
+function resolveTipoFromRegistro(r?: Registro | null): TipoAtendimento {
+    if (!r) return "funerario";
+    if ((r as any)?.tipo_atendimento === "terceiro") return "terceiro";
+    const asst = (r.assistencia || "").toString().toLowerCase();
+    const tan = (r.tanato || "").toString().toLowerCase();
+    const orn = (r.ornamentacao || "").toString().toLowerCase();
+    if (asst === "não" && tan === "não" && orn === "não") return "terceiro";
+    return "funerario";
+}
+
+/* -------------------- Config dinâmico por tipo -------------------- */
+function getWizardConfig(tipo: TipoAtendimento) {
+    // índices conforme constants.ts (comentários de lá)
+    // Padrao:
+    // [ [0,1,2,3,17], [4,5,6,7,8,9,10,18], [11,12,13,19], [14,15,16,20] ]
+    if (tipo === "terceiro") {
+        const wizardStepIndexes = [
+            // Atendimento enxuto
+            [0, 1, 17],
+            // (SEM Itens)
+            // Velório
+            [11, 12, 13, 19],
+            // Sepultamento
+            [14, 15, 16, 20],
+        ];
+        const wizardStepTitles = ["Atendimento", "Velório", "Sepultamento"];
+        const obrigatorios: string[] = []; // nada obrigatório
+        return { wizardStepIndexes, wizardStepTitles, obrigatorios, steps: stepsPadrao };
+    }
+    // Funerário normal
+    return {
+        wizardStepIndexes: wizardStepIndexesPadrao as number[][],
+        wizardStepTitles: wizardStepTitlesPadrao as string[],
+        obrigatorios: obrigatoriosPadrao as string[],
+        steps: stepsPadrao,
+    };
+}
+
 export default function AcompanhamentoPage() {
     // Tabela
     const [registros, setRegistros] = useState<Registro[]>([]);
@@ -38,6 +91,9 @@ export default function AcompanhamentoPage() {
     const [avisos, setAvisos] = useState<Aviso[]>([]);
     const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const avisoInputRef = useRef<HTMLInputElement>(null);
+
+    // Tipo do cadastro atual
+    const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>("funerario");
 
     // Wizard
     const [wizardOpen, setWizardOpen] = useState(false);
@@ -49,10 +105,6 @@ export default function AcompanhamentoPage() {
     const [wizardData, setWizardData] = useState<Registro>({});
     const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [wizardSubmitting, setWizardSubmitting] = useState(false);
-
-    // Tipo de atendimento (para novos registros)
-    const [novoTipoOpen, setNovoTipoOpen] = useState(false);
-    const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>("funerario");
 
     // selects
     const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -72,7 +124,7 @@ export default function AcompanhamentoPage() {
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-    // Info
+    // Info — agora por ID (evita desindexar com polling)
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
 
@@ -80,6 +132,17 @@ export default function AcompanhamentoPage() {
     const [signOpen, setSignOpen] = useState(false);
     const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
     const [signIdx, setSignIdx] = useState<number | null>(null);
+
+    // Modal: escolha do tipo ao clicar em "Novo Registro"
+    const [chooseTipoOpen, setChooseTipoOpen] = useState(false);
+
+    /* -------------------- Config corrente por tipo -------------------- */
+    const {
+        wizardStepIndexes: wizardStepIndexesForTipo,
+        wizardStepTitles: wizardStepTitlesForTipo,
+        obrigatorios: obrigatoriosForTipo,
+        steps: stepsForTipo,
+    } = useMemo(() => getWizardConfig(tipoAtendimento), [tipoAtendimento]);
 
     /* -------------------- Fetch helpers -------------------- */
 
@@ -248,14 +311,14 @@ export default function AcompanhamentoPage() {
                 setMateriaisOpen(false);
                 setArrumacaoOpen(false);
                 setSignOpen(false);
-                setNovoTipoOpen(false);
+                setChooseTipoOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
         return () => window.removeEventListener("keydown", onEsc);
     }, []);
 
-    /* -------------------- Parser helpers -------------------- */
+    /* -------------------- Parsers locais -------------------- */
 
     const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
         if (r.materiais_json) {
@@ -298,6 +361,43 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Aberturas -------------------- */
 
+    // Modal que pergunta o tipo
+    const abrirNovoRegistro = useCallback(() => {
+        setChooseTipoOpen(true);
+    }, []);
+
+    const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
+        setChooseTipoOpen(false);
+        setTipoAtendimento(tipo);
+
+        setWizardSubmitting(false);
+        setWizardEditing(false);
+        setWizardIdx(null);
+        setWizardRestrictGroup(null);
+        setWizardStep(0);
+        setWizardMsg(null);
+        setWizardTitle("Novo Registro");
+
+        const empty: Registro = {};
+        (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+
+        if (tipo === "terceiro") {
+            empty.assistencia = "Não";
+            empty.tanato = "Não";
+            empty.ornamentacao = "Não";
+            (empty as any).tipo_atendimento = "terceiro";
+        } else {
+            (empty as any).tipo_atendimento = "funerario";
+        }
+
+        setWizardData(empty);
+        setMateriais(defaultMateriais());
+        setArrumacao(defaultArrumacao());
+        setAssistenciaVal(String(empty.assistencia || ""));
+        setTanatoVal(String(empty.tanato || ""));
+        setWizardOpen(true);
+    }, []);
+
     const abrirWizard = useCallback(
         (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
             setWizardSubmitting(false);
@@ -310,14 +410,16 @@ export default function AcompanhamentoPage() {
             setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
 
             if (editing && idx !== null && registros[idx]) {
-                // Em edição, consideramos padrão funerário (registros antigos não tinham esse campo)
                 const r = registros[idx];
+
+                // ajusta o "tipo" de edição conforme o registro
+                setTipoAtendimento(resolveTipoFromRegistro(r));
+
                 const data: Registro = {};
-                (steps as any).forEach((s: any) => {
+                (stepsPadrao as any).forEach((s: any) => {
                     (data as any)[s.id] = (r as any)[s.id] ?? "";
                 });
                 data.id = r.id;
-                data.tipo_atendimento = (r as any).tipo_atendimento || "funerario";
 
                 const mats = parseMateriaisFromRegistro(r);
                 setMateriais(mats);
@@ -331,32 +433,14 @@ export default function AcompanhamentoPage() {
                 setAssistenciaVal(String((r.assistencia ?? "") as string));
                 setTanatoVal(String((r.tanato ?? "") as string));
             } else {
-                // ---------- NOVO REGISTRO ----------
-                const empty: Registro = {};
-                (steps as any).forEach((s: any) => ((empty as any)[s.id] = ""));
-
-                if (tipoAtendimento === "terceiro") {
-                    empty.tipo_atendimento = "terceiro";
-                    // define campos que controlam as ações
-                    empty.assistencia = "Não";
-                    empty.tanato = "Não";
-                    empty.ornamentacao = "Não";
-                    setAssistenciaVal("Não");
-                    setTanatoVal("Não");
-                } else {
-                    empty.tipo_atendimento = "funerario";
-                    setAssistenciaVal("");
-                    setTanatoVal("");
-                }
-
-                setWizardData(empty);
-                setMateriais(defaultMateriais());
-                setArrumacao(defaultArrumacao());
+                // novo (quando vier direto deste caminho)
+                iniciarNovoRegistro(tipoAtendimento);
+                return;
             }
 
             setWizardOpen(true);
         },
-        [registros, tipoAtendimento]
+        [registros, iniciarNovoRegistro, tipoAtendimento]
     );
 
     const salvarGrupoWizard = useCallback((): Registro | null => {
@@ -364,12 +448,18 @@ export default function AcompanhamentoPage() {
         const next: Registro = { ...wizardData };
 
         for (const idx of grupo) {
-            const s = (steps as any)[idx] as any;
+            const s = (stepsForTipo as any)[idx] as any;
             const el = document.getElementById("wizard-" + s.id) as
                 | HTMLInputElement
                 | HTMLTextAreaElement
                 | null;
             const v = (el?.value ?? "").trim();
+
+            if (obrigatoriosForTipo.includes(s.id) && !v) {
+                el?.focus();
+                setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
+                return null;
+            }
             (next as any)[s.id] = v;
         }
 
@@ -377,21 +467,30 @@ export default function AcompanhamentoPage() {
 
         (next as any).materiais = materiais;
         (next as any).arrumacao = arrumacao;
+        (next as any).tipo_atendimento = tipoAtendimento;
 
         setWizardData(next);
         return next;
-    }, [wizardData, wizardStep, materiais, arrumacao]);
+    }, [
+        wizardData,
+        wizardStep,
+        materiais,
+        arrumacao,
+        wizardStepIndexesForTipo,
+        stepsForTipo,
+        obrigatoriosForTipo,
+        tipoAtendimento,
+    ]);
 
     const concluirWizard = useCallback(async () => {
         if (wizardSubmitting) return;
         const dataAtualizada = salvarGrupoWizard();
         if (!dataAtualizada) return;
 
-        // obrigatórios dinâmicos por tipo
         let grupoObrigatorios: string[];
         if (typeof wizardRestrictGroup === "number") {
             const grupo = wizardStepIndexesForTipo[wizardRestrictGroup];
-            const ids = grupo.map((i) => (steps as any)[i].id);
+            const ids = grupo.map((i) => (stepsForTipo as any)[i].id);
             grupoObrigatorios = ids.filter((id) => obrigatoriosForTipo.includes(id));
         } else {
             grupoObrigatorios = obrigatoriosForTipo;
@@ -410,6 +509,11 @@ export default function AcompanhamentoPage() {
             const json = await enviarRegistroPHP(payload);
             if (json?.sucesso) {
                 setWizardMsg({ text: "Registro salvo!", ok: true });
+                // se for terceiro, guarda o id na sessão
+                if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
+                    const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
+                    addTerceiroIdToSession(novoId);
+                }
                 fetchRegistros();
                 setTimeout(() => setWizardOpen(false), 950);
             } else {
@@ -420,7 +524,16 @@ export default function AcompanhamentoPage() {
         } finally {
             setWizardSubmitting(false);
         }
-    }, [salvarGrupoWizard, wizardRestrictGroup, wizardEditing, fetchRegistros, wizardSubmitting]);
+    }, [
+        salvarGrupoWizard,
+        wizardRestrictGroup,
+        wizardEditing,
+        fetchRegistros,
+        wizardSubmitting,
+        obrigatoriosForTipo,
+        wizardStepIndexesForTipo,
+        stepsForTipo,
+    ]);
 
     /* -------------------- Ações (status) -------------------- */
 
@@ -463,7 +576,7 @@ export default function AcompanhamentoPage() {
         [acaoId, fetchRegistros, acaoSubmitting]
     );
 
-    /* -------------------- Info por ID -------------------- */
+    /* -------------------- Info por ID (estável) -------------------- */
 
     const registroInfo = useMemo(
         () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
@@ -484,9 +597,13 @@ export default function AcompanhamentoPage() {
     const abrirWizardFromInfo = useCallback(
         (tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
             const idx = infoIdxResolved;
-            if (idx != null) abrirWizard(tipo, idx, grupoStep);
+            if (idx != null) {
+                // Ajusta tipo pela linha selecionada
+                setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
+                abrirWizard(tipo, idx, grupoStep);
+            }
         },
-        [infoIdxResolved, abrirWizard]
+        [infoIdxResolved, abrirWizard, registros]
     );
 
     const abrirAssinaturaFromInfo = useCallback(
@@ -501,34 +618,12 @@ export default function AcompanhamentoPage() {
         [infoIdxResolved]
     );
 
+    /* -------------------- Assinatura (fora do Info) -------------------- */
     const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
         setSignIdx(idx);
         setSignTipo(tipo);
         setSignOpen(true);
     }, []);
-
-    /* -------------------- Wizard dinâmico por tipo -------------------- */
-    const wizardStepTitlesForTipo = useMemo(() => {
-        return tipoAtendimento === "terceiro"
-            ? ["Atendimento", "Velório", "Sepultamento"]
-            : wizardStepTitles;
-    }, [tipoAtendimento]);
-
-    const wizardStepIndexesForTipo = useMemo(() => {
-        if (tipoAtendimento === "terceiro") {
-            // Atendimento: Nome(0), Contato(1), Obs Atendimento(17)
-            return [
-                [0, 1, 17],
-                [11, 12, 13, 19],
-                [14, 15, 16, 20],
-            ];
-        }
-        return wizardStepIndexes;
-    }, [tipoAtendimento]);
-
-    const obrigatoriosForTipo = useMemo(() => {
-        return tipoAtendimento === "terceiro" ? [] : obrigatorios;
-    }, [tipoAtendimento]);
 
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
@@ -573,7 +668,7 @@ export default function AcompanhamentoPage() {
                 </div>
                 <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-                    onClick={() => setNovoTipoOpen(true)}
+                    onClick={abrirNovoRegistro}
                 >
                     Novo Registro
                 </button>
@@ -596,6 +691,25 @@ export default function AcompanhamentoPage() {
                 avisoInputRef={avisoInputRef}
             />
 
+            {/* Modal de escolha: tipo do novo registro */}
+            <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
+                <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
+                <div className="mt-4 grid gap-2">
+                    <button
+                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                        onClick={() => iniciarNovoRegistro("funerario")}
+                    >
+                        Atendimento Funerário
+                    </button>
+                    <button
+                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                        onClick={() => iniciarNovoRegistro("terceiro")}
+                    >
+                        Serviço de Outra Empresa
+                    </button>
+                </div>
+            </Modal>
+
             <Wizard
                 open={wizardOpen}
                 onClose={() => setWizardOpen(false)}
@@ -606,7 +720,7 @@ export default function AcompanhamentoPage() {
                 wizardData={wizardData}
                 setWizardData={setWizardData}
                 obrigatorios={obrigatoriosForTipo}
-                steps={steps as any}
+                steps={stepsForTipo as any}
                 wizardStepIndexes={wizardStepIndexesForTipo}
                 wizardStepTitles={wizardStepTitlesForTipo}
                 assistenciaVal={assistenciaVal}
@@ -666,45 +780,6 @@ export default function AcompanhamentoPage() {
                     fetchRegistros();
                 }}
             />
-
-            {/* Modal para escolher o tipo de novo registro */}
-            <Modal
-                open={novoTipoOpen}
-                onClose={() => setNovoTipoOpen(false)}
-                ariaLabel="Tipo de atendimento"
-                maxWidth={420}
-            >
-                <h3 className="text-lg font-semibold">Selecione o tipo de atendimento</h3>
-                <div className="mt-4 grid gap-3">
-                    <button
-                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted"
-                        onClick={() => {
-                            setTipoAtendimento("funerario");
-                            setNovoTipoOpen(false);
-                            abrirWizard("novo");
-                        }}
-                    >
-                        Atendimento Funerário
-                        <div className="text-xs text-muted-foreground">
-                            Fluxo completo (itens, ornamentação, etc.)
-                        </div>
-                    </button>
-
-                    <button
-                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted"
-                        onClick={() => {
-                            setTipoAtendimento("terceiro");
-                            setNovoTipoOpen(false);
-                            abrirWizard("novo");
-                        }}
-                    >
-                        Serviço de Outra Empresa
-                        <div className="text-xs text-muted-foreground">
-                            Apenas Atendimento (Nome/Contato/Observação) + Velório/Sepultamento
-                        </div>
-                    </button>
-                </div>
-            </Modal>
         </div>
     );
 }

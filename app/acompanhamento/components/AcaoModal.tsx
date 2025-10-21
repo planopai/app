@@ -19,6 +19,19 @@ type Fase = (typeof fases)[number];
 // Fase final: 'material recolhido' => 'fase11'
 const FASE_FINAL = "fase11" as Fase;
 
+/** Lê da sessionStorage a lista de IDs marcados como "Serviço de Outra Empresa" */
+function isTerceiroBySession(id?: string | number | null | undefined) {
+    try {
+        if (id == null) return false;
+        const raw = sessionStorage.getItem("terceiro_ids");
+        if (!raw) return false;
+        const arr = JSON.parse(raw) as Array<string | number>;
+        return arr.some((v) => String(v) === String(id));
+    } catch {
+        return false;
+    }
+}
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -110,10 +123,17 @@ export default function AcaoModal({
 
     // Detecta se é "Serviço de Outra Empresa"
     const isTerceiro =
+        isTerceiroBySession(acaoId) || // <- garante via sessionStorage
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
-        ((registroLocal?.assistencia || "").toLowerCase() === "não" &&
-            (registroLocal?.tanato || "").toLowerCase() === "não" &&
-            (registroLocal?.ornamentacao || "").toLowerCase() === "não");
+        (
+            // fallback heurístico: somente se TODOS existirem e forem "Não"
+            typeof registroLocal?.assistencia === "string" &&
+            typeof registroLocal?.tanato === "string" &&
+            typeof registroLocal?.ornamentacao === "string" &&
+            (registroLocal.assistencia || "").toLowerCase() === "não" &&
+            (registroLocal.tanato || "").toLowerCase() === "não" &&
+            (registroLocal.ornamentacao || "").toLowerCase() === "não"
+        );
 
     // Skips "clássicos"
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
@@ -125,7 +145,7 @@ export default function AcaoModal({
         // Serviço de Outra Empresa => apenas fase08, fase09, fase10
         if (isTerceiro) {
             const base: Fase[] = ["fase08", "fase09", "fase10"];
-            // nunca esconder a fase atual
+            // nunca esconder a fase atual (se o backend devolver outra)
             if (efetivo && !base.includes(efetivo.status as Fase)) {
                 return [efetivo.status as Fase, ...base];
             }
