@@ -331,19 +331,32 @@ export default function AcompanhamentoPage() {
                 setAssistenciaVal(String((r.assistencia ?? "") as string));
                 setTanatoVal(String((r.tanato ?? "") as string));
             } else {
-                // Novo — respeita o tipo escolhido
+                // ---------- NOVO REGISTRO ----------
                 const empty: Registro = {};
                 (steps as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+
+                // ⚠️ Aqui está o segredo:
+                // Se for "Serviço de Outra Empresa", deixamos explícito que não haverá
+                // conservação, ornamentação e assistência — isso controla a visibilidade das ações.
+                if (tipoAtendimento === "terceiro") {
+                    empty.assistencia = "Não";
+                    empty.tanato = "Não";
+                    empty.ornamentacao = "Não";
+                    setAssistenciaVal("Não");
+                    setTanatoVal("Não");
+                } else {
+                    setAssistenciaVal("");
+                    setTanatoVal("");
+                }
+
                 setWizardData(empty);
                 setMateriais(defaultMateriais());
                 setArrumacao(defaultArrumacao());
-                setAssistenciaVal("");
-                setTanatoVal("");
             }
 
             setWizardOpen(true);
         },
-        [registros]
+        [registros, tipoAtendimento]
     );
 
     const salvarGrupoWizard = useCallback((): Registro | null => {
@@ -452,13 +465,11 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Info por ID (estável) -------------------- */
 
-    // Registro atual para o Info
     const registroInfo = useMemo(
         () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
         [registros, infoId]
     );
 
-    // Índice “compatível” para o InfoModal (enquanto ele ainda depender de índice)
     const infoIdxResolved = useMemo(() => {
         if (infoId == null) return null;
         const idx = registros.findIndex((x) => String(x.id) === String(infoId));
@@ -470,7 +481,6 @@ export default function AcompanhamentoPage() {
         setInfoOpen(true);
     }, []);
 
-    // Wrappers para manter compat com InfoModal que espera índice:
     const abrirWizardFromInfo = useCallback(
         (tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
             const idx = infoIdxResolved;
@@ -491,7 +501,6 @@ export default function AcompanhamentoPage() {
         [infoIdxResolved]
     );
 
-    /* -------------------- Assinatura (fora do Info) -------------------- */
     const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
         setSignIdx(idx);
         setSignTipo(tipo);
