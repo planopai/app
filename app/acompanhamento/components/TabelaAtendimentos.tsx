@@ -5,7 +5,6 @@ import { capitalizeStatus } from "./helpers";
 
 interface Props {
     registros: Registro[];
-    // Ambos por ID
     onAcao: (id: Registro["id"]) => void;
     onInfo: (id: Registro["id"]) => void;
 }
@@ -33,7 +32,8 @@ function statusBg(s?: string) {
 }
 
 export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props) {
-    const visiveis = registros.filter((r) => r.status !== "fase11");
+    // Agora escondemos fase10 (Sepultamento Concluído) e fase11 (Material Recolhido)
+    const visiveis = registros.filter((r) => r.status !== "fase10" && r.status !== "fase11");
 
     return (
         <div className="overflow-x-auto rounded-xl border">
@@ -81,15 +81,12 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
 
                                 <td className="px-3 py-2">
                                     <div className="flex flex-col gap-2">
-                                        {/* Ações por ID */}
                                         <button
                                             className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800"
                                             onClick={() => r.id != null && onAcao(r.id)}
                                         >
                                             Ações
                                         </button>
-
-                                        {/* Info no mobile por ID */}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
                                             onClick={() => r.id != null && onInfo(r.id)}
@@ -99,7 +96,6 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                     </div>
                                 </td>
 
-                                {/* Info no desktop por ID */}
                                 <td className="hidden px-3 py-2 sm:table-cell">
                                     <button
                                         className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"

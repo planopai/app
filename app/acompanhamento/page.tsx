@@ -26,6 +26,9 @@ import ArrumacaoModal from "./components/ArrumacaoModal";
 import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
+import Modal from "./components/Modal";
+
+type TipoAtendimento = "funerario" | "terceiro";
 
 export default function AcompanhamentoPage() {
     // Tabela
@@ -46,6 +49,10 @@ export default function AcompanhamentoPage() {
     const [wizardData, setWizardData] = useState<Registro>({});
     const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [wizardSubmitting, setWizardSubmitting] = useState(false);
+
+    // Tipo de atendimento (para novos registros)
+    const [novoTipoOpen, setNovoTipoOpen] = useState(false);
+    const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>("funerario");
 
     // selects
     const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -241,6 +248,7 @@ export default function AcompanhamentoPage() {
                 setMateriaisOpen(false);
                 setArrumacaoOpen(false);
                 setSignOpen(false);
+                setNovoTipoOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
@@ -302,6 +310,8 @@ export default function AcompanhamentoPage() {
             setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
 
             if (editing && idx !== null && registros[idx]) {
+                // Em edição, mantemos o fluxo padrão (funerário)
+                setTipoAtendimento("funerario");
                 const r = registros[idx];
                 const data: Registro = {};
                 (steps as any).forEach((s: any) => {
@@ -321,6 +331,7 @@ export default function AcompanhamentoPage() {
                 setAssistenciaVal(String((r.assistencia ?? "") as string));
                 setTanatoVal(String((r.tanato ?? "") as string));
             } else {
+                // Novo — respeita o tipo escolhido
                 const empty: Registro = {};
                 (steps as any).forEach((s: any) => ((empty as any)[s.id] = ""));
                 setWizardData(empty);
@@ -336,7 +347,7 @@ export default function AcompanhamentoPage() {
     );
 
     const salvarGrupoWizard = useCallback((): Registro | null => {
-        const grupo = wizardStepIndexes[wizardStep];
+        const grupo = wizardStepIndexesForTipo[wizardStep];
         const next: Registro = { ...wizardData };
 
         for (const idx of grupo) {
@@ -346,12 +357,6 @@ export default function AcompanhamentoPage() {
                 | HTMLTextAreaElement
                 | null;
             const v = (el?.value ?? "").trim();
-
-            if (obrigatorios.includes(s.id) && !v) {
-                el?.focus();
-                setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
-                return null;
-            }
             (next as any)[s.id] = v;
         }
 
@@ -369,13 +374,14 @@ export default function AcompanhamentoPage() {
         const dataAtualizada = salvarGrupoWizard();
         if (!dataAtualizada) return;
 
+        // obrigatórios dinâmicos por tipo
         let grupoObrigatorios: string[];
         if (typeof wizardRestrictGroup === "number") {
-            const grupo = wizardStepIndexes[wizardRestrictGroup];
+            const grupo = wizardStepIndexesForTipo[wizardRestrictGroup];
             const ids = grupo.map((i) => (steps as any)[i].id);
-            grupoObrigatorios = ids.filter((id) => obrigatorios.includes(id));
+            grupoObrigatorios = ids.filter((id) => obrigatoriosForTipo.includes(id));
         } else {
-            grupoObrigatorios = obrigatorios;
+            grupoObrigatorios = obrigatoriosForTipo;
         }
 
         for (const id of grupoObrigatorios) {
@@ -492,6 +498,30 @@ export default function AcompanhamentoPage() {
         setSignOpen(true);
     }, []);
 
+    /* -------------------- Configuração dinâmica do Wizard por tipo -------------------- */
+    const wizardStepTitlesForTipo = useMemo(() => {
+        return tipoAtendimento === "terceiro"
+            ? ["Atendimento", "Velório", "Sepultamento"]
+            : wizardStepTitles;
+    }, [tipoAtendimento]);
+
+    const wizardStepIndexesForTipo = useMemo(() => {
+        if (tipoAtendimento === "terceiro") {
+            // Atendimento: Nome(0), Contato(1), Obs Atendimento(17)
+            return [
+                [0, 1, 17], // Atendimento (nenhum obrigatório)
+                [11, 12, 13, 19], // Velório 01
+                [14, 15, 16, 20], // Velório 02
+            ];
+        }
+        return wizardStepIndexes;
+    }, [tipoAtendimento]);
+
+    const obrigatoriosForTipo = useMemo(() => {
+        // No serviço de outra empresa, nada é obrigatório
+        return tipoAtendimento === "terceiro" ? [] : obrigatorios;
+    }, [tipoAtendimento]);
+
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
         const list: string[] = [];
@@ -535,7 +565,7 @@ export default function AcompanhamentoPage() {
                 </div>
                 <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-                    onClick={() => abrirWizard("novo")}
+                    onClick={() => setNovoTipoOpen(true)}
                 >
                     Novo Registro
                 </button>
@@ -567,10 +597,10 @@ export default function AcompanhamentoPage() {
                 wizardRestrictGroup={wizardRestrictGroup}
                 wizardData={wizardData}
                 setWizardData={setWizardData}
-                obrigatorios={obrigatorios}
+                obrigatorios={obrigatoriosForTipo}
                 steps={steps as any}
-                wizardStepIndexes={wizardStepIndexes}
-                wizardStepTitles={wizardStepTitles}
+                wizardStepIndexes={wizardStepIndexesForTipo}
+                wizardStepTitles={wizardStepTitlesForTipo}
                 assistenciaVal={assistenciaVal}
                 setAssistenciaVal={setAssistenciaVal}
                 tanatoVal={tanatoVal}
@@ -628,6 +658,45 @@ export default function AcompanhamentoPage() {
                     fetchRegistros();
                 }}
             />
+
+            {/* Modal para escolher o tipo de novo registro */}
+            <Modal
+                open={novoTipoOpen}
+                onClose={() => setNovoTipoOpen(false)}
+                ariaLabel="Tipo de atendimento"
+                maxWidth={420}
+            >
+                <h3 className="text-lg font-semibold">Selecione o tipo de atendimento</h3>
+                <div className="mt-4 grid gap-3">
+                    <button
+                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted"
+                        onClick={() => {
+                            setTipoAtendimento("funerario");
+                            setNovoTipoOpen(false);
+                            abrirWizard("novo");
+                        }}
+                    >
+                        Atendimento Funerário
+                        <div className="text-xs text-muted-foreground">
+                            Fluxo completo (itens, ornamentação, etc.)
+                        </div>
+                    </button>
+
+                    <button
+                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted"
+                        onClick={() => {
+                            setTipoAtendimento("terceiro");
+                            setNovoTipoOpen(false);
+                            abrirWizard("novo");
+                        }}
+                    >
+                        Serviço de Outra Empresa
+                        <div className="text-xs text-muted-foreground">
+                            Apenas Atendimento (Nome/Contato/Observação) + Velório/Sepultamento
+                        </div>
+                    </button>
+                </div>
+            </Modal>
         </div>
     );
 }

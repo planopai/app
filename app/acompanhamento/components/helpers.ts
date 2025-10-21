@@ -77,8 +77,6 @@ export async function jsonWith401(url: string, init?: RequestInit) {
 }
 
 /* -------------------- Status <-> rótulos -------------------- */
-// Tabela completa de rótulos que já vi no projeto.
-// Coloque variações em minúsculas e sem acento para cobrir registros antigos.
 const ROTULO_PARA_FASE: Record<string, string> = {
     "removendo": "fase01",
     "aguardando procedimento": "fase02",
@@ -93,7 +91,6 @@ const ROTULO_PARA_FASE: Record<string, string> = {
     "material recolhido": "fase11",
 };
 
-// Remove acentos e baixa o caso para normalizar rótulos antigos
 function normalizeKey(s: string) {
     return s
         .normalize("NFD")
@@ -107,7 +104,6 @@ export function normalizarStatus(status?: string): string | undefined {
     if (!status) return undefined;
     const s = String(status).trim();
     if (s.startsWith("fase")) {
-        // garante "faseNN"
         const digits = s.replace(/[^0-9]/g, "");
         if (!digits) return s;
         return `fase${digits.padStart(2, "0")}`;
@@ -157,7 +153,6 @@ export function isTanatoNo(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
-/* -------------------- Envio registro -------------------- */
 export async function enviarRegistroPHP(data: any) {
     let materiais_json = "";
     const flatQtd: Record<string, string> = {};
@@ -198,11 +193,6 @@ export type StatusConsulta = {
     tanato: string;
 };
 
-/**
- * Consulta o status atual diretamente no PHP:
- * GET /api/php/informativo.php?status_atual=1&id=...
- * Retorna status já normalizado em "faseNN".
- */
 export async function consultarStatusAtual(id: number | string): Promise<StatusConsulta> {
     const url = `${API}/api/php/informativo.php?status_atual=1&id=${encodeURIComponent(String(id))}`;
     const data = await jsonWith401(url);
@@ -218,31 +208,38 @@ export async function consultarStatusAtual(id: number | string): Promise<StatusC
     };
 }
 
-/* -------------------- Próxima fase -------------------- */
+/* -------------------- Próxima fase (com novas regras) -------------------- */
 export function proximaFaseDoRegistro(
-    r: { status?: string; local_velorio?: string; tanato?: string },
+    r: {
+        status?: string;
+        local_velorio?: string;
+        tanato?: string;
+        ornamentacao?: string;
+        assistencia?: string;
+    },
     fases: readonly string[]
 ) {
-    // ✅ Normaliza sempre que calcular
     const atualCode = normalizarStatus(r.status) ?? "fase00";
     let nextIdx = fases.indexOf(atualCode as any) + 1;
 
     const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
     const skipConservacao = isTanatoNo(r.tanato);
+    const skipOrnamentacao = String(r.ornamentacao || "").toLowerCase() === "não" || String(r.ornamentacao || "").toLowerCase() === "nao";
+    const skipMaterialRecolhido = String(r.assistencia || "").toLowerCase() === "não" || String(r.assistencia || "").toLowerCase() === "nao";
 
     while (nextIdx < fases.length) {
         const next = fases[nextIdx];
+
         if (skipTransportando && next === "fase07") { nextIdx++; continue; }
         if (skipConservacao && (next === "fase03" || next === "fase04")) { nextIdx++; continue; }
+        if (skipOrnamentacao && (next === "fase05" || next === "fase06")) { nextIdx++; continue; }
+        if (skipMaterialRecolhido && next === "fase11") { nextIdx++; continue; }
+
         return next;
     }
     return null;
 }
 
-/**
- * (Opcional) Obtém o status mais recente do backend e calcula a próxima fase
- * usando as mesmas regras do front.
- */
 export async function proximaFaseOnline(
     id: number | string,
     fases: readonly string[]
