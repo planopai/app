@@ -51,6 +51,9 @@ export type Registro = {
     ornamentacao?: string;       // "Sim" | "Não"
     ornamentacao_tipo?: string;  // "Natural" | "Artificial"
 
+    /** ✅ identifica o tipo do fluxo do registro */
+    tipo_atendimento?: "funerario" | "terceiro";
+
     local?: string;
     local_velorio?: string;
     data_inicio_velorio?: string;

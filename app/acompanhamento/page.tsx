@@ -72,11 +72,11 @@ export default function AcompanhamentoPage() {
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-    // Info — agora por ID (evita desindexar com polling)
+    // Info
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
 
-    // Assinatura (ainda por índice internamente)
+    // Assinatura
     const [signOpen, setSignOpen] = useState(false);
     const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
     const [signIdx, setSignIdx] = useState<number | null>(null);
@@ -255,7 +255,7 @@ export default function AcompanhamentoPage() {
         return () => window.removeEventListener("keydown", onEsc);
     }, []);
 
-    /* -------------------- Parser helpers locais -------------------- */
+    /* -------------------- Parser helpers -------------------- */
 
     const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
         if (r.materiais_json) {
@@ -310,14 +310,14 @@ export default function AcompanhamentoPage() {
             setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
 
             if (editing && idx !== null && registros[idx]) {
-                // Em edição, mantemos o fluxo padrão (funerário)
-                setTipoAtendimento("funerario");
+                // Em edição, consideramos padrão funerário (registros antigos não tinham esse campo)
                 const r = registros[idx];
                 const data: Registro = {};
                 (steps as any).forEach((s: any) => {
                     (data as any)[s.id] = (r as any)[s.id] ?? "";
                 });
                 data.id = r.id;
+                data.tipo_atendimento = (r as any).tipo_atendimento || "funerario";
 
                 const mats = parseMateriaisFromRegistro(r);
                 setMateriais(mats);
@@ -335,16 +335,16 @@ export default function AcompanhamentoPage() {
                 const empty: Registro = {};
                 (steps as any).forEach((s: any) => ((empty as any)[s.id] = ""));
 
-                // ⚠️ Aqui está o segredo:
-                // Se for "Serviço de Outra Empresa", deixamos explícito que não haverá
-                // conservação, ornamentação e assistência — isso controla a visibilidade das ações.
                 if (tipoAtendimento === "terceiro") {
+                    empty.tipo_atendimento = "terceiro";
+                    // define campos que controlam as ações
                     empty.assistencia = "Não";
                     empty.tanato = "Não";
                     empty.ornamentacao = "Não";
                     setAssistenciaVal("Não");
                     setTanatoVal("Não");
                 } else {
+                    empty.tipo_atendimento = "funerario";
                     setAssistenciaVal("");
                     setTanatoVal("");
                 }
@@ -463,7 +463,7 @@ export default function AcompanhamentoPage() {
         [acaoId, fetchRegistros, acaoSubmitting]
     );
 
-    /* -------------------- Info por ID (estável) -------------------- */
+    /* -------------------- Info por ID -------------------- */
 
     const registroInfo = useMemo(
         () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
@@ -507,7 +507,7 @@ export default function AcompanhamentoPage() {
         setSignOpen(true);
     }, []);
 
-    /* -------------------- Configuração dinâmica do Wizard por tipo -------------------- */
+    /* -------------------- Wizard dinâmico por tipo -------------------- */
     const wizardStepTitlesForTipo = useMemo(() => {
         return tipoAtendimento === "terceiro"
             ? ["Atendimento", "Velório", "Sepultamento"]
@@ -518,16 +518,15 @@ export default function AcompanhamentoPage() {
         if (tipoAtendimento === "terceiro") {
             // Atendimento: Nome(0), Contato(1), Obs Atendimento(17)
             return [
-                [0, 1, 17], // Atendimento (nenhum obrigatório)
-                [11, 12, 13, 19], // Velório 01
-                [14, 15, 16, 20], // Velório 02
+                [0, 1, 17],
+                [11, 12, 13, 19],
+                [14, 15, 16, 20],
             ];
         }
         return wizardStepIndexes;
     }, [tipoAtendimento]);
 
     const obrigatoriosForTipo = useMemo(() => {
-        // No serviço de outra empresa, nada é obrigatório
         return tipoAtendimento === "terceiro" ? [] : obrigatorios;
     }, [tipoAtendimento]);
 

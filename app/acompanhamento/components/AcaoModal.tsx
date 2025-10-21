@@ -13,7 +13,10 @@ import {
     consultarStatusAtual,
 } from "./helpers";
 
+// Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
+
+// Fase final: 'material recolhido' => 'fase11'
 const FASE_FINAL = "fase11" as Fase;
 
 export default function AcaoModal({
@@ -33,7 +36,7 @@ export default function AcaoModal({
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
 }) {
-    // 1) Registro local
+    // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
         const r =
             acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
@@ -42,7 +45,7 @@ export default function AcaoModal({
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
-    // 2) Estado online
+    // ---------- 2) Estado "online" vindo do backend ----------
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -52,16 +55,20 @@ export default function AcaoModal({
         tanato: string;
     } | null>(null);
 
+    // Busca o status atual direto do PHP quando abrir/mudar acaoId
     useEffect(() => {
         let cancel = false;
+
         async function run() {
             setOnline(null);
             setOnlineError(null);
+
             if (!open || !acaoId) return;
             setLoadingOnline(true);
             try {
                 const s = await consultarStatusAtual(acaoId);
                 if (cancel) return;
+                // normaliza para Fase
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
                     id: String(s.id ?? acaoId),
@@ -75,78 +82,93 @@ export default function AcaoModal({
                 if (!cancel) setLoadingOnline(false);
             }
         }
+
         run();
-        return () => { cancel = true; };
+        return () => {
+            cancel = true;
+        };
     }, [open, acaoId]);
 
-    // 3) Dados efetivos para UI
+    // Dados efetivos usados na UI (prefere online; cai para local)
     const efetivo = useMemo(() => {
-        // Preferimos status/local/tanato do online; ornamentacao/assistencia só existem localmente
         if (online) {
             return {
                 status: online.status as Fase,
                 local_velorio: online.local_velorio,
                 tanato: online.tanato,
-                ornamentacao: registroLocal?.ornamentacao || "",
-                assistencia: registroLocal?.assistencia || "",
             };
         }
         if (registroLocal) {
             return {
                 status: (registroLocal.status as Fase) ?? ("fase00" as Fase),
-                local_velorio: registroLocal.local_velorio || "",
-                tanato: registroLocal.tanato || "",
-                ornamentacao: registroLocal.ornamentacao || "",
-                assistencia: registroLocal.assistencia || "",
+                local_velorio: registroLocal.local_velorio,
+                tanato: registroLocal.tanato,
             };
         }
         return null;
     }, [online, registroLocal]);
 
-    // Skips
+    // Detecta se é "Serviço de Outra Empresa"
+    const isTerceiro =
+        (registroLocal as any)?.tipo_atendimento === "terceiro" ||
+        ((registroLocal?.assistencia || "").toLowerCase() === "não" &&
+            (registroLocal?.tanato || "").toLowerCase() === "não" &&
+            (registroLocal?.ornamentacao || "").toLowerCase() === "não");
+
+    // Skips "clássicos"
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
-    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
-    const skipOrnamentacao = !!efetivo && (String(efetivo.ornamentacao || "").toLowerCase() === "não" || String(efetivo.ornamentacao || "").toLowerCase() === "nao");
-    const skipMaterialRecolhido = !!efetivo && (String(efetivo.assistencia || "").toLowerCase() === "não" || String(efetivo.assistencia || "").toLowerCase() === "nao");
+    const skipTransportando =
+        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
-    // Fases visíveis
-    const fasesVisiveis = useMemo<readonly Fase[]>(
-        () =>
-            (fases as readonly Fase[]).filter((f) => {
-                if (efetivo && f === efetivo.status) return true; // mantém a atual
-                if (skipTransportando && f === "fase07") return false;
-                if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
-                if (skipOrnamentacao && (f === "fase05" || f === "fase06")) return false;
-                if (skipMaterialRecolhido && f === "fase11") return false;
-                return true;
-            }),
-        [skipTransportando, skipConservacao, skipOrnamentacao, skipMaterialRecolhido, efetivo]
-    );
+    // Fases visíveis (array normal: Fase[])
+    const fasesVisiveis = useMemo<Fase[]>(() => {
+        // Serviço de Outra Empresa => apenas fase08, fase09, fase10
+        if (isTerceiro) {
+            const base: Fase[] = ["fase08", "fase09", "fase10"];
+            // nunca esconder a fase atual
+            if (efetivo && !base.includes(efetivo.status as Fase)) {
+                return [efetivo.status as Fase, ...base];
+            }
+            return base;
+        }
 
-    // Próxima fase
+        // Regra padrão (funerário)
+        return (fases as readonly Fase[]).filter((f) => {
+            if (efetivo && f === efetivo.status) return true; // mantém visível a fase atual
+            if (skipTransportando && f === "fase07") return false;
+            if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
+            return true;
+        }) as Fase[];
+    }, [isTerceiro, efetivo, skipTransportando, skipConservacao]);
+
+    // Próxima fase calculada
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
 
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
+        // Se já está na fase final, não há próxima
         if (efetivo.status === FASE_FINAL) return null;
 
+        // 1) tenta via helper com as fases visíveis
         let p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
                 tanato: efetivo.tanato,
-                ornamentacao: efetivo.ornamentacao,
-                assistencia: efetivo.assistencia,
             },
             visiveis as readonly string[]
         ) as Fase | null;
 
         if (p) return p;
 
+        // 2) fallback: próxima visível no fluxo completo
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
-        if (idxAtual === -1) return null;
+        if (idxAtual === -1) {
+            // se status não está no fluxo (p.ex. "fase00"), pega a primeira visível
+            return visiveis[0] ?? null;
+        }
 
         for (let i = idxAtual + 1; i < fluxoCompleto.length; i++) {
             const candidato = fluxoCompleto[i];
@@ -157,12 +179,14 @@ export default function AcaoModal({
         return null;
     }, [efetivo, fasesVisiveis]);
 
+    // Concluído apenas na fase final (fase11)
     const concluido = !!efetivo && efetivo.status === FASE_FINAL;
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
             <h2 className="text-xl font-semibold">Registrar uma ação</h2>
 
+            {/* Linha de status de sincronização */}
             <div className="mt-2 text-xs text-muted-foreground">
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
@@ -196,7 +220,8 @@ export default function AcaoModal({
                                     type="button"
                                     disabled={!habilitar}
                                     onClick={() => registrarAcao(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"}`}
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
+                                        }`}
                                     title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
                                 >
                                     {acaoToStatus(f)}
