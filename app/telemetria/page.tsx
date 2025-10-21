@@ -1,33 +1,55 @@
-// app/telemetria/page.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { API } from "../acompanhamento/components/constants";
 
+/** Coerção e formatação seguras para números vindos como string */
+function num(v: any): number | null {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+function fmtFixed(v: any, d: number): string {
+    const n = num(v);
+    return n === null ? "-" : n.toFixed(d);
+}
+function fmtLatLng(lat: any, lng: any): string | null {
+    const la = num(lat);
+    const ln = num(lng);
+    if (la === null || ln === null) return null;
+    return `${la.toFixed(5)}, ${ln.toFixed(5)}`;
+}
+function secsToMinSec(s: any): string {
+    const n = num(s);
+    if (n === null) return "-";
+    const mm = Math.floor(n / 60);
+    const ss = Math.floor(n % 60);
+    return `${mm}m ${ss}s`;
+}
+
 type Row = {
-    id: number;
-    sepultamento_id: number;
-    tipo: "remocao" | "para_velorio" | "para_sepultamento";
+    id: number | string;
+    sepultamento_id: number | string;
+    tipo: "remocao" | "para_velorio" | "para_sepultamento" | string;
     agente?: string | null;
     falecido?: string | null;
     veiculo_nome?: string | null;
     veiculo_obs?: string | null;
-    inicio_ts: string;
-    inicio_lat?: number | null;
-    inicio_lng?: number | null;
+    inicio_ts?: string | null;
+    inicio_lat?: number | string | null;
+    inicio_lng?: number | string | null;
     fim_ts?: string | null;
-    fim_lat?: number | null;
-    fim_lng?: number | null;
-    distancia_km?: number | null;
-    duracao_seg?: number | null;
-    vel_media_kmh?: number | null;
-    vel_max_kmh?: number | null;
-    amostras?: number | null;
+    fim_lat?: number | string | null;
+    fim_lng?: number | string | null;
+    distancia_km?: number | string | null;
+    duracao_seg?: number | string | null;
+    vel_media_kmh?: number | string | null;
+    vel_max_kmh?: number | string | null;
+    amostras?: number | string | null;
     pontos_json?: string | null;
     source_device?: string | null;
-    encerrado?: 0 | 1;
-    criado_em?: string;
-    atualizado_em?: string;
+    encerrado?: 0 | 1 | string | null;
+    criado_em?: string | null;
+    atualizado_em?: string | null;
 };
 
 export default function TelemetriaPage() {
@@ -56,8 +78,12 @@ export default function TelemetriaPage() {
                 },
             });
             const j = await r.json();
-            if (j?.sucesso) setRows(Array.isArray(j.dados) ? j.dados : []);
-            else setMsg(j?.msg || "Erro ao listar.");
+            if (j?.sucesso) {
+                const arr = Array.isArray(j.dados) ? j.dados : [];
+                setRows(arr);
+            } else {
+                setMsg(j?.msg || "Erro ao listar.");
+            }
         } catch (e: any) {
             setMsg(e?.message || "Falha ao listar.");
         } finally {
@@ -70,13 +96,11 @@ export default function TelemetriaPage() {
     }, [fetchList]);
 
     const totalKm = useMemo(
-        () =>
-            rows.reduce((acc, r) => acc + (typeof r.distancia_km === "number" ? r.distancia_km : 0), 0),
+        () => rows.reduce((acc, r) => acc + (num(r.distancia_km) ?? 0), 0),
         [rows]
     );
     const totalSeg = useMemo(
-        () =>
-            rows.reduce((acc, r) => acc + (typeof r.duracao_seg === "number" ? r.duracao_seg : 0), 0),
+        () => rows.reduce((acc, r) => acc + (num(r.duracao_seg) ?? 0), 0),
         [rows]
     );
 
@@ -163,7 +187,7 @@ export default function TelemetriaPage() {
                     Registros: <b>{rows.length}</b>
                 </span>
                 <span className="rounded bg-slate-100 px-3 py-1">
-                    Distância total: <b>{totalKm.toFixed(3)} km</b>
+                    Distância total: <b>{fmtFixed(totalKm, 3)} km</b>
                 </span>
                 <span className="rounded bg-slate-100 px-3 py-1">
                     Tempo total:{" "}
@@ -202,59 +226,57 @@ export default function TelemetriaPage() {
                                 </td>
                             </tr>
                         ) : (
-                            rows.map((r) => (
-                                <tr key={r.id} className="border-t">
-                                    <td className="px-3 py-2">{r.id}</td>
-                                    <td className="px-3 py-2">{r.sepultamento_id}</td>
-                                    <td className="px-3 py-2">
-                                        {r.tipo === "remocao"
-                                            ? "Remoção"
-                                            : r.tipo === "para_velorio"
-                                                ? "Para Velório"
-                                                : "Para Sepultamento"}
-                                    </td>
-                                    <td className="px-3 py-2">{r.agente || ""}</td>
-                                    <td className="px-3 py-2">{r.falecido || ""}</td>
-                                    <td className="px-3 py-2">
-                                        <div className="flex flex-col">
-                                            <span>{r.veiculo_nome || ""}</span>
-                                            {r.veiculo_obs ? (
-                                                <span className="text-xs text-muted-foreground">{r.veiculo_obs}</span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <div className="flex flex-col">
-                                            <span>{r.inicio_ts ? new Date(r.inicio_ts).toLocaleString() : "-"}</span>
-                                            {typeof r.inicio_lat === "number" && typeof r.inicio_lng === "number" ? (
-                                                <span className="text-xs text-muted-foreground">
-                                                    {r.inicio_lat.toFixed(5)}, {r.inicio_lng.toFixed(5)}
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <div className="flex flex-col">
-                                            <span>{r.fim_ts ? new Date(r.fim_ts).toLocaleString() : "-"}</span>
-                                            {typeof r.fim_lat === "number" && typeof r.fim_lng === "number" ? (
-                                                <span className="text-xs text-muted-foreground">
-                                                    {r.fim_lat.toFixed(5)}, {r.fim_lng.toFixed(5)}
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    <td className="px-3 py-2">{r.distancia_km?.toFixed(3) ?? "-"}</td>
-                                    <td className="px-3 py-2">
-                                        {typeof r.duracao_seg === "number"
-                                            ? `${Math.floor(r.duracao_seg / 60)}m ${(r.duracao_seg % 60)}s`
-                                            : "-"}
-                                    </td>
-                                    <td className="px-3 py-2">{r.vel_media_kmh?.toFixed(2) ?? "-"}</td>
-                                    <td className="px-3 py-2">{r.vel_max_kmh?.toFixed(2) ?? "-"}</td>
-                                    <td className="px-3 py-2">{r.amostras ?? "-"}</td>
-                                    <td className="px-3 py-2">{r.source_device || ""}</td>
-                                </tr>
-                            ))
+                            rows.map((r) => {
+                                const inicioCoords = fmtLatLng(r.inicio_lat, r.inicio_lng);
+                                const fimCoords = fmtLatLng(r.fim_lat, r.fim_lng);
+                                return (
+                                    <tr key={String(r.id)} className="border-t">
+                                        <td className="px-3 py-2">{r.id}</td>
+                                        <td className="px-3 py-2">{r.sepultamento_id}</td>
+                                        <td className="px-3 py-2">
+                                            {r.tipo === "remocao"
+                                                ? "Remoção"
+                                                : r.tipo === "para_velorio"
+                                                    ? "Para Velório"
+                                                    : r.tipo === "para_sepultamento"
+                                                        ? "Para Sepultamento"
+                                                        : String(r.tipo || "")}
+                                        </td>
+                                        <td className="px-3 py-2">{r.agente || ""}</td>
+                                        <td className="px-3 py-2">{r.falecido || ""}</td>
+                                        <td className="px-3 py-2">
+                                            <div className="flex flex-col">
+                                                <span>{r.veiculo_nome || ""}</span>
+                                                {r.veiculo_obs ? (
+                                                    <span className="text-xs text-muted-foreground">{r.veiculo_obs}</span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <div className="flex flex-col">
+                                                <span>{r.inicio_ts ? new Date(r.inicio_ts).toLocaleString() : "-"}</span>
+                                                {inicioCoords ? (
+                                                    <span className="text-xs text-muted-foreground">{inicioCoords}</span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <div className="flex flex-col">
+                                                <span>{r.fim_ts ? new Date(r.fim_ts).toLocaleString() : "-"}</span>
+                                                {fimCoords ? (
+                                                    <span className="text-xs text-muted-foreground">{fimCoords}</span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2">{fmtFixed(r.distancia_km, 3)}</td>
+                                        <td className="px-3 py-2">{secsToMinSec(r.duracao_seg)}</td>
+                                        <td className="px-3 py-2">{fmtFixed(r.vel_media_kmh, 2)}</td>
+                                        <td className="px-3 py-2">{fmtFixed(r.vel_max_kmh, 2)}</td>
+                                        <td className="px-3 py-2">{num(r.amostras) ?? "-"}</td>
+                                        <td className="px-3 py-2">{r.source_device || ""}</td>
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
