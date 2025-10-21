@@ -123,10 +123,9 @@ export default function AcaoModal({
 
     // Detecta se é "Serviço de Outra Empresa"
     const isTerceiro =
-        isTerceiroBySession(acaoId) || // <- garante via sessionStorage
+        isTerceiroBySession(acaoId) ||
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
         (
-            // fallback heurístico: somente se TODOS existirem e forem "Não"
             typeof registroLocal?.assistencia === "string" &&
             typeof registroLocal?.tanato === "string" &&
             typeof registroLocal?.ornamentacao === "string" &&
@@ -140,16 +139,11 @@ export default function AcaoModal({
     const skipTransportando =
         !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
 
-    // Fases visíveis (array normal: Fase[])
+    // Fases visíveis (para TERCEIRO sempre só 3; não inclui a fase atual)
     const fasesVisiveis = useMemo<Fase[]>(() => {
-        // Serviço de Outra Empresa => apenas fase08, fase09, fase10
         if (isTerceiro) {
-            const base: Fase[] = ["fase08", "fase09", "fase10"];
-            // nunca esconder a fase atual (se o backend devolver outra)
-            if (efetivo && !base.includes(efetivo.status as Fase)) {
-                return [efetivo.status as Fase, ...base];
-            }
-            return base;
+            // Somente os três botões solicitados
+            return ["fase08", "fase09", "fase10"];
         }
 
         // Regra padrão (funerário)
@@ -186,7 +180,8 @@ export default function AcaoModal({
         // 2) fallback: próxima visível no fluxo completo
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
         if (idxAtual === -1) {
-            // se status não está no fluxo (p.ex. "fase00"), pega a primeira visível
+            // Se o status não está no fluxo (ou não está nas visíveis),
+            // para "terceiro" pegamos a primeira visível (fase08).
             return visiveis[0] ?? null;
         }
 
