@@ -48,7 +48,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter();
   const sidebar = useSidebar() as any;
 
-  // fecha imediatamente o drawer mobile (cobre diferentes versões do componente)
+  // fecha imediatamente o drawer mobile
   const closeMobileNow = React.useCallback(() => {
     if (typeof sidebar?.setOpenMobile === "function") {
       sidebar.setOpenMobile(false);
