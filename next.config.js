@@ -61,14 +61,32 @@ module.exports = withPWA({
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  images: { domains: ["cdn.onesignal.com", "fonts.gstatic.com"] },
 
-  // ✅ Rewrite correto: manda /api/php/:path* para a RAIZ do site principal
+  // ✅ Liberação dos domínios para <Image />
+  images: {
+    formats: ["image/avif", "image/webp"],
+    deviceSizes: [360, 414, 640, 768, 1024, 1280, 1536, 1920],
+    imageSizes: [64, 96, 128, 160, 180, 196, 256],
+    domains: [
+      // Domínio principal (onde ficam as imagens enviadas via PHP)
+      "planoassistencialintegrado.com.br",
+      // S3 usado no projeto
+      "rp-master3-prod.s3.us-east-1.amazonaws.com",
+      // Unsplash (usado em prévias)
+      "images.unsplash.com",
+      // (opcional) se houver outros domínios de imagem, adicione aqui
+    ],
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy:
+      "default-src 'self'; img-src * blob: data:; media-src 'none'; script-src 'none'; sandbox;",
+  },
+
+  // ✅ Rewrite: encaminha /api/php/:path* para a raiz do site principal
   async rewrites() {
     return [
       {
         source: "/api/php/:path*",
-        destination: "https://planoassistencialintegrado.com.br/:path*", // <-- ajustado
+        destination: "https://planoassistencialintegrado.com.br/:path*",
       },
     ];
   },
