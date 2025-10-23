@@ -13,6 +13,7 @@ import {
   IconFileText,
   IconHelp,
   IconBuildingSkyscraper,
+  IconGift, // 🎁 novo ícone para o Clube PAI
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -25,19 +26,18 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar, // vamos detectar mobile e fechar
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 const data = {
   user: { name: "shadcn", email: "m@example.com", avatar: "/avatars/shadcn.jpg" },
-  // Lista PLANA para compatibilidade com o NavMain atual (sem subitens)
   navMain: [
     { title: "Início", url: "/", icon: IconHome },
     { title: "Quadro de Atendimento", url: "/quadro-atendimento", icon: IconDeviceDesktop },
     { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
     { title: "Memorial", url: "/memorial", icon: IconBuildingSkyscraper },
     { title: "Obituário", url: "/obituario", icon: IconBook },
-    { title: "Clube PAI", url: "/clube", icon: IconUsersGroup },
+    { title: "Clube PAI", url: "/clube", icon: IconGift }, // 🎁 ícone atualizado aqui
     { title: "Leads", url: "/leads", icon: IconUsersGroup },
     { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
     { title: "Relatório", url: "/relatorio", icon: IconFileText },
@@ -48,7 +48,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter();
   const sidebar = useSidebar() as any;
 
-  // fecha imediatamente o drawer mobile
   const closeMobileNow = React.useCallback(() => {
     if (typeof sidebar?.setOpenMobile === "function") {
       sidebar.setOpenMobile(false);
@@ -57,28 +56,28 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     }
   }, [sidebar]);
 
-  // navega de forma controlada no MOBILE: fecha e depois muda a rota
   const handleNavigateMobile = React.useCallback(
     (href: string, e?: React.MouseEvent<HTMLAnchorElement>) => {
-      // permitir abrir em nova aba/janela etc.
       if (
-        e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1
+        e?.metaKey ||
+        e?.ctrlKey ||
+        e?.shiftKey ||
+        e?.altKey ||
+        e?.button === 1
       ) {
         return;
       }
       const isMobile: boolean =
         !!sidebar?.isMobile ||
-        // fallback por conferência de viewport (caso a lib não exponha isMobile)
-        (typeof window !== "undefined" && window.matchMedia?.("(max-width: 1024px)")?.matches) ||
+        (typeof window !== "undefined" &&
+          window.matchMedia?.("(max-width: 1024px)")?.matches) ||
         false;
 
       if (isMobile) {
-        e?.preventDefault(); // NÃO deixa o Link navegar ainda
-        closeMobileNow();    // fecha já o menu (efeito imediato)
-        // navega programaticamente
+        e?.preventDefault();
+        closeMobileNow();
         router.push(href);
       }
-      // no desktop, não fazemos nada: Link cuida da navegação e o menu fica como está
     },
     [router, sidebar?.isMobile, closeMobileNow]
   );
@@ -104,13 +103,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       {/* Menu principal */}
       <SidebarContent>
-        {/* Passa a navegação controlada para cada item */}
-        <NavMain
-          items={data.navMain}
-          onNavigate={handleNavigateMobile}
-        />
+        <NavMain items={data.navMain} onNavigate={handleNavigateMobile} />
 
-        {/* Ajuda no rodapé visual */}
+        {/* Rodapé visual de ajuda */}
         <div className="mt-auto px-2">
           <SidebarMenu>
             <SidebarMenuItem>
