@@ -68,8 +68,20 @@ export default function HomePage() {
           .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
           .replace(/\./g, ":")
       );
-      const days = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
-      setDateStr(`${days[dt.getDay()]}, ${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}/${dt.getFullYear()}`);
+      const days = [
+        "Domingo",
+        "Segunda-feira",
+        "Terça-feira",
+        "Quarta-feira",
+        "Quinta-feira",
+        "Sexta-feira",
+        "Sábado",
+      ];
+      setDateStr(
+        `${days[dt.getDay()]}, ${String(dt.getDate()).padStart(2, "0")}/${String(
+          dt.getMonth() + 1
+        ).padStart(2, "0")}/${dt.getFullYear()}`
+      );
     };
     tick();
     const t = setInterval(tick, 1000);
@@ -96,7 +108,11 @@ export default function HomePage() {
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {shortcutsTop.map(({ title, href, desc, icon: Icon }) => (
-          <Link key={href} href={href} className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
+          <Link
+            key={href}
+            href={href}
+            className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+          >
             <div className="flex items-start gap-3">
               <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
                 <Icon className="size-6 text-primary" />
@@ -112,8 +128,11 @@ export default function HomePage() {
           </Link>
         ))}
 
-        {/* Único card para o Memorial */}
-        <Link href="/memorial" className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
+        {/* Card Memorial */}
+        <Link
+          href="/memorial"
+          className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+        >
           <div className="flex items-start gap-3">
             <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
               <IconBuildingSkyscraper className="size-6 text-primary" />
@@ -130,8 +149,33 @@ export default function HomePage() {
           </div>
         </Link>
 
+        {/* ✅ Novo Card: Clube PAI */}
+        <Link
+          href="/clube-pai"
+          className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
+              <IconUsersGroup className="size-6 text-primary" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold leading-tight">Clube PAI</h3>
+                <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Benefícios, parceiros e gestão do clube.
+              </p>
+            </div>
+          </div>
+        </Link>
+
         {shortcutsBottom.map(({ title, href, desc, icon: Icon }) => (
-          <Link key={href} href={href} className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5">
+          <Link
+            key={href}
+            href={href}
+            className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+          >
             <div className="flex items-start gap-3">
               <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
                 <Icon className="size-6 text-primary" />
