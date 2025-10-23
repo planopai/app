@@ -1,9 +1,14 @@
 // src/app/(admin)/consultas/admin/page.tsx
 "use client";
 
-
-
 import { useEffect, useMemo, useState } from "react";
+import { Nunito } from "next/font/google";
+
+/* ===== Fonte Nunito ===== */
+const nunito = Nunito({
+    subsets: ["latin"],
+    weight: ["400", "600", "700", "800"],
+});
 
 /* ================= Tipos compartilhados ================= */
 type Categoria =
@@ -53,6 +58,7 @@ type ApiConsulta = {
     created_at?: string;
     updated_at?: string;
 };
+
 type ApiListOk = { ok: true; items: ApiConsulta[] };
 type ApiOk = { ok: true } & Record<string, unknown>;
 type ApiErr = { ok: false; error: string };
@@ -60,7 +66,12 @@ type ApiErr = { ok: false; error: string };
 function isApiConsulta(v: unknown): v is ApiConsulta {
     if (typeof v !== "object" || v === null) return false;
     const o = v as Record<string, unknown>;
-    return typeof o.id === "number" && typeof o.nome === "string" && typeof o.endereco === "string" && typeof o.categoria === "string";
+    return (
+        typeof o.id === "number" &&
+        typeof o.nome === "string" &&
+        typeof o.endereco === "string" &&
+        typeof o.categoria === "string"
+    );
 }
 function isApiListOk(v: unknown): v is ApiListOk {
     if (typeof v !== "object" || v === null) return false;
@@ -74,7 +85,6 @@ function isApiListOk(v: unknown): v is ApiListOk {
 function cleanDigits(s: string): string {
     return s.replace(/\D+/g, "");
 }
-
 
 /* ================= Form State ================= */
 type FormState = {
@@ -109,7 +119,7 @@ function fromApiToForm(x: ApiConsulta): FormState {
         telefone: x.telefone ?? "",
         instagram: x.instagram ?? "",
         site: x.site ?? "",
-        ativo: (typeof x.ativo === "boolean" ? x.ativo : x.ativo === 1),
+        ativo: typeof x.ativo === "boolean" ? x.ativo : x.ativo === 1,
     };
 }
 
@@ -150,7 +160,11 @@ function EditModal({
     }
 
     const canSave = useMemo(() => {
-        return model.nome.trim() !== "" && model.endereco.trim() !== "" && CATEGORIAS.includes(model.categoria);
+        return (
+            model.nome.trim() !== "" &&
+            model.endereco.trim() !== "" &&
+            CATEGORIAS.includes(model.categoria)
+        );
     }, [model]);
 
     async function save() {
@@ -188,7 +202,8 @@ function EditModal({
             }
             const ok = (raw as ApiOk).ok === true;
             if (!ok) {
-                const msg = (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
+                const msg =
+                    (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
                 throw new Error(msg);
             }
             onSaved();
@@ -209,11 +224,15 @@ function EditModal({
     return (
         <div
             className="fixed inset-0 z-[100] grid place-items-center bg-black/40 backdrop-blur-sm p-4"
-            onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+            onClick={(e) => {
+                if (e.target === e.currentTarget) onCancel();
+            }}
             role="dialog"
             aria-modal="true"
         >
-            <div className="w-full max-w-3xl rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 font-[Nunito]">
+            <div
+                className={`w-full max-w-3xl rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 ${nunito.className}`}
+            >
                 <div className="mb-4 flex items-start justify-between gap-3">
                     <h2 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">
                         {isEdit ? "Editar consulta" : "Nova consulta"}
@@ -229,7 +248,10 @@ function EditModal({
                         <button
                             onClick={save}
                             disabled={!canSave || saving}
-                            className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white ${canSave ? "bg-emerald-600 hover:brightness-110" : "bg-emerald-400 cursor-not-allowed opacity-70"}`}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white ${canSave
+                                    ? "bg-emerald-600 hover:brightness-110"
+                                    : "bg-emerald-400 cursor-not-allowed opacity-70"
+                                }`}
                         >
                             {saving ? "Salvando…" : "Salvar"}
                         </button>
@@ -239,7 +261,9 @@ function EditModal({
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {/* Nome */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Nome *</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Nome *
+                        </label>
                         <input
                             value={model.nome}
                             onChange={(e) => set("nome", e.target.value)}
@@ -249,20 +273,26 @@ function EditModal({
                     </div>
                     {/* Categoria */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Categoria *</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Categoria *
+                        </label>
                         <select
                             value={model.categoria}
                             onChange={(e) => set("categoria", e.target.value as Categoria)}
                             className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
                         >
                             {CATEGORIAS.map((c) => (
-                                <option key={c} value={c}>{c}</option>
+                                <option key={c} value={c}>
+                                    {c}
+                                </option>
                             ))}
                         </select>
                     </div>
                     {/* Especialidade */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Especialidade</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Especialidade
+                        </label>
                         <input
                             value={model.especialidade}
                             onChange={(e) => set("especialidade", e.target.value)}
@@ -272,7 +302,9 @@ function EditModal({
                     </div>
                     {/* Unidade */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Unidade</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Unidade
+                        </label>
                         <input
                             value={model.unidade}
                             onChange={(e) => set("unidade", e.target.value)}
@@ -282,7 +314,9 @@ function EditModal({
                     </div>
                     {/* Endereço */}
                     <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Endereço *</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Endereço *
+                        </label>
                         <input
                             value={model.endereco}
                             onChange={(e) => set("endereco", e.target.value)}
@@ -292,7 +326,9 @@ function EditModal({
                     </div>
                     {/* CEP */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">CEP</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            CEP
+                        </label>
                         <input
                             value={model.cep}
                             onChange={(e) => set("cep", e.target.value)}
@@ -302,7 +338,9 @@ function EditModal({
                     </div>
                     {/* Mapa URL */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">URL do Mapa</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            URL do Mapa
+                        </label>
                         <input
                             value={model.mapa_url}
                             onChange={(e) => set("mapa_url", e.target.value)}
@@ -312,7 +350,9 @@ function EditModal({
                     </div>
                     {/* WhatsApp */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">WhatsApp (só dígitos)</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            WhatsApp (só dígitos)
+                        </label>
                         <input
                             value={model.whatsapp}
                             onChange={(e) => set("whatsapp", cleanDigits(e.target.value))}
@@ -322,7 +362,9 @@ function EditModal({
                     </div>
                     {/* Telefone */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Telefone (só dígitos)</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Telefone (só dígitos)
+                        </label>
                         <input
                             value={model.telefone}
                             onChange={(e) => set("telefone", cleanDigits(e.target.value))}
@@ -332,7 +374,9 @@ function EditModal({
                     </div>
                     {/* Instagram */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Instagram (URL ou @)</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Instagram (URL ou @)
+                        </label>
                         <input
                             value={model.instagram}
                             onChange={(e) => set("instagram", e.target.value)}
@@ -342,7 +386,9 @@ function EditModal({
                     </div>
                     {/* Site */}
                     <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Site</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Site
+                        </label>
                         <input
                             value={model.site}
                             onChange={(e) => set("site", e.target.value)}
@@ -360,11 +406,18 @@ function EditModal({
                             onChange={(e) => set("ativo", e.target.checked)}
                             className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                         />
-                        <label htmlFor="ativo" className="text-sm text-gray-700 dark:text-gray-200">Ativo</label>
+                        <label
+                            htmlFor="ativo"
+                            className="text-sm text-gray-700 dark:text-gray-200"
+                        >
+                            Ativo
+                        </label>
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Descrição</label>
+                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            Descrição
+                        </label>
                         <textarea
                             value={model.descricao}
                             onChange={(e) => set("descricao", e.target.value)}
@@ -410,14 +463,17 @@ export default function AdminConsultasPage() {
             if (cat !== "TODAS") params.set("categoria", cat);
             if (ativos === "apenasAtivos") params.set("ativos", "1");
 
-            const r = await fetch(`/api/consultas?${params.toString()}`, { cache: "no-store" });
+            const r = await fetch(`/api/consultas?${params.toString()}`, {
+                cache: "no-store",
+            });
             const raw: unknown = await r.json();
             if (!r.ok) {
                 const msg = (raw as ApiErr | undefined)?.error || "Falha ao carregar.";
                 throw new Error(msg);
             }
             if (!isApiListOk(raw)) {
-                const msg = (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
+                const msg =
+                    (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
                 throw new Error(msg);
             }
             setRows(raw.items);
@@ -463,158 +519,179 @@ export default function AdminConsultasPage() {
     }, [rows]);
 
     return (
-        <main className="px-4 py-6 md:px-8 font-[Nunito]">
-            <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-gray-100">
-                        Admin • Consultas
-                    </h1>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Gerencie os registros de consultas: criar, editar, excluir e filtrar.
-                    </p>
-                </div>
+        <main className={`${nunito.className} px-4 py-6 md:px-8`}>
+            <div className="mx-auto w-full max-w-6xl">
+                <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-gray-100">
+                            Admin • Consultas
+                        </h1>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            Gerencie os registros de consultas: criar, editar, excluir e
+                            filtrar.
+                        </p>
+                    </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                    <button
-                        onClick={openCreate}
-                        className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-                    >
-                        + Nova consulta
-                    </button>
-                    <button
-                        onClick={load}
-                        className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                    >
-                        Recarregar
-                    </button>
-                </div>
-            </header>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            onClick={openCreate}
+                            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+                        >
+                            + Nova consulta
+                        </button>
+                        <button
+                            onClick={load}
+                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                            Recarregar
+                        </button>
+                    </div>
+                </header>
 
-            {/* Filtros */}
-            <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="relative">
-                    <input
-                        type="text"
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                        placeholder="Buscar por nome, especialidade, endereço…"
-                        className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-4 py-3 pr-10 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                    />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
-                            <path d="M21 21l-4.2-4.2M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                        </svg>
-                    </span>
-                </div>
+                {/* Filtros */}
+                <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                            placeholder="Buscar por nome, especialidade, endereço…"
+                            className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-4 py-3 pr-10 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+                                <path
+                                    d="M21 21l-4.2-4.2M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"
+                                    stroke="currentColor"
+                                    strokeWidth="1.6"
+                                    strokeLinecap="round"
+                                />
+                            </svg>
+                        </span>
+                    </div>
 
-                <div>
-                    <select
-                        value={cat}
-                        onChange={(e) => setCat(e.target.value as "TODAS" | Categoria)}
-                        className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-3 py-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                    >
-                        <option value="TODAS">Todas as categorias</option>
-                        {CATEGORIAS.map((c) => (
-                            <option key={c} value={c}>{c}</option>
-                        ))}
-                    </select>
-                </div>
-
-                <div>
-                    <select
-                        value={ativos}
-                        onChange={(e) => setAtivos(e.target.value as "todos" | "apenasAtivos")}
-                        className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-3 py-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                    >
-                        <option value="apenasAtivos">Apenas ativos</option>
-                        <option value="todos">Todos (ativos e inativos)</option>
-                    </select>
-                </div>
-            </section>
-
-            {/* Estados de carregamento/erro */}
-            {loading && (
-                <div className="rounded-2xl border border-gray-200 bg-white p-6 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">
-                    Carregando…
-                </div>
-            )}
-            {err && !loading && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-900/50 dark:bg-red-900/20">
-                    {err}
-                </div>
-            )}
-
-            {/* Tabela */}
-            {!loading && !err && (
-                <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-900">
-                            <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                <th className="px-4 py-3">ID</th>
-                                <th className="px-4 py-3">Nome</th>
-                                <th className="px-4 py-3">Categoria</th>
-                                <th className="px-4 py-3">Especialidade</th>
-                                <th className="px-4 py-3">Endereço</th>
-                                <th className="px-4 py-3">WhatsApp</th>
-                                <th className="px-4 py-3">Telefone</th>
-                                <th className="px-4 py-3">Ativo</th>
-                                <th className="px-4 py-3 text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {filtered.length === 0 && (
-                                <tr>
-                                    <td colSpan={9} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-                                        Nenhum registro encontrado.
-                                    </td>
-                                </tr>
-                            )}
-                            {filtered.map((r) => (
-                                <tr key={r.id} className="bg-white/80 dark:bg-gray-900/60">
-                                    <td className="px-4 py-3">{r.id}</td>
-                                    <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">{r.nome}</td>
-                                    <td className="px-4 py-3">{r.categoria}</td>
-                                    <td className="px-4 py-3">{r.especialidade || "—"}</td>
-                                    <td className="px-4 py-3">{r.endereco}</td>
-                                    <td className="px-4 py-3">{r.whatsapp || "—"}</td>
-                                    <td className="px-4 py-3">{r.telefone || "—"}</td>
-                                    <td className="px-4 py-3">
-                                        {((typeof r.ativo === "boolean" ? r.ativo : r.ativo === 1) ? "Sim" : "Não")}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={() => openEdit(r)}
-                                                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                            >
-                                                Editar
-                                            </button>
-                                            <button
-                                                onClick={() => remove(r.id)}
-                                                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                                            >
-                                                Excluir
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
+                    <div>
+                        <select
+                            value={cat}
+                            onChange={(e) => setCat(e.target.value as "TODAS" | Categoria)}
+                            className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-3 py-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                        >
+                            <option value="TODAS">Todas as categorias</option>
+                            {CATEGORIAS.map((c) => (
+                                <option key={c} value={c}>
+                                    {c}
+                                </option>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                        </select>
+                    </div>
 
-            {/* Modal de edição/criação */}
-            {editing && (
-                <EditModal
-                    initial={editing}
-                    onCancel={() => setEditing(null)}
-                    onSaved={async () => {
-                        setEditing(null);
-                        await load();
-                    }}
-                />
-            )}
+                    <div>
+                        <select
+                            value={ativos}
+                            onChange={(e) =>
+                                setAtivos(e.target.value as "todos" | "apenasAtivos")
+                            }
+                            className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-3 py-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                        >
+                            <option value="apenasAtivos">Apenas ativos</option>
+                            <option value="todos">Todos (ativos e inativos)</option>
+                        </select>
+                    </div>
+                </section>
+
+                {/* Estados de carregamento/erro */}
+                {loading && (
+                    <div className="rounded-2xl border border-gray-200 bg-white p-6 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">
+                        Carregando…
+                    </div>
+                )}
+                {err && !loading && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-900/50 dark:bg-red-900/20">
+                        {err}
+                    </div>
+                )}
+
+                {/* Tabela */}
+                {!loading && !err && (
+                    <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-900">
+                                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-4 py-3">ID</th>
+                                    <th className="px-4 py-3">Nome</th>
+                                    <th className="px-4 py-3">Categoria</th>
+                                    <th className="px-4 py-3">Especialidade</th>
+                                    <th className="px-4 py-3">Endereço</th>
+                                    <th className="px-4 py-3">WhatsApp</th>
+                                    <th className="px-4 py-3">Telefone</th>
+                                    <th className="px-4 py-3">Ativo</th>
+                                    <th className="px-4 py-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                {filtered.length === 0 && (
+                                    <tr>
+                                        <td
+                                            colSpan={9}
+                                            className="px-4 py-6 text-center text-gray-500 dark:text-gray-400"
+                                        >
+                                            Nenhum registro encontrado.
+                                        </td>
+                                    </tr>
+                                )}
+                                {filtered.map((r) => (
+                                    <tr key={r.id} className="bg-white/80 dark:bg-gray-900/60">
+                                        <td className="px-4 py-3">{r.id}</td>
+                                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
+                                            {r.nome}
+                                        </td>
+                                        <td className="px-4 py-3">{r.categoria}</td>
+                                        <td className="px-4 py-3">{r.especialidade || "—"}</td>
+                                        <td className="px-4 py-3">{r.endereco}</td>
+                                        <td className="px-4 py-3">{r.whatsapp || "—"}</td>
+                                        <td className="px-4 py-3">{r.telefone || "—"}</td>
+                                        <td className="px-4 py-3">
+                                            {(
+                                                typeof r.ativo === "boolean" ? r.ativo : r.ativo === 1
+                                            )
+                                                ? "Sim"
+                                                : "Não"}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={() => openEdit(r)}
+                                                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                                >
+                                                    Editar
+                                                </button>
+                                                <button
+                                                    onClick={() => remove(r.id)}
+                                                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                                                >
+                                                    Excluir
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Modal de edição/criação */}
+                {editing && (
+                    <EditModal
+                        initial={editing}
+                        onCancel={() => setEditing(null)}
+                        onSaved={async () => {
+                            setEditing(null);
+                            await load();
+                        }}
+                    />
+                )}
+            </div>
         </main>
     );
 }
