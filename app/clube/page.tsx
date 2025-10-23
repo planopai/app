@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import {
-    IconBuildingSkyscraper,
+    IconGift,
     IconUsersGroup,
     IconSend,
     IconStethoscope,
-    IconGift,
     IconChevronRight,
 } from "@tabler/icons-react";
 
@@ -37,18 +36,18 @@ const items = [
     },
 ];
 
-export default function MemorialPage() {
+export default function ClubePage() {
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
             {/* Cabeçalho */}
             <header className="mb-6 flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl border bg-background/70">
-                    <IconBuildingSkyscraper className="size-6 text-primary" />
+                    <IconGift className="size-6 text-primary" />
                 </div>
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Memorial</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Clube PAI</h1>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Acesso rápido aos módulos administrativos.
+                        Acesso rápido aos módulos administrativos e benefícios do clube.
                     </p>
                 </div>
             </header>
