@@ -37,6 +37,7 @@ const data = {
     { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
     { title: "Memorial", url: "/memorial", icon: IconBuildingSkyscraper },
     { title: "Obituário", url: "/obituario", icon: IconBook },
+    { title: "Clube PAI", url: "/clube", icon: IconUsersGroup },
     { title: "Leads", url: "/leads", icon: IconUsersGroup },
     { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
     { title: "Relatório", url: "/relatorio", icon: IconFileText },
