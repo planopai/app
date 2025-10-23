@@ -1,14 +1,19 @@
 "use client";
 
-
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Nunito } from "next/font/google";
 
-/* ================== tipos ================== */
+/* ====== Fonte Nunito (Next Font) ====== */
+const nunito = Nunito({
+    subsets: ["latin"],
+    weight: ["400", "600", "700", "800"],
+});
+
+/* ================== Tipos ================== */
 type ApiOkCreate = { ok: true; id: number };
-type ApiOkBool = { ok: true } | { ok: true; deleted?: boolean; updated?: boolean };
+type ApiOkBool = { ok: true; deleted?: boolean; updated?: boolean };
 type ApiErr = { ok: false; error: string };
 
 type Row = {
@@ -25,7 +30,9 @@ type Row = {
     telefone?: string | null;
 };
 
-type ListResp = { ok: true; items: Row[] } | { ok: false; error: string };
+type ListRespOk = { ok: true; items: Row[] };
+type ListRespErr = { ok: false; error: string };
+type ListResp = ListRespOk | ListRespErr;
 
 const CATEGORIES = [
     "Farmácias",
@@ -38,7 +45,7 @@ const CATEGORIES = [
     "Saúde",
 ] as const;
 
-/* ================== helpers ================== */
+/* ================== Helpers ================== */
 const asS = (v: unknown) => (typeof v === "string" ? v : "");
 const isHttpUrl = (s?: string | null) => !!s && /^https?:\/\//i.test(s);
 
@@ -68,7 +75,9 @@ function Modal({
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4">
-            <div className="w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <div
+                className={`w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${nunito.className}`}
+            >
                 <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-800">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h3>
                     <button
@@ -119,10 +128,8 @@ export default function ParceirosGestaoPage() {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     const isValid = useMemo(() => {
-        if (editId) {
-            return nome.trim().length >= 2 && categoria.trim().length > 0; // foto opcional
-        }
-        return nome.trim().length >= 2 && categoria.trim().length > 0 && !!fotoFile; // criação exige foto
+        if (editId) return nome.trim().length >= 2 && categoria.trim().length > 0;
+        return nome.trim().length >= 2 && categoria.trim().length > 0 && !!fotoFile;
     }, [editId, nome, categoria, fotoFile]);
 
     /* -------- carregar lista -------- */
@@ -140,14 +147,22 @@ export default function ParceirosGestaoPage() {
                 cache: "no-store",
                 headers: authHeaders(),
             });
+
             const data = (await r.json()) as ListResp;
 
-            if (!r.ok || !("ok" in data) || !data.ok) {
-                setErroLista((data as { error?: string }).error || "Falha ao carregar lista.");
+            if (!r.ok) {
+                setErroLista("Falha ao carregar lista.");
                 setItems([]);
                 return;
             }
-            setItems(data.items);
+
+            if (!data.ok) {
+                setErroLista((data as ListRespErr).error || "Falha ao carregar lista.");
+                setItems([]);
+                return;
+            }
+
+            setItems((data as ListRespOk).items);
         } catch (err) {
             setErroLista(err instanceof Error ? err.message : String(err));
             setItems([]);
@@ -162,9 +177,7 @@ export default function ParceirosGestaoPage() {
 
     /* -------- helpers form -------- */
     const resetFileInput = () => {
-        if (fileInputRef.current && typeof fileInputRef.current.value !== "undefined") {
-            fileInputRef.current.value = "";
-        }
+        if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
     const startNovo = () => {
@@ -220,7 +233,9 @@ export default function ParceirosGestaoPage() {
             setMsgOk(null);
 
             if (!isValid) {
-                setErroForm(editId ? "Preencha ao menos Nome e Categoria." : "Preencha Nome, Categoria e selecione uma Foto.");
+                setErroForm(
+                    editId ? "Preencha ao menos Nome e Categoria." : "Preencha Nome, Categoria e selecione uma Foto."
+                );
                 return;
             }
 
@@ -228,7 +243,7 @@ export default function ParceirosGestaoPage() {
                 setSalvando(true);
 
                 if (editId === null) {
-                    // ======= CREATE (POST multipart) =======
+                    // ======= CREATE =======
                     const fd = new FormData();
                     fd.append("nome", nome.trim());
                     fd.append("categoria", categoria.trim());
@@ -246,8 +261,13 @@ export default function ParceirosGestaoPage() {
                         body: fd,
                         headers: authHeaders(), // NÃO setar Content-Type manualmente
                     });
+
                     const data = (await r.json()) as ApiOkCreate | ApiErr;
-                    if (!r.ok || ("ok" in data && !data.ok)) {
+
+                    if (!r.ok) {
+                        throw new Error("Falha ao criar.");
+                    }
+                    if (!data.ok) {
                         throw new Error((data as ApiErr).error || "Falha ao criar.");
                     }
 
@@ -265,13 +285,13 @@ export default function ParceirosGestaoPage() {
                     setFotoPreview("");
                     resetFileInput();
                 } else {
-                    // ======= UPDATE (POST override ?_method=PUT) =======
+                    // ======= UPDATE (?_method=PUT) =======
                     const url = `/api/parceiros?id=${encodeURIComponent(editId)}&_method=PUT`;
 
                     const fd = new FormData();
                     fd.append("nome", nome.trim());
                     fd.append("categoria", categoria.trim());
-                    fd.append("beneficio", beneficio.trim()); // pode ir vazio -> backend faz asNull
+                    fd.append("beneficio", beneficio.trim());
                     fd.append("regras", regras.trim());
                     fd.append("como_usar", comoUsar.trim());
                     fd.append("rota_url", rotaUrl.trim());
@@ -282,12 +302,16 @@ export default function ParceirosGestaoPage() {
 
                     const r = await fetch(url, { method: "POST", body: fd, headers: authHeaders() });
                     const data = (await r.json()) as ApiOkBool | ApiErr;
-                    if (!r.ok || ("ok" in data && !data.ok)) {
+
+                    if (!r.ok) {
+                        throw new Error("Falha ao atualizar.");
+                    }
+                    if (!data.ok) {
                         throw new Error((data as ApiErr).error || "Falha ao atualizar.");
                     }
 
                     setMsgOk("Parceiro atualizado com sucesso.");
-                    setModalOpen(false); // fecha para evitar impressão de duplicação
+                    setModalOpen(false);
                 }
 
                 await carregar();
@@ -325,10 +349,16 @@ export default function ParceirosGestaoPage() {
                 headers: authHeaders(),
             });
             const data = (await r.json()) as ApiOkBool | ApiErr;
-            if (!r.ok || ("ok" in data && !data.ok)) {
+
+            if (!r.ok) {
+                alert("Falha ao excluir.");
+                return;
+            }
+            if (!data.ok) {
                 alert((data as ApiErr).error || "Falha ao excluir.");
                 return;
             }
+
             if (editId === row.id) {
                 setModalOpen(false);
                 setEditId(null);
@@ -348,8 +378,8 @@ export default function ParceirosGestaoPage() {
     }, [items, fCat, fQ]);
 
     return (
-        <div className="p-4 sm:p-6 xl:p-8 font-[Nunito]">
-            <div className="mx-auto max-w-3xl">
+        <div className={`${nunito.className} p-4 sm:p-6 xl:p-8`}>
+            <div className="mx-auto w-full max-w-6xl">
                 {/* cabeçalho */}
                 <header className="mb-6 flex items-center justify-between">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Gestão de Parceiros</h1>
@@ -363,15 +393,15 @@ export default function ParceirosGestaoPage() {
 
                 {/* filtros / ação */}
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="flex flex-1 gap-3">
+                    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
                         <input
-                            className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+                            className="flex-1 rounded-xl border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
                             placeholder="Pesquisar por nome…"
                             value={fQ}
                             onChange={(e) => setFQ(e.target.value)}
                         />
                         <select
-                            className="w-48 rounded-xl border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+                            className="w-full sm:w-56 rounded-xl border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
                             value={fCat}
                             onChange={(e) => setFCat(e.target.value)}
                         >
@@ -386,7 +416,7 @@ export default function ParceirosGestaoPage() {
                     <button
                         type="button"
                         onClick={startNovo}
-                        className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+                        className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
                     >
                         Adicionar Novo Parceiro
                     </button>
@@ -407,9 +437,9 @@ export default function ParceirosGestaoPage() {
                             {itemsFiltered.map((row) => (
                                 <div
                                     key={row.id}
-                                    className="flex items-center gap-4 rounded-xl border border-gray-200 p-3 dark:border-gray-700"
+                                    className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 p-3 dark:border-gray-700"
                                 >
-                                    <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                                    <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800 flex-shrink-0">
                                         {row.foto_url ? (
                                             <Image
                                                 src={isHttpUrl(row.foto_url) ? row.foto_url : "/images/logo/pai.png"}
