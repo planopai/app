@@ -151,7 +151,7 @@ export default function HomePage() {
 
         {/* ✅ Novo Card: Clube PAI */}
         <Link
-          href="/clube-pai"
+          href="/clube"
           className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
         >
           <div className="flex items-start gap-3">

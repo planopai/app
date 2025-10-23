@@ -1,5 +1,6 @@
 "use client";
 
+import { B612 } from "next/font/google";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Ponto = { lat: number; lng: number; t?: number; v?: number };
@@ -126,3 +127,4 @@ export default function MapRoute({
         </div>
     );
 }
+
