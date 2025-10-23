@@ -32,6 +32,11 @@ function isTerceiroBySession(id?: string | number | null | undefined) {
     }
 }
 
+function isNao(v?: string) {
+    const s = (v || "").toString().trim().toLowerCase();
+    return s === "não" || s === "nao" || s === "n";
+}
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -51,8 +56,7 @@ export default function AcaoModal({
 }) {
     // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
-        const r =
-            acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
+        const r = acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
         if (!r) return undefined;
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
@@ -102,13 +106,15 @@ export default function AcaoModal({
         };
     }, [open, acaoId]);
 
-    // Dados efetivos usados na UI (prefere online; cai para local)
+    // Dados efetivos usados na UI (prefere online; cai para local) + assistencia
     const efetivo = useMemo(() => {
         if (online) {
             return {
                 status: online.status as Fase,
                 local_velorio: online.local_velorio,
                 tanato: online.tanato,
+                // assistencia vem do local (não faz parte da consulta de status)
+                assistencia: registroLocal?.assistencia,
             };
         }
         if (registroLocal) {
@@ -116,6 +122,7 @@ export default function AcaoModal({
                 status: (registroLocal.status as Fase) ?? ("fase00" as Fase),
                 local_velorio: registroLocal.local_velorio,
                 tanato: registroLocal.tanato,
+                assistencia: registroLocal.assistencia,
             };
         }
         return null;
@@ -125,19 +132,17 @@ export default function AcaoModal({
     const isTerceiro =
         isTerceiroBySession(acaoId) ||
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
-        (
-            typeof registroLocal?.assistencia === "string" &&
+        (typeof registroLocal?.assistencia === "string" &&
             typeof registroLocal?.tanato === "string" &&
             typeof registroLocal?.ornamentacao === "string" &&
             (registroLocal.assistencia || "").toLowerCase() === "não" &&
             (registroLocal.tanato || "").toLowerCase() === "não" &&
-            (registroLocal.ornamentacao || "").toLowerCase() === "não"
-        );
+            (registroLocal.ornamentacao || "").toLowerCase() === "não");
 
     // Skips "clássicos"
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
-    const skipTransportando =
-        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
     // Fases visíveis (para TERCEIRO sempre só 3; não inclui a fase atual)
     const fasesVisiveis = useMemo<Fase[]>(() => {
@@ -151,9 +156,10 @@ export default function AcaoModal({
             if (efetivo && f === efetivo.status) return true; // mantém visível a fase atual
             if (skipTransportando && f === "fase07") return false;
             if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
+            if (skipMaterialRecolhido && f === "fase11") return false; // não mostrar fase11 quando não há assistência
             return true;
         }) as Fase[];
-    }, [isTerceiro, efetivo, skipTransportando, skipConservacao]);
+    }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipMaterialRecolhido]);
 
     // Próxima fase calculada
     const prox = useMemo<Fase | null>(() => {
@@ -162,8 +168,9 @@ export default function AcaoModal({
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        // Se já está na fase final, não há próxima
-        if (efetivo.status === FASE_FINAL) return null;
+        // Se já está na fase final (p/ cada caso), não há próxima
+        const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
+        if (isFinal) return null;
 
         // 1) tenta via helper com as fases visíveis
         let p = proximaFaseDoRegistro(
@@ -171,6 +178,7 @@ export default function AcaoModal({
                 status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
                 tanato: efetivo.tanato,
+                assistencia: efetivo.assistencia,
             },
             visiveis as readonly string[]
         ) as Fase | null;
@@ -180,8 +188,6 @@ export default function AcaoModal({
         // 2) fallback: próxima visível no fluxo completo
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
         if (idxAtual === -1) {
-            // Se o status não está no fluxo (ou não está nas visíveis),
-            // para "terceiro" pegamos a primeira visível (fase08).
             return visiveis[0] ?? null;
         }
 
@@ -192,10 +198,10 @@ export default function AcaoModal({
             }
         }
         return null;
-    }, [efetivo, fasesVisiveis]);
+    }, [efetivo, fasesVisiveis, isTerceiro]);
 
-    // Concluído apenas na fase final (fase11)
-    const concluido = !!efetivo && efetivo.status === FASE_FINAL;
+    // Concluído: TERCEIRO conclui na fase10; FUNERÁRIO conclui na fase11
+    const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
@@ -206,9 +212,7 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">
-                        {onlineError} — exibindo dados locais como fallback.
-                    </span>
+                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
                 )}
             </div>
 
@@ -245,17 +249,11 @@ export default function AcaoModal({
                         })}
                     </div>
 
-                    {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            Fluxo concluído para este registro.
-                        </p>
-                    )}
+                    {concluido && <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>}
                 </>
             )}
 
-            {acaoMsg && (
-                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>
-            )}
+            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
         </Modal>
     );
 }

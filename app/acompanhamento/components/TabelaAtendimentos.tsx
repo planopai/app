@@ -31,9 +31,41 @@ function statusBg(s?: string) {
     return statusClasses[key] || "bg-muted text-foreground";
 }
 
+function isNao(v?: string) {
+    const s = (v || "").toString().trim().toLowerCase();
+    return s === "não" || s === "nao" || s === "n";
+}
+function isSim(v?: string) {
+    return (v || "").toString().trim().toLowerCase() === "sim";
+}
+function isTerceiro(r: Registro) {
+    if ((r as any).tipo_atendimento === "terceiro") return true;
+    // heurística p/ registros antigos
+    return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
+}
+
 export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props) {
-    // Agora escondemos fase10 (Sepultamento Concluído) e fase11 (Material Recolhido)
-    const visiveis = registros.filter((r) => r.status !== "fase10" && r.status !== "fase11");
+    /**
+     * Regras de visibilidade:
+     * - SEMPRE esconder fase11 (Material Recolhido).
+     * - TERCEIRO: esconder na fase10 (Sepultamento Concluído).
+     * - FUNERÁRIO + Assistência=Não: esconder na fase10.
+     * - FUNERÁRIO + Assistência=Sim: manter na fase10 e esconder só na fase11.
+     */
+    const visiveis = registros.filter((r) => {
+        if (r.status === "fase11") return false; // sempre sai após Material Recolhido
+
+        if (isTerceiro(r)) {
+            return r.status !== "fase10"; // termina em Sepultamento Concluído
+        }
+
+        // funerário
+        if (!isSim(r.assistencia)) {
+            return r.status !== "fase10"; // sem assistência: termina em fase10
+        }
+
+        return true; // assistência=Sim → permanece mesmo em fase10
+    });
 
     return (
         <div className="overflow-x-auto rounded-xl border">
@@ -42,13 +74,9 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                     <tr>
                         <th className="w-40 px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Falecido(a)</th>
-                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">
-                            Agente
-                        </th>
+                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
                         <th className="w-36 px-3 py-2 text-left font-semibold">Ações</th>
-                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">
-                            Info
-                        </th>
+                        <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">Info</th>
                     </tr>
                 </thead>
                 <tbody id="tb-registros">
@@ -63,9 +91,7 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                             <tr key={String(r.id ?? `row-${idx}`)} className="border-t">
                                 <td className="px-3 py-2">
                                     <span
-                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBg(
-                                            r.status
-                                        )}`}
+                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBg(r.status)}`}
                                     >
                                         {capitalizeStatus(r.status)}
                                     </span>
