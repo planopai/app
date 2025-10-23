@@ -3,10 +3,17 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { Nunito } from "next/font/google";
+
+/* ===== Fonte Nunito ===== */
+const nunito = Nunito({
+    subsets: ["latin"],
+    weight: ["400", "600", "700", "800"],
+});
 
 /* ================== Tipos ================== */
 type ApiOkCreate = { ok: true; id: number };
-type ApiOkBool = { ok: true } | { ok: true; deleted?: boolean; updated?: boolean };
+type ApiOkBool = { ok: true; deleted?: boolean; updated?: boolean };
 type ApiErr = { ok: false; error: string };
 
 type Row = {
@@ -19,7 +26,9 @@ type Row = {
     atualizado_em?: string;
 };
 
-type ListResp = { ok: true; items: Row[] } | { ok: false; error: string };
+type ListRespOk = { ok: true; items: Row[] };
+type ListRespErr = { ok: false; error: string };
+type ListResp = ListRespOk | ListRespErr;
 
 /* ================== Helpers ================== */
 const asS = (v: unknown) => (typeof v === "string" ? v : "");
@@ -116,20 +125,17 @@ export default function NoticiasAdminPage() {
                     headers: authHeaders(),
                 });
 
-                const data: unknown = await r.json();
+                const data = (await r.json()) as ListResp;
 
-                if (typeof data !== "object" || data === null || !("ok" in (data as Record<string, unknown>))) {
-                    throw new Error("Resposta inválida do servidor.");
+                if (!r.ok) {
+                    throw new Error("Falha ao carregar notícias.");
                 }
-
-                const resp = data as ListResp;
-
-                if (!("ok" in resp) || resp.ok !== true) {
-                    const errMsg = getRespErrorMessage(resp) ?? "Falha ao carregar notícias.";
+                if (!data.ok) {
+                    const errMsg = getRespErrorMessage(data) ?? "Falha ao carregar notícias.";
                     throw new Error(errMsg);
                 }
 
-                const pageItems = resp.items.map((it) => ({
+                const pageItems = data.items.map((it) => ({
                     ...it,
                     id: asN(it.id),
                     titulo: asS(it.titulo),
@@ -242,8 +248,12 @@ export default function NoticiasAdminPage() {
                         body: fd,
                         headers: authHeaders(),
                     });
-                    const data: ApiOkCreate | ApiErr = await r.json();
-                    if (!r.ok || ("ok" in data && !data.ok)) {
+                    const data = (await r.json()) as ApiOkCreate | ApiErr;
+
+                    if (!r.ok) {
+                        throw new Error("Falha ao criar.");
+                    }
+                    if (!data.ok) {
                         const msg = getRespErrorMessage(data) ?? "Falha ao criar.";
                         throw new Error(msg);
                     }
@@ -265,8 +275,12 @@ export default function NoticiasAdminPage() {
                         fd.append("imagem", imagemFile);
 
                         const r = await fetch(url, { method: "POST", headers: authHeaders(), body: fd });
-                        const data: ApiOkBool | ApiErr = await r.json();
-                        if (!r.ok || ("ok" in data && !data.ok)) {
+                        const data = (await r.json()) as ApiOkBool | ApiErr;
+
+                        if (!r.ok) {
+                            throw new Error("Falha ao atualizar.");
+                        }
+                        if (!data.ok) {
                             const msg = getRespErrorMessage(data) ?? "Falha ao atualizar.";
                             throw new Error(msg);
                         }
@@ -282,8 +296,12 @@ export default function NoticiasAdminPage() {
                             headers: authHeaders({ "Content-Type": "application/json" }),
                             body: JSON.stringify(payload),
                         });
-                        const data: ApiOkBool | ApiErr = await r.json();
-                        if (!r.ok || ("ok" in data && !data.ok)) {
+                        const data = (await r.json()) as ApiOkBool | ApiErr;
+
+                        if (!r.ok) {
+                            throw new Error("Falha ao atualizar.");
+                        }
+                        if (!data.ok) {
                             const msg = getRespErrorMessage(data) ?? "Falha ao atualizar.";
                             throw new Error(msg);
                         }
@@ -310,11 +328,16 @@ export default function NoticiasAdminPage() {
                 method: "DELETE",
                 headers: authHeaders(),
             });
-            const data: ApiOkBool | ApiErr = await r.json();
-            if (!r.ok || ("ok" in data && !data.ok)) {
+            const data = (await r.json()) as ApiOkBool | ApiErr;
+
+            if (!r.ok) {
+                throw new Error("Falha ao excluir.");
+            }
+            if (!data.ok) {
                 const msg = getRespErrorMessage(data) ?? "Falha ao excluir.";
                 throw new Error(msg);
             }
+
             await carregar(true);
         } catch (err) {
             alert(err instanceof Error ? err.message : String(err));
@@ -323,8 +346,8 @@ export default function NoticiasAdminPage() {
 
     /* -------- UI -------- */
     return (
-        <div className="p-4 sm:p-6 xl:p-8 font-[Nunito]">
-            <div className="mx-auto max-w-4xl">
+        <div className={`${nunito.className} p-4 sm:p-6 xl:p-8`}>
+            <div className="mx-auto w-full max-w-6xl">
                 <header className="mb-6 flex items-center justify-between">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Gestão de Notícias</h1>
                     <button
@@ -430,7 +453,7 @@ export default function NoticiasAdminPage() {
                 {/* Modal do Form */}
                 {modalOpen && (
                     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4">
-                        <div className="w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                        <div className={`w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${nunito.className}`}>
                             <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-800">
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                                     {editId ? `Editar Notícia #${editId}` : "Nova Notícia"}
