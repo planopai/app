@@ -38,6 +38,10 @@ type Registro = {
     local_sepultamento?: string;
     materiais?: string;
     material?: string;
+
+    /** quando presente já define claramente o fluxo */
+    tipo_atendimento?: "funerario" | "terceiro";
+
     [key: string]: any;
 };
 
@@ -80,9 +84,47 @@ function timeOr(t?: string) {
     return hhmm;
 }
 
+/* ----------- Normalização de status (texto → faseNN) ----------- */
+const ROTULO_PARA_FASE: Record<string, string> = {
+    "removendo": "fase01",
+    "aguardando procedimento": "fase02",
+    "preparando": "fase03",
+    "aguardando ornamentacao": "fase04",
+    "ornamentando": "fase05",
+    "corpo pronto": "fase06",
+    "transportando": "fase07",
+    "transportando p/ velorio": "fase07",
+    "velando": "fase08",
+    "sepultando": "fase09",
+    "transportando p/ sepultamento": "fase09",
+    "sepultamento concluido": "fase10",
+    "sepultamento concluído": "fase10",
+    "material recolhido": "fase11",
+    "concluido": "fase11",
+    "concluído": "fase11",
+};
+function normalizeKey(s: string) {
+    return s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+}
+function normalizarStatus(status?: string): string | undefined {
+    if (!status) return undefined;
+    const s = String(status).trim();
+    if (s.toLowerCase().startsWith("fase")) {
+        const digits = s.replace(/[^0-9]/g, "");
+        if (!digits) return s.toLowerCase();
+        return `fase${digits.padStart(2, "0")}`.toLowerCase();
+    }
+    const mapeado = ROTULO_PARA_FASE[normalizeKey(s)];
+    return (mapeado || s).toLowerCase();
+}
+
 /* ---------------- Status badge ---------------- */
 function capStatus(s?: string) {
-    switch (s) {
+    switch (normalizarStatus(s)) {
         case "fase01":
             return "Removendo";
         case "fase02":
@@ -111,22 +153,22 @@ function capStatus(s?: string) {
 }
 
 function badgeClass(s?: string) {
-    const x = (s || "").toLowerCase();
-    if (x === "fase01" || x.includes("remov")) return "bg-amber-600";
-    if (x === "fase02" || x.includes("aguardando procedimento")) return "bg-zinc-600";
-    if (x === "fase03" || x.includes("prepar")) return "bg-blue-600";
-    if (x === "fase04" || x.includes("ornamentaç") || x.includes("ornamenta")) return "bg-fuchsia-600";
-    if (x === "fase05" || x.includes("ornamentando")) return "bg-rose-600";
-    if (x === "fase06" || x.includes("corpo pronto")) return "bg-emerald-600";
-    if (x === "fase07" || x.includes("transportando p/ velório")) return "bg-cyan-600";
-    if (x === "fase08" || x.includes("veland")) return "bg-violet-600";
-    if (x === "fase09" || x.includes("transportando p/ sepultamento")) return "bg-orange-600";
-    if (x === "fase10" || x.includes("conclu")) return "bg-green-700";
-    if (x === "fase11" || x.includes("material recolh")) return "bg-slate-700";
+    const x = (normalizarStatus(s) || "").toLowerCase();
+    if (x === "fase01") return "bg-amber-600";
+    if (x === "fase02") return "bg-zinc-600";
+    if (x === "fase03") return "bg-blue-600";
+    if (x === "fase04") return "bg-fuchsia-600";
+    if (x === "fase05") return "bg-rose-600";
+    if (x === "fase06") return "bg-emerald-600";
+    if (x === "fase07") return "bg-cyan-600";
+    if (x === "fase08") return "bg-violet-600";
+    if (x === "fase09") return "bg-orange-600";
+    if (x === "fase10") return "bg-green-700";
+    if (x === "fase11") return "bg-slate-700";
     return "bg-slate-500";
 }
 
-/* ---------------- Convenio chip ---------------- */
+/* Convenio chip */
 type ConvenioKind = "Particular" | "Prefeitura" | "Associado" | "a definir";
 function normalizeConvenio(s?: string): ConvenioKind {
     const v = (s || "").toLowerCase();
@@ -245,6 +287,23 @@ function buildClipboardText(r: Registro) {
 }
 
 /* =========================
+   Regras do painel (quem permanece / sai)
+   ========================= */
+function isNao(v?: string) {
+    const s = (v || "").toString().trim().toLowerCase();
+    return s === "não" || s === "nao" || s === "n";
+}
+function isSim(v?: string) {
+    const s = (v || "").toString().trim().toLowerCase();
+    return s === "sim" || s === "s";
+}
+function isTerceiroRegistro(r: Registro) {
+    if ((r as any).tipo_atendimento === "terceiro") return true;
+    // heurística para registros antigos
+    return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
+}
+
+/* =========================
    Página
    ========================= */
 export default function QuadroAtendimentoPage() {
@@ -320,16 +379,30 @@ export default function QuadroAtendimentoPage() {
         return () => window.removeEventListener("keydown", onKey);
     }, []);
 
-    const ativos = useMemo(
-        () =>
-            registros.filter(
-                (r) =>
-                    String(r.status).toLowerCase() !== "concluido" &&
-                    String(r.status).toLowerCase() !== "fase11" &&
-                    capStatus(r.status).toLowerCase() !== "material recolhido"
-            ),
-        [registros]
-    );
+    /* =========================
+       ATIVOS: aplica as 3 regras do painel
+       ========================= */
+    const ativos = useMemo(() => {
+        return registros.filter((r) => {
+            const status = normalizarStatus(r.status);
+
+            // 1) some sempre ao chegar em Material Recolhido
+            if (status === "fase11") return false;
+
+            // tipo Serviço de Outra Empresa: termina em fase10
+            if (isTerceiroRegistro(r)) {
+                return status !== "fase10";
+            }
+
+            // funerário: se Assistência = Não, termina em fase10
+            if (!isSim(r.assistencia)) {
+                return status !== "fase10";
+            }
+
+            // funerário + Assistência = Sim -> continua visível mesmo em fase10
+            return true;
+        });
+    }, [registros]);
 
     // copiar para clipboard
     async function handleCopy() {
@@ -661,8 +734,6 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
-
-                            {/* Removido o bloco final "OBSERVAÇÃO" (genérico) */}
 
                             <div className="rounded-xl border bg-background p-3">
                                 <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
