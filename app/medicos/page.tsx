@@ -613,21 +613,39 @@ export default function AdminConsultasPage() {
 
                 {/* Tabela */}
                 {!loading && !err && (
-                    <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800">
                         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm">
                             <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                    <th className="px-4 py-3">ID</th>
+                                    {/* ID – escondido no mobile */}
+                                    <th className="px-4 py-3 hidden md:table-cell">ID</th>
+
+                                    {/* Nome – sempre visível */}
                                     <th className="px-4 py-3">Nome</th>
+
+                                    {/* Categoria – sempre visível */}
                                     <th className="px-4 py-3">Categoria</th>
-                                    <th className="px-4 py-3">Especialidade</th>
-                                    <th className="px-4 py-3">Endereço</th>
-                                    <th className="px-4 py-3">WhatsApp</th>
-                                    <th className="px-4 py-3">Telefone</th>
-                                    <th className="px-4 py-3">Ativo</th>
+
+                                    {/* Especialidade – escondido no mobile */}
+                                    <th className="px-4 py-3 hidden md:table-cell">Especialidade</th>
+
+                                    {/* Endereço – escondido no mobile */}
+                                    <th className="px-4 py-3 hidden md:table-cell">Endereço</th>
+
+                                    {/* WhatsApp – escondido no mobile */}
+                                    <th className="px-4 py-3 hidden md:table-cell">WhatsApp</th>
+
+                                    {/* Telefone – escondido no mobile */}
+                                    <th className="px-4 py-3 hidden md:table-cell">Telefone</th>
+
+                                    {/* Ativo – escondido no mobile */}
+                                    <th className="px-4 py-3 hidden md:table-cell">Ativo</th>
+
+                                    {/* Ações – sempre visível */}
                                     <th className="px-4 py-3 text-right">Ações</th>
                                 </tr>
                             </thead>
+
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                                 {filtered.length === 0 && (
                                     <tr>
@@ -639,24 +657,40 @@ export default function AdminConsultasPage() {
                                         </td>
                                     </tr>
                                 )}
+
                                 {filtered.map((r) => (
                                     <tr key={r.id} className="bg-white/80 dark:bg-gray-900/60">
-                                        <td className="px-4 py-3">{r.id}</td>
+                                        {/* ID – escondido no mobile */}
+                                        <td className="px-4 py-3 hidden md:table-cell">{r.id}</td>
+
+                                        {/* Nome – sempre visível */}
                                         <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
                                             {r.nome}
                                         </td>
+
+                                        {/* Categoria – sempre visível */}
                                         <td className="px-4 py-3">{r.categoria}</td>
-                                        <td className="px-4 py-3">{r.especialidade || "—"}</td>
-                                        <td className="px-4 py-3">{r.endereco}</td>
-                                        <td className="px-4 py-3">{r.whatsapp || "—"}</td>
-                                        <td className="px-4 py-3">{r.telefone || "—"}</td>
-                                        <td className="px-4 py-3">
-                                            {(
-                                                typeof r.ativo === "boolean" ? r.ativo : r.ativo === 1
-                                            )
-                                                ? "Sim"
-                                                : "Não"}
+
+                                        {/* Especialidade – escondido no mobile */}
+                                        <td className="px-4 py-3 hidden md:table-cell">
+                                            {r.especialidade || "—"}
                                         </td>
+
+                                        {/* Endereço – escondido no mobile */}
+                                        <td className="px-4 py-3 hidden md:table-cell">{r.endereco}</td>
+
+                                        {/* WhatsApp – escondido no mobile */}
+                                        <td className="px-4 py-3 hidden md:table-cell">{r.whatsapp || "—"}</td>
+
+                                        {/* Telefone – escondido no mobile */}
+                                        <td className="px-4 py-3 hidden md:table-cell">{r.telefone || "—"}</td>
+
+                                        {/* Ativo – escondido no mobile */}
+                                        <td className="px-4 py-3 hidden md:table-cell">
+                                            {(typeof r.ativo === "boolean" ? r.ativo : r.ativo === 1) ? "Sim" : "Não"}
+                                        </td>
+
+                                        {/* Ações – sempre visível */}
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
                                                 <button
