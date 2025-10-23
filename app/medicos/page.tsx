@@ -214,6 +214,26 @@ function EditModal({
         }
     }
 
+    async function removeInsideModal() {
+        if (!isEdit || !model.id) return;
+        const ok = confirm("Tem certeza que deseja excluir este registro?");
+        if (!ok) return;
+        try {
+            setSaving(true);
+            const r = await fetch(`/api/consultas?id=${model.id}`, { method: "DELETE" });
+            const raw: unknown = await r.json();
+            if (!r.ok || (raw as ApiOk).ok !== true) {
+                const msg = (raw as ApiErr | undefined)?.error || "Falha ao excluir.";
+                throw new Error(msg);
+            }
+            onSaved(); // fecha no pai e recarrega
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+        } finally {
+            setSaving(false);
+        }
+    }
+
     // Fechar com ESC e click fora
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
@@ -243,7 +263,7 @@ function EditModal({
                             className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                             disabled={saving}
                         >
-                            Cancelar
+                            Fechar
                         </button>
                         <button
                             onClick={save}
@@ -255,6 +275,15 @@ function EditModal({
                         >
                             {saving ? "Salvando…" : "Salvar"}
                         </button>
+                        {isEdit && (
+                            <button
+                                onClick={removeInsideModal}
+                                disabled={saving}
+                                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
+                            >
+                                Excluir
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -406,10 +435,7 @@ function EditModal({
                             onChange={(e) => set("ativo", e.target.checked)}
                             className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                         />
-                        <label
-                            htmlFor="ativo"
-                            className="text-sm text-gray-700 dark:text-gray-200"
-                        >
+                        <label htmlFor="ativo" className="text-sm text-gray-700 dark:text-gray-200">
                             Ativo
                         </label>
                     </div>
@@ -497,22 +523,6 @@ export default function AdminConsultasPage() {
         setEditing(fromApiToForm(x));
     }
 
-    async function remove(id: number) {
-        if (!confirm("Tem certeza que deseja excluir este registro?")) return;
-        try {
-            const r = await fetch(`/api/consultas?id=${id}`, { method: "DELETE" });
-            const raw: unknown = await r.json();
-            if (!r.ok || (raw as ApiOk).ok !== true) {
-                const msg = (raw as ApiErr | undefined)?.error || "Falha ao excluir.";
-                throw new Error(msg);
-            }
-            // recarrega
-            await load();
-        } catch (e) {
-            alert(e instanceof Error ? e.message : String(e));
-        }
-    }
-
     const filtered = useMemo(() => {
         // o backend já filtra por q/categoria/ativo, mas mantemos ordenação estável aqui
         return [...rows].sort((a, b) => a.nome.localeCompare(b.nome));
@@ -588,9 +598,7 @@ export default function AdminConsultasPage() {
                     <div>
                         <select
                             value={ativos}
-                            onChange={(e) =>
-                                setAtivos(e.target.value as "todos" | "apenasAtivos")
-                            }
+                            onChange={(e) => setAtivos(e.target.value as "todos" | "apenasAtivos")}
                             className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-3 py-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
                         >
                             <option value="apenasAtivos">Apenas ativos</option>
@@ -641,7 +649,7 @@ export default function AdminConsultasPage() {
                                     {/* Ativo – escondido no mobile */}
                                     <th className="px-4 py-3 hidden md:table-cell">Ativo</th>
 
-                                    {/* Ações – sempre visível */}
+                                    {/* Ações – sempre visível (somente Editar) */}
                                     <th className="px-4 py-3 text-right">Ações</th>
                                 </tr>
                             </thead>
@@ -680,7 +688,9 @@ export default function AdminConsultasPage() {
                                         <td className="px-4 py-3 hidden md:table-cell">{r.endereco}</td>
 
                                         {/* WhatsApp – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">{r.whatsapp || "—"}</td>
+                                        <td className="px-4 py-3 hidden md:table-cell">
+                                            {r.whatsapp || "—"}
+                                        </td>
 
                                         {/* Telefone – escondido no mobile */}
                                         <td className="px-4 py-3 hidden md:table-cell">{r.telefone || "—"}</td>
@@ -690,20 +700,14 @@ export default function AdminConsultasPage() {
                                             {(typeof r.ativo === "boolean" ? r.ativo : r.ativo === 1) ? "Sim" : "Não"}
                                         </td>
 
-                                        {/* Ações – sempre visível */}
+                                        {/* Ações – apenas Editar (Excluir foi para o modal) */}
                                         <td className="px-4 py-3">
-                                            <div className="flex justify-end gap-2">
+                                            <div className="flex justify-end">
                                                 <button
                                                     onClick={() => openEdit(r)}
                                                     className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                                 >
                                                     Editar
-                                                </button>
-                                                <button
-                                                    onClick={() => remove(r.id)}
-                                                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                                                >
-                                                    Excluir
                                                 </button>
                                             </div>
                                         </td>
