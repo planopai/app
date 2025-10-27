@@ -679,7 +679,7 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
     const handleVeiculoRequired = useCallback(
-        (id: Registro["id"], fase: string) => {
+        (id: Registro["id"] | null | undefined, fase: string) => {
             const tipo = mapFaseToTipo(fase);
             if (!tipo) {
                 setAcaoId(id != null ? String(id) : null);

@@ -16,7 +16,7 @@ import {
 // Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
 
-// Fase final: 'material recolhido' => 'fase11'
+// Fase final
 const FASE_FINAL = "fase11" as Fase;
 
 /** Lê da sessionStorage a lista de IDs marcados como "Serviço de Outra Empresa" */
@@ -37,7 +37,7 @@ function isNao(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
-/** NOVO: fases que exigem seleção de veículo/telemetria */
+/** Fases que exigem seleção de veículo/telemetria */
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
 
 export default function AcaoModal({
@@ -48,7 +48,7 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
-    /** NOVO: callback disparado quando a fase exige veículo */
+    /** callback disparado quando a fase exige veículo */
     onVeiculoRequired,
 }: {
     open: boolean;
@@ -58,11 +58,18 @@ export default function AcaoModal({
     registrarAcao: (acao: string) => Promise<void>;
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
-    onVeiculoRequired?: (id: Registro["id"], fase: Fase) => void;
+    /** ✅ flexibilizamos a tipagem para casar com o page.tsx */
+    onVeiculoRequired?: (
+        id: string | number | null | undefined,
+        fase: string
+    ) => void;
 }) {
     // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
-        const r = acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
+        const r =
+            acaoId != null
+                ? registros.find((x) => String(x.id) === String(acaoId))
+                : undefined;
         if (!r) return undefined;
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
@@ -78,10 +85,8 @@ export default function AcaoModal({
         tanato: string;
     } | null>(null);
 
-    // Busca o status atual direto do PHP quando abrir/mudar acaoId
     useEffect(() => {
         let cancel = false;
-
         async function run() {
             setOnline(null);
             setOnlineError(null);
@@ -91,7 +96,6 @@ export default function AcaoModal({
             try {
                 const s = await consultarStatusAtual(acaoId);
                 if (cancel) return;
-                // normaliza para Fase
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
                     id: String(s.id ?? acaoId),
@@ -100,12 +104,12 @@ export default function AcaoModal({
                     tanato: s.tanato || "",
                 });
             } catch (e: any) {
-                if (!cancel) setOnlineError(e?.message || "Falha ao consultar status.");
+                if (!cancel)
+                    setOnlineError(e?.message || "Falha ao consultar status.");
             } finally {
                 if (!cancel) setLoadingOnline(false);
             }
         }
-
         run();
         return () => {
             cancel = true;
@@ -119,7 +123,6 @@ export default function AcaoModal({
                 status: online.status as Fase,
                 local_velorio: online.local_velorio,
                 tanato: online.tanato,
-                // assistencia vem do local (não faz parte da consulta de status)
                 assistencia: registroLocal?.assistencia,
             };
         }
@@ -145,25 +148,21 @@ export default function AcaoModal({
             (registroLocal.tanato || "").toLowerCase() === "não" &&
             (registroLocal.ornamentacao || "").toLowerCase() === "não");
 
-    // Skips "clássicos"
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando =
-        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
-    const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
+        !!efetivo &&
+        salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipMaterialRecolhido =
+        !!efetivo && isNao(efetivo.assistencia);
 
-    // Fases visíveis (para TERCEIRO sempre só 3; não inclui a fase atual)
+    // Fases visíveis
     const fasesVisiveis = useMemo<Fase[]>(() => {
-        if (isTerceiro) {
-            // Somente os três botões solicitados
-            return ["fase08", "fase09", "fase10"];
-        }
-
-        // Regra padrão (funerário)
+        if (isTerceiro) return ["fase08", "fase09", "fase10"];
         return (fases as readonly Fase[]).filter((f) => {
-            if (efetivo && f === efetivo.status) return true; // mantém visível a fase atual
+            if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
             if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
-            if (skipMaterialRecolhido && f === "fase11") return false; // não mostrar fase11 quando não há assistência
+            if (skipMaterialRecolhido && f === "fase11") return false;
             return true;
         }) as Fase[];
     }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipMaterialRecolhido]);
@@ -171,15 +170,14 @@ export default function AcaoModal({
     // Próxima fase calculada
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
-
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        // Se já está na fase final (p/ cada caso), não há próxima
-        const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
+        const isFinal = isTerceiro
+            ? efetivo.status === "fase10"
+            : efetivo.status === FASE_FINAL;
         if (isFinal) return null;
 
-        // 1) tenta via helper com as fases visíveis
         let p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
@@ -189,33 +187,26 @@ export default function AcaoModal({
             },
             visiveis as readonly string[]
         ) as Fase | null;
-
         if (p) return p;
 
-        // 2) fallback: próxima visível no fluxo completo
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
-        if (idxAtual === -1) {
-            return visiveis[0] ?? null;
-        }
+        if (idxAtual === -1) return visiveis[0] ?? null;
 
         for (let i = idxAtual + 1; i < fluxoCompleto.length; i++) {
             const candidato = fluxoCompleto[i];
-            if (visiveis.includes(candidato)) {
-                return candidato;
-            }
+            if (visiveis.includes(candidato)) return candidato;
         }
         return null;
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
-    // Concluído: TERCEIRO conclui na fase10; FUNERÁRIO conclui na fase11
     const concluido =
-        !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+        !!efetivo &&
+        (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
             <h2 className="text-xl font-semibold">Registrar uma ação</h2>
 
-            {/* Linha de status de sincronização */}
             <div className="mt-2 text-xs text-muted-foreground">
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
@@ -244,22 +235,25 @@ export default function AcaoModal({
                         {fasesVisiveis.map((f) => {
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
                             const requiresVehicle = FASES_COM_VEICULO.includes(f);
+
                             return (
                                 <button
                                     key={f}
                                     type="button"
                                     disabled={!habilitar}
                                     onClick={() => {
-                                        if (!habilitar || !acaoId) return;
+                                        if (!habilitar) return;
                                         if (requiresVehicle && onVeiculoRequired) {
-                                            onVeiculoRequired(acaoId, f);
+                                            onVeiculoRequired(acaoId ?? null, f);
                                         } else {
                                             registrarAcao(f);
                                         }
                                     }}
                                     className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
-                                    title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
+                                    title={
+                                        habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"
+                                    }
                                 >
                                     {acaoToStatus(f)}
                                 </button>
@@ -268,13 +262,17 @@ export default function AcaoModal({
                     </div>
 
                     {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Fluxo concluído para este registro.
+                        </p>
                     )}
                 </>
             )}
 
             {acaoMsg && (
-                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>
+                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>
+                    {acaoMsg.text}
+                </TextFeedback>
             )}
         </Modal>
     );
