@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    Fragment,
+} from "react";
 import { API } from "../acompanhamento/components/constants";
 import MapRoute from "./MapRoute";
 
@@ -12,6 +18,11 @@ type TelemetriaRegistro = {
     sepultamento_id: number | null;
     agente: string | null;
     falecido: string | null;
+
+    tipo?: "remocao" | "para_velorio" | "para_sepultamento" | string;
+
+    veiculo_nome?: string | null;
+    veiculo_obs?: string | null;
 
     inicio_iso?: string | null;
     fim_iso?: string | null;
@@ -36,10 +47,10 @@ type TelemetriaRegistro = {
     atualizado_em?: string | null;
 };
 
+type TipoTab = "remocao" | "para_velorio" | "para_sepultamento" | "geral";
+
 /* ======================= Helpers ======================= */
 const isFiniteNum = (v: any): v is number => Number.isFinite(Number(v));
-
-/** aceita default number | null | undefined  */
 const n = (v: any, d: number | null | undefined = 0): number =>
     isFiniteNum(v) ? Number(v) : (d ?? 0);
 
@@ -186,11 +197,50 @@ function MiniMap({ pontos }: { pontos: Ponto[] }) {
     );
 }
 
+/* ======================= Agregadores ======================= */
+function mergePontos(list: TelemetriaRegistro[]): Ponto[] {
+    const out: Ponto[] = [];
+    list.forEach((r) => {
+        out.push(...parsePontosJson(r.pontos_json));
+    });
+    return out;
+}
+
+function sumStats(list: TelemetriaRegistro[]) {
+    const dist = list.reduce((a, r) => a + n(r.distancia_km, 0), 0);
+    const dur = list.reduce((a, r) => a + n(r.duracao_s, 0), 0);
+    const vmax = list.reduce((m, r) => Math.max(m, n(r.velocidade_max, 0)), 0);
+    const vmed = dur > 0 ? dist / (dur / 3600) : 0; // média ponderada por tempo
+    return { dist, dur, vmax, vmed };
+}
+
+function titleForTab(tab: TipoTab) {
+    switch (tab) {
+        case "remocao":
+            return "Remoção";
+        case "para_velorio":
+            return "Transporte para Velório";
+        case "para_sepultamento":
+            return "Transporte para Sepultamento";
+        default:
+            return "Geral";
+    }
+}
+
 /* ======================= Página ======================= */
 export default function TelemetriaPage() {
     const [rows, setRows] = useState<TelemetriaRegistro[]>([]);
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
+
+    // filtros
+    const [fltVeiculo, setFltVeiculo] = useState<string>("");
+    const [fltAgente, setFltAgente] = useState<string>("");
+    const [fltFalecido, setFltFalecido] = useState<string>("");
+
+    // UI seleção
+    const [openKey, setOpenKey] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<TipoTab>("geral");
 
     const normalizeRow = (d: any): TelemetriaRegistro => {
         // compat com colunas alternativas vindas do insert
@@ -200,24 +250,30 @@ export default function TelemetriaPage() {
         const distancia_km = d.distancia_km ?? d.distancia_total_km ?? null;
         const duracao_s = d.duracao_s ?? d.duracao_seg ?? null;
 
-        // início/fim compat
         const inicio_iso = d.inicio_iso ?? d.inicio_ts ?? d.inicio ?? null;
         const fim_iso = d.fim_iso ?? d.fim_ts ?? d.fim ?? null;
 
-        // pontos_json pode vir já como array (do MySQL json) ou string
         const pontos_json = d.pontos_json ?? d.pontos ?? null;
 
         return {
             id: Number(d.id),
-            sepultamento_id: d.sepultamento_id != null ? Number(d.sepultamento_id) : null,
+            sepultamento_id:
+                d.sepultamento_id != null ? Number(d.sepultamento_id) : null,
             agente: d.agente ?? d.usuario ?? null,
             falecido: d.falecido ?? d.nome ?? null,
+
+            tipo: d.tipo ?? null,
+
+            veiculo_nome: d.veiculo_nome ?? null,
+            veiculo_obs: d.veiculo_obs ?? null,
 
             inicio_iso,
             fim_iso,
 
             velocidade_max: isFiniteNum(velocidade_max) ? Number(velocidade_max) : null,
-            velocidade_media: isFiniteNum(velocidade_media) ? Number(velocidade_media) : null,
+            velocidade_media: isFiniteNum(velocidade_media)
+                ? Number(velocidade_media)
+                : null,
             distancia_km: isFiniteNum(distancia_km) ? Number(distancia_km) : null,
             duracao_s: isFiniteNum(duracao_s) ? Number(duracao_s) : null,
 
@@ -251,14 +307,13 @@ export default function TelemetriaPage() {
             // Pode vir 200 com {sucesso:true,dados:[...]} OU um array direto
             const payload: any = await r.json();
 
-            // Extrai lista, independente do formato
             const list: any[] = Array.isArray(payload)
                 ? payload
                 : Array.isArray(payload?.dados)
                     ? payload.dados
                     : [];
 
-            if (!Array.isArray(list) || list.length === 0) {
+            if (!Array.isArray(list)) {
                 setRows([]);
                 setMsg(payload?.msg || "Nenhum dado.");
             } else {
@@ -276,22 +331,92 @@ export default function TelemetriaPage() {
         fetchRows();
     }, [fetchRows]);
 
-    const resumo = useMemo(() => {
-        const total = rows.length;
-        const dist = rows.reduce((a, r) => a + n(r.distancia_km, 0), 0);
-        const dur = rows.reduce((a, r) => a + n(r.duracao_s, 0), 0);
-        const vmax = rows.reduce((m, r) => Math.max(m, n(r.velocidade_max, 0)), 0);
-        const vmed =
-            rows.length > 0
-                ? rows.reduce((a, r) => a + n(r.velocidade_media, 0), 0) / rows.length
-                : 0;
-
-        return { total, dist, dur, vmax, vmed };
+    /* ---------- listas para filtros ---------- */
+    const allVeiculos = useMemo(() => {
+        const s = new Set<string>();
+        rows.forEach((r) => {
+            if (r.veiculo_nome) s.add(r.veiculo_nome);
+        });
+        return Array.from(s).sort((a, b) => a.localeCompare(b));
     }, [rows]);
 
+    const allAgentes = useMemo(() => {
+        const s = new Set<string>();
+        rows.forEach((r) => {
+            if (r.agente) s.add(r.agente);
+        });
+        return Array.from(s).sort((a, b) => a.localeCompare(b));
+    }, [rows]);
+
+    /* ---------- aplica filtros em sessões ---------- */
+    const filtered = useMemo(() => {
+        const qAg = fltAgente.trim().toLowerCase();
+        const qFa = fltFalecido.trim().toLowerCase();
+        const qVe = fltVeiculo.trim();
+
+        return rows.filter((r) => {
+            const okVeiculo = qVe ? (r.veiculo_nome || "") === qVe : true;
+            const okAgente = qAg
+                ? (r.agente || "").toLowerCase().includes(qAg)
+                : true;
+            const okFalecido = qFa
+                ? (r.falecido || "").toLowerCase().includes(qFa)
+                : true;
+            return okVeiculo && okAgente && okFalecido;
+        });
+    }, [rows, fltAgente, fltFalecido, fltVeiculo]);
+
+    /* ---------- agrupa por (sepultamento_id + falecido) ---------- */
+    type Group = {
+        key: string;
+        sepultamento_id: number | null;
+        falecido: string;
+        agentes: string[];
+        veiculos: string[];
+        sessions: TelemetriaRegistro[];
+    };
+
+    const groups = useMemo<Group[]>(() => {
+        const map = new Map<string, Group>();
+        filtered.forEach((r) => {
+            const key = `${r.sepultamento_id ?? "null"}::${r.falecido ?? ""}`;
+            const g = map.get(key) ?? {
+                key,
+                sepultamento_id: r.sepultamento_id ?? null,
+                falecido: r.falecido ?? "(sem nome)",
+                agentes: [],
+                veiculos: [],
+                sessions: [],
+            };
+            g.sessions.push(r);
+            if (r.agente && !g.agentes.includes(r.agente)) g.agentes.push(r.agente);
+            if (r.veiculo_nome && !g.veiculos.includes(r.veiculo_nome))
+                g.veiculos.push(r.veiculo_nome);
+            map.set(key, g);
+        });
+        // ordenar por id decrescente da sessão mais recente
+        const arr = Array.from(map.values());
+        arr.sort((a, b) => {
+            const aMax = Math.max(...a.sessions.map((x) => x.id));
+            const bMax = Math.max(...b.sessions.map((x) => x.id));
+            return bMax - aMax;
+        });
+        return arr;
+    }, [filtered]);
+
+    /* ---------- KPIs gerais (pós-filtro) ---------- */
+    const resumo = useMemo(() => {
+        const dist = filtered.reduce((a, r) => a + n(r.distancia_km, 0), 0);
+        const dur = filtered.reduce((a, r) => a + n(r.duracao_s, 0), 0);
+        const vmax = filtered.reduce((m, r) => Math.max(m, n(r.velocidade_max, 0)), 0);
+        const vmed = dur > 0 ? dist / (dur / 3600) : 0;
+        return { total: groups.length, dist, dur, vmax, vmed };
+    }, [filtered, groups.length]);
+
+    /* ---------- render ---------- */
     return (
         <div className="p-6">
-            <header className="mb-6 flex items-center justify-between">
+            <header className="mb-4 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Relatório de Telemetria</h1>
                     <p className="text-sm text-slate-500">
@@ -307,9 +432,54 @@ export default function TelemetriaPage() {
                 </button>
             </header>
 
-            {/* KPIs gerais */}
+            {/* Filtros */}
+            <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div>
+                    <label className="mb-1 block text-xs text-slate-500">Veículo</label>
+                    <select
+                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        value={fltVeiculo}
+                        onChange={(e) => setFltVeiculo(e.target.value)}
+                    >
+                        <option value="">Todos</option>
+                        {allVeiculos.map((v) => (
+                            <option key={v} value={v}>
+                                {v}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label className="mb-1 block text-xs text-slate-500">Agente</label>
+                    <input
+                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        placeholder="Filtrar por agente..."
+                        value={fltAgente}
+                        onChange={(e) => setFltAgente(e.target.value)}
+                        list="agentes-sug"
+                    />
+                    <datalist id="agentes-sug">
+                        {allAgentes.map((a) => (
+                            <option key={a} value={a} />
+                        ))}
+                    </datalist>
+                </div>
+
+                <div>
+                    <label className="mb-1 block text-xs text-slate-500">Falecido(a)</label>
+                    <input
+                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        placeholder="Filtrar por falecido(a)..."
+                        value={fltFalecido}
+                        onChange={(e) => setFltFalecido(e.target.value)}
+                    />
+                </div>
+            </div>
+
+            {/* KPIs gerais do resultado filtrado */}
             <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <KPI label="Sessões" value={String(resumo.total)} />
+                <KPI label="Registros (agrupados)" value={String(resumo.total)} />
                 <KPI label="Distância total" value={fmtKm(resumo.dist)} />
                 <KPI label="Tempo total" value={fmtDur(resumo.dur)} />
                 <KPI
@@ -325,69 +495,170 @@ export default function TelemetriaPage() {
                 </div>
             )}
 
-            {/* Lista de sessões */}
-            <div className="space-y-6">
-                {rows.map((r) => {
-                    const pontos = parsePontosJson(r.pontos_json);
+            {/* LISTA (sem mapa) */}
+            <div className="space-y-4">
+                {groups.map((g) => {
+                    const isOpen = openKey === g.key;
+
+                    // separa por tipo para as abas
+                    const listRem = g.sessions.filter((s) => s.tipo === "remocao");
+                    const listVel = g.sessions.filter((s) => s.tipo === "para_velorio");
+                    const listSep = g.sessions.filter(
+                        (s) => s.tipo === "para_sepultamento"
+                    );
+                    const listAll = g.sessions;
+
+                    // escolhe lista conforme aba
+                    const currentList =
+                        activeTab === "remocao"
+                            ? listRem
+                            : activeTab === "para_velorio"
+                                ? listVel
+                                : activeTab === "para_sepultamento"
+                                    ? listSep
+                                    : listAll;
+
+                    const stats = sumStats(currentList);
+                    const pontos = mergePontos(currentList);
+
                     return (
-                        <div key={r.id} className="rounded-2xl border bg-white p-4 shadow-sm">
-                            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <div className="text-sm text-slate-500">
-                                        #{r.id} {r.origem ? `• ${r.origem}` : ""}
+                        <div
+                            key={g.key}
+                            className="rounded-2xl border bg-white p-4 shadow-sm"
+                        >
+                            {/* linha superior */}
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-lg font-semibold truncate">
+                                        {g.falecido || "Falecido(a) — não informado"}
                                     </div>
-                                    <div className="text-lg font-semibold">
-                                        {r.falecido || "Falecido(a) — não informado"}
-                                    </div>
-                                    <div className="text-xs text-slate-500">
-                                        Agente: <b>{r.agente || "-"}</b>
+                                    <div className="mt-0.5 text-xs text-slate-500">
+                                        {g.agentes.length > 0 && (
+                                            <>
+                                                Agente(s):{" "}
+                                                <b>{g.agentes.join(", ")}</b>
+                                                {" • "}
+                                            </>
+                                        )}
+                                        {g.veiculos.length > 0 && (
+                                            <>
+                                                Veículo(s): <b>{g.veiculos.join(", ")}</b>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="text-right text-xs text-slate-500">
-                                    <div>Início: {fmtDataHora(r.inicio_iso)}</div>
-                                    <div>Fim: {fmtDataHora(r.fim_iso)}</div>
-                                </div>
+
+                                <button
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
+                                    onClick={() => {
+                                        setOpenKey(isOpen ? null : g.key);
+                                        // ao abrir, manter aba anterior; se não houver, cair em "geral"
+                                        if (!isOpen && !activeTab) setActiveTab("geral");
+                                    }}
+                                >
+                                    {isOpen ? "Fechar" : "Ver detalhes"}
+                                </button>
                             </div>
 
-                            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                                {/* Mapa */}
-                                <div className="lg:col-span-2">
-                                    {pontos.length >= 2 ? (
-                                        <MapRoute pontos={pontos} />
-                                    ) : (
-                                        <MiniMap pontos={pontos} />
+                            {/* Detalhes expandido */}
+                            {isOpen && (
+                                <div className="mt-4">
+                                    {/* Abas */}
+                                    <div className="mb-3 flex flex-wrap gap-2">
+                                        {(["remocao", "para_velorio", "para_sepultamento", "geral"] as TipoTab[]).map(
+                                            (tab) => (
+                                                <button
+                                                    key={tab}
+                                                    className={`rounded-full border px-3 py-1 text-xs ${activeTab === tab
+                                                            ? "bg-primary text-primary-foreground"
+                                                            : "hover:bg-slate-50"
+                                                        }`}
+                                                    onClick={() => setActiveTab(tab)}
+                                                >
+                                                    {titleForTab(tab)}
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
+
+                                    {/* Métricas + Mapa */}
+                                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                        <div className="lg:col-span-2">
+                                            {pontos.length >= 2 ? (
+                                                <MapRoute pontos={pontos} />
+                                            ) : (
+                                                <MiniMap pontos={pontos} />
+                                            )}
+                                            <div className="mt-1 text-xs text-slate-500">
+                                                {currentList.length > 0 ? (
+                                                    <>
+                                                        Início:{" "}
+                                                        {fmtDataHora(
+                                                            currentList[0].inicio_iso || currentList[0].criado_em
+                                                        )}{" "}
+                                                        • Fim:{" "}
+                                                        {fmtDataHora(
+                                                            currentList[currentList.length - 1].fim_iso ||
+                                                            currentList[currentList.length - 1].atualizado_em
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    "Sem datas registradas para este filtro."
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <KPI label="Distância" value={fmtKm(stats.dist)} />
+                                            <KPI label="Duração" value={fmtDur(stats.dur)} />
+                                            <KPI label="V. Média" value={fmtKmH(stats.vmed)} />
+                                            <KPI label="V. Máxima" value={fmtKmH(stats.vmax)} />
+                                            <KPI
+                                                label="Paradas"
+                                                value={String(
+                                                    currentList.reduce((a, r) => a + n(r.paradas, 0), 0)
+                                                )}
+                                            />
+                                            <KPI
+                                                label="Eventos"
+                                                value={`${currentList.reduce(
+                                                    (a, r) => a + n(r.acel_fortes, 0),
+                                                    0
+                                                )} acel / ${currentList.reduce(
+                                                    (a, r) => a + n(r.frenagens_fortes, 0),
+                                                    0
+                                                )} freios`}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Observações das sessões visíveis */}
+                                    {currentList.some((r) => r.observacao) && (
+                                        <div className="mt-3 space-y-2">
+                                            {currentList.map(
+                                                (r) =>
+                                                    r.observacao && (
+                                                        <div
+                                                            key={r.id}
+                                                            className="rounded-md bg-slate-50 p-3 text-sm text-slate-700"
+                                                        >
+                                                            <b>#{r.id}</b> — {titleForTab((r.tipo as any) || "geral")}
+                                                            {r.veiculo_nome ? ` • ${r.veiculo_nome}` : ""}:{" "}
+                                                            {r.observacao}
+                                                        </div>
+                                                    )
+                                            )}
+                                        </div>
                                     )}
-                                </div>
-
-                                {/* Métricas */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <KPI label="Distância" value={fmtKm(r.distancia_km)} />
-                                    <KPI label="Duração" value={fmtDur(r.duracao_s)} />
-                                    <KPI label="V. Média" value={fmtKmH(r.velocidade_media)} />
-                                    <KPI label="V. Máxima" value={fmtKmH(r.velocidade_max)} />
-                                    <KPI label="Paradas" value={String(n(r.paradas, 0))} />
-                                    <KPI
-                                        label="Eventos"
-                                        value={`${n(r.acel_fortes, 0)} acel / ${n(
-                                            r.frenagens_fortes,
-                                            0
-                                        )} freios`}
-                                    />
-                                </div>
-                            </div>
-
-                            {r.observacao && (
-                                <div className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
-                                    <b>Observação:</b> {r.observacao}
                                 </div>
                             )}
                         </div>
                     );
                 })}
 
-                {rows.length === 0 && !loading && (
+                {groups.length === 0 && !loading && (
                     <div className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">
-                        Nenhuma sessão de telemetria encontrada.
+                        Nenhum registro encontrado com os filtros atuais.
                     </div>
                 )}
             </div>
