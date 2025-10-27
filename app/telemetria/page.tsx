@@ -28,7 +28,7 @@ type TelemetriaRegistro = {
     origem?: string | null;
     observacao?: string | null;
 
-    pontos_json?: string | null;
+    pontos_json?: string | null | any[]; // pode vir string ou array
     eventos_json?: string | null;
     extra_json?: string | null;
 
@@ -66,22 +66,44 @@ function fmtDataHora(iso?: string | null) {
     return d.toLocaleString();
 }
 
-function parsePontosJson(pontos_json?: string | null): Ponto[] {
+/** Aceita string JSON OU array já parseado. Entende ambas as chaves: ts|t e spd|v */
+function parsePontosJson(pontos_json?: string | null | any[]): Ponto[] {
     if (!pontos_json) return [];
-    try {
-        const arr = JSON.parse(pontos_json);
-        if (!Array.isArray(arr)) return [];
-        return arr
-            .map((p) => ({
-                lat: Number(p?.lat),
-                lng: Number(p?.lng),
-                t: p?.t != null ? Number(p.t) : undefined,
-                v: p?.v != null ? Number(p.v) : undefined,
-            }))
-            .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    } catch {
-        return [];
+    let arr: any[] | null = null;
+
+    if (Array.isArray(pontos_json)) {
+        arr = pontos_json as any[];
+    } else if (typeof pontos_json === "string") {
+        try {
+            const parsed = JSON.parse(pontos_json);
+            arr = Array.isArray(parsed) ? parsed : null;
+        } catch {
+            arr = null;
+        }
     }
+
+    if (!arr) return [];
+
+    return arr
+        .map((p: any) => {
+            const lat = Number(p?.lat ?? p?.latitude);
+            const lng = Number(p?.lng ?? p?.longitude);
+            const tRaw = p?.t ?? p?.ts ?? p?.timestamp;
+            const vRaw = p?.v ?? p?.spd; // spd provável em m/s
+            const t = tRaw != null ? Number(tRaw) : undefined;
+
+            // v: preferir "v" (km/h). Se vier "spd" (m/s), converter -> km/h
+            let v: number | undefined = undefined;
+            if (isFiniteNum(vRaw)) {
+                v = Number(vRaw);
+                // heurística: se parece m/s, converter para km/h (valores razoáveis < 120 em m/s virariam 400+ km/h, então:
+                // se vRaw < 60 consideramos m/s; acima disso já deve ser km/h)
+                if (v < 60) v = v * 3.6;
+            }
+
+            return { lat, lng, t, v };
+        })
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
 }
 
 /* ======================= UI menores ======================= */
@@ -172,6 +194,54 @@ export default function TelemetriaPage() {
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
 
+    const normalizeRow = (d: any): TelemetriaRegistro => {
+        // compat com colunas alternativas vindas do insert
+        const velocidade_max =
+            d.velocidade_max ?? d.vel_max_kmh ?? d.vel_max ?? null;
+        const velocidade_media =
+            d.velocidade_media ?? d.vel_media_kmh ?? d.vel_media ?? null;
+        const distancia_km = d.distancia_km ?? d.distancia_total_km ?? null;
+        const duracao_s = d.duracao_s ?? d.duracao_seg ?? null;
+
+        // início/fim compat
+        const inicio_iso = d.inicio_iso ?? d.inicio_ts ?? d.inicio ?? null;
+        const fim_iso = d.fim_iso ?? d.fim_ts ?? d.fim ?? null;
+
+        // pontos_json pode vir já como array (do MySQL json) ou string
+        const pontos_json = d.pontos_json ?? d.pontos ?? null;
+
+        return {
+            id: Number(d.id),
+            sepultamento_id: d.sepultamento_id != null ? Number(d.sepultamento_id) : null,
+            agente: d.agente ?? d.usuario ?? null,
+            falecido: d.falecido ?? d.nome ?? null,
+
+            inicio_iso,
+            fim_iso,
+
+            velocidade_max: isFiniteNum(velocidade_max) ? Number(velocidade_max) : null,
+            velocidade_media: isFiniteNum(velocidade_media) ? Number(velocidade_media) : null,
+            distancia_km: isFiniteNum(distancia_km) ? Number(distancia_km) : null,
+            duracao_s: isFiniteNum(duracao_s) ? Number(duracao_s) : null,
+
+            paradas: isFiniteNum(d.paradas) ? Number(d.paradas) : null,
+            acel_fortes: isFiniteNum(d.acel_fortes) ? Number(d.acel_fortes) : null,
+            frenagens_fortes: isFiniteNum(d.frenagens_fortes)
+                ? Number(d.frenagens_fortes)
+                : null,
+
+            origem: d.origem ?? d.source_device ?? null,
+            observacao: d.observacao ?? d.veiculo_obs ?? null,
+
+            pontos_json,
+            eventos_json: d.eventos_json ?? null,
+            extra_json: d.extra_json ?? null,
+
+            criado_em: d.criado_em ?? d.created_at ?? null,
+            atualizado_em: d.atualizado_em ?? d.updated_at ?? null,
+        };
+    };
+
     const fetchRows = useCallback(async () => {
         setLoading(true);
         setMsg(null);
@@ -185,18 +255,7 @@ export default function TelemetriaPage() {
                 setRows([]);
                 setMsg(data?.msg || "Nenhum dado.");
             } else {
-                setRows(
-                    data.map((d: any) => ({
-                        ...d,
-                        velocidade_max: n(d.velocidade_max, null),
-                        velocidade_media: n(d.velocidade_media, null),
-                        distancia_km: n(d.distancia_km, null),
-                        duracao_s: n(d.duracao_s, null),
-                        paradas: n(d.paradas, null),
-                        acel_fortes: n(d.acel_fortes, null),
-                        frenagens_fortes: n(d.frenagens_fortes, null),
-                    }))
-                );
+                setRows(data.map(normalizeRow));
             }
         } catch (e: any) {
             setMsg(e?.message || "Falha ao carregar.");
@@ -215,10 +274,9 @@ export default function TelemetriaPage() {
         const dist = rows.reduce((a, r) => a + n(r.distancia_km, 0), 0);
         const dur = rows.reduce((a, r) => a + n(r.duracao_s, 0), 0);
         const vmax = rows.reduce((m, r) => Math.max(m, n(r.velocidade_max, 0)), 0);
-        const vmed =
-            rows.length > 0
-                ? rows.reduce((a, r) => a + n(r.velocidade_media, 0), 0) / rows.length
-                : 0;
+        const vmed = rows.length > 0
+            ? rows.reduce((a, r) => a + n(r.velocidade_media, 0), 0) / rows.length
+            : 0;
 
         return { total, dist, dur, vmax, vmed };
     }, [rows]);
@@ -264,10 +322,7 @@ export default function TelemetriaPage() {
                 {rows.map((r) => {
                     const pontos = parsePontosJson(r.pontos_json);
                     return (
-                        <div
-                            key={r.id}
-                            className="rounded-2xl border bg-white p-4 shadow-sm"
-                        >
+                        <div key={r.id} className="rounded-2xl border bg-white p-4 shadow-sm">
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <div className="text-sm text-slate-500">
