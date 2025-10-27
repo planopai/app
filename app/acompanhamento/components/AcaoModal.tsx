@@ -37,6 +37,9 @@ function isNao(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
+/** NOVO: fases que exigem seleção de veículo/telemetria */
+const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -45,6 +48,8 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
+    /** NOVO: callback disparado quando a fase exige veículo */
+    onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
@@ -53,6 +58,7 @@ export default function AcaoModal({
     registrarAcao: (acao: string) => Promise<void>;
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
+    onVeiculoRequired?: (id: Registro["id"], fase: Fase) => void;
 }) {
     // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
@@ -233,12 +239,20 @@ export default function AcaoModal({
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+                            const requiresVehicle = FASES_COM_VEICULO.includes(f);
                             return (
                                 <button
                                     key={f}
                                     type="button"
                                     disabled={!habilitar}
-                                    onClick={() => registrarAcao(f)}
+                                    onClick={() => {
+                                        if (!habilitar || !acaoId) return;
+                                        if (requiresVehicle && onVeiculoRequired) {
+                                            onVeiculoRequired(acaoId, f);
+                                        } else {
+                                            registrarAcao(f);
+                                        }
+                                    }}
                                     className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
                                     title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
