@@ -27,10 +27,8 @@ import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
-import TelemetriaModal from "./components/TelemetriaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
-type TipoTele = "remocao" | "para_velorio" | "para_sepultamento";
 
 /* -------------------- utils sessão (IDs de terceiros) -------------------- */
 function addTerceiroIdToSession(id: string | number | undefined | null) {
@@ -85,14 +83,6 @@ function getWizardConfig(tipo: TipoAtendimento) {
     };
 }
 
-/* -------------------- Mapa fase -> tipo de telemetria -------------------- */
-function mapFaseToTipo(fase: string): TipoTele | null {
-    if (fase === "fase01") return "remocao";               // Indo Retirar o Óbito
-    if (fase === "fase07") return "para_velorio";          // Transportando Óbito P/Velório
-    if (fase === "fase09") return "para_sepultamento";     // Transportando P/ Sepultamento
-    return null;
-}
-
 export default function AcompanhamentoPage() {
     // Tabela
     const [registros, setRegistros] = useState<Registro[]>([]);
@@ -114,7 +104,6 @@ export default function AcompanhamentoPage() {
     const [wizardStep, setWizardStep] = useState(0);
     const [wizardData, setWizardData] = useState<Registro>({});
     const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
-
     const [wizardSubmitting, setWizardSubmitting] = useState(false);
 
     // selects
@@ -146,12 +135,6 @@ export default function AcompanhamentoPage() {
 
     // Modal: escolha do tipo ao clicar em "Novo Registro"
     const [chooseTipoOpen, setChooseTipoOpen] = useState(false);
-
-    // Telemetria
-    const [teleOpen, setTeleOpen] = useState(false);
-    const [teleFase, setTeleFase] = useState<string>("fase01");
-    const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
-    const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
 
     /* -------------------- Config corrente por tipo -------------------- */
     const {
@@ -329,7 +312,6 @@ export default function AcompanhamentoPage() {
                 setArrumacaoOpen(false);
                 setSignOpen(false);
                 setChooseTipoOpen(false);
-                setTeleOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
@@ -594,22 +576,6 @@ export default function AcompanhamentoPage() {
         [acaoId, fetchRegistros, acaoSubmitting]
     );
 
-    /* ---- Confirmação silenciosa (sem prompt) para a TelemetriaModal ---- */
-    const confirmarAcaoSilenciosa = useCallback(
-        async (fase: string) => {
-            const id = teleRegistroId ?? acaoId; // tenta id da telemetria; cai para acaoId
-            if (id == null) return;
-            await enviarRegistroPHP({
-                acao: "atualizar_status",
-                id,
-                status: fase,
-            });
-            // não fecha AcaoModal aqui; a telemetria abre por fora
-            await fetchRegistros();
-        },
-        [teleRegistroId, acaoId, fetchRegistros]
-    );
-
     /* -------------------- Info por ID (estável) -------------------- */
 
     const registroInfo = useMemo(
@@ -659,26 +625,6 @@ export default function AcompanhamentoPage() {
         setSignOpen(true);
     }, []);
 
-    /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
-    const handleVeiculoRequired = useCallback(
-        (id: Registro["id"], fase: string) => {
-            const tipo = mapFaseToTipo(fase);
-            if (!tipo) {
-                // fallback: se por algum motivo vier fase fora do trio, apenas executa o fluxo padrão
-                setAcaoId(id != null ? String(id) : null);
-                registrarAcao(fase);
-                return;
-            }
-            setTeleRegistroId(id != null ? String(id) : null);
-            setTeleFase(fase);
-            setTeleTipo(tipo);
-            setTeleOpen(true);
-            // importante: NÃO fechar o AcaoModal aqui; ele pode permanecer ou você pode fechá-lo:
-            setAcaoOpen(false);
-        },
-        [registrarAcao]
-    );
-
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
         const list: string[] = [];
@@ -709,13 +655,6 @@ export default function AcompanhamentoPage() {
             .map((o) => o.label)
             .join(" • ");
     }, [wizardData.arrumacao, arrumacao]);
-
-    /* -------------------- Helpers de lookup -------------------- */
-    const findRegistroById = useCallback(
-        (id: Registro["id"] | null): Registro | undefined =>
-            id == null ? undefined : registros.find((x) => String(x.id) === String(id)),
-        [registros]
-    );
 
     /* -------------------- Render -------------------- */
     return (
@@ -821,7 +760,6 @@ export default function AcompanhamentoPage() {
                 registrarAcao={registrarAcao}
                 acaoMsg={acaoMsg}
                 acaoSubmitting={acaoSubmitting}
-                onVeiculoRequired={handleVeiculoRequired}
             />
 
             <InfoModal
@@ -841,20 +779,6 @@ export default function AcompanhamentoPage() {
                 onSaved={() => {
                     fetchRegistros();
                 }}
-            />
-
-            {/* ---- Telemetria ---- */}
-            <TelemetriaModal
-                open={teleOpen}
-                onClose={() => {
-                    setTeleOpen(false);
-                    // ao fechar, atualiza a lista (pode ter gravado telemetria)
-                    fetchRegistros();
-                }}
-                registro={findRegistroById(teleRegistroId)}
-                fase={teleFase}
-                tipo={teleTipo}
-                onConfirmAcao={confirmarAcaoSilenciosa}
             />
         </div>
     );
