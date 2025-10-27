@@ -37,6 +37,9 @@ function isNao(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
+/** NOVO: fases que exigem seleção de veículo/telemetria */
+const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -45,6 +48,8 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
+    /** NOVO: callback disparado quando a fase exige veículo */
+    onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
@@ -53,6 +58,7 @@ export default function AcaoModal({
     registrarAcao: (acao: string) => Promise<void>;
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
+    onVeiculoRequired?: (id: Registro["id"], fase: Fase) => void;
 }) {
     // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
@@ -141,7 +147,8 @@ export default function AcaoModal({
 
     // Skips "clássicos"
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
-    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipTransportando =
+        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
     // Fases visíveis (para TERCEIRO sempre só 3; não inclui a fase atual)
@@ -201,7 +208,8 @@ export default function AcaoModal({
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
     // Concluído: TERCEIRO conclui na fase10; FUNERÁRIO conclui na fase11
-    const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+    const concluido =
+        !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
@@ -212,7 +220,9 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
+                    <span className="text-red-600">
+                        {onlineError} — exibindo dados locais como fallback.
+                    </span>
                 )}
             </div>
 
@@ -233,12 +243,20 @@ export default function AcaoModal({
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+                            const requiresVehicle = FASES_COM_VEICULO.includes(f);
                             return (
                                 <button
                                     key={f}
                                     type="button"
                                     disabled={!habilitar}
-                                    onClick={() => registrarAcao(f)}
+                                    onClick={() => {
+                                        if (!habilitar || !acaoId) return;
+                                        if (requiresVehicle && onVeiculoRequired) {
+                                            onVeiculoRequired(acaoId, f);
+                                        } else {
+                                            registrarAcao(f);
+                                        }
+                                    }}
                                     className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
                                     title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
@@ -249,11 +267,15 @@ export default function AcaoModal({
                         })}
                     </div>
 
-                    {concluido && <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>}
+                    {concluido && (
+                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                    )}
                 </>
             )}
 
-            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
+            {acaoMsg && (
+                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>
+            )}
         </Modal>
     );
 }

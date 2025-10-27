@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { ArrumacaoState, MateriaisState, Registro, Aviso } from "./components/types";
 import {
     API,
@@ -27,6 +33,7 @@ import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
+import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -57,24 +64,16 @@ function resolveTipoFromRegistro(r?: Registro | null): TipoAtendimento {
 
 /* -------------------- Config dinâmico por tipo -------------------- */
 function getWizardConfig(tipo: TipoAtendimento) {
-    // índices conforme constants.ts (comentários de lá)
-    // Padrao:
-    // [ [0,1,2,3,17], [4,5,6,7,8,9,10,18], [11,12,13,19], [14,15,16,20] ]
     if (tipo === "terceiro") {
         const wizardStepIndexes = [
-            // Atendimento enxuto
             [0, 1, 17],
-            // (SEM Itens)
-            // Velório
             [11, 12, 13, 19],
-            // Sepultamento
             [14, 15, 16, 20],
         ];
         const wizardStepTitles = ["Atendimento", "Velório", "Sepultamento"];
-        const obrigatorios: string[] = []; // nada obrigatório
+        const obrigatorios: string[] = [];
         return { wizardStepIndexes, wizardStepTitles, obrigatorios, steps: stepsPadrao };
     }
-    // Funerário normal
     return {
         wizardStepIndexes: wizardStepIndexesPadrao as number[][],
         wizardStepTitles: wizardStepTitlesPadrao as string[],
@@ -82,6 +81,20 @@ function getWizardConfig(tipo: TipoAtendimento) {
         steps: stepsPadrao,
     };
 }
+
+/* -------------------- Mapas de telemetria -------------------- */
+function mapFaseToTipo(fase: string): TipoTele | null {
+    if (fase === "fase01") return "remocao";
+    if (fase === "fase07") return "para_velorio";
+    if (fase === "fase09") return "para_sepultamento";
+    return null;
+}
+// "fase que PARA" a telemetria iniciada por:
+const STOP_BY_START: Record<string, string> = {
+    fase01: "fase02", // Corpo na Clínica
+    fase07: "fase08", // Entrega de Corpo
+    fase09: "fase10", // Sepultamento Concluído
+};
 
 export default function AcompanhamentoPage() {
     // Tabela
@@ -124,7 +137,7 @@ export default function AcompanhamentoPage() {
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-    // Info — agora por ID (evita desindexar com polling)
+    // Info
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
 
@@ -133,8 +146,19 @@ export default function AcompanhamentoPage() {
     const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
     const [signIdx, setSignIdx] = useState<number | null>(null);
 
-    // Modal: escolha do tipo ao clicar em "Novo Registro"
+    // Modal: escolher tipo no novo registro
     const [chooseTipoOpen, setChooseTipoOpen] = useState(false);
+
+    // Telemetria
+    const teleRef = useRef<TelemetriaHandle>(null);
+    const [teleOpen, setTeleOpen] = useState(false);
+    const [teleFase, setTeleFase] = useState<string>("fase01");
+    const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
+    const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
+
+    // Controle de sessão ativa de telemetria (para sabermos em qual "par" parar)
+    const [teleActive, setTeleActive] = useState(false);
+    const [teleStartFase, setTeleStartFase] = useState<string | null>(null);
 
     /* -------------------- Config corrente por tipo -------------------- */
     const {
@@ -148,15 +172,18 @@ export default function AcompanhamentoPage() {
 
     const fetchRegistros = useCallback(async () => {
         try {
-            const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
-                cache: "no-store",
-                headers: {
-                    Pragma: "no-cache",
-                    Expires: "0",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                },
-                credentials: "include",
-            });
+            const r = await fetch(
+                `${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`,
+                {
+                    cache: "no-store",
+                    headers: {
+                        Pragma: "no-cache",
+                        Expires: "0",
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                    },
+                    credentials: "include",
+                }
+            );
 
             if (r.status === 401) return;
 
@@ -201,6 +228,7 @@ export default function AcompanhamentoPage() {
             const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({ mensagem: val }),
             });
             if (res?.sucesso) {
@@ -221,6 +249,7 @@ export default function AcompanhamentoPage() {
                 const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
+                    credentials: "include",
                     body: JSON.stringify({ id, mensagem }),
                 });
                 if (res?.sucesso) {
@@ -243,6 +272,7 @@ export default function AcompanhamentoPage() {
                 const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
+                    credentials: "include",
                     body: JSON.stringify({ id, excluir: true }),
                 });
                 if (res?.sucesso) {
@@ -264,6 +294,7 @@ export default function AcompanhamentoPage() {
                 const res = await jsonWith401(`${API}/api/php/avisos.php`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
+                    credentials: "include",
                     body: JSON.stringify({ id, finalizar: true }),
                 });
                 if (res?.sucesso) {
@@ -312,6 +343,7 @@ export default function AcompanhamentoPage() {
                 setArrumacaoOpen(false);
                 setSignOpen(false);
                 setChooseTipoOpen(false);
+                setTeleOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
@@ -334,9 +366,7 @@ export default function AcompanhamentoPage() {
                     };
                 });
                 return base;
-            } catch {
-                // segue fallback
-            }
+            } catch { }
         }
         const base = defaultMateriais();
         Object.keys(base).forEach((k) => {
@@ -352,9 +382,7 @@ export default function AcompanhamentoPage() {
             try {
                 const parsed = JSON.parse(String(r.arrumacao_json));
                 return { ...defaultArrumacao(), ...parsed };
-            } catch {
-                // ignore
-            }
+            } catch { }
         }
         return defaultArrumacao();
     };
@@ -412,7 +440,6 @@ export default function AcompanhamentoPage() {
             if (editing && idx !== null && registros[idx]) {
                 const r = registros[idx];
 
-                // ajusta o "tipo" de edição conforme o registro
                 setTipoAtendimento(resolveTipoFromRegistro(r));
 
                 const data: Registro = {};
@@ -433,7 +460,6 @@ export default function AcompanhamentoPage() {
                 setAssistenciaVal(String((r.assistencia ?? "") as string));
                 setTanatoVal(String((r.tanato ?? "") as string));
             } else {
-                // novo (quando vier direto deste caminho)
                 iniciarNovoRegistro(tipoAtendimento);
                 return;
             }
@@ -509,7 +535,6 @@ export default function AcompanhamentoPage() {
             const json = await enviarRegistroPHP(payload);
             if (json?.sucesso) {
                 setWizardMsg({ text: "Registro salvo!", ok: true });
-                // se for terceiro, guarda o id na sessão
                 if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
                     const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
                     addTerceiroIdToSession(novoId);
@@ -562,6 +587,19 @@ export default function AcompanhamentoPage() {
 
                 if (json?.sucesso) {
                     setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
+
+                    // se a ação é uma "parada" da telemetria ativa, para e salva automaticamente
+                    if (
+                        teleActive &&
+                        teleStartFase &&
+                        STOP_BY_START[teleStartFase] &&
+                        STOP_BY_START[teleStartFase] === acao
+                    ) {
+                        await teleRef.current?.stopAndSave();
+                        setTeleActive(false);
+                        setTeleStartFase(null);
+                    }
+
                     await fetchRegistros();
                     setAcaoOpen(false);
                 } else {
@@ -573,7 +611,22 @@ export default function AcompanhamentoPage() {
                 setAcaoSubmitting(false);
             }
         },
-        [acaoId, fetchRegistros, acaoSubmitting]
+        [acaoId, fetchRegistros, acaoSubmitting, teleActive, teleStartFase]
+    );
+
+    /* ---- Confirmação silenciosa para a TelemetriaModal (start) ---- */
+    const confirmarAcaoSilenciosa = useCallback(
+        async (fase: string) => {
+            const id = teleRegistroId ?? acaoId;
+            if (id == null) return;
+            await enviarRegistroPHP({
+                acao: "atualizar_status",
+                id,
+                status: fase,
+            });
+            await fetchRegistros();
+        },
+        [teleRegistroId, acaoId, fetchRegistros]
     );
 
     /* -------------------- Info por ID (estável) -------------------- */
@@ -598,7 +651,6 @@ export default function AcompanhamentoPage() {
         (tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
             const idx = infoIdxResolved;
             if (idx != null) {
-                // Ajusta tipo pela linha selecionada
                 setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
                 abrirWizard(tipo, idx, grupoStep);
             }
@@ -624,6 +676,24 @@ export default function AcompanhamentoPage() {
         setSignTipo(tipo);
         setSignOpen(true);
     }, []);
+
+    /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
+    const handleVeiculoRequired = useCallback(
+        (id: Registro["id"], fase: string) => {
+            const tipo = mapFaseToTipo(fase);
+            if (!tipo) {
+                setAcaoId(id != null ? String(id) : null);
+                registrarAcao(fase);
+                return;
+            }
+            setTeleRegistroId(id != null ? String(id) : null);
+            setTeleFase(fase);
+            setTeleTipo(tipo);
+            setTeleOpen(true);
+            setAcaoOpen(false);
+        },
+        [registrarAcao]
+    );
 
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
@@ -655,6 +725,13 @@ export default function AcompanhamentoPage() {
             .map((o) => o.label)
             .join(" • ");
     }, [wizardData.arrumacao, arrumacao]);
+
+    /* -------------------- Helpers -------------------- */
+    const findRegistroById = useCallback(
+        (id: Registro["id"] | null): Registro | undefined =>
+            id == null ? undefined : registros.find((x) => String(x.id) === String(id)),
+        [registros]
+    );
 
     /* -------------------- Render -------------------- */
     return (
@@ -760,6 +837,7 @@ export default function AcompanhamentoPage() {
                 registrarAcao={registrarAcao}
                 acaoMsg={acaoMsg}
                 acaoSubmitting={acaoSubmitting}
+                onVeiculoRequired={handleVeiculoRequired}
             />
 
             <InfoModal
@@ -777,6 +855,29 @@ export default function AcompanhamentoPage() {
                 registro={signIdx != null ? registros[signIdx] : undefined}
                 tipo={signTipo}
                 onSaved={() => {
+                    fetchRegistros();
+                }}
+            />
+
+            {/* ---- Telemetria ---- */}
+            <TelemetriaModal
+                ref={teleRef}
+                open={teleOpen}
+                onClose={() => {
+                    setTeleOpen(false);
+                    fetchRegistros();
+                }}
+                registro={findRegistroById(teleRegistroId)}
+                fase={teleFase}
+                tipo={teleTipo}
+                onConfirmAcao={confirmarAcaoSilenciosa}
+                onStarted={({ fase }) => {
+                    setTeleActive(true);
+                    setTeleStartFase(fase);
+                }}
+                onSaved={() => {
+                    setTeleActive(false);
+                    setTeleStartFase(null);
                     fetchRegistros();
                 }}
             />
