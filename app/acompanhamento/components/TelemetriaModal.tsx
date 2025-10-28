@@ -20,11 +20,12 @@ type Ponto = {
     lat: number;
     lng: number;
     ts: number; // epoch ms
-    spd?: number; // m/s (nativo)
-    acc?: number; // acurácia (m)
+    spd?: number; // m/s
+    acc?: number; // m accuracy
 };
 
 export type TelemetriaHandle = {
+    /** Chamado externamente (ex.: quando chega a fase que encerra) */
     stopAndSave: () => Promise<void>;
 };
 
@@ -44,12 +45,10 @@ const VEICULOS: string[] = [
 ];
 
 /* ======================= Utils ======================= */
-
 function isNum(v: any): v is number {
     return Number.isFinite(v);
 }
 function distMeters(a: Ponto, b: Ponto) {
-    // haversine rápido
     const R = 6371000;
     const dLat = ((b.lat - a.lat) * Math.PI) / 180;
     const dLon = ((b.lng - a.lng) * Math.PI) / 180;
@@ -63,11 +62,7 @@ function distMeters(a: Ponto, b: Ponto) {
 }
 
 /* --------- Queue offline --------- */
-type OffPayload = {
-    when: number;
-    url: string;
-    body: any;
-};
+type OffPayload = { when: number; url: string; body: any };
 function readQueue(): OffPayload[] {
     try {
         const raw = localStorage.getItem("telemetria_offline_queue");
@@ -114,7 +109,7 @@ function clearActiveSnapshot() {
     } catch { }
 }
 
-/* --------- Wake Lock (manter tela acordada) --------- */
+/* --------- Wake Lock --------- */
 async function requestWakeLock(): Promise<any | null> {
     try {
         // @ts-ignore
@@ -127,16 +122,20 @@ async function requestWakeLock(): Promise<any | null> {
 }
 
 /* ======================= Componente ======================= */
-export default forwardRef<TelemetriaHandle, {
-    open: boolean;
-    onClose: () => void;
-    registro?: Registro;
-    fase: string; // fase01/fase07/fase09
-    tipo: TipoTele;
-    onConfirmAcao?: (fase: string) => Promise<void> | void; // atualiza status sem perguntar
-    onStarted?: (info: { fase: string }) => void;
-    onSaved?: () => void;
-}>(function TelemetriaModal(
+export default forwardRef<
+    TelemetriaHandle,
+    {
+        open: boolean;
+        onClose: () => void;
+        registro?: Registro;
+        fase: string; // fase01/fase07/fase09
+        tipo: TipoTele;
+        /** Atualiza status sem perguntar (ex.: fase01) */
+        onConfirmAcao?: (fase: string) => Promise<void> | void;
+        onStarted?: (info: { fase: string }) => void;
+        onSaved?: () => void;
+    }
+>(function TelemetriaModal(
     { open, onClose, registro, fase, tipo, onConfirmAcao, onStarted, onSaved },
     ref
 ) {
@@ -151,6 +150,7 @@ export default forwardRef<TelemetriaHandle, {
     const endTsRef = useRef<number | null>(null);
     const snapshotTimerRef = useRef<number | null>(null);
     const wakeLockRef = useRef<any | null>(null);
+    const relockHandlerRef = useRef<() => void>(() => { });
 
     useImperativeHandle(ref, () => ({
         stopAndSave: async () => {
@@ -174,16 +174,17 @@ export default forwardRef<TelemetriaHandle, {
             await onConfirmAcao?.(fase);
         } catch { }
 
-        // wake lock
+        // wake lock + relock em mudança de visibilidade
         wakeLockRef.current = await requestWakeLock();
         const relock = async () => {
             if (!wakeLockRef.current) {
                 wakeLockRef.current = await requestWakeLock();
             }
         };
+        relockHandlerRef.current = relock;
         window.addEventListener("visibilitychange", relock);
 
-        // watchPosition
+        // watchPosition rodando em background
         try {
             startTsRef.current = Date.now();
             pontosRef.current = [];
@@ -202,7 +203,7 @@ export default forwardRef<TelemetriaHandle, {
                     const arr = pontosRef.current;
                     const last = arr.length ? arr[arr.length - 1] : null;
 
-                    // filtros: pelo menos 3s e 10m do último
+                    // filtros: pelo menos 3s e 10m entre pontos (evita "linha reta" de jitter)
                     const enoughTime = !last || p.ts - last.ts >= 3000;
                     const enoughMove = !last || distMeters(last, p) >= 10;
 
@@ -212,7 +213,7 @@ export default forwardRef<TelemetriaHandle, {
                         arr.push(p);
                     }
 
-                    // snapshot periódico
+                    // snapshot periódico local
                     saveActiveSnapshot({
                         id: registro?.id ?? null,
                         fase,
@@ -230,7 +231,7 @@ export default forwardRef<TelemetriaHandle, {
             setMsg({ text: e?.message || "Falha ao iniciar localização.", ok: false });
         }
 
-        // snapshot timer (garantia)
+        // timer de snapshot (redundância)
         if (snapshotTimerRef.current == null) {
             snapshotTimerRef.current = window.setInterval(() => {
                 saveActiveSnapshot({
@@ -244,10 +245,13 @@ export default forwardRef<TelemetriaHandle, {
             }, 5000) as unknown as number;
         }
 
-        // flush fila quando ficar online
+        // tentar escoar fila quando ficar online
         window.addEventListener("online", flushQueue);
 
         onStarted?.({ fase });
+
+        // ✅ fecha o modal imediatamente após selecionar (coleta continua em bg)
+        onClose();
     }
 
     async function stopAndSave() {
@@ -263,6 +267,7 @@ export default forwardRef<TelemetriaHandle, {
                 window.clearInterval(snapshotTimerRef.current);
                 snapshotTimerRef.current = null;
             }
+            window.removeEventListener("visibilitychange", relockHandlerRef.current);
             clearActiveSnapshot();
             if (wakeLockRef.current) {
                 try {
@@ -287,7 +292,6 @@ export default forwardRef<TelemetriaHandle, {
             const durS = Math.max(1, Math.round(((endTsRef.current || 0) - (startTsRef.current || 0)) / 1000));
             const velMedKmH = dist > 0 ? (dist / 1000) / (durS / 3600) : 0;
 
-            // payload
             const payload = {
                 acao: "inserir",
                 sepultamento_id: (registro as any)?.sepultamento_id ?? null,
@@ -306,7 +310,7 @@ export default forwardRef<TelemetriaHandle, {
                 vel_media_kmh: Number(velMedKmH.toFixed(2)),
                 vel_max_kmh: Number(vmax.toFixed(2)),
                 amostras: pontos.length,
-                pontos_json: pontos, // array puro; o PHP já serializa
+                pontos_json: pontos,
                 source_device: "web",
                 encerrado: 1,
             };
@@ -325,7 +329,6 @@ export default forwardRef<TelemetriaHandle, {
                     sent = true;
                 }
             } catch {
-                // fila offline
                 const q = readQueue();
                 q.push({ when: Date.now(), url: `${API}/api/php/telemetria.php`, body: payload });
                 writeQueue(q);
@@ -336,7 +339,6 @@ export default forwardRef<TelemetriaHandle, {
 
             if (sent) setMsg({ text: "Telemetria salva!", ok: true });
             onSaved?.();
-            onClose();
         } finally {
             setSaving(false);
         }
@@ -352,7 +354,7 @@ export default forwardRef<TelemetriaHandle, {
     }, [open]);
 
     useEffect(() => {
-        // tenta escoar fila ao abrir modal
+        // tenta escoar fila ao montar
         flushQueue();
         const on = () => flushQueue();
         window.addEventListener("online", on);
@@ -361,12 +363,13 @@ export default forwardRef<TelemetriaHandle, {
 
     /* ====== UI ====== */
 
-    // Apenas a lista de veículos. Ao escolher, começa automaticamente.
+    // Apenas a lista de veículos; ao escolher, inicia e fecha o modal.
     return (
         <Modal open={open} onClose={saving ? () => { } : onClose} ariaLabel="Selecionar veículo" maxWidth={560}>
             <h3 className="text-lg font-semibold">Selecionar veículo</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-                Ao selecionar, pediremos a localização (se necessário), atualizaremos o status e iniciaremos a telemetria.
+                Ao selecionar, pediremos a localização (se necessário) e iniciaremos a telemetria.
+                O encerramento ocorre automaticamente quando o próximo comando for registrado.
             </p>
 
             <div className="mt-4">
@@ -376,9 +379,10 @@ export default forwardRef<TelemetriaHandle, {
                     value={veiculo}
                     onChange={async (e) => {
                         const v = e.target.value;
+                        if (!v) return;
                         setVeiculo(v);
-                        // inicia imediatamente após escolher
-                        await startAfterSelect();
+                        await startAfterSelect(); // inicia
+                        // fecha já no startAfterSelect
                     }}
                 >
                     <option value="">Selecione…</option>
@@ -390,7 +394,7 @@ export default forwardRef<TelemetriaHandle, {
                 </select>
             </div>
 
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 flex items-center justify-end">
                 <button
                     type="button"
                     onClick={saving ? undefined : onClose}
@@ -398,15 +402,6 @@ export default forwardRef<TelemetriaHandle, {
                     disabled={saving}
                 >
                     Fechar
-                </button>
-
-                <button
-                    type="button"
-                    onClick={saving ? undefined : stopAndSave}
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-                    disabled={saving}
-                >
-                    Encerrar e Salvar
                 </button>
             </div>
 
