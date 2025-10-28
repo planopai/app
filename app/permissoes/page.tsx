@@ -25,39 +25,9 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     return json;
 }
 
-/** Lista consolidada das páginas (keys = slugs das pastas; labels = menu) */
-const ALL_PAGES: Pagina[] = [
-    { key: 'inicio', label: 'Início' },
-    { key: 'quadro-atendimento', label: 'Quadro de Atendimento' },
-    { key: 'acompanhamento', label: 'Acompanhamento' },
-    { key: 'memorial', label: 'Memorial' },
-    { key: 'obituario', label: 'Obituário' },
-    { key: 'clube', label: 'Clube PAI' },
-    { key: 'leads', label: 'Leads' },
-    { key: 'coroa-de-flores', label: 'Coroa de Flores' },
-    { key: 'relatorio', label: 'Relatório' },
-    { key: 'administrativo', label: 'Administrativo' },
-    // extras da árvore (caso usem no menu ou tela inicial)
-    { key: 'dashboard', label: 'Dashboard' },
-    { key: 'api', label: 'API' },
-    { key: 'atendimento', label: 'Atendimento' },
-    { key: 'login', label: 'Login' },
-    { key: 'medicos', label: 'Médicos' },
-    { key: 'mensagens', label: 'Mensagens' },
-    { key: 'noticias', label: 'Notícias' },
-    { key: 'offline', label: 'Offline' },
-    { key: 'parceiros', label: 'Parceiros' },
-    { key: 'permissoes', label: 'Permissões' },
-    { key: 'salas', label: 'Salas' },
-    { key: 'seguranca', label: 'Segurança' },
-    { key: 'sorteios', label: 'Sorteios' },
-    { key: 'tela', label: 'Tela Inicial' },
-    { key: 'telemetria', label: 'Telemetria' },
-    { key: 'usuarios', label: 'Usuários' },
-];
-
 export default function PermissoesPage() {
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+    const [pages, setPages] = useState<Pagina[]>([]);
     const [userId, setUserId] = useState<number | null>(null);
     const [allowed, setAllowed] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(false);
@@ -74,6 +44,16 @@ export default function PermissoesPage() {
         } finally { setLoading(false); }
     };
 
+    const fetchPages = async () => {
+        try {
+            const j = await safeJsonFetch(`${API_URL}?action=list_pages&_=${Date.now()}`);
+            setPages(j as Pagina[]);
+        } catch {
+            // fallback (se o PHP não responder, mantém vazio)
+            setPages([]);
+        }
+    };
+
     const fetchPerms = async (uid: number) => {
         setLoading(true); setError(null); setMsg(null);
         try {
@@ -87,7 +67,7 @@ export default function PermissoesPage() {
         } finally { setLoading(false); }
     };
 
-    useEffect(() => { fetchUsuarios(); }, []);
+    useEffect(() => { fetchUsuarios(); fetchPages(); }, []);
     useEffect(() => { if (userId != null) fetchPerms(userId); }, [userId]);
 
     const toggle = (key: string) => setAllowed((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -111,8 +91,8 @@ export default function PermissoesPage() {
     const currentUser = useMemo(() => usuarios.find((u) => u.id === userId), [userId, usuarios]);
 
     return (
-        <div className="max-w-6xl mx-auto p-4 sm:p-6 font-[var(--font-nunito,_inherit)]">
-            <h1 className="text-xl sm:text-2xl font-semibold mb-4">Permissões por usuário</h1>
+        <div className="w-full px-3 sm:px-6 lg:px-10 pt-10 pb-14 md:pt-12 md:pb-16 lg:pt-16 lg:pb-24 font-[var(--font-nunito,_inherit)]">
+            <h1 className="text-2xl md:text-3xl font-semibold mb-6 md:mb-8">Permissões por usuário</h1>
 
             <div className="rounded-2xl shadow p-4 mb-6">
                 <label className="block text-sm mb-1">Usuário</label>
@@ -140,7 +120,7 @@ export default function PermissoesPage() {
                     {error && <p className="text-red-600 mb-2">{error}</p>}
 
                     <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        {ALL_PAGES.map((p) => (
+                        {pages.map((p) => (
                             <li key={p.key} className="flex items-center gap-2">
                                 <input
                                     id={`pg-${p.key}`}
