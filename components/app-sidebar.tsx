@@ -13,7 +13,8 @@ import {
   IconFileText,
   IconHelp,
   IconBuildingSkyscraper,
-  IconGift, // 🎁 novo ícone para o Clube PAI
+  IconGift, // 🎁 ícone do Clube PAI
+  IconSettings, // ⚙️ ícone do Administrativo
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -37,10 +38,12 @@ const data = {
     { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
     { title: "Memorial", url: "/memorial", icon: IconBuildingSkyscraper },
     { title: "Obituário", url: "/obituario", icon: IconBook },
-    { title: "Clube PAI", url: "/clube", icon: IconGift }, // 🎁 ícone atualizado aqui
+    { title: "Clube PAI", url: "/clube", icon: IconGift }, // 🎁
     { title: "Leads", url: "/leads", icon: IconUsersGroup },
     { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
     { title: "Relatório", url: "/relatorio", icon: IconFileText },
+    // ➕ Novo item solicitado: Administrativo (após Relatório)
+    { title: "Administrativo", url: "/administrativo", icon: IconSettings },
   ] as { title: string; url: string; icon?: any }[],
 };
 
