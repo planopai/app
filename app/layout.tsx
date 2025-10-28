@@ -8,8 +8,8 @@ import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
 
-// >>> IMPORTANTE: provider que carrega whoami + list_permissions e expõe "has(slug)"
-import { PermsProvider } from "@/app/_perms/PermsProvider";
+// === importe o Provider ===
+import { PermsProvider } from "./_perms/PermsProvider";
 
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
@@ -43,6 +43,9 @@ export default async function RootLayout({
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
 
+  // >>> AQUI: lemos o cookie setado pelo PHP (whoami/login)
+  const uidCookie = cookieStore.get("pai_uid")?.value || null;
+
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
@@ -75,8 +78,11 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* >>> PermsProvider envolve o AppShell para que Home e Sidebar possam filtrar pelos slugs permitidos */}
-            <PermsProvider>
+            {/* 
+              key = uidCookie → se mudar de usuário, remonta tudo.
+              PermsProvider usa userKey p/ refetch imediato das permissões.
+            */}
+            <PermsProvider key={uidCookie ?? "nouid"} userKey={uidCookie}>
               <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
             </PermsProvider>
           </ActiveThemeProvider>
