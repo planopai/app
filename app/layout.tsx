@@ -8,8 +8,14 @@ import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
 
-// === importe o Provider ===
+// Provider de permissões (cliente)
 import { PermsProvider } from "./_perms/PermsProvider";
+// SSR helper para perms
+import { getInitialPerms } from "./_perms/getPermsServer";
+
+// Garante que o layout NUNCA seja estático (evita cache e flicker)
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
@@ -43,8 +49,11 @@ export default async function RootLayout({
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
 
-  // >>> AQUI: lemos o cookie setado pelo PHP (whoami/login)
+  // Chave do usuário (cookie setado pelo seu backend)
   const uidCookie = cookieStore.get("pai_uid")?.value || null;
+
+  // >>> SSR: pega permissões com os cookies da requisição
+  const initialPerms = await getInitialPerms(); // [] se não logado
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
@@ -78,11 +87,11 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* 
+            {/*
               key = uidCookie → se mudar de usuário, remonta tudo.
-              PermsProvider usa userKey p/ refetch imediato das permissões.
+              PermsProvider recebe initialPerms (SSR) para não piscar/atrasar.
             */}
-            <PermsProvider key={uidCookie ?? "nouid"} userKey={uidCookie}>
+            <PermsProvider key={uidCookie ?? "nouid"} userKey={uidCookie} initialPerms={initialPerms}>
               <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
             </PermsProvider>
           </ActiveThemeProvider>
