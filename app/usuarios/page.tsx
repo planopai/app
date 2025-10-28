@@ -4,7 +4,44 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 type Usuario = { id: number; nome: string; usuario: string };
 
-const API_URL = '/api/php/pai_api.php'; // proxied p/ https://planoassistencialintegrado.com.br/pai_api.php
+const API_URL = '/api/php/pai_api.php';
+
+// -------- parser robusto --------
+async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
+    const r = await fetch(input, { cache: 'no-store', ...init });
+    const text = await r.text();
+
+    // remove BOM e espaços fora
+    const cleaned = text.replace(/^\uFEFF/, '').trim();
+
+    // se veio HTML (ex.: erro do servidor), tenta extrair um { ... } do texto
+    const looksHtml = cleaned.startsWith('<') || cleaned.toLowerCase().startsWith('http');
+    let parsed: any = null;
+
+    if (!looksHtml) {
+        try {
+            parsed = JSON.parse(cleaned);
+        } catch {
+            // fallback: tenta pegar primeiro bloco { ... }
+            const m = cleaned.match(/\{[\s\S]*\}$/m);
+            if (m) {
+                parsed = JSON.parse(m[0]);
+            }
+        }
+    }
+
+    // se ainda não deu, retorna como erro bruto
+    if (parsed == null) {
+        throw new Error(`Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? '…' : ''}`);
+    }
+
+    // se HTTP não-OK, propaga msg do JSON se tiver
+    if (!r.ok || parsed?.erro) {
+        throw new Error(parsed?.erro || parsed?.msg || `HTTP ${r.status}`);
+    }
+
+    return parsed;
+}
 
 export default function UsuariosPage() {
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -21,12 +58,14 @@ export default function UsuariosPage() {
     const fetchUsuarios = async () => {
         setLoading(true); setError(null);
         try {
-            const r = await fetch(`${API_URL}?action=list_users`, { cache: 'no-store' });
-            const j = await r.json();
-            if (!r.ok) throw new Error(j?.erro || 'Falha ao listar usuários');
+            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`);
             setUsuarios(j as Usuario[]);
-        } catch (e: any) { setError(e.message || 'Erro inesperado'); }
-        finally { setLoading(false); }
+        } catch (e: any) {
+            setError(e.message || 'Erro inesperado');
+            setUsuarios([]);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => { fetchUsuarios(); }, []);
@@ -41,16 +80,17 @@ export default function UsuariosPage() {
         setLoading(true);
         try {
             const action = editingId == null ? 'create_user' : 'update_user';
-            const r = await fetch(`${API_URL}?action=${action}`, {
+            await safeJsonFetch(`${API_URL}?action=${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: editingId ?? undefined, nome, usuario, senha }),
             });
-            const j = await r.json();
-            if (!r.ok || j?.erro || j?.sucesso === false) throw new Error(j?.msg || j?.erro || 'Falha ao salvar');
             await fetchUsuarios(); resetForm();
-        } catch (e: any) { setError(e.message || 'Erro inesperado'); }
-        finally { setLoading(false); }
+        } catch (e: any) {
+            setError(e.message || 'Erro inesperado');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const startEdit = (u: Usuario) => { setEditingId(u.id); setNome(u.nome); setUsuario(u.usuario); setSenha(''); };
@@ -59,22 +99,23 @@ export default function UsuariosPage() {
         if (!confirm('Excluir este usuário?')) return;
         setLoading(true); setError(null);
         try {
-            const r = await fetch(`${API_URL}?action=delete_user`, {
+            await safeJsonFetch(`${API_URL}?action=delete_user`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id }),
             });
-            const j = await r.json();
-            if (!r.ok || j?.erro || j?.sucesso === false) throw new Error(j?.msg || j?.erro || 'Falha ao excluir');
             await fetchUsuarios();
-        } catch (e: any) { setError(e.message || 'Erro inesperado'); }
-        finally { setLoading(false); }
+        } catch (e: any) {
+            setError(e.message || 'Erro inesperado');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const title = useMemo(() => (editingId == null ? 'Novo usuário' : `Editar usuário #${editingId}`), [editingId]);
 
     return (
-        <div className="max-w-5xl mx-auto p-6">
+        <div className="max-w-6xl mx-auto p-6 font-[var(--font-nunito,_inherit)]">
             <h1 className="text-2xl font-semibold mb-4">Usuários</h1>
 
             <div className="rounded-2xl shadow p-4 mb-8">
