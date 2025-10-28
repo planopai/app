@@ -11,13 +11,13 @@ import {
 const items = [
     {
         title: "Usuários",
-        href: "/administrativo/usuarios",
+        href: "/usuarios",
         desc: "Gerencie contas, perfis e status de acesso.",
         icon: IconUserCog,
     },
     {
         title: "Permissões",
-        href: "/administrativo/permissoes",
+        href: "/permissoes",
         desc: "Defina papéis e controle o que cada usuário pode fazer.",
         icon: IconShieldLock,
     },
