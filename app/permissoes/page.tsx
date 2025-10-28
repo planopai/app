@@ -7,7 +7,7 @@ type Pagina = { key: string; label: string };
 
 const API_URL = '/api/php/pai_api.php';
 
-/* parser robusto */
+/* ---------------- parser robusto (tolera BOM/HTML/HTML) ---------------- */
 async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     const r = await fetch(input, { cache: 'no-store', ...init });
     const txt = await r.text();
@@ -34,6 +34,7 @@ export default function PermissoesPage() {
     const [msg, setMsg] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
+    /* ---------------- fetchers ---------------- */
     const fetchUsuarios = async () => {
         setLoading(true); setError(null);
         try {
@@ -49,7 +50,6 @@ export default function PermissoesPage() {
             const j = await safeJsonFetch(`${API_URL}?action=list_pages&_=${Date.now()}`);
             setPages(j as Pagina[]);
         } catch {
-            // fallback (se o PHP não responder, mantém vazio)
             setPages([]);
         }
     };
@@ -70,7 +70,24 @@ export default function PermissoesPage() {
     useEffect(() => { fetchUsuarios(); fetchPages(); }, []);
     useEffect(() => { if (userId != null) fetchPerms(userId); }, [userId]);
 
+    /* ---------------- ações ---------------- */
     const toggle = (key: string) => setAllowed((prev) => ({ ...prev, [key]: !prev[key] }));
+
+    const marcarTudo = () => {
+        setAllowed((prev) => {
+            const next: Record<string, boolean> = { ...prev };
+            for (const p of pages) next[p.key] = true;
+            return next;
+        });
+    };
+
+    const desmarcarTudo = () => {
+        setAllowed((prev) => {
+            const next: Record<string, boolean> = { ...prev };
+            for (const p of pages) next[p.key] = false;
+            return next;
+        });
+    };
 
     const save = async () => {
         if (userId == null) return;
@@ -90,6 +107,7 @@ export default function PermissoesPage() {
 
     const currentUser = useMemo(() => usuarios.find((u) => u.id === userId), [userId, usuarios]);
 
+    /* ---------------- render ---------------- */
     return (
         <div className="w-full px-3 sm:px-6 lg:px-10 pt-10 pb-14 md:pt-12 md:pb-16 lg:pt-16 lg:pb-24 font-[var(--font-nunito,_inherit)]">
             <h1 className="text-2xl md:text-3xl font-semibold mb-6 md:mb-8">Permissões por usuário</h1>
@@ -112,14 +130,34 @@ export default function PermissoesPage() {
 
             {userId != null && (
                 <div className="rounded-2xl shadow p-4">
-                    <h2 className="text-lg font-medium mb-3">
-                        Páginas liberadas para {currentUser?.nome} ({currentUser?.usuario})
-                    </h2>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <h2 className="text-lg font-medium">
+                            Páginas liberadas para {currentUser?.nome} ({currentUser?.usuario})
+                        </h2>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={marcarTudo}
+                                className="px-3 py-2 rounded-xl border text-sm"
+                                disabled={loading || pages.length === 0}
+                                title="Marcar todas as páginas"
+                            >
+                                Marcar tudo
+                            </button>
+                            <button
+                                onClick={desmarcarTudo}
+                                className="px-3 py-2 rounded-xl border text-sm"
+                                disabled={loading || pages.length === 0}
+                                title="Desmarcar todas as páginas"
+                            >
+                                Desmarcar tudo
+                            </button>
+                        </div>
+                    </div>
 
-                    {msg && <p className="text-green-700 mb-2">{msg}</p>}
-                    {error && <p className="text-red-600 mb-2">{error}</p>}
+                    {msg && <p className="text-green-700 mt-2">{msg}</p>}
+                    {error && <p className="text-red-600 mt-2">{error}</p>}
 
-                    <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <ul className="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {pages.map((p) => (
                             <li key={p.key} className="flex items-center gap-2">
                                 <input
@@ -131,9 +169,14 @@ export default function PermissoesPage() {
                                 <label htmlFor={`pg-${p.key}`}>{p.label}</label>
                             </li>
                         ))}
+                        {pages.length === 0 && (
+                            <li className="text-sm text-muted-foreground col-span-full">
+                                Nenhuma página disponível.
+                            </li>
+                        )}
                     </ul>
 
-                    <div className="mt-4">
+                    <div className="mt-5">
                         <button
                             onClick={save}
                             disabled={loading}
