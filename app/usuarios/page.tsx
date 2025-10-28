@@ -88,7 +88,7 @@ export default function UsuariosPage() {
     const openEdit = (u: Usuario) => { setEditingId(u.id); setNome(u.nome); setUsuario(u.usuario); setSenha(''); setOpen(true); };
 
     const title = useMemo(
-        () => (editingId == null ? 'Novo usuário' : `Editar usuário`), // sem #ID
+        () => (editingId == null ? 'Novo usuário' : `Editar usuário`),
         [editingId]
     );
 
@@ -137,9 +137,18 @@ export default function UsuariosPage() {
     };
 
     return (
-        <div className="w-full px-3 sm:px-6 lg:px-10 font-[var(--font-nunito,_inherit)]">
-            <div className="flex items-center justify-between gap-3 mb-4">
-                <h1 className="text-2xl lg:text-3xl font-semibold">Usuários</h1>
+        <div
+            className="
+        w-full
+        px-3 sm:px-6 lg:px-10
+        pt-10 pb-14
+        md:pt-12 md:pb-16
+        lg:pt-16 lg:pb-24
+        font-[var(--font-nunito,_inherit)]
+      "
+        >
+            <div className="flex items-center justify-between gap-3 mb-6 md:mb-8">
+                <h1 className="text-2xl md:text-3xl font-semibold">Usuários</h1>
                 <button
                     onClick={openCreate}
                     className="rounded-xl bg-black text-white px-4 py-2 text-sm"
@@ -148,26 +157,26 @@ export default function UsuariosPage() {
                 </button>
             </div>
 
-            {error && <p className="text-red-600 mb-3">{error}</p>}
+            {error && <p className="text-red-600 mb-4">{error}</p>}
 
             {/* Tabela full width; sem coluna de ID */}
             <div className="rounded-2xl shadow overflow-x-auto">
                 <table className="w-full table-fixed">
                     <thead>
                         <tr className="bg-gray-50 text-left">
-                            <th className="px-4 py-3">Nome</th>
-                            <th className="px-4 py-3">Usuário</th>
-                            <th className="px-4 py-3">Ação</th>
+                            <th className="px-4 py-4">Nome</th>
+                            <th className="px-4 py-4">Usuário</th>
+                            <th className="px-4 py-4">Ação</th>
                         </tr>
                     </thead>
                     <tbody>
                         {usuarios.map((u) => (
-                            <tr key={u.id} className="border-top border-t">
-                                <td className="px-4 py-2 truncate">{u.nome}</td>
-                                <td className="px-4 py-2 truncate">{u.usuario}</td>
-                                <td className="px-4 py-2">
+                            <tr key={u.id} className="border-t">
+                                <td className="px-4 py-3 truncate">{u.nome}</td>
+                                <td className="px-4 py-3 truncate">{u.usuario}</td>
+                                <td className="px-4 py-3">
                                     <button
-                                        className="px-3 py-1 rounded-lg border w-full sm:w-auto"
+                                        className="px-3 py-1.5 rounded-lg border w-full sm:w-auto"
                                         onClick={() => openEdit(u)}
                                         disabled={loading}
                                     >
@@ -178,7 +187,7 @@ export default function UsuariosPage() {
                         ))}
                         {usuarios.length === 0 && !loading && (
                             <tr>
-                                <td className="px-4 py-6 text-center text-gray-500" colSpan={3}>
+                                <td className="px-4 py-8 text-center text-gray-500" colSpan={3}>
                                     Nenhum usuário encontrado.
                                 </td>
                             </tr>
@@ -186,6 +195,9 @@ export default function UsuariosPage() {
                     </tbody>
                 </table>
             </div>
+
+            {/* respiro extra ao fim da página */}
+            <div className="h-10 md:h-14" />
 
             <Modal
                 open={open}
