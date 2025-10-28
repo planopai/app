@@ -12,6 +12,7 @@ import {
   IconFlower,
   IconReportAnalytics,
   IconChevronRight,
+  IconSettings, // ⚙️ administrativo
 } from "@tabler/icons-react";
 
 const shortcutsTop = [
@@ -53,6 +54,13 @@ const shortcutsBottom = [
     href: "/relatorio",
     desc: "Indicadores, métricas e exportações.",
     icon: IconReportAnalytics,
+  },
+  // ✅ Novo item: Administrativo
+  {
+    title: "Administrativo",
+    href: "/administrativo",
+    desc: "Gerencie usuários, permissões e configurações.",
+    icon: IconSettings,
   },
 ];
 
@@ -149,7 +157,7 @@ export default function HomePage() {
           </div>
         </Link>
 
-        {/* ✅ Novo Card: Clube PAI */}
+        {/* ✅ Card: Clube PAI */}
         <Link
           href="/clube"
           className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
