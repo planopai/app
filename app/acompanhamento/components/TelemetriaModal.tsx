@@ -10,50 +10,27 @@ import React, {
 } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
-import { API } from "./constants"; // mantém sua base de API
+import { API } from "./constants";
+import TextFeedback from "./TextFeedback";
 
 /* ======================= Tipos ======================= */
 export type TipoTele = "remocao" | "para_velorio" | "para_sepultamento";
 
+type Ponto = {
+    lat: number;
+    lng: number;
+    ts: number; // epoch ms
+    spd?: number; // m/s (nativo)
+    acc?: number; // acurácia (m)
+};
+
 export type TelemetriaHandle = {
-    /** Encerra a sessão em andamento, calcula estatísticas e salva no PHP */
     stopAndSave: () => Promise<void>;
 };
 
-type Props = {
-    open: boolean;
-    onClose: () => void;
-    registro?: Registro | null;
-    /** fase é algo como "fase01" | "fase07" | "fase09" */
-    fase: string;
-    /** tipo: "remocao" | "para_velorio" | "para_sepultamento" */
-    tipo: TipoTele;
-
-    /** Atualiza o status no PHP sem UI de confirmação (silencioso) */
-    onConfirmAcao?: (fase: string) => Promise<void> | void;
-    /** Notifica o page.tsx que começamos (para ele marcar teleActive, etc.) */
-    onStarted?: (info: { fase: string }) => void;
-    /** Notifica o page.tsx quando salvarmos */
-    onSaved?: () => void;
-};
-
-/* ======================= Fallback de veículos ======================= */
-/* Tentamos importar de constants.ts (se houver), senão usamos este fallback */
-let EXTERNAL_VEICS: string[] | undefined;
-try {
-    // @ts-ignore – se não existir, caímos no catch
-    const m = require("./constants");
-    EXTERNAL_VEICS =
-        m?.veiculosNomes ||
-        m?.veiculos ||
-        m?.VEICULOS ||
-        m?.VEICULOS_NOMES ||
-        undefined;
-} catch {
-    // ignore
-}
-
-const FALLBACK_VEICS: string[] = [
+/* ======================= Veículos (fallback local) ======================= */
+/** Troque por sua fonte real se quiser, ou mantenha esta lista padrão */
+const VEICULOS: string[] = [
     "Strada RDR 8G25",
     "S10 PRY 7H63",
     "SPRINTER RDG 9170",
@@ -66,227 +43,346 @@ const FALLBACK_VEICS: string[] = [
     "OUTRA EMPRESA",
 ];
 
-function getVeiculosLista(reg?: Registro | null): string[] {
-    const base =
-        (EXTERNAL_VEICS && Array.isArray(EXTERNAL_VEICS) && EXTERNAL_VEICS.length
-            ? EXTERNAL_VEICS
-            : FALLBACK_VEICS) as string[];
-    // Garante que o veículo previamente salvo no registro, se houver, estará na lista
-    const atual = (reg?.veiculo_nome || "").toString().trim();
-    if (atual && !base.some((v) => v === atual)) return [atual, ...base];
-    return base;
-}
+/* ======================= Utils ======================= */
 
-/* ======================= Haversine ======================= */
-function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-    const R = 6371; // km
+function isNum(v: any): v is number {
+    return Number.isFinite(v);
+}
+function distMeters(a: Ponto, b: Ponto) {
+    // haversine rápido
+    const R = 6371000;
     const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-    const sa =
+    const dLon = ((b.lng - a.lng) * Math.PI) / 180;
+    const la1 = (a.lat * Math.PI) / 180;
+    const la2 = (b.lat * Math.PI) / 180;
+    const x =
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((a.lat * Math.PI) / 180) *
-        Math.cos((b.lat * Math.PI) / 180) *
-        Math.sin(dLng / 2) *
-        Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(sa), Math.sqrt(1 - sa));
+        Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
     return R * c;
 }
 
+/* --------- Queue offline --------- */
+type OffPayload = {
+    when: number;
+    url: string;
+    body: any;
+};
+function readQueue(): OffPayload[] {
+    try {
+        const raw = localStorage.getItem("telemetria_offline_queue");
+        return raw ? (JSON.parse(raw) as OffPayload[]) : [];
+    } catch {
+        return [];
+    }
+}
+function writeQueue(q: OffPayload[]) {
+    try {
+        localStorage.setItem("telemetria_offline_queue", JSON.stringify(q));
+    } catch { }
+}
+async function flushQueue() {
+    const q = readQueue();
+    if (!q.length || !navigator.onLine) return;
+    const rest: OffPayload[] = [];
+    for (const item of q) {
+        try {
+            const r = await fetch(item.url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify(item.body),
+            });
+            const j = await r.json();
+            if (!r.ok || !j?.sucesso) throw new Error("Fail");
+        } catch {
+            rest.push(item);
+        }
+    }
+    writeQueue(rest);
+}
+
+/* --------- Snapshot da sessão ativa --------- */
+function saveActiveSnapshot(snap: any) {
+    try {
+        localStorage.setItem("tele_active_snapshot", JSON.stringify(snap));
+    } catch { }
+}
+function clearActiveSnapshot() {
+    try {
+        localStorage.removeItem("tele_active_snapshot");
+    } catch { }
+}
+
+/* --------- Wake Lock (manter tela acordada) --------- */
+async function requestWakeLock(): Promise<any | null> {
+    try {
+        // @ts-ignore
+        if (navigator.wakeLock && typeof navigator.wakeLock.request === "function") {
+            // @ts-ignore
+            return await navigator.wakeLock.request("screen");
+        }
+    } catch { }
+    return null;
+}
+
 /* ======================= Componente ======================= */
-const TelemetriaModal = forwardRef<TelemetriaHandle, Props>(function TelemetriaModal(
+export default forwardRef<TelemetriaHandle, {
+    open: boolean;
+    onClose: () => void;
+    registro?: Registro;
+    fase: string; // fase01/fase07/fase09
+    tipo: TipoTele;
+    onConfirmAcao?: (fase: string) => Promise<void> | void; // atualiza status sem perguntar
+    onStarted?: (info: { fase: string }) => void;
+    onSaved?: () => void;
+}>(function TelemetriaModal(
     { open, onClose, registro, fase, tipo, onConfirmAcao, onStarted, onSaved },
     ref
 ) {
-    // lista de veículos (somente UI mínima)
-    const veics = useMemo(() => getVeiculosLista(registro || null), [registro]);
-
-    // estado mínimo
-    const [sel, setSel] = useState<string>("");
+    const [veiculo, setVeiculo] = useState<string>("");
     const [saving, setSaving] = useState(false);
+    const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-    // telemetria em memória
+    // coleta
     const watchIdRef = useRef<number | null>(null);
-    const startedAtRef = useRef<number | null>(null);
-    const pontosRef = useRef<{ ts: number; lat: number; lng: number; spd?: number }[]>([]);
-    const veiculoRef = useRef<string>("");
+    const pontosRef = useRef<Ponto[]>([]);
+    const startTsRef = useRef<number | null>(null);
+    const endTsRef = useRef<number | null>(null);
+    const snapshotTimerRef = useRef<number | null>(null);
+    const wakeLockRef = useRef<any | null>(null);
 
-    useEffect(() => {
-        if (!open) {
-            setSel("");
-        }
-    }, [open]);
-
-    // expõe stopAndSave para o page.tsx
     useImperativeHandle(ref, () => ({
         stopAndSave: async () => {
-            // se não foi iniciado, apenas notifica
-            if (!startedAtRef.current) {
-                onSaved?.();
-                return;
-            }
-            try {
-                setSaving(true);
-
-                // para o watch
-                if (watchIdRef.current != null) {
-                    navigator.geolocation.clearWatch(watchIdRef.current);
-                    watchIdRef.current = null;
-                }
-
-                const pontos = pontosRef.current.slice();
-                const t0 = startedAtRef.current!;
-                const t1 = Date.now();
-                const duracao_seg = Math.max(0, Math.round((t1 - t0) / 1000));
-
-                // distância e velocidades
-                let distancia_km = 0;
-                let vel_max_kmh = 0;
-
-                for (let i = 1; i < pontos.length; i++) {
-                    const a = pontos[i - 1];
-                    const b = pontos[i];
-                    distancia_km += haversineKm(a, b);
-                    if (typeof b.spd === "number") {
-                        vel_max_kmh = Math.max(vel_max_kmh, b.spd * 3.6); // m/s -> km/h
-                    }
-                }
-
-                const vel_media_kmh =
-                    duracao_seg > 0 ? (distancia_km / (duracao_seg / 3600)) : 0;
-
-                // monta payload compatível com seu telemetria.php
-                const payload: any = {
-                    acao: "inserir",
-                    sepultamento_id:
-                        registro?.sepultamento_id != null ? Number(registro.sepultamento_id) : null,
-                    tipo,
-                    falecido: registro?.falecido ?? null,
-                    veiculo_nome: veiculoRef.current || sel || registro?.veiculo_nome || null,
-                    veiculo_obs: null,
-                    inicio_ts: new Date(t0).toISOString().slice(0, 19).replace("T", " "),
-                    fim_ts: new Date(t1).toISOString().slice(0, 19).replace("T", " "),
-                    distancia_km,
-                    duracao_seg,
-                    vel_media_kmh,
-                    vel_max_kmh,
-                    amostras: pontos.length,
-                    pontos_json: pontos.map((p) => ({
-                        ts: p.ts,
-                        lat: p.lat,
-                        lng: p.lng,
-                        spd: p.spd ?? null,
-                    })),
-                    source_device: "web",
-                    encerrado: true,
-                };
-
-                await fetch(`${API}/api/php/telemetria.php`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify(payload),
-                }).catch(() => null);
-
-                // limpa estado
-                startedAtRef.current = null;
-                pontosRef.current = [];
-                veiculoRef.current = "";
-
-                onSaved?.();
-            } finally {
-                setSaving(false);
-            }
+            await stopAndSave();
         },
     }));
 
-    // inicia a coleta (sem exibir nada além do select)
-    async function startAfterSelect(vNome: string) {
-        veiculoRef.current = vNome;
+    const titulo = useMemo(() => {
+        if (tipo === "remocao") return "Remoção";
+        if (tipo === "para_velorio") return "Transporte para Velório";
+        return "Transporte para Sepultamento";
+    }, [tipo]);
 
-        // pede permissão/primeiro ponto (não bloqueante)
-        try {
-            await new Promise<void>((resolve) => {
-                navigator.geolocation.getCurrentPosition(
-                    () => resolve(),
-                    () => resolve(),
-                    { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
-                );
-            });
-        } catch {
-            // segue mesmo sem o 1º ponto
-        }
+    /* ====== start/stop ====== */
 
-        // confere/atualiza status no PHP (silencioso)
+    async function startAfterSelect() {
+        setMsg(null);
+
+        // confirma ação (muda status) silenciosamente
         try {
             await onConfirmAcao?.(fase);
-        } catch {
-            // mesmo que falhe, vamos em frente para não travar o agente
-        }
+        } catch { }
 
-        // Inicia o watch
+        // wake lock
+        wakeLockRef.current = await requestWakeLock();
+        const relock = async () => {
+            if (!wakeLockRef.current) {
+                wakeLockRef.current = await requestWakeLock();
+            }
+        };
+        window.addEventListener("visibilitychange", relock);
+
+        // watchPosition
         try {
-            startedAtRef.current = Date.now();
+            startTsRef.current = Date.now();
             pontosRef.current = [];
+
             const id = navigator.geolocation.watchPosition(
                 (pos) => {
-                    const { latitude, longitude, speed } = pos.coords;
-                    // normaliza
-                    const lat = Number(latitude);
-                    const lng = Number(longitude);
-                    const spd = typeof speed === "number" && isFinite(speed) ? speed : undefined;
-                    if (!isFinite(lat) || !isFinite(lng)) return;
+                    const { latitude, longitude, accuracy, speed } = pos.coords;
+                    const p: Ponto = {
+                        lat: latitude,
+                        lng: longitude,
+                        ts: pos.timestamp || Date.now(),
+                        spd: isNum(speed) ? Number(speed) : undefined,
+                        acc: isNum(accuracy) ? Number(accuracy) : undefined,
+                    };
 
-                    pontosRef.current.push({
-                        ts: Date.now(),
-                        lat,
-                        lng,
-                        spd,
-                    });
-                    // limitador simples para não crescer infinito (opcional)
-                    if (pontosRef.current.length > 5000) {
-                        pontosRef.current.splice(0, 1000);
+                    const arr = pontosRef.current;
+                    const last = arr.length ? arr[arr.length - 1] : null;
+
+                    // filtros: pelo menos 3s e 10m do último
+                    const enoughTime = !last || p.ts - last.ts >= 3000;
+                    const enoughMove = !last || distMeters(last, p) >= 10;
+
+                    if (enoughTime && enoughMove) {
+                        arr.push(p);
+                    } else if (!last) {
+                        arr.push(p);
                     }
+
+                    // snapshot periódico
+                    saveActiveSnapshot({
+                        id: registro?.id ?? null,
+                        fase,
+                        tipo,
+                        veiculo,
+                        startTs: startTsRef.current,
+                        pontos: arr,
+                    });
                 },
-                // erro – apenas ignora (não mostra nada ao agente)
                 () => { },
-                { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
             );
-            watchIdRef.current = id as unknown as number;
-        } catch {
-            // sem watch, seguimos – o stopAndSave vai salvar com 0 pontos
+            watchIdRef.current = id;
+        } catch (e: any) {
+            setMsg({ text: e?.message || "Falha ao iniciar localização.", ok: false });
         }
 
-        // avisa a página que começamos
+        // snapshot timer (garantia)
+        if (snapshotTimerRef.current == null) {
+            snapshotTimerRef.current = window.setInterval(() => {
+                saveActiveSnapshot({
+                    id: registro?.id ?? null,
+                    fase,
+                    tipo,
+                    veiculo,
+                    startTs: startTsRef.current,
+                    pontos: pontosRef.current,
+                });
+            }, 5000) as unknown as number;
+        }
+
+        // flush fila quando ficar online
+        window.addEventListener("online", flushQueue);
+
         onStarted?.({ fase });
-        // fecha o modal imediatamente (fluxo pedido)
-        onClose();
     }
 
+    async function stopAndSave() {
+        if (saving) return;
+        setSaving(true);
+
+        try {
+            if (watchIdRef.current != null) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+            if (snapshotTimerRef.current != null) {
+                window.clearInterval(snapshotTimerRef.current);
+                snapshotTimerRef.current = null;
+            }
+            clearActiveSnapshot();
+            if (wakeLockRef.current) {
+                try {
+                    await wakeLockRef.current.release?.();
+                } catch { }
+                wakeLockRef.current = null;
+            }
+
+            endTsRef.current = Date.now();
+
+            const pontos = pontosRef.current.slice();
+            if (pontos.length === 1) {
+                pontos.push({ ...pontos[0], ts: (pontos[0].ts || Date.now()) + 1000 });
+            }
+
+            // métricas
+            let dist = 0;
+            let vmax = 0;
+            for (let i = 1; i < pontos.length; i++) dist += distMeters(pontos[i - 1], pontos[i]);
+            for (const p of pontos) if (isNum(p.spd)) vmax = Math.max(vmax, p.spd! * 3.6);
+
+            const durS = Math.max(1, Math.round(((endTsRef.current || 0) - (startTsRef.current || 0)) / 1000));
+            const velMedKmH = dist > 0 ? (dist / 1000) / (durS / 3600) : 0;
+
+            // payload
+            const payload = {
+                acao: "inserir",
+                sepultamento_id: (registro as any)?.sepultamento_id ?? null,
+                tipo: tipo,
+                falecido: (registro as any)?.falecido || (registro as any)?.falecido_nome || null,
+                veiculo_nome: veiculo || null,
+                veiculo_obs: null,
+                inicio_ts: new Date(startTsRef.current || Date.now()).toISOString().slice(0, 19).replace("T", " "),
+                fim_ts: new Date(endTsRef.current || Date.now()).toISOString().slice(0, 19).replace("T", " "),
+                inicio_lat: pontos[0]?.lat ?? null,
+                inicio_lng: pontos[0]?.lng ?? null,
+                fim_lat: pontos[pontos.length - 1]?.lat ?? null,
+                fim_lng: pontos[pontos.length - 1]?.lng ?? null,
+                distancia_km: Number((dist / 1000).toFixed(3)),
+                duracao_seg: durS,
+                vel_media_kmh: Number(velMedKmH.toFixed(2)),
+                vel_max_kmh: Number(vmax.toFixed(2)),
+                amostras: pontos.length,
+                pontos_json: pontos, // array puro; o PHP já serializa
+                source_device: "web",
+                encerrado: 1,
+            };
+
+            let sent = false;
+            try {
+                if (navigator.onLine) {
+                    const r = await fetch(`${API}/api/php/telemetria.php`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "include",
+                        body: JSON.stringify(payload),
+                    });
+                    const j = await r.json();
+                    if (!r.ok || !j?.sucesso) throw new Error("Falha ao enviar");
+                    sent = true;
+                }
+            } catch {
+                // fila offline
+                const q = readQueue();
+                q.push({ when: Date.now(), url: `${API}/api/php/telemetria.php`, body: payload });
+                writeQueue(q);
+                try {
+                    alert("Sem internet: sessão salva no aparelho e será enviada ao reconectar.");
+                } catch { }
+            }
+
+            if (sent) setMsg({ text: "Telemetria salva!", ok: true });
+            onSaved?.();
+            onClose();
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    /* ====== efeitos ====== */
+    useEffect(() => {
+        if (!open) {
+            setVeiculo("");
+            setMsg(null);
+            return;
+        }
+    }, [open]);
+
+    useEffect(() => {
+        // tenta escoar fila ao abrir modal
+        flushQueue();
+        const on = () => flushQueue();
+        window.addEventListener("online", on);
+        return () => window.removeEventListener("online", on);
+    }, []);
+
+    /* ====== UI ====== */
+
+    // Apenas a lista de veículos. Ao escolher, começa automaticamente.
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Selecionar veículo" maxWidth={720}>
-            <h2 className="text-xl font-semibold">Selecionar veículo</h2>
+        <Modal open={open} onClose={saving ? () => { } : onClose} ariaLabel="Selecionar veículo" maxWidth={560}>
+            <h3 className="text-lg font-semibold">Selecionar veículo</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-                Ao selecionar, pediremos a localização (se necessário), confirmaremos a ação e
-                iniciaremos a telemetria automaticamente.
+                Ao selecionar, pediremos a localização (se necessário), atualizaremos o status e iniciaremos a telemetria.
             </p>
 
-            {/* Único controle visível: select de veículo */}
             <div className="mt-4">
-                <label className="mb-1 block text-sm font-medium">Veículo</label>
+                <label className="mb-1 block text-sm text-slate-600">Veículo</label>
                 <select
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={sel}
-                    onChange={(e) => {
+                    value={veiculo}
+                    onChange={async (e) => {
                         const v = e.target.value;
-                        setSel(v);
-                        if (v) {
-                            // inicia tudo e fecha
-                            startAfterSelect(v);
-                        }
+                        setVeiculo(v);
+                        // inicia imediatamente após escolher
+                        await startAfterSelect();
                     }}
                 >
-                    <option value="">Selecione...</option>
-                    {veics.map((v) => (
+                    <option value="">Selecione…</option>
+                    {VEICULOS.map((v: string) => (
                         <option key={v} value={v}>
                             {v}
                         </option>
@@ -294,21 +390,31 @@ const TelemetriaModal = forwardRef<TelemetriaHandle, Props>(function TelemetriaM
                 </select>
             </div>
 
-            <div className="mt-6 flex items-center justify-between">
+            <div className="mt-4 flex items-center justify-between">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-2 text-sm"
-                    onClick={onClose}
+                    onClick={saving ? undefined : onClose}
+                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
                     disabled={saving}
                 >
                     Fechar
                 </button>
-                <div className="text-xs text-muted-foreground">
-                    {saving ? "Salvando..." : "Aguardando seleção"}
-                </div>
+
+                <button
+                    type="button"
+                    onClick={saving ? undefined : stopAndSave}
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                    disabled={saving}
+                >
+                    Encerrar e Salvar
+                </button>
             </div>
+
+            {msg && (
+                <div className="mt-3">
+                    <TextFeedback kind={msg.ok ? "success" : "error"}>{msg.text}</TextFeedback>
+                </div>
+            )}
         </Modal>
     );
 });
-
-export default TelemetriaModal;
