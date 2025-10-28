@@ -6,10 +6,9 @@ type Usuario = {
     id: number;
     nome: string;
     usuario: string;
-    // senha nunca vem do backend nos GETs
 };
 
-const API_URL = '/api/pai.php'; // mova o pai.php para um local público (ex.: /public/api/pai.php) ou ajuste a URL absoluta
+const API_URL = '/api/php/pai_api.php'; // proxy -> https://planoassistencialintegrado.com.br/pai_api.php
 
 export default function UsuariosPage() {
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -20,7 +19,7 @@ export default function UsuariosPage() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [nome, setNome] = useState('');
     const [usuario, setUsuario] = useState('');
-    const [senha, setSenha] = useState(''); // no edit, em branco = não alterar
+    const [senha, setSenha] = useState('');
 
     const resetForm = () => {
         setEditingId(null);
@@ -33,7 +32,7 @@ export default function UsuariosPage() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`${API_URL}?action=list_users`, { cache: 'no-store', credentials: 'include' });
+            const res = await fetch(`${API_URL}?action=list_users`, { cache: 'no-store' });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.erro || 'Falha ao listar usuários.');
             setUsuarios(data as Usuario[]);
@@ -52,31 +51,22 @@ export default function UsuariosPage() {
         e.preventDefault();
         setError(null);
 
-        if (!nome.trim() || !usuario.trim()) {
-            setError('Preencha nome e usuário.');
+        if (!nome.trim() || !usuario.trim() || (editingId == null && !senha.trim())) {
+            setError(editingId == null ? 'Preencha nome, usuário e senha.' : 'Preencha nome e usuário.');
             return;
         }
 
         setLoading(true);
         try {
             let res: Response;
-            if (editingId == null) {
-                // create
-                res = await fetch(`${API_URL}?action=create_user`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nome, usuario, senha }),
-                });
-            } else {
-                // update
-                res = await fetch(`${API_URL}?action=update_user`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: editingId, nome, usuario, senha }), // senha vazia = não alterar
-                });
-            }
+            const payload = { id: editingId ?? undefined, nome, usuario, senha };
+
+            res = await fetch(`${API_URL}?action=${editingId == null ? 'create_user' : 'update_user'}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
             const data = await res.json();
             if (!res.ok || data?.erro || data?.sucesso === false) {
                 throw new Error(data?.msg || data?.erro || 'Falha ao salvar.');
@@ -94,7 +84,7 @@ export default function UsuariosPage() {
         setEditingId(u.id);
         setNome(u.nome);
         setUsuario(u.usuario);
-        setSenha(''); // não mostramos senha; se preencher, troca
+        setSenha('');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -105,7 +95,6 @@ export default function UsuariosPage() {
         try {
             const res = await fetch(`${API_URL}?action=delete_user`, {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id }),
             });
@@ -121,13 +110,15 @@ export default function UsuariosPage() {
         }
     };
 
-    const title = useMemo(() => (editingId == null ? 'Novo usuário' : `Editar usuário #${editingId}`), [editingId]);
+    const title = useMemo(
+        () => (editingId == null ? 'Novo usuário' : `Editar usuário #${editingId}`),
+        [editingId]
+    );
 
     return (
         <div className="max-w-5xl mx-auto p-6">
             <h1 className="text-2xl font-semibold mb-4">Usuários</h1>
 
-            {/* Form */}
             <div className="rounded-2xl shadow p-4 mb-8">
                 <h2 className="text-lg font-medium mb-4">{title}</h2>
                 {error && <p className="text-red-600 mb-3">{error}</p>}
@@ -152,7 +143,7 @@ export default function UsuariosPage() {
                     </div>
                     <div className="md:col-span-1">
                         <label className="block text-sm mb-1">
-                            Senha {editingId != null && <span className="opacity-60 text-xs">(deixe em branco p/ manter)</span>}
+                            Senha {editingId != null && <span className="opacity-60 text-xs">(em branco = manter)</span>}
                         </label>
                         <input
                             className="w-full border rounded-lg px-3 py-2"
@@ -185,7 +176,6 @@ export default function UsuariosPage() {
                 </form>
             </div>
 
-            {/* Table */}
             <div className="rounded-2xl shadow overflow-auto">
                 <table className="min-w-full">
                     <thead>
@@ -204,11 +194,7 @@ export default function UsuariosPage() {
                                 <td className="px-4 py-2">{u.usuario}</td>
                                 <td className="px-4 py-2">
                                     <div className="flex gap-2">
-                                        <button
-                                            className="px-3 py-1 rounded-lg border"
-                                            onClick={() => startEdit(u)}
-                                            disabled={loading}
-                                        >
+                                        <button className="px-3 py-1 rounded-lg border" onClick={() => startEdit(u)} disabled={loading}>
                                             Editar
                                         </button>
                                         <button
