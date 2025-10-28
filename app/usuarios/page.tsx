@@ -88,7 +88,7 @@ export default function UsuariosPage() {
     const openEdit = (u: Usuario) => { setEditingId(u.id); setNome(u.nome); setUsuario(u.usuario); setSenha(''); setOpen(true); };
 
     const title = useMemo(
-        () => (editingId == null ? 'Novo usuário' : `Editar usuário #${editingId}`),
+        () => (editingId == null ? 'Novo usuário' : `Editar usuário`), // sem #ID
         [editingId]
     );
 
@@ -150,12 +150,11 @@ export default function UsuariosPage() {
 
             {error && <p className="text-red-600 mb-3">{error}</p>}
 
-            {/* Tabela: largura total no desktop; no mobile esconde ID */}
+            {/* Tabela full width; sem coluna de ID */}
             <div className="rounded-2xl shadow overflow-x-auto">
                 <table className="w-full table-fixed">
                     <thead>
                         <tr className="bg-gray-50 text-left">
-                            <th className="px-4 py-3 hidden md:table-cell">ID</th>
                             <th className="px-4 py-3">Nome</th>
                             <th className="px-4 py-3">Usuário</th>
                             <th className="px-4 py-3">Ação</th>
@@ -163,8 +162,7 @@ export default function UsuariosPage() {
                     </thead>
                     <tbody>
                         {usuarios.map((u) => (
-                            <tr key={u.id} className="border-t">
-                                <td className="px-4 py-2 truncate hidden md:table-cell">{u.id}</td>
+                            <tr key={u.id} className="border-top border-t">
                                 <td className="px-4 py-2 truncate">{u.nome}</td>
                                 <td className="px-4 py-2 truncate">{u.usuario}</td>
                                 <td className="px-4 py-2">
@@ -180,7 +178,7 @@ export default function UsuariosPage() {
                         ))}
                         {usuarios.length === 0 && !loading && (
                             <tr>
-                                <td className="px-4 py-6 text-center text-gray-500" colSpan={4}>
+                                <td className="px-4 py-6 text-center text-gray-500" colSpan={3}>
                                     Nenhum usuário encontrado.
                                 </td>
                             </tr>
