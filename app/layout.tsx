@@ -8,6 +8,9 @@ import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
 
+// >>> IMPORTANTE: provider que carrega whoami + list_permissions e expõe "has(slug)"
+import { PermsProvider } from "@/app/_perms/PermsProvider";
+
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
@@ -72,7 +75,10 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
+            {/* >>> PermsProvider envolve o AppShell para que Home e Sidebar possam filtrar pelos slugs permitidos */}
+            <PermsProvider>
+              <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
+            </PermsProvider>
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>

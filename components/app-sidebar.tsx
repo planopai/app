@@ -3,19 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  IconHome,
-  IconDeviceDesktop,
-  IconUsers,
-  IconBook,
-  IconUsersGroup,
-  IconLeaf,
-  IconFileText,
-  IconHelp,
-  IconBuildingSkyscraper,
-  IconGift, // 🎁 ícone do Clube PAI
-  IconSettings, // ⚙️ ícone do Administrativo
-} from "@tabler/icons-react";
+import { IconHelp } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "@/components/nav-user";
@@ -30,26 +18,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const data = {
-  user: { name: "shadcn", email: "m@example.com", avatar: "/avatars/shadcn.jpg" },
-  navMain: [
-    { title: "Início", url: "/", icon: IconHome },
-    { title: "Quadro de Atendimento", url: "/quadro-atendimento", icon: IconDeviceDesktop },
-    { title: "Acompanhamento", url: "/acompanhamento", icon: IconUsers },
-    { title: "Memorial", url: "/memorial", icon: IconBuildingSkyscraper },
-    { title: "Obituário", url: "/obituario", icon: IconBook },
-    { title: "Clube PAI", url: "/clube", icon: IconGift }, // 🎁
-    { title: "Leads", url: "/leads", icon: IconUsersGroup },
-    { title: "Coroa de Flores", url: "/coroa-de-flores", icon: IconLeaf },
-    { title: "Relatório", url: "/relatorio", icon: IconFileText },
-    // ➕ Novo item solicitado: Administrativo (após Relatório)
-    { title: "Administrativo", url: "/administrativo", icon: IconSettings },
-  ] as { title: string; url: string; icon?: any }[],
-};
+import { usePerms } from "@/app/_perms/PermsProvider";
+import { LINKS } from "@/app/_perms/links";
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter();
   const sidebar = useSidebar() as any;
+  const { perms, has } = usePerms();
 
   const closeMobileNow = React.useCallback(() => {
     if (typeof sidebar?.setOpenMobile === "function") {
@@ -61,19 +36,10 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const handleNavigateMobile = React.useCallback(
     (href: string, e?: React.MouseEvent<HTMLAnchorElement>) => {
-      if (
-        e?.metaKey ||
-        e?.ctrlKey ||
-        e?.shiftKey ||
-        e?.altKey ||
-        e?.button === 1
-      ) {
-        return;
-      }
+      if (e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1) return;
       const isMobile: boolean =
         !!sidebar?.isMobile ||
-        (typeof window !== "undefined" &&
-          window.matchMedia?.("(max-width: 1024px)")?.matches) ||
+        (typeof window !== "undefined" && window.matchMedia?.("(max-width: 1024px)")?.matches) ||
         false;
 
       if (isMobile) {
@@ -84,6 +50,44 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     },
     [router, sidebar?.isMobile, closeMobileNow]
   );
+
+  // Loading state
+  if (perms == null) {
+    return (
+      <Sidebar collapsible="icon" {...props}>
+        <SidebarHeader>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
+                <Link href="/">
+                  <img
+                    src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+                    alt="Logo PAI"
+                    className="h-8 w-auto"
+                  />
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarContent>
+          <div className="p-3 text-sm opacity-60">Carregando…</div>
+        </SidebarContent>
+        <SidebarFooter>
+          <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
+        </SidebarFooter>
+      </Sidebar>
+    );
+  }
+
+  // Filtra os itens com base nas permissões
+  const visible = LINKS.filter(l => has(l.slug));
+
+  const navMain = visible.map(v => ({
+    title: v.label,
+    url: v.href,
+    icon: v.Icon,
+  }));
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -106,7 +110,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       {/* Menu principal */}
       <SidebarContent>
-        <NavMain items={data.navMain} onNavigate={handleNavigateMobile} />
+        <NavMain items={navMain} onNavigate={handleNavigateMobile} />
 
         {/* Rodapé visual de ajuda */}
         <div className="mt-auto px-2">
@@ -125,7 +129,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       {/* Usuário (opcional) */}
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
       </SidebarFooter>
     </Sidebar>
   );
