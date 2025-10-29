@@ -2,11 +2,14 @@
 
 import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { usePerms } from "../_perms/PermsProvider"; // <<< importe o Provider
 
 export default function LoginPage() {
     const router = useRouter();
     const search = useSearchParams();
     const next = search.get("next") || "/";
+
+    const { reload } = usePerms(); // <<< vamos recarregar permissões antes de sair do login
 
     const [usuario, setUsuario] = React.useState("");
     const [senha, setSenha] = React.useState("");
@@ -34,6 +37,7 @@ export default function LoginPage() {
         }
         setLoading(true);
         try {
+            // 1) Autentica no backend (deve SETAR cookies: pai_auth=1, pai_uid, etc.)
             const r = await fetch("/api/auth/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -46,7 +50,7 @@ export default function LoginPage() {
                 throw new Error(data?.msg || data?.error || "Dados incorretos. Tente novamente.");
             }
 
-            // lembrar?
+            // 2) Lembrar credenciais (OBS: guardar senha em localStorage não é recomendado em produção)
             if (remember) {
                 localStorage.setItem("usuario", usuario);
                 localStorage.setItem("senha", senha);
@@ -55,11 +59,25 @@ export default function LoginPage() {
                 localStorage.removeItem("senha");
             }
 
+            // 3) (opcional, ajuda a garantir que cookie já esteja válido no backend)
+            await fetch("/api/php/pai_api.php?action=whoami", { cache: "no-store" }).catch(() => { });
+
+            // 4) Recarrega permissões AINDA NA TELA DE LOGIN
+            //    Assim, ao navegar, a Home já renderiza com os cards corretos imediatamente.
+            await reload();
+
+            // 5) Navega client-side já com permissões em memória:
             router.replace(next);
+
+            // --- Alternativa “bala de prata” (se preferir hard reload) ---
+            // window.location.replace(next);
         } catch (err: any) {
-            setError(err.message || "Erro de comunicação com o servidor.");
-        } finally {
+            setError(err?.message || "Erro de comunicação com o servidor.");
             setLoading(false);
+            return;
+        } finally {
+            // Se usou router.replace, pode manter o loading true até a troca de rota.
+            // Se usar window.location.replace, esse finally nem chega a aparecer.
         }
     }
 
