@@ -5,9 +5,8 @@ import { NextResponse } from "next/server";
 const PUBLIC_FILE = /\.(.*)$/;
 
 // Slugs protegidos (devem bater com 'permissoes.pagina' no MySQL)
-// IMPORTANTE: NÃO coloque "login" aqui.
+// ⚠️ Removido 'inicio' (sua Home está em "/")
 const PROTECTED_SLUGS = new Set<string>([
-    "inicio",
     "quadro-atendimento",
     "acompanhamento",
     "memorial",
@@ -20,7 +19,7 @@ const PROTECTED_SLUGS = new Set<string>([
     "dashboard",
     "api",
     "atendimento",
-    // "login", // mantenha comentado PARA SEMPRE se /login deve ser público
+    // "login", // NÃO proteger login
     "medicos",
     "mensagens",
     "noticias",
@@ -36,21 +35,35 @@ const PROTECTED_SLUGS = new Set<string>([
 ]);
 
 // Rotas livres (além de estáticos e /api/php)
-const PUBLIC_PATHS = new Set<string>(["/", "/login", "/ajuda"]);
+const PUBLIC_PATHS = new Set<string>([
+    "/",
+    "/login",
+    "/ajuda",
+]);
 
 function firstSlug(pathname: string): string {
     return pathname.split("/").filter(Boolean)[0] || "";
 }
 
+function pickFirstAllowedPath(perms: string[]): string {
+    if (perms.includes("*")) return "/";
+    for (const slug of perms) {
+        // Considera apenas slugs conhecidos/protegidos
+        if (PROTECTED_SLUGS.has(slug)) return `/${slug}`;
+    }
+    // fallback seguro
+    return "/";
+}
+
 export async function middleware(req: NextRequest) {
     const { pathname, search } = req.nextUrl;
 
-    // >>> Regra explícita: /login e subrotas SEMPRE passam <<<
-    if (pathname === "/login" || pathname.startsWith("/login/")) {
+    // /login deve ser sempre público
+    if (pathname === "/login") {
         return NextResponse.next();
     }
 
-    // Públicos / estáticos SEMPRE passam
+    // Públicos / estáticos
     const isPublic =
         PUBLIC_PATHS.has(pathname) ||
         pathname.startsWith("/_next") ||
@@ -62,13 +75,17 @@ export async function middleware(req: NextRequest) {
         pathname.startsWith("/api/wc") ||
         PUBLIC_FILE.test(pathname);
 
-    if (isPublic) {
-        return NextResponse.next();
-    }
-
     const isAuthed = req.cookies.get("pai_auth")?.value === "1";
 
-    // Exige login para rotas não públicas
+    // Já logado indo para /login → manda para local seguro
+    if (pathname === "/login" && isAuthed) {
+        return NextResponse.redirect(new URL("/", req.url));
+    }
+
+    // Rotas públicas passam
+    if (isPublic) return NextResponse.next();
+
+    // Exige login
     if (!isAuthed) {
         const login = new URL("/login", req.url);
         const next = pathname + (search || "");
@@ -76,7 +93,7 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(login);
     }
 
-    // Checagem por slug protegido
+    // Checagem por slug
     const slug = firstSlug(pathname);
     if (!slug || !PROTECTED_SLUGS.has(slug)) {
         return NextResponse.next();
@@ -97,11 +114,7 @@ export async function middleware(req: NextRequest) {
             cache: "no-store",
         });
         const t1 = await r1.text();
-        try {
-            who = JSON.parse(t1.replace(/^\uFEFF/, "").trim());
-        } catch {
-            who = null;
-        }
+        try { who = JSON.parse(t1.replace(/^\uFEFF/, "").trim()); } catch { who = null; }
     } catch {
         // erro de rede → trate como não logado
     }
@@ -142,12 +155,11 @@ export async function middleware(req: NextRequest) {
     const allowed = perms.includes("*") || perms.includes(slug);
     if (allowed) return NextResponse.next();
 
-    // Sem permissão → redireciona para uma página segura (ex.: /inicio)
-    const to = new URL("/login", req.url);
+    // Sem permissão → redireciona para uma página segura
+    const to = new URL(pickFirstAllowedPath(perms), req.url);
     return NextResponse.redirect(to);
 }
 
-// Onde o middleware roda
 export const config = {
     matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };

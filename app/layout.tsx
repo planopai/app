@@ -8,9 +8,7 @@ import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
 
-// Provider de permissões (cliente)
 import { PermsProvider } from "./_perms/PermsProvider";
-// SSR helper para perms
 import { getInitialPerms } from "./_perms/getPermsServer";
 
 // Garante que o layout NUNCA seja estático (evita cache e flicker)
@@ -30,20 +28,20 @@ export const metadata: Metadata = {
       { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" }
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
-    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }]
+    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
   },
   appleWebApp: {
     capable: true,
     title: "App Plano PAI 2.0",
-    statusBarStyle: "black-translucent"
-  }
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default async function RootLayout({
-  children
+  children,
 }: Readonly<{ children: React.ReactNode }>) {
   const cookieStore = await cookies();
   const activeThemeValue = cookieStore.get("active_theme")?.value;
@@ -52,7 +50,7 @@ export default async function RootLayout({
   // Chave do usuário (cookie setado pelo seu backend)
   const uidCookie = cookieStore.get("pai_uid")?.value || null;
 
-  // >>> SSR: pega permissões com os cookies da requisição
+  // SSR: pega permissões com os cookies da requisição
   const initialPerms = await getInitialPerms(); // [] se não logado
 
   return (
@@ -87,10 +85,7 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/*
-              key = uidCookie → se mudar de usuário, remonta tudo.
-              PermsProvider recebe initialPerms (SSR) para não piscar/atrasar.
-            */}
+            {/* key = uidCookie → se mudar de usuário, remonta tudo. */}
             <PermsProvider key={uidCookie ?? "nouid"} userKey={uidCookie} initialPerms={initialPerms}>
               <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
             </PermsProvider>
