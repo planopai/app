@@ -143,7 +143,7 @@ export async function middleware(req: NextRequest) {
     if (allowed) return NextResponse.next();
 
     // Sem permissão → redireciona para uma página segura (ex.: /inicio)
-    const to = new URL("/inicio", req.url);
+    const to = new URL("/login", req.url);
     return NextResponse.redirect(to);
 }
 
