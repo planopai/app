@@ -45,6 +45,11 @@ function firstSlug(pathname: string): string {
 export async function middleware(req: NextRequest) {
     const { pathname, search } = req.nextUrl;
 
+    // >>> Regra explícita: /login e subrotas SEMPRE passam <<<
+    if (pathname === "/login" || pathname.startsWith("/login/")) {
+        return NextResponse.next();
+    }
+
     // Públicos / estáticos SEMPRE passam
     const isPublic =
         PUBLIC_PATHS.has(pathname) ||
