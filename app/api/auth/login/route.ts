@@ -10,20 +10,17 @@ const PHP_LOGIN = "/autentica.php";
 
 function extractPhpSessId(setCookieHeader: string | null): string | null {
     if (!setCookieHeader) return null;
-    // tenta capturar o primeiro PHPSESSID em qualquer posição
     const m = setCookieHeader.match(/PHPSESSID=([^;,\s]+)/i);
     return m?.[1] || null;
 }
 
-// Apenas inicial maiúscula, restante como veio
-function capitalizeFirst(s: string) {
-    if (!s) return s;
-    return s.charAt(0).toUpperCase() + s.slice(1);
+function stripBOM(s: string) {
+    return s.replace(/^\uFEFF/, "").trim();
 }
 
 export async function POST(req: NextRequest) {
     try {
-        // aceita JSON { usuario, senha } e também x-www-form-urlencoded
+        // aceita JSON e x-www-form-urlencoded
         let usuario = "";
         let senha = "";
 
@@ -53,7 +50,7 @@ export async function POST(req: NextRequest) {
             redirect: "manual",
         });
 
-        const raw = await resp.text();
+        const raw = stripBOM(await resp.text());
 
         if (process.env.NODE_ENV !== "production") {
             console.log("[auth/php] status:", resp.status);
@@ -65,7 +62,7 @@ export async function POST(req: NextRequest) {
         try {
             data = JSON.parse(raw);
         } catch {
-            // fica vazio e tratamos abaixo
+            // ignora; trata abaixo
         }
 
         const sucesso = data?.sucesso === true || data?.success === true;
@@ -74,46 +71,50 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ sucesso: false, error: msg }, { status: 401 });
         }
 
-        // extrai o PHPSESSID retornado pelo PHP (ou pega do JSON, se enviado)
+        // IMPORTANTE: precisamos do ID do usuário para preencher pai_uid
+        const userId =
+            Number(data?.id || data?.user_id || data?.uid) || 0; // ajuste se seu PHP usar outro campo
+        if (!userId) {
+            return NextResponse.json(
+                { sucesso: false, error: "Resposta do servidor sem ID do usuário." },
+                { status: 500 }
+            );
+        }
+
+        // extrai o PHPSESSID retornado
         const setCookie = resp.headers.get("set-cookie");
         const phpSess = extractPhpSessId(setCookie) || data?.sessid || "";
 
-        const nomeOriginal = (data?.nome ?? usuario) as string;
-        const nomeExibicao = capitalizeFirst(nomeOriginal.trim());
-
+        const nome = String(data?.nome || data?.name || usuario).trim();
         const isProd = process.env.NODE_ENV === "production";
 
-        const res = NextResponse.json({ sucesso: true, nome: nomeExibicao });
+        const res = NextResponse.json({ sucesso: true, nome, uid: userId });
         res.headers.set("Cache-Control", "no-store");
 
-        // opções de cookie no domínio RAIZ (.planoassistencialintegrado.com.br)
-        const baseOpts = {
+        // 1) Cookies HOST-ONLY (sem domain) -> SSR do seu app enxerga imediatamente
+        const hostOnly = {
             httpOnly: true,
             sameSite: "lax" as const,
             secure: isProd,
             path: "/",
-            domain: ".planoassistencialintegrado.com.br",
             maxAge: 60 * 60 * 8, // 8h
         };
+        res.cookies.set("pai_auth", "1", hostOnly);
+        res.cookies.set("pai_uid", String(userId), hostOnly);
 
-        // sinal de login
-        res.cookies.set("pai_auth", "1", baseOpts);
+        // opcional: info não-httpOnly para UI
+        res.cookies.set("pai_name", nome, { ...hostOnly, httpOnly: false });
+        res.cookies.set("pai_user", usuario, { ...hostOnly, httpOnly: false });
 
-        // nome legível pelo front (não httpOnly) — sem encodeURIComponent, com inicial maiúscula
-        res.cookies.set("pai_name", nomeExibicao, {
-            ...baseOpts,
-            httpOnly: false,
-        });
-
-        // alias opcional do usuário — cru (sem encode/transform)
-        res.cookies.set("pai_user", usuario, {
-            ...baseOpts,
-            httpOnly: false,
-        });
-
-        // **propaga o MESMO PHPSESSID** para o domínio raiz
+        // 2) Cookies no DOMÍNIO PAI -> PHP de apex/subdomínios também recebe
+        const parent = {
+            ...hostOnly,
+            domain: ".planoassistencialintegrado.com.br",
+        };
+        res.cookies.set("pai_auth", "1", parent);
+        res.cookies.set("pai_uid", String(userId), parent);
         if (phpSess) {
-            res.cookies.set("PHPSESSID", phpSess, baseOpts);
+            res.cookies.set("PHPSESSID", phpSess, parent);
         }
 
         return res;
