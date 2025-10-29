@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 const PUBLIC_FILE = /\.(.*)$/;
 
 // Slugs protegidos (devem bater com 'permissoes.pagina' no MySQL)
+// IMPORTANTE: NÃO coloque "login" aqui.
 const PROTECTED_SLUGS = new Set<string>([
     "inicio",
     "quadro-atendimento",
@@ -19,7 +20,7 @@ const PROTECTED_SLUGS = new Set<string>([
     "dashboard",
     "api",
     "atendimento",
-    // "login", // deixe comentado se /login deve ser sempre público
+    // "login", // mantenha comentado PARA SEMPRE se /login deve ser público
     "medicos",
     "mensagens",
     "noticias",
@@ -35,11 +36,7 @@ const PROTECTED_SLUGS = new Set<string>([
 ]);
 
 // Rotas livres (além de estáticos e /api/php)
-const PUBLIC_PATHS = new Set<string>([
-    "/",
-    "/login",
-    "/ajuda",
-]);
+const PUBLIC_PATHS = new Set<string>(["/", "/login", "/ajuda"]);
 
 function firstSlug(pathname: string): string {
     return pathname.split("/").filter(Boolean)[0] || "";
@@ -48,29 +45,25 @@ function firstSlug(pathname: string): string {
 export async function middleware(req: NextRequest) {
     const { pathname, search } = req.nextUrl;
 
-    // Públicos / estáticos
+    // Públicos / estáticos SEMPRE passam
     const isPublic =
         PUBLIC_PATHS.has(pathname) ||
         pathname.startsWith("/_next") ||
         pathname.startsWith("/static") ||
         pathname.startsWith("/public") ||
         pathname.startsWith("/api/auth") ||
-        pathname.startsWith("/api/php") ||   // proxy PHP deve ficar livre
+        pathname.startsWith("/api/php") || // proxy PHP deve ficar livre
         pathname.startsWith("/api/wp") ||
         pathname.startsWith("/api/wc") ||
         PUBLIC_FILE.test(pathname);
 
-    const isAuthed = req.cookies.get("pai_auth")?.value === "1";
-
-    // Já logado indo para /login → volta para home
-    if (pathname === "/login" && isAuthed) {
-        return NextResponse.redirect(new URL("/", req.url));
+    if (isPublic) {
+        return NextResponse.next();
     }
 
-    // Rotas públicas passam
-    if (isPublic) return NextResponse.next();
+    const isAuthed = req.cookies.get("pai_auth")?.value === "1";
 
-    // Exige login
+    // Exige login para rotas não públicas
     if (!isAuthed) {
         const login = new URL("/login", req.url);
         const next = pathname + (search || "");
@@ -78,7 +71,7 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(login);
     }
 
-    // Checagem por slug
+    // Checagem por slug protegido
     const slug = firstSlug(pathname);
     if (!slug || !PROTECTED_SLUGS.has(slug)) {
         return NextResponse.next();
@@ -94,13 +87,16 @@ export async function middleware(req: NextRequest) {
         const r1 = await fetch(`${origin}/api/php/pai_api.php?action=whoami`, {
             headers: {
                 "x-requested-with": "XMLHttpRequest",
-                "cookie": cookieHeader,
+                cookie: cookieHeader,
             },
             cache: "no-store",
         });
-        // Tolerante a respostas não-JSON
         const t1 = await r1.text();
-        try { who = JSON.parse(t1.replace(/^\uFEFF/, "").trim()); } catch { who = null; }
+        try {
+            who = JSON.parse(t1.replace(/^\uFEFF/, "").trim());
+        } catch {
+            who = null;
+        }
     } catch {
         // erro de rede → trate como não logado
     }
@@ -122,7 +118,7 @@ export async function middleware(req: NextRequest) {
             {
                 headers: {
                     "x-requested-with": "XMLHttpRequest",
-                    "cookie": cookieHeader,
+                    cookie: cookieHeader,
                 },
                 cache: "no-store",
             }
