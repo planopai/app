@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 const PUBLIC_FILE = /\.(.*)$/;
 
 // Slugs protegidos (devem bater com 'permissoes.pagina' no MySQL)
-// ⚠️ Removido 'inicio' (sua Home está em "/")
+// ⚠️ Não inclua 'inicio' aqui; sua Home está em "/"
 const PROTECTED_SLUGS = new Set<string>([
     "quadro-atendimento",
     "acompanhamento",
@@ -35,8 +35,8 @@ const PROTECTED_SLUGS = new Set<string>([
 ]);
 
 // Rotas livres (além de estáticos e /api/php)
+// ⚠️ Removido "/" para que a Home exija login
 const PUBLIC_PATHS = new Set<string>([
-    "/",
     "/login",
     "/ajuda",
 ]);
@@ -82,10 +82,10 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(new URL("/", req.url));
     }
 
-    // Rotas públicas passam
+    // Se a rota é pública (ex.: /login, /ajuda, estáticos), passa direto
     if (isPublic) return NextResponse.next();
 
-    // Exige login
+    // Para qualquer outra rota (inclusive "/"), exige login
     if (!isAuthed) {
         const login = new URL("/login", req.url);
         const next = pathname + (search || "");
@@ -93,7 +93,7 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(login);
     }
 
-    // Checagem por slug
+    // Checagem por slug (para rotas protegidas específicas)
     const slug = firstSlug(pathname);
     if (!slug || !PROTECTED_SLUGS.has(slug)) {
         return NextResponse.next();
@@ -160,6 +160,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(to);
 }
 
+// Onde o middleware roda
 export const config = {
     matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };
