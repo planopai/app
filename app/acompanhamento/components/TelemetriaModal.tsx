@@ -204,8 +204,8 @@ export default forwardRef<
                     const last = arr.length ? arr[arr.length - 1] : null;
 
                     // filtros: pelo menos 3s e 10m entre pontos (evita "linha reta" de jitter)
-                    const enoughTime = !last || p.ts - last.ts >= 3000;
-                    const enoughMove = !last || distMeters(last, p) >= 10;
+                    const enoughTime = !last || p.ts - last.ts >= 1000;
+                    const enoughMove = !last || distMeters(last, p) >= 3;
 
                     if (enoughTime && enoughMove) {
                         arr.push(p);
@@ -224,7 +224,7 @@ export default forwardRef<
                     });
                 },
                 () => { },
-                { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+                { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
             );
             watchIdRef.current = id;
         } catch (e: any) {
