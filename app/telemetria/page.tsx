@@ -351,7 +351,7 @@ export default function TelemetriaPage() {
 
     useEffect(() => { fetchRows(); }, [fetchRows]);
 
-    // Filtros
+    // Filtros de pesquisa para veiculos
     const allVeiculos = useMemo(() => {
         const s = new Set<string>();
         rows.forEach((r) => { if (r.veiculo_nome) s.add(r.veiculo_nome); });
