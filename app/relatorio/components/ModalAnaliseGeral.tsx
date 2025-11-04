@@ -21,7 +21,7 @@ const ICONES_TIPO: Record<string, string> = {
     Arrumação: "🧴",
     Material: "📦",
     Tanatopraxia: "⚗️",
-    "Convênio": "🤝",
+    Convênio: "🤝",
     Principal: "⭐",
 };
 
@@ -85,11 +85,10 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 ];
 
 /* =========================
-   Parsers de Data (precisos)
+   Datas — parsers robustos
    ========================= */
-
-/** dd/mm/aaaa[ , HH:MM:SS] → Date (local) */
-function parseBrDate(s: string): Date | null {
+function parseBrDate(s?: string | null): Date | null {
+    if (!s) return null;
     const m = s
         .trim()
         .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
@@ -98,41 +97,29 @@ function parseBrDate(s: string): Date | null {
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
     return isNaN(d.getTime()) ? null : d;
 }
-
-/** ISO → Date (LOCAL se não houver timezone) */
-function parseIsoDate(s: string): Date | null {
+function parseIsoLocal(s?: string | null): Date | null {
+    if (!s) return null;
     const t = s.trim().replace(" ", "T");
-
-    // Apenas data: aaaa-mm-dd → construir como LOCAL 00:00
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) {
-        const [, yyyy, mm, dd] = m;
-        const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
-        return isNaN(d.getTime()) ? null : d;
-    }
-
-    // Data + hora sem timezone: construir como LOCAL
-    m = t.match(/^(\d{4})-(\d{2})-(\d{2})[T](\d{2}):(\d{2})(?::(\d{2}))?$/);
-    if (m) {
-        const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
-        const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
-        return isNaN(d.getTime()) ? null : d;
-    }
-
-    // Demais formatos (com Z ou offset) → delega para Date (já trata timezone)
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], 0, 0, 0);
+    m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
     const d = new Date(t);
     return isNaN(d.getTime()) ? null : d;
 }
-
-/** Tenta BR, depois ISO. Se falhar, null. */
-function parseDateFlex(s?: string | null): Date | null {
-    if (!s) return null;
-    return parseBrDate(s) || parseIsoDate(s) || null;
+function parseDateFlex(s?: string | null) {
+    return parseBrDate(s) || parseIsoLocal(s) || null;
 }
 
-/** Melhor data do registro (ordem de preferência). */
-function getRegistroDate(r: RegistroAnalise): Date | null {
-    const candidatos = [
+/** Data canônica para FILTRAGEM do período — prioriza início de conservação/tanato */
+function getRegistroDateAnalitico(r: RegistroAnalise): Date | null {
+    const cand = [
+        // variações comuns em backends
+        (r as any).data_inicio_conservacao,
+        (r as any).tanato_data_inicio,
+        (r as any).inicio_conservacao,
+        (r as any).data_tanato,
+        // genéricas
         (r as any).data,
         (r as any).data_inicio_velorio,
         (r as any).data_fim_velorio,
@@ -140,80 +127,46 @@ function getRegistroDate(r: RegistroAnalise): Date | null {
         (r as any).ultima_datahora,
         (r as any).created_at,
     ];
-    for (const c of candidatos) {
+    for (const c of cand) {
         const d = parseDateFlex(String(c || ""));
         if (d) return d;
     }
     return null;
 }
 
-/** Intervalo inclusivo [start,end]. Se informar uma data só, usa "aquele dia". */
-function makeRange(
-    aDe?: string,
-    aAte?: string
-): { start: Date | null; end: Date | null } {
+/** Constrói intervalo inclusivo [start,end]. Se informar só uma data, usa aquele dia. */
+function makeRange(aDe?: string, aAte?: string) {
     const hasDe = !!aDe;
     const hasAte = !!aAte;
-
-    // se só um foi informado, usa o mesmo dia para ambos
     const deStr = hasDe ? aDe! : hasAte ? aAte! : "";
     const ateStr = hasAte ? aAte! : hasDe ? aDe! : "";
-
     const start = deStr ? new Date(`${deStr}T00:00:00`) : null;
     const end = ateStr ? new Date(`${ateStr}T23:59:59`) : null;
-
-    // se invertido, corrige
-    if (start && end && end < start) {
-        return {
-            start: end,
-            end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000),
-        };
-    }
+    if (start && end && end < start) return { start: end, end: start };
     return { start, end };
 }
 
 /* =========================
-   Helpers de Tanatopraxia (AGENTE)
+   Responsável Tanato
    ========================= */
-
 function normStr(s: string): string {
-    return s
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
+    return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 }
-
-const SANDRO_IDS = new Set<string | number>([]);
-const JOSEILDO_IDS = new Set<string | number>([]);
-
 function pickNome(obj: any): string {
     if (!obj) return "";
     if (typeof obj === "string") return obj;
     if (typeof obj === "object") {
-        return (
-            obj.nome ||
-            obj.name ||
-            obj.displayName ||
-            obj.usuario ||
-            obj.login ||
-            obj.agente ||
-            ""
-        );
+        return obj.nome || obj.name || obj.displayName || obj.usuario || obj.login || obj.agente || "";
     }
     return String(obj);
 }
-
-/** tenta reconhecer se um item de log representa o *início da conservação* */
 function isInicioConservacao(log: any): boolean {
     const a = normStr(String(log?.acao || ""));
     const s = normStr(String(log?.status_novo || log?.status || ""));
     if (a.includes("iniciou") && a.includes("conserva")) return true;
     if (a.includes("atualizou") && a.includes("status")) {
-        // fase01 / fase 01 / fase1
-        if (/fase\s*0*1\b/.test(s)) return true;
+        if (/fase\s*0*1\b/.test(s)) return true; // fase01/fase1
     }
-    // alguns payloads trazem flags dentro de detalhes
     try {
         const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
         const detStr = normStr(JSON.stringify(det || ""));
@@ -221,33 +174,18 @@ function isInicioConservacao(log: any): boolean {
     } catch { }
     return false;
 }
-
-/** Busca Sandro/Joseildo.
- *  Ordem: campos de AGENTE → logs que iniciam conservação → fallbacks → (por fim) usuario/operador
- */
 function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | null {
-    // 1) Campos diretos de agente
-    const agenteDireto =
+    const direto =
         (r as any).agente ??
         (r as any).agente_nome ??
         (r as any).agente_responsavel ??
         (r as any).responsavel_agente ??
         (r as any).agente_inicio_conservacao ??
         (r as any).agente_inicio_tanato;
-    const nomeAgenteDireto = normStr(pickNome(agenteDireto));
-    if (nomeAgenteDireto.includes("sandro")) return "sandro";
-    if (nomeAgenteDireto.includes("joseildo") || nomeAgenteDireto.includes("jose il")) return "joseildo";
+    const nomeDireto = normStr(pickNome(direto));
+    if (nomeDireto.includes("sandro")) return "sandro";
+    if (nomeDireto.includes("joseildo") || nomeDireto.includes("jose il")) return "joseildo";
 
-    const agenteId =
-        (r as any).agente_id ??
-        (r as any).id_agente ??
-        (r as any).responsavel_agente_id;
-    if (agenteId != null) {
-        if (SANDRO_IDS.has(agenteId) || SANDRO_IDS.has(String(agenteId))) return "sandro";
-        if (JOSEILDO_IDS.has(agenteId) || JOSEILDO_IDS.has(String(agenteId))) return "joseildo";
-    }
-
-    // 2) Logs dentro do registro
     const logs: any[] =
         (Array.isArray((r as any).logs) && (r as any).logs) ||
         (Array.isArray((r as any).historico) && (r as any).historico) ||
@@ -256,21 +194,14 @@ function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | n
         (Array.isArray((r as any).logVisiveis) && (r as any).logVisiveis) ||
         [];
 
-    // procura o evento de início
     for (const l of logs) {
         if (!isInicioConservacao(l)) continue;
         const nome = normStr(pickNome(l?.usuario ?? l?.agente ?? l?.operador));
         if (nome.includes("sandro")) return "sandro";
         if (nome.includes("joseildo") || nome.includes("jose il")) return "joseildo";
-        const uid = l?.usuario_id ?? l?.agente_id ?? l?.operador_id;
-        if (uid != null) {
-            if (SANDRO_IDS.has(uid) || SANDRO_IDS.has(String(uid))) return "sandro";
-            if (JOSEILDO_IDS.has(uid) || JOSEILDO_IDS.has(String(uid))) return "joseildo";
-        }
     }
 
-    // 3) Fallbacks textuais
-    const candText = [
+    const textos = [
         (r as any).tanato_responsavel,
         (r as any).responsavel_tanato,
         (r as any).conservacao_responsavel,
@@ -278,24 +209,37 @@ function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | n
         (r as any).iniciado_por,
         (r as any).usuario_responsavel,
     ];
-    for (const c of candText) {
+    for (const c of textos) {
         const v = normStr(String(c || ""));
         if (!v) continue;
         if (v.includes("sandro")) return "sandro";
         if (v.includes("joseildo") || v.includes("jose il")) return "joseildo";
     }
-
-    // 4) Último recurso: usuario/operador do registro
-    const usuarioFallback =
-        (r as any).usuario ??
-        (r as any).usuario_nome ??
-        (r as any).operador ??
-        (r as any).user;
-    const nomeUsuario = normStr(pickNome(usuarioFallback));
-    if (nomeUsuario.includes("sandro")) return "sandro";
-    if (nomeUsuario.includes("joseildo") || nomeUsuario.includes("jose il")) return "joseildo";
-
     return null;
+}
+
+/* =========================
+   DEDUP + consolidação
+   ========================= */
+/** escolhe a “melhor” data para ORDENAR ao consolidar dups */
+function bestSortDate(r: RegistroAnalise): number {
+    const d =
+        parseDateFlex(String((r as any).ultima_datahora || "")) ||
+        parseDateFlex(String((r as any).created_at || "")) ||
+        getRegistroDateAnalitico(r);
+    return d ? d.getTime() : 0;
+}
+
+/** Deduplica por sepultamento_id: para cada id, mantém o registro com data “mais nova” */
+function dedupPorSepultamento(dados: RegistroAnalise[]): RegistroAnalise[] {
+    const map = new Map<string, RegistroAnalise>();
+    for (const r of dados || []) {
+        const id = String((r.sepultamento_id ?? r.id ?? "") || "");
+        if (!id) continue;
+        const prev = map.get(id);
+        if (!prev || bestSortDate(r) >= bestSortDate(prev)) map.set(id, r);
+    }
+    return Array.from(map.values());
 }
 
 /* =========================
@@ -349,21 +293,22 @@ export default function ModalAnaliseGeral({
         carregar();
     }, [onRecarregar, carregar]);
 
-    // Filtro por período com parser robusto
+    /** 1) DEDUP por sepultamento_id (sempre) */
+    const dedup = React.useMemo(() => dedupPorSepultamento(dados), [dados]);
+
+    /** 2) Filtra por período usando a **data canônica** (prioriza início de conservação) */
     const dadosPeriodo = React.useMemo(() => {
         const { start, end } = makeRange(aDe, aAte);
-        return (dados || []).filter((r) => {
-            const d = getRegistroDate(r);
+        return (dedup || []).filter((r) => {
+            const d = getRegistroDateAnalitico(r);
             if (!d) return false;
             if (start && d < start) return false;
             if (end && d > end) return false;
             return true;
         });
-    }, [dados, aDe, aAte]);
+    }, [dedup, aDe, aAte]);
 
-    const registrosComEventoNoPeriodo = dadosPeriodo.length;
-
-    // Agregações
+    /** 3) Agregações sobre a lista filtrada e deduplicada */
     const {
         tanatoCount,
         tanatoSandro,
@@ -377,8 +322,8 @@ export default function ModalAnaliseGeral({
         convAssoc,
     } = React.useMemo(() => {
         let tanato = 0;
-        let tSandro = 0;
-        let tJoseildo = 0;
+        let tS = 0;
+        let tJ = 0;
         let assist = 0;
         let ornNat = 0;
         let ornArt = 0;
@@ -396,8 +341,8 @@ export default function ModalAnaliseGeral({
             if (fezTanato) {
                 tanato++;
                 const resp = extrairResponsavelTanato(r);
-                if (resp === "sandro") tSandro++;
-                else if (resp === "joseildo") tJoseildo++;
+                if (resp === "sandro") tS++;
+                else if (resp === "joseildo") tJ++;
             }
 
             if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
@@ -422,15 +367,14 @@ export default function ModalAnaliseGeral({
                 ""
             ).toLowerCase();
             if (convTxt.includes("prefeitura")) cPref++;
-            else if (convTxt.includes("associado") || convTxt.includes("associação"))
-                cAssoc++;
+            else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
             else if (convTxt.includes("particular")) cPart++;
         }
 
         return {
             tanatoCount: tanato,
-            tanatoSandro: tSandro,
-            tanatoJoseildo: tJoseildo,
+            tanatoSandro: tS,
+            tanatoJoseildo: tJ,
             assistTotal: assist,
             ornNatural: ornNat,
             ornArtificial: ornArt,
@@ -441,8 +385,8 @@ export default function ModalAnaliseGeral({
         };
     }, [dadosPeriodo]);
 
+    const subTanato = `Sandro: ${fmt0(tanatoSandro)} · Joseildo: ${fmt0(tanatoJoseildo)}`;
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
-    const subTanato = `Sandro: ${fmt0(tanatoSandro || 0)} · Joseildo: ${fmt0(tanatoJoseildo || 0)}`;
 
     if (!aberto) return null;
 
@@ -454,20 +398,17 @@ export default function ModalAnaliseGeral({
                     <div>
                         <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
                         <p className="text-xs text-gray-500">
-                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
+                            Período: {aDe || "—"} a {aAte || "—"} • Registros únicos no período: {fmt0(dadosPeriodo.length)}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                            Tanato: {fmt0(tanatoCount)} • Responsáveis atribuídos: {fmt0(tanatoSandro + tanatoJoseildo)} ({subTanato})
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleRecarregar}
-                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                        >
+                        <button onClick={handleRecarregar} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50">
                             Recarregar
                         </button>
-                        <button
-                            onClick={onFechar}
-                            className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-                        >
+                        <button onClick={onFechar} className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
                             Fechar
                         </button>
                     </div>
@@ -477,28 +418,14 @@ export default function ModalAnaliseGeral({
                 <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Data inicial</span>
-                        <input
-                            type="date"
-                            value={aDe || ""}
-                            onChange={(e) => setADe(e.target.value)}
-                            className="rounded-md border px-3 py-2"
-                        />
+                        <input type="date" value={aDe || ""} onChange={(e) => setADe(e.target.value)} className="rounded-md border px-3 py-2" />
                     </label>
                     <label className="flex flex-col gap-1">
                         <span className="text-xs text-gray-500">Data final</span>
-                        <input
-                            type="date"
-                            value={aAte || ""}
-                            onChange={(e) => setAAte(e.target.value)}
-                            className="rounded-md border px-3 py-2"
-                        />
+                        <input type="date" value={aAte || ""} onChange={(e) => setAAte(e.target.value)} className="rounded-md border px-3 py-2" />
                     </label>
                     <label className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            checked={!!somenteTanato}
-                            onChange={(e) => setSomenteTanato(e.target.checked)}
-                        />
+                        <input type="checkbox" checked={!!somenteTanato} onChange={(e) => setSomenteTanato(e.target.checked)} />
                         <span className="text-sm">Ocultar cards de itens</span>
                     </label>
                     <div className="text-sm text-gray-500 self-center">
@@ -509,17 +436,11 @@ export default function ModalAnaliseGeral({
                 {/* Corpo */}
                 <div className="p-4 pt-0">
                     {busy ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
-                            Carregando análise…
-                        </div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">Carregando análise…</div>
                     ) : erro ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">
-                            {erro}
-                        </div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">{erro}</div>
                     ) : dadosPeriodo.length === 0 ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
-                            Nenhum dado para o período/filtro selecionado.
-                        </div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">Nenhum dado para o período/filtro selecionado.</div>
                     ) : (
                         <>
                             {/* ITENS PRINCIPAIS */}
@@ -528,25 +449,12 @@ export default function ModalAnaliseGeral({
                                     <div className="text-sm font-semibold">Itens principais</div>
                                 </div>
                                 <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard
-                                        titulo="Tanatopraxia"
-                                        valor={tanatoCount}
-                                        subtexto={subTanato}
-                                        tipo="Principal"
-                                        destaque="indigo"
-                                    />
-                                    <ItemCard
-                                        titulo="Assistências"
-                                        valor={assistTotal}
-                                        tipo="Principal"
-                                        destaque="teal"
-                                    />
+                                    <ItemCard titulo="Tanatopraxia" valor={tanatoCount} subtexto={subTanato} tipo="Principal" destaque="indigo" />
+                                    <ItemCard titulo="Assistências" valor={assistTotal} tipo="Principal" destaque="teal" />
                                     <ItemCard
                                         titulo="Ornamentações"
                                         valor={ornTotal}
-                                        subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(
-                                            ornArtificial || 0
-                                        )}`}
+                                        subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(ornArtificial || 0)}`}
                                         tipo="Principal"
                                         destaque="rose"
                                     />
@@ -565,7 +473,7 @@ export default function ModalAnaliseGeral({
                                 </div>
                             </div>
 
-                            {/* 12 ITENS DE ARRUMAÇÃO */}
+                            {/* ARRUMAÇÃO */}
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
