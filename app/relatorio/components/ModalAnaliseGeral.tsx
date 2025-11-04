@@ -174,7 +174,7 @@ function makeRange(
 }
 
 /* =========================
-   Helpers de Tanatopraxia
+   Helpers de Tanatopraxia (AGENTE)
    ========================= */
 
 /** Normaliza string simples (lowercase, sem acento) */
@@ -186,7 +186,7 @@ function normStr(s: string): string {
         .trim();
 }
 
-/** IDs (opcional) caso o backend salve por id de usuário/agente */
+/** IDs (opcional) caso o backend salve por id do agente */
 const SANDRO_IDS = new Set<string | number>([
     // ex.: 12, "12"
 ]);
@@ -194,77 +194,73 @@ const JOSEILDO_IDS = new Set<string | number>([
     // ex.: 34, "34"
 ]);
 
-/** Extrai o nome do campo (string ou objeto) */
-function pegarNomeCampoGenerico(v: any): string {
-    if (!v) return "";
-    if (typeof v === "string") return v;
-    if (typeof v === "object") {
+/** Extrai o nome do campo de agente podendo ser string ou objeto */
+function pegarNomeDeAgenteCampo(agente: any): string {
+    if (!agente) return "";
+    if (typeof agente === "string") return agente;
+    if (typeof agente === "object") {
+        // formatos comuns
         return (
-            v.nome ||
-            v.name ||
-            v.agente ||
-            v.usuario ||
-            v.login ||
-            v.displayName ||
+            agente.nome ||
+            agente.name ||
+            agente.agente ||
+            agente.login ||
+            agente.displayName ||
+            agente.usuario || // às vezes o objeto do agente vem com 'usuario'
             ""
         );
     }
-    return String(v || "");
+    return String(agente || "");
 }
 
-/**
- * Busca o responsável pela Tanatopraxia (Sandro/Joseildo)
- * PRIORIDADE: agente → agente_nome → operador → usuario → fallbacks
- */
+/** Descobre o responsável da Tanatopraxia a partir do AGENTE */
 function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | null {
-    // 1) campos de agente (o que você mostrou no outro arquivo)
+    // 1) Prioriza campos de AGENTE
     const agenteBruto =
         (r as any).agente ??
         (r as any).agente_nome ??
         (r as any).agente_responsavel ??
-        (r as any).agente_inicio_conservacao;
-    const agenteNome = normStr(pegarNomeCampoGenerico(agenteBruto));
+        (r as any).responsavel_agente ??
+        (r as any).agente_inicio_conservacao ??
+        (r as any).agente_inicio_tanato;
+
+    const agenteNome = normStr(pegarNomeDeAgenteCampo(agenteBruto));
+
     if (agenteNome) {
         if (agenteNome.includes("sandro")) return "sandro";
         if (agenteNome.includes("joseildo") || agenteNome.includes("jose il")) return "joseildo";
     }
 
-    // 2) campos de usuario/operador (fallback)
-    const usuarioBruto =
+    // 2) Se vier id do agente, tenta por id
+    const agenteId =
+        (r as any).agente_id ??
+        (r as any).id_agente ??
+        (r as any).responsavel_agente_id;
+
+    if (agenteId != null) {
+        if (SANDRO_IDS.has(agenteId) || SANDRO_IDS.has(String(agenteId))) return "sandro";
+        if (JOSEILDO_IDS.has(agenteId) || JOSEILDO_IDS.has(String(agenteId))) return "joseildo";
+    }
+
+    // 3) Fallbacks (caso base ainda use 'usuario' para o agente)
+    const usuarioFallback =
         (r as any).usuario ??
         (r as any).usuario_nome ??
-        (r as any).user ??
-        (r as any).operador;
-    const usuarioNome = normStr(pegarNomeCampoGenerico(usuarioBruto));
+        (r as any).operador ??
+        (r as any).user;
+
+    const usuarioNome = normStr(pegarNomeDeAgenteCampo(usuarioFallback));
     if (usuarioNome) {
         if (usuarioNome.includes("sandro")) return "sandro";
         if (usuarioNome.includes("joseildo") || usuarioNome.includes("jose il")) return "joseildo";
     }
 
-    // 3) por id
-    const agenteId =
-        (r as any).agente_id ??
-        (r as any).usuario_id ??
-        (r as any).user_id ??
-        (r as any).operador_id ??
-        (r as any).id_usuario;
-    if (agenteId != null) {
-        if (SANDRO_IDS.has(agenteId)) return "sandro";
-        if (JOSEILDO_IDS.has(agenteId)) return "joseildo";
-        const aidStr = String(agenteId);
-        if (SANDRO_IDS.has(aidStr)) return "sandro";
-        if (JOSEILDO_IDS.has(aidStr)) return "joseildo";
-    }
-
-    // 4) campos alternativos
+    // 4) Outros campos textuais possivelmente usados
     const candidatos = [
         (r as any).tanato_responsavel,
         (r as any).responsavel_tanato,
         (r as any).conservacao_responsavel,
         (r as any).responsavel_conservacao,
-        (r as any).usuario_inicio_conservacao,
-        (r as any).usuario_inicio_tanato,
-        (r as any).tanato_usuario_inicio,
         (r as any).iniciado_por,
         (r as any).usuario_responsavel,
     ];
@@ -274,7 +270,6 @@ function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | n
         if (v.includes("sandro")) return "sandro";
         if (v.includes("joseildo") || v.includes("jose il")) return "joseildo";
     }
-
     return null;
 }
 
