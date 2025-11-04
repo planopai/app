@@ -186,7 +186,7 @@ function normStr(s: string): string {
         .trim();
 }
 
-/** IDs (opcional) caso o backend salve por id de usuário */
+/** IDs (opcional) caso o backend salve por id de usuário/agente */
 const SANDRO_IDS = new Set<string | number>([
     // ex.: 12, "12"
 ]);
@@ -194,56 +194,69 @@ const JOSEILDO_IDS = new Set<string | number>([
     // ex.: 34, "34"
 ]);
 
-/** Extrai o nome do campo `usuario` podendo ser string ou objeto */
-function pegarNomeDeUsuarioCampo(usuario: any): string {
-    if (!usuario) return "";
-    if (typeof usuario === "string") return usuario;
-    if (typeof usuario === "object") {
-        // formatos comuns: { nome }, { name }, { usuario }, { login }, { displayName }
+/** Extrai o nome do campo (string ou objeto) */
+function pegarNomeCampoGenerico(v: any): string {
+    if (!v) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "object") {
         return (
-            usuario.nome ||
-            usuario.name ||
-            usuario.usuario ||
-            usuario.login ||
-            usuario.displayName ||
+            v.nome ||
+            v.name ||
+            v.agente ||
+            v.usuario ||
+            v.login ||
+            v.displayName ||
             ""
         );
     }
-    return String(usuario || "");
+    return String(v || "");
 }
 
-/** Busca o responsável pela Tanatopraxia (Sandro/Joseildo) priorizando o campo `usuario` */
+/**
+ * Busca o responsável pela Tanatopraxia (Sandro/Joseildo)
+ * PRIORIDADE: agente → agente_nome → operador → usuario → fallbacks
+ */
 function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | null {
-    // 1) Prioriza o campo 'usuario' informado na sua base
+    // 1) campos de agente (o que você mostrou no outro arquivo)
+    const agenteBruto =
+        (r as any).agente ??
+        (r as any).agente_nome ??
+        (r as any).agente_responsavel ??
+        (r as any).agente_inicio_conservacao;
+    const agenteNome = normStr(pegarNomeCampoGenerico(agenteBruto));
+    if (agenteNome) {
+        if (agenteNome.includes("sandro")) return "sandro";
+        if (agenteNome.includes("joseildo") || agenteNome.includes("jose il")) return "joseildo";
+    }
+
+    // 2) campos de usuario/operador (fallback)
     const usuarioBruto =
         (r as any).usuario ??
         (r as any).usuario_nome ??
         (r as any).user ??
         (r as any).operador;
-    const usuarioNome = normStr(pegarNomeDeUsuarioCampo(usuarioBruto));
-
+    const usuarioNome = normStr(pegarNomeCampoGenerico(usuarioBruto));
     if (usuarioNome) {
         if (usuarioNome.includes("sandro")) return "sandro";
-        // aceita "joséildo" com acento ou sem
         if (usuarioNome.includes("joseildo") || usuarioNome.includes("jose il")) return "joseildo";
     }
 
-    // 2) Se vier id separado, tenta por id:
-    const usuarioId =
+    // 3) por id
+    const agenteId =
+        (r as any).agente_id ??
         (r as any).usuario_id ??
         (r as any).user_id ??
         (r as any).operador_id ??
         (r as any).id_usuario;
-
-    if (usuarioId != null) {
-        if (SANDRO_IDS.has(usuarioId)) return "sandro";
-        if (JOSEILDO_IDS.has(usuarioId)) return "joseildo";
-        const uidStr = String(usuarioId);
-        if (SANDRO_IDS.has(uidStr)) return "sandro";
-        if (JOSEILDO_IDS.has(uidStr)) return "joseildo";
+    if (agenteId != null) {
+        if (SANDRO_IDS.has(agenteId)) return "sandro";
+        if (JOSEILDO_IDS.has(agenteId)) return "joseildo";
+        const aidStr = String(agenteId);
+        if (SANDRO_IDS.has(aidStr)) return "sandro";
+        if (JOSEILDO_IDS.has(aidStr)) return "joseildo";
     }
 
-    // 3) Campos alternativos (fallbacks)
+    // 4) campos alternativos
     const candidatos = [
         (r as any).tanato_responsavel,
         (r as any).responsavel_tanato,
@@ -255,13 +268,13 @@ function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | n
         (r as any).iniciado_por,
         (r as any).usuario_responsavel,
     ];
-
     for (const c of candidatos) {
         const v = normStr(String(c || ""));
         if (!v) continue;
         if (v.includes("sandro")) return "sandro";
         if (v.includes("joseildo") || v.includes("jose il")) return "joseildo";
     }
+
     return null;
 }
 
