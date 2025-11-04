@@ -164,7 +164,6 @@ function makeRange(
 
     // se invertido, corrige
     if (start && end && end < start) {
-        // troca e garante fim do dia
         return {
             start: end,
             end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000),
@@ -177,7 +176,6 @@ function makeRange(
    Helpers de Tanatopraxia (AGENTE)
    ========================= */
 
-/** Normaliza string simples (lowercase, sem acento) */
 function normStr(s: string): string {
     return s
         .toLowerCase()
@@ -186,77 +184,93 @@ function normStr(s: string): string {
         .trim();
 }
 
-/** IDs (opcional) caso o backend salve por id do agente */
-const SANDRO_IDS = new Set<string | number>([
-    // ex.: 12, "12"
-]);
-const JOSEILDO_IDS = new Set<string | number>([
-    // ex.: 34, "34"
-]);
+const SANDRO_IDS = new Set<string | number>([]);
+const JOSEILDO_IDS = new Set<string | number>([]);
 
-/** Extrai o nome do campo de agente podendo ser string ou objeto */
-function pegarNomeDeAgenteCampo(agente: any): string {
-    if (!agente) return "";
-    if (typeof agente === "string") return agente;
-    if (typeof agente === "object") {
-        // formatos comuns
+function pickNome(obj: any): string {
+    if (!obj) return "";
+    if (typeof obj === "string") return obj;
+    if (typeof obj === "object") {
         return (
-            agente.nome ||
-            agente.name ||
-            agente.agente ||
-            agente.login ||
-            agente.displayName ||
-            agente.usuario || // às vezes o objeto do agente vem com 'usuario'
+            obj.nome ||
+            obj.name ||
+            obj.displayName ||
+            obj.usuario ||
+            obj.login ||
+            obj.agente ||
             ""
         );
     }
-    return String(agente || "");
+    return String(obj);
 }
 
-/** Descobre o responsável da Tanatopraxia a partir do AGENTE */
+/** tenta reconhecer se um item de log representa o *início da conservação* */
+function isInicioConservacao(log: any): boolean {
+    const a = normStr(String(log?.acao || ""));
+    const s = normStr(String(log?.status_novo || log?.status || ""));
+    if (a.includes("iniciou") && a.includes("conserva")) return true;
+    if (a.includes("atualizou") && a.includes("status")) {
+        // fase01 / fase 01 / fase1
+        if (/fase\s*0*1\b/.test(s)) return true;
+    }
+    // alguns payloads trazem flags dentro de detalhes
+    try {
+        const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
+        const detStr = normStr(JSON.stringify(det || ""));
+        if (detStr.includes("inicio") && detStr.includes("conserva")) return true;
+    } catch { }
+    return false;
+}
+
+/** Busca Sandro/Joseildo.
+ *  Ordem: campos de AGENTE → logs que iniciam conservação → fallbacks → (por fim) usuario/operador
+ */
 function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | null {
-    // 1) Prioriza campos de AGENTE
-    const agenteBruto =
+    // 1) Campos diretos de agente
+    const agenteDireto =
         (r as any).agente ??
         (r as any).agente_nome ??
         (r as any).agente_responsavel ??
         (r as any).responsavel_agente ??
         (r as any).agente_inicio_conservacao ??
         (r as any).agente_inicio_tanato;
+    const nomeAgenteDireto = normStr(pickNome(agenteDireto));
+    if (nomeAgenteDireto.includes("sandro")) return "sandro";
+    if (nomeAgenteDireto.includes("joseildo") || nomeAgenteDireto.includes("jose il")) return "joseildo";
 
-    const agenteNome = normStr(pegarNomeDeAgenteCampo(agenteBruto));
-
-    if (agenteNome) {
-        if (agenteNome.includes("sandro")) return "sandro";
-        if (agenteNome.includes("joseildo") || agenteNome.includes("jose il")) return "joseildo";
-    }
-
-    // 2) Se vier id do agente, tenta por id
     const agenteId =
         (r as any).agente_id ??
         (r as any).id_agente ??
         (r as any).responsavel_agente_id;
-
     if (agenteId != null) {
         if (SANDRO_IDS.has(agenteId) || SANDRO_IDS.has(String(agenteId))) return "sandro";
         if (JOSEILDO_IDS.has(agenteId) || JOSEILDO_IDS.has(String(agenteId))) return "joseildo";
     }
 
-    // 3) Fallbacks (caso base ainda use 'usuario' para o agente)
-    const usuarioFallback =
-        (r as any).usuario ??
-        (r as any).usuario_nome ??
-        (r as any).operador ??
-        (r as any).user;
+    // 2) Logs dentro do registro
+    const logs: any[] =
+        (Array.isArray((r as any).logs) && (r as any).logs) ||
+        (Array.isArray((r as any).historico) && (r as any).historico) ||
+        (Array.isArray((r as any).historicos) && (r as any).historicos) ||
+        (Array.isArray((r as any).log) && (r as any).log) ||
+        (Array.isArray((r as any).logVisiveis) && (r as any).logVisiveis) ||
+        [];
 
-    const usuarioNome = normStr(pegarNomeDeAgenteCampo(usuarioFallback));
-    if (usuarioNome) {
-        if (usuarioNome.includes("sandro")) return "sandro";
-        if (usuarioNome.includes("joseildo") || usuarioNome.includes("jose il")) return "joseildo";
+    // procura o evento de início
+    for (const l of logs) {
+        if (!isInicioConservacao(l)) continue;
+        const nome = normStr(pickNome(l?.usuario ?? l?.agente ?? l?.operador));
+        if (nome.includes("sandro")) return "sandro";
+        if (nome.includes("joseildo") || nome.includes("jose il")) return "joseildo";
+        const uid = l?.usuario_id ?? l?.agente_id ?? l?.operador_id;
+        if (uid != null) {
+            if (SANDRO_IDS.has(uid) || SANDRO_IDS.has(String(uid))) return "sandro";
+            if (JOSEILDO_IDS.has(uid) || JOSEILDO_IDS.has(String(uid))) return "joseildo";
+        }
     }
 
-    // 4) Outros campos textuais possivelmente usados
-    const candidatos = [
+    // 3) Fallbacks textuais
+    const candText = [
         (r as any).tanato_responsavel,
         (r as any).responsavel_tanato,
         (r as any).conservacao_responsavel,
@@ -264,12 +278,23 @@ function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | n
         (r as any).iniciado_por,
         (r as any).usuario_responsavel,
     ];
-    for (const c of candidatos) {
+    for (const c of candText) {
         const v = normStr(String(c || ""));
         if (!v) continue;
         if (v.includes("sandro")) return "sandro";
         if (v.includes("joseildo") || v.includes("jose il")) return "joseildo";
     }
+
+    // 4) Último recurso: usuario/operador do registro
+    const usuarioFallback =
+        (r as any).usuario ??
+        (r as any).usuario_nome ??
+        (r as any).operador ??
+        (r as any).user;
+    const nomeUsuario = normStr(pickNome(usuarioFallback));
+    if (nomeUsuario.includes("sandro")) return "sandro";
+    if (nomeUsuario.includes("joseildo") || nomeUsuario.includes("jose il")) return "joseildo";
+
     return null;
 }
 
