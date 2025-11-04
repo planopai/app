@@ -85,7 +85,7 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 ];
 
 /* =========================
-   Datas
+   Parser de datas (BR/ISO)
    ========================= */
 function parseBrDate(s: string): Date | null {
     const m = s
@@ -104,7 +104,7 @@ function parseIsoDate(s: string): Date | null {
         const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
         return isNaN(d.getTime()) ? null : d;
     }
-    m = t.match(/^(\d{4})-(\d{2})-(\d{2})[T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
     if (m) {
         const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -133,8 +133,7 @@ function getRegistroDate(r: RegistroAnalise): Date | null {
     return null;
 }
 function makeRange(aDe?: string, aAte?: string) {
-    const hasDe = !!aDe;
-    const hasAte = !!aAte;
+    const hasDe = !!aDe, hasAte = !!aAte;
     const deStr = hasDe ? aDe! : hasAte ? aAte! : "";
     const ateStr = hasAte ? aAte! : hasDe ? aDe! : "";
     const start = deStr ? new Date(`${deStr}T00:00:00`) : null;
@@ -149,38 +148,55 @@ function makeRange(aDe?: string, aAte?: string) {
 }
 
 /* =========================
-   Agentes (fase03)
+   Helpers de log (INÍCIO DE CONSERVAÇÃO)
    ========================= */
 const norm = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
 const titleCase = (s: string) =>
     s
-        .toLowerCase()
         .split(/\s+/)
-        .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : ""))
+        .map((p) => (p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ""))
         .join(" ");
 
-function isInicioConservacao(log: any): boolean {
-    const a = norm(String(log?.acao || ""));
-    const s = norm(String(log?.status_novo || log?.status || ""));
-    if (a.includes("inicio") && a.includes("conserva")) return true;
-    if ((a.includes("atualizou") && a.includes("status")) || a.includes("mudou status")) {
-        if (/fase\s*0*3\b/.test(s)) return true;
-        if (s.includes("inicio") && s.includes("conserva")) return true;
-    }
-    try {
-        const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
-        const detStr = norm(JSON.stringify(det || ""));
-        if (detStr.includes("fase03")) return true;
-        if (detStr.includes("inicio") && detStr.includes("conserva")) return true;
-    } catch { }
-    return false;
+/** reconhece estritamente o log de “Início de Conservação” */
+function isInicioConservacaoStrict(log: any): boolean {
+    const acao = norm(String(log?.acao || "")); // "Atualizou status"
+    const novo = norm(String(log?.status_novo || log?.status || "")); // "Início de Conservação"
+    const titulo = norm(String(log?.titulo || "")); // alguns logs trazem no título
+
+    const matchByStatus =
+        (acao.includes("atualizou") && acao.includes("status")) &&
+        (novo.includes("inicio de conservacao") || /fase\s*0*3\b/.test(novo));
+
+    const matchByTitle = titulo.includes("inicio de conservacao");
+
+    return matchByStatus || matchByTitle;
 }
-function agenteDoLogInicio(log: any): string {
+
+/** tenta extrair o nome do usuário do log */
+function agenteDoLog(log: any): string {
     const pick = (o: any) =>
-        o?.usuario || o?.agente || o?.operador || o?.user || o?.nome || o?.name || "";
-    return String(pick(log) || "").trim();
+        o?.usuario || o?.user || o?.operador || o?.agente || o?.nome || o?.name || "";
+    if (pick(log)) return String(pick(log)).trim();
+
+    try {
+        const det =
+            typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
+        const poss = pick(det) || det?.usuario_nome || det?.user_name;
+        if (poss) return String(poss).trim();
+    } catch { }
+    return "";
+}
+
+/** devolve o primeiro log (cronológico) que iniciou a conservação */
+function findInicioConservacaoLog(logs: any[]): any | null {
+    const ord = (logs || [])
+        .slice()
+        .sort((a, b) =>
+            String(a?.datahora || "").localeCompare(String(b?.datahora || ""))
+        );
+    return ord.find(isInicioConservacaoStrict) || null;
 }
 
 /* =========================
@@ -234,6 +250,7 @@ export default function ModalAnaliseGeral({
         carregar();
     }, [onRecarregar, carregar]);
 
+    // filtro por período
     const dadosPeriodo = React.useMemo(() => {
         const { start, end } = makeRange(aDe, aAte);
         return (dados || []).filter((r) => {
@@ -247,9 +264,7 @@ export default function ModalAnaliseGeral({
 
     const registrosComEventoNoPeriodo = dadosPeriodo.length;
 
-    /* ===== Mapa de responsável por sepultamento_id =====
-       respPorId[id] => string (nome do agente) ou "" se não encontrou
-    */
+    /* ========= Resolve responsável de TANATO *via logs* ========= */
     const [respPorId, setRespPorId] = React.useState<Record<string, string>>({});
 
     React.useEffect(() => {
@@ -274,19 +289,17 @@ export default function ModalAnaliseGeral({
                     const id = idsAlvo[i++];
                     try {
                         const logs = await listarLogPorId(id);
-                        const ord = (logs || [])
-                            .slice()
-                            .sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
-                        const ini = ord.find((l) => isInicioConservacao(l));
-                        out[id] = ini ? String(agenteDoLogInicio(ini) || "").trim() : "";
+                        const inicio = findInicioConservacaoLog(logs || []);
+                        out[id] = inicio ? agenteDoLog(inicio) : ""; // só preenche quando achar o log correto
                     } catch {
                         out[id] = "";
                     }
                 }
             }
 
-            const workers = Array.from({ length: Math.min(maxConc, idsAlvo.length) }, worker);
-            await Promise.all(workers);
+            await Promise.all(
+                Array.from({ length: Math.min(maxConc, idsAlvo.length) }, worker)
+            );
             if (!cancel) setRespPorId((prev) => ({ ...prev, ...out }));
         }
 
@@ -296,10 +309,12 @@ export default function ModalAnaliseGeral({
         };
     }, [dadosPeriodo, respPorId]);
 
-    // ===== Agregações (inclui contagem por agente) =====
+    /* =========================
+       Agregações
+       ========================= */
     const {
         tanatoCount,
-        agentesOrdenados, // [{display, count}]
+        agentesOrdenados,
         assistTotal,
         ornNatural,
         ornArtificial,
@@ -321,40 +336,16 @@ export default function ModalAnaliseGeral({
             cPart = 0,
             cAssoc = 0;
 
-        // contadores de agentes
+        // contagem por AGENTE (apenas logs)
         const byKey: Record<string, number> = {};
         const displayByKey: Record<string, string> = {};
 
         for (const r of dadosPeriodo) {
-            const fezTanato = normSimNao(String((r as any).tanato || "")) === "sim";
-            if (fezTanato) {
+            // TANATO
+            if (normSimNao(String((r as any).tanato || "")) === "sim") {
                 tanato++;
-
-                // tenta pegar o nome direto dos campos do registro
-                const possiveis = [
-                    (r as any).agente,
-                    (r as any).agente_nome,
-                    (r as any).agente_responsavel,
-                    (r as any).responsavel_agente,
-                    (r as any).agente_inicio_conservacao,
-                    (r as any).agente_inicio_tanato,
-                    (r as any).tanato_responsavel,
-                    (r as any).responsavel_tanato,
-                    (r as any).conservacao_responsavel,
-                    (r as any).responsavel_conservacao,
-                    (r as any).iniciado_por,
-                    (r as any).usuario_responsavel,
-                    (r as any).usuario,
-                    (r as any).user,
-                ];
-                let nome = String(possiveis.find(Boolean) || "").trim();
-
-                // se não veio, usa o que foi resolvido via logs reais
-                if (!nome) {
-                    const id = String((r as any).sepultamento_id || (r as any).id || "");
-                    nome = String(respPorId[id] || "").trim();
-                }
-
+                const id = String((r as any).sepultamento_id || (r as any).id || "");
+                const nome = (respPorId[id] || "").trim();
                 if (nome) {
                     const key = norm(nome);
                     byKey[key] = (byKey[key] || 0) + 1;
@@ -362,8 +353,10 @@ export default function ModalAnaliseGeral({
                 }
             }
 
+            // ASSISTÊNCIAS
             if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
 
+            // ORNAMENTAÇÃO
             const ornTxt = String(
                 (r as any).ornamentacao_tipo ||
                 (r as any).ornamentacao ||
@@ -373,9 +366,11 @@ export default function ModalAnaliseGeral({
             if (ornTxt.includes("natural")) ornNat++;
             else if (ornTxt.includes("artificial")) ornArt++;
 
+            // ARRUMAÇÃO (12 itens fixos)
             const estadosArr = extrairEstadoArrumacao(r);
             for (const k of ARR_KEYS) if (estadosArr[k]) arr[k] = (arr[k] || 0) + 1;
 
+            // CONVÊNIOS
             const convTxt = String(
                 (r as any).convenio ||
                 (r as any).tipo_convenio ||
@@ -406,12 +401,10 @@ export default function ModalAnaliseGeral({
     }, [dadosPeriodo, respPorId]);
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
-
-    // Monta o subtexto com "Nome: Qtd · Nome: Qtd ..."
     const subTanato =
-        (agentesOrdenados.length
+        agentesOrdenados.length
             ? agentesOrdenados.map((a) => `${a.display}: ${fmt0(a.count)}`).join(" · ")
-            : "") || undefined;
+            : undefined;
 
     if (!aberto) return null;
 
