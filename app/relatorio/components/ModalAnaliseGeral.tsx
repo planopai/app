@@ -85,10 +85,8 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 ];
 
 /* =========================
-   Parsers de Data (precisos)
+   Datas
    ========================= */
-
-/** dd/mm/aaaa[ , HH:MM:SS] → Date (local) */
 function parseBrDate(s: string): Date | null {
     const m = s
         .trim()
@@ -98,39 +96,27 @@ function parseBrDate(s: string): Date | null {
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
     return isNaN(d.getTime()) ? null : d;
 }
-
-/** ISO → Date (LOCAL se não houver timezone) */
 function parseIsoDate(s: string): Date | null {
     const t = s.trim().replace(" ", "T");
-
-    // Apenas data: aaaa-mm-dd → construir como LOCAL 00:00
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) {
         const [, yyyy, mm, dd] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
         return isNaN(d.getTime()) ? null : d;
     }
-
-    // Data + hora sem timezone: construir como LOCAL
     m = t.match(/^(\d{4})-(\d{2})-(\d{2})[T](\d{2}):(\d{2})(?::(\d{2}))?$/);
     if (m) {
         const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
         return isNaN(d.getTime()) ? null : d;
     }
-
-    // Demais formatos (com Z ou offset)
     const d = new Date(t);
     return isNaN(d.getTime()) ? null : d;
 }
-
-/** Tenta BR, depois ISO. Se falhar, null. */
 function parseDateFlex(s?: string | null): Date | null {
     if (!s) return null;
     return parseBrDate(s) || parseIsoDate(s) || null;
 }
-
-/** Melhor data do registro (ordem de preferência). */
 function getRegistroDate(r: RegistroAnalise): Date | null {
     const candidatos = [
         (r as any).data,
@@ -146,23 +132,13 @@ function getRegistroDate(r: RegistroAnalise): Date | null {
     }
     return null;
 }
-
-/** Intervalo inclusivo [start,end]. Se informar uma data só, usa "aquele dia". */
-function makeRange(
-    aDe?: string,
-    aAte?: string
-): { start: Date | null; end: Date | null } {
+function makeRange(aDe?: string, aAte?: string) {
     const hasDe = !!aDe;
     const hasAte = !!aAte;
-
-    // se só um foi informado, usa o mesmo dia para ambos
     const deStr = hasDe ? aDe! : hasAte ? aAte! : "";
     const ateStr = hasAte ? aAte! : hasDe ? aDe! : "";
-
     const start = deStr ? new Date(`${deStr}T00:00:00`) : null;
     const end = ateStr ? new Date(`${ateStr}T23:59:59`) : null;
-
-    // se invertido, corrige mantendo inclusivo
     if (start && end && end < start) {
         return {
             start: end,
@@ -173,42 +149,34 @@ function makeRange(
 }
 
 /* =========================
-   Helpers de Tanatopraxia (AGENTE)
+   Agentes (fase03)
    ========================= */
+const norm = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
-function normStr(s: string): string {
-    return s
+const titleCase = (s: string) =>
+    s
         .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
-}
+        .split(/\s+/)
+        .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : ""))
+        .join(" ");
 
-/** reconhece se um log representa o *início da conservação* (fase03) */
 function isInicioConservacao(log: any): boolean {
-    const a = normStr(String(log?.acao || ""));
-    const s = normStr(String(log?.status_novo || log?.status || ""));
-
-    // Frase direta
+    const a = norm(String(log?.acao || ""));
+    const s = norm(String(log?.status_novo || log?.status || ""));
     if (a.includes("inicio") && a.includes("conserva")) return true;
-
-    // Atualizou/mudou status para fase03 (Início de Conservação)
     if ((a.includes("atualizou") && a.includes("status")) || a.includes("mudou status")) {
         if (/fase\s*0*3\b/.test(s)) return true;
         if (s.includes("inicio") && s.includes("conserva")) return true;
     }
-
-    // Alguns payloads trazem em "detalhes"
     try {
         const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
-        const detStr = normStr(JSON.stringify(det || ""));
+        const detStr = norm(JSON.stringify(det || ""));
         if (detStr.includes("fase03")) return true;
         if (detStr.includes("inicio") && detStr.includes("conserva")) return true;
     } catch { }
-
     return false;
 }
-
 function agenteDoLogInicio(log: any): string {
     const pick = (o: any) =>
         o?.usuario || o?.agente || o?.operador || o?.user || o?.nome || o?.name || "";
@@ -266,7 +234,6 @@ export default function ModalAnaliseGeral({
         carregar();
     }, [onRecarregar, carregar]);
 
-    // Filtro por período com parser robusto
     const dadosPeriodo = React.useMemo(() => {
         const { start, end } = makeRange(aDe, aAte);
         return (dados || []).filter((r) => {
@@ -280,15 +247,12 @@ export default function ModalAnaliseGeral({
 
     const registrosComEventoNoPeriodo = dadosPeriodo.length;
 
-    /* ====== Mapa de responsáveis resolvidos via LOGS reais ======
-       respPorId[id] => "sandro" | "joseildo" | "outro"
+    /* ===== Mapa de responsável por sepultamento_id =====
+       respPorId[id] => string (nome do agente) ou "" se não encontrou
     */
-    const [respPorId, setRespPorId] = React.useState<
-        Record<string, "sandro" | "joseildo" | "outro">
-    >({});
+    const [respPorId, setRespPorId] = React.useState<Record<string, string>>({});
 
     React.useEffect(() => {
-        // ids de tanato no período que ainda não têm responsável resolvido
         const idsAlvo = Array.from(
             new Set(
                 (dadosPeriodo || [])
@@ -303,13 +267,7 @@ export default function ModalAnaliseGeral({
 
         async function run(maxConc = 6) {
             let i = 0;
-            const out: Record<string, "sandro" | "joseildo" | "outro"> = {};
-
-            const normalize = (s: string) =>
-                s
-                    .toLowerCase()
-                    .normalize("NFD")
-                    .replace(/[\u0300-\u036f]/g, "");
+            const out: Record<string, string> = {};
 
             async function worker() {
                 while (i < idsAlvo.length && !cancel) {
@@ -320,19 +278,9 @@ export default function ModalAnaliseGeral({
                             .slice()
                             .sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
                         const ini = ord.find((l) => isInicioConservacao(l));
-                        if (ini) {
-                            const nome = normalize(agenteDoLogInicio(ini));
-                            out[id] =
-                                nome.includes("sandro")
-                                    ? "sandro"
-                                    : nome.includes("joseildo") || nome.includes("jose il")
-                                        ? "joseildo"
-                                        : "outro";
-                        } else {
-                            out[id] = "outro";
-                        }
+                        out[id] = ini ? String(agenteDoLogInicio(ini) || "").trim() : "";
                     } catch {
-                        out[id] = "outro";
+                        out[id] = "";
                     }
                 }
             }
@@ -348,12 +296,10 @@ export default function ModalAnaliseGeral({
         };
     }, [dadosPeriodo, respPorId]);
 
-    // Agregações
+    // ===== Agregações (inclui contagem por agente) =====
     const {
         tanatoCount,
-        tanatoSandro,
-        tanatoJoseildo,
-        tanatoSemId,
+        agentesOrdenados, // [{display, count}]
         assistTotal,
         ornNatural,
         ornArtificial,
@@ -363,9 +309,6 @@ export default function ModalAnaliseGeral({
         convAssoc,
     } = React.useMemo(() => {
         let tanato = 0;
-        let tSandro = 0;
-        let tJoseildo = 0;
-        let tOutros = 0;
         let assist = 0;
         let ornNat = 0;
         let ornArt = 0;
@@ -378,14 +321,16 @@ export default function ModalAnaliseGeral({
             cPart = 0,
             cAssoc = 0;
 
+        // contadores de agentes
+        const byKey: Record<string, number> = {};
+        const displayByKey: Record<string, string> = {};
+
         for (const r of dadosPeriodo) {
             const fezTanato = normSimNao(String((r as any).tanato || "")) === "sim";
             if (fezTanato) {
                 tanato++;
 
-                // 1) tenta pelos campos/logs embutidos no próprio registro
-                let resp: "sandro" | "joseildo" | null = null;
-                // Heurística leve: procura nomes em campos comuns
+                // tenta pegar o nome direto dos campos do registro
                 const possiveis = [
                     (r as any).agente,
                     (r as any).agente_nome,
@@ -402,20 +347,19 @@ export default function ModalAnaliseGeral({
                     (r as any).usuario,
                     (r as any).user,
                 ];
-                const nomeInline = normStr(String(possiveis.find(Boolean) || ""));
-                if (nomeInline.includes("sandro")) resp = "sandro";
-                else if (nomeInline.includes("joseildo") || nomeInline.includes("jose il")) resp = "joseildo";
+                let nome = String(possiveis.find(Boolean) || "").trim();
 
-                // 2) fallback: resposta do mapa carregado pelos LOGS
-                if (!resp) {
+                // se não veio, usa o que foi resolvido via logs reais
+                if (!nome) {
                     const id = String((r as any).sepultamento_id || (r as any).id || "");
-                    const m = respPorId[id];
-                    if (m === "sandro" || m === "joseildo") resp = m;
+                    nome = String(respPorId[id] || "").trim();
                 }
 
-                if (resp === "sandro") tSandro++;
-                else if (resp === "joseildo") tJoseildo++;
-                else tOutros++; // não identificado
+                if (nome) {
+                    const key = norm(nome);
+                    byKey[key] = (byKey[key] || 0) + 1;
+                    if (!displayByKey[key]) displayByKey[key] = titleCase(nome);
+                }
             }
 
             if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
@@ -444,11 +388,13 @@ export default function ModalAnaliseGeral({
             else if (convTxt.includes("particular")) cPart++;
         }
 
+        const agentesOrdenados = Object.entries(byKey)
+            .map(([k, count]) => ({ display: displayByKey[k] || k, count }))
+            .sort((a, b) => b.count - a.count);
+
         return {
             tanatoCount: tanato,
-            tanatoSandro: tSandro,
-            tanatoJoseildo: tJoseildo,
-            tanatoSemId: tOutros,
+            agentesOrdenados,
             assistTotal: assist,
             ornNatural: ornNat,
             ornArtificial: ornArt,
@@ -460,12 +406,12 @@ export default function ModalAnaliseGeral({
     }, [dadosPeriodo, respPorId]);
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
+
+    // Monta o subtexto com "Nome: Qtd · Nome: Qtd ..."
     const subTanato =
-        tanatoSemId > 0
-            ? `Sandro: ${fmt0(tanatoSandro)} · Joseildo: ${fmt0(
-                tanatoJoseildo
-            )} · Sem id.: ${fmt0(tanatoSemId)}`
-            : `Sandro: ${fmt0(tanatoSandro)} · Joseildo: ${fmt0(tanatoJoseildo)}`;
+        (agentesOrdenados.length
+            ? agentesOrdenados.map((a) => `${a.display}: ${fmt0(a.count)}`).join(" · ")
+            : "") || undefined;
 
     if (!aberto) return null;
 
