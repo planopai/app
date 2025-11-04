@@ -186,8 +186,64 @@ function normStr(s: string): string {
         .trim();
 }
 
-/** Busca o responsável pela Tanatopraxia em campos comuns e retorna "sandro" | "joseildo" | null */
+/** IDs (opcional) caso o backend salve por id de usuário */
+const SANDRO_IDS = new Set<string | number>([
+    // ex.: 12, "12"
+]);
+const JOSEILDO_IDS = new Set<string | number>([
+    // ex.: 34, "34"
+]);
+
+/** Extrai o nome do campo `usuario` podendo ser string ou objeto */
+function pegarNomeDeUsuarioCampo(usuario: any): string {
+    if (!usuario) return "";
+    if (typeof usuario === "string") return usuario;
+    if (typeof usuario === "object") {
+        // formatos comuns: { nome }, { name }, { usuario }, { login }, { displayName }
+        return (
+            usuario.nome ||
+            usuario.name ||
+            usuario.usuario ||
+            usuario.login ||
+            usuario.displayName ||
+            ""
+        );
+    }
+    return String(usuario || "");
+}
+
+/** Busca o responsável pela Tanatopraxia (Sandro/Joseildo) priorizando o campo `usuario` */
 function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | null {
+    // 1) Prioriza o campo 'usuario' informado na sua base
+    const usuarioBruto =
+        (r as any).usuario ??
+        (r as any).usuario_nome ??
+        (r as any).user ??
+        (r as any).operador;
+    const usuarioNome = normStr(pegarNomeDeUsuarioCampo(usuarioBruto));
+
+    if (usuarioNome) {
+        if (usuarioNome.includes("sandro")) return "sandro";
+        // aceita "joséildo" com acento ou sem
+        if (usuarioNome.includes("joseildo") || usuarioNome.includes("jose il")) return "joseildo";
+    }
+
+    // 2) Se vier id separado, tenta por id:
+    const usuarioId =
+        (r as any).usuario_id ??
+        (r as any).user_id ??
+        (r as any).operador_id ??
+        (r as any).id_usuario;
+
+    if (usuarioId != null) {
+        if (SANDRO_IDS.has(usuarioId)) return "sandro";
+        if (JOSEILDO_IDS.has(usuarioId)) return "joseildo";
+        const uidStr = String(usuarioId);
+        if (SANDRO_IDS.has(uidStr)) return "sandro";
+        if (JOSEILDO_IDS.has(uidStr)) return "joseildo";
+    }
+
+    // 3) Campos alternativos (fallbacks)
     const candidatos = [
         (r as any).tanato_responsavel,
         (r as any).responsavel_tanato,
@@ -198,14 +254,13 @@ function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | n
         (r as any).tanato_usuario_inicio,
         (r as any).iniciado_por,
         (r as any).usuario_responsavel,
-        (r as any).usuario,
-        (r as any).operador,
     ];
+
     for (const c of candidatos) {
         const v = normStr(String(c || ""));
         if (!v) continue;
         if (v.includes("sandro")) return "sandro";
-        if (v.includes("joseildo")) return "joseildo";
+        if (v.includes("joseildo") || v.includes("jose il")) return "joseildo";
     }
     return null;
 }
