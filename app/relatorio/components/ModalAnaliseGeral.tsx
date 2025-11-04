@@ -174,6 +174,43 @@ function makeRange(
 }
 
 /* =========================
+   Helpers de Tanatopraxia
+   ========================= */
+
+/** Normaliza string simples (lowercase, sem acento) */
+function normStr(s: string): string {
+    return s
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+}
+
+/** Busca o responsável pela Tanatopraxia em campos comuns e retorna "sandro" | "joseildo" | null */
+function extrairResponsavelTanato(r: RegistroAnalise): "sandro" | "joseildo" | null {
+    const candidatos = [
+        (r as any).tanato_responsavel,
+        (r as any).responsavel_tanato,
+        (r as any).conservacao_responsavel,
+        (r as any).responsavel_conservacao,
+        (r as any).usuario_inicio_conservacao,
+        (r as any).usuario_inicio_tanato,
+        (r as any).tanato_usuario_inicio,
+        (r as any).iniciado_por,
+        (r as any).usuario_responsavel,
+        (r as any).usuario,
+        (r as any).operador,
+    ];
+    for (const c of candidatos) {
+        const v = normStr(String(c || ""));
+        if (!v) continue;
+        if (v.includes("sandro")) return "sandro";
+        if (v.includes("joseildo")) return "joseildo";
+    }
+    return null;
+}
+
+/* =========================
    Componente
    ========================= */
 export default function ModalAnaliseGeral({
@@ -241,6 +278,8 @@ export default function ModalAnaliseGeral({
     // Agregações
     const {
         tanatoCount,
+        tanatoSandro,
+        tanatoJoseildo,
         assistTotal,
         ornNatural,
         ornArtificial,
@@ -250,6 +289,8 @@ export default function ModalAnaliseGeral({
         convAssoc,
     } = React.useMemo(() => {
         let tanato = 0;
+        let tSandro = 0;
+        let tJoseildo = 0;
         let assist = 0;
         let ornNat = 0;
         let ornArt = 0;
@@ -263,7 +304,14 @@ export default function ModalAnaliseGeral({
             cAssoc = 0;
 
         for (const r of dadosPeriodo) {
-            if (normSimNao(String((r as any).tanato || "")) === "sim") tanato++;
+            const fezTanato = normSimNao(String((r as any).tanato || "")) === "sim";
+            if (fezTanato) {
+                tanato++;
+                const resp = extrairResponsavelTanato(r);
+                if (resp === "sandro") tSandro++;
+                else if (resp === "joseildo") tJoseildo++;
+            }
+
             if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
 
             const ornTxt = String(
@@ -293,6 +341,8 @@ export default function ModalAnaliseGeral({
 
         return {
             tanatoCount: tanato,
+            tanatoSandro: tSandro,
+            tanatoJoseildo: tJoseildo,
             assistTotal: assist,
             ornNatural: ornNat,
             ornArtificial: ornArt,
@@ -304,6 +354,7 @@ export default function ModalAnaliseGeral({
     }, [dadosPeriodo]);
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
+    const subTanato = `Sandro: ${fmt0(tanatoSandro || 0)} · Joseildo: ${fmt0(tanatoJoseildo || 0)}`;
 
     if (!aberto) return null;
 
@@ -392,6 +443,7 @@ export default function ModalAnaliseGeral({
                                     <ItemCard
                                         titulo="Tanatopraxia"
                                         valor={tanatoCount}
+                                        subtexto={subTanato}
                                         tipo="Principal"
                                         destaque="indigo"
                                     />
