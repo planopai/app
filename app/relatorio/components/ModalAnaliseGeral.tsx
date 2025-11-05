@@ -323,7 +323,10 @@ export default function ModalAnaliseGeral({
         convPart,
         convAssoc,
     } = React.useMemo(() => {
-        let tanato = 0;
+        // contagem por AGENTE (apenas logs com início identificado)
+        const byKey: Record<string, number> = {};
+        const displayByKey: Record<string, string> = {};
+
         let assist = 0;
         let ornNat = 0;
         let ornArt = 0;
@@ -336,14 +339,9 @@ export default function ModalAnaliseGeral({
             cPart = 0,
             cAssoc = 0;
 
-        // contagem por AGENTE (apenas logs)
-        const byKey: Record<string, number> = {};
-        const displayByKey: Record<string, string> = {};
-
         for (const r of dadosPeriodo) {
-            // TANATO
+            // TANATO por agente (somente se houver responsável identificado via log)
             if (normSimNao(String((r as any).tanato || "")) === "sim") {
-                tanato++;
                 const id = String((r as any).sepultamento_id || (r as any).id || "");
                 const nome = (respPorId[id] || "").trim();
                 if (nome) {
@@ -387,8 +385,11 @@ export default function ModalAnaliseGeral({
             .map(([k, count]) => ({ display: displayByKey[k] || k, count }))
             .sort((a, b) => b.count - a.count);
 
+        // >>> AQUI: total de Tanatopraxia é a SOMA dos agentes
+        const tanatoCount = agentesOrdenados.reduce((s, a) => s + a.count, 0);
+
         return {
-            tanatoCount: tanato,
+            tanatoCount,
             agentesOrdenados,
             assistTotal: assist,
             ornNatural: ornNat,
