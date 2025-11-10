@@ -3,7 +3,6 @@
 import React, {
     useCallback,
     useEffect,
-    useMemo,
     useRef,
     useState,
 } from "react";
@@ -39,8 +38,6 @@ type TelemetriaRegistro = {
     atualizado_em?: string | null;
 };
 
-type TipoTab = "remocao" | "para_velorio" | "para_sepultamento" | "geral";
-
 /* ======================= Helpers ======================= */
 const isFiniteNum = (v: any): v is number => Number.isFinite(Number(v));
 const n = (v: any, d: number | null | undefined = 0): number =>
@@ -69,14 +66,12 @@ function fmtDataHora(iso?: string | null) {
     return d.toLocaleString();
 }
 
-/** Parse coerente (sem heurística de v<60) e ordenado por tempo. */
 function parsePontosJson(pontos_json?: string | null | any[]): Ponto[] {
     if (!pontos_json) return [];
     let arr: any[] | null = null;
 
-    if (Array.isArray(pontos_json)) {
-        arr = pontos_json as any[];
-    } else if (typeof pontos_json === "string") {
+    if (Array.isArray(pontos_json)) arr = pontos_json;
+    else if (typeof pontos_json === "string") {
         try {
             const parsed = JSON.parse(pontos_json);
             arr = Array.isArray(parsed) ? parsed : null;
@@ -95,13 +90,9 @@ function parsePontosJson(pontos_json?: string | null | any[]): Ponto[] {
             const t = tRaw != null ? Number(tRaw) : undefined;
 
             let v: number | undefined;
-            if (p?.spd_ms != null && Number.isFinite(Number(p.spd_ms))) {
-                v = Number(p.spd_ms) * 3.6;
-            } else if (p?.spd_kmh != null && Number.isFinite(Number(p.spd_kmh))) {
-                v = Number(p.spd_kmh);
-            } else if (p?.v != null && Number.isFinite(Number(p.v))) {
-                v = Number(p.v);
-            }
+            if (p?.spd_ms != null) v = Number(p.spd_ms) * 3.6;
+            else if (p?.spd_kmh != null) v = Number(p.spd_kmh);
+            else if (p?.v != null) v = Number(p.v);
 
             return { lat, lng, t, v };
         })
@@ -109,144 +100,18 @@ function parsePontosJson(pontos_json?: string | null | any[]): Ponto[] {
         .sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
 }
 
-/* ======================= IndexedDB (fila offline) ======================= */
-function idbOpen(): Promise<IDBDatabase> {
-    return new Promise((res, rej) => {
-        const req = indexedDB.open("telemetria_db", 1);
-        req.onupgradeneeded = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains("queue")) {
-                db.createObjectStore("queue", { keyPath: "id", autoIncrement: true });
-            }
-        };
-        req.onsuccess = () => res(req.result);
-        req.onerror = () => rej(req.error);
-    });
-}
-async function idbAdd(item: any) {
-    const db = await idbOpen();
-    await new Promise<void>((res, rej) => {
-        const tx = db.transaction("queue", "readwrite");
-        tx.objectStore("queue").add(item);
-        tx.oncomplete = () => res();
-        tx.onerror = () => rej(tx.error);
-    });
-    db.close();
-}
-async function idbAll(): Promise<any[]> {
-    const db = await idbOpen();
-    const items = await new Promise<any[]>((res, rej) => {
-        const tx = db.transaction("queue", "readonly");
-        const req = tx.objectStore("queue").getAll();
-        req.onsuccess = () => res(req.result || []);
-        req.onerror = () => rej(req.error);
-    });
-    db.close();
-    return items;
-}
-async function idbDelete(ids: number[]) {
-    if (!ids.length) return;
-    const db = await idbOpen();
-    await new Promise<void>((res, rej) => {
-        const tx = db.transaction("queue", "readwrite");
-        const store = tx.objectStore("queue");
-        ids.forEach((id) => store.delete(id));
-        tx.oncomplete = () => res();
-        tx.onerror = () => rej(tx.error);
-    });
-    db.close();
-}
-
-/* ======================= Envio com retry ======================= */
-async function postJSON(body: any) {
-    const r = await fetch(`${API}/api/php/telemetria.php`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-}
-
-async function flushQueueOnce() {
-    const items = await idbAll();
-    const successes: number[] = [];
-    for (const it of items) {
-        try {
-            await postJSON(it.payload);
-            successes.push(it.id);
-        } catch {
-            // mantém na fila
-        }
-    }
-    if (successes.length) await idbDelete(successes);
-}
-
-async function registerBackgroundSync() {
-    // intencionalmente vazio
-}
-
-/* ======================= Coleta (watchPosition + Wake Lock) ======================= */
-let watchId: number | null = null;
-let wakeLock: any | null = null;
-
-async function requestWakeLock() {
-    try {
-        // Mantém a tela ligada enquanto grava
-        // @ts-ignore
-        if ("wakeLock" in navigator && (navigator as any).wakeLock) {
-            // @ts-ignore
-            wakeLock = await (navigator as any).wakeLock.request("screen");
-        }
-    } catch { }
-}
-function releaseWakeLock() {
-    try { wakeLock?.release?.(); } catch { }
-    wakeLock = null;
-}
-
-/* ======================= UI menores ======================= */
-function KPI({ label, value, sub }: { label: string; value: string; sub?: string; }) {
-    return (
-        <div className="rounded-xl border p-4">
-            <div className="text-xs text-slate-500">{label}</div>
-            <div className="mt-1 text-xl font-semibold">{value}</div>
-            {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
-        </div>
-    );
-}
-
-function MiniMap({ pontos }: { pontos: Ponto[] }) {
-    const [w, h, pad] = [320, 180, 10];
-    if (pontos.length === 0) {
-        return (
-            <div className="flex h-[180px] w-full items-center justify-center rounded-lg border text-xs text-slate-500">
-                Sem pontos de rota
-            </div>
-        );
-    }
-    const xs = pontos.map((p) => p.lng);
-    const ys = pontos.map((p) => p.lat);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-    const dx = Math.max(1e-9, maxX - minX);
-    const dy = Math.max(1e-9, maxY - minY);
-    const sx = (w - 2 * pad) / dx;
-    const sy = (h - 2 * pad) / dy;
-    const s = Math.min(sx, sy);
-    const tr = (p: Ponto) => {
-        const x = pad + (p.lng - minX) * s;
-        const y = h - pad - (p.lat - minY) * s;
-        return `${x},${y}`;
+function normalizeRow(raw: any): TelemetriaRegistro {
+    return {
+        ...raw,
+        velocidade_max: n(raw.velocidade_max),
+        velocidade_media: n(raw.velocidade_media),
+        distancia_km: n(raw.distancia_km),
+        duracao_s: n(raw.duracao_s),
+        paradas: n(raw.paradas),
+        acel_fortes: n(raw.acel_fortes),
+        frenagens_fortes: n(raw.frenagens_fortes),
+        pontos_json: parsePontosJson(raw.pontos_json),
     };
-    const d = pontos.map(tr).join(" ");
-    return (
-        <svg viewBox={`0 0 ${w} ${h}`} className="w-full rounded-lg border bg-white">
-            <polyline points={d} fill="none" stroke="#0ea5e9" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx={pad + (pontos[0].lng - minX) * s} cy={h - pad - (pontos[0].lat - minY) * s} r={5} fill="#10b981" stroke="white" strokeWidth={1.5} />
-            <circle cx={pad + (pontos[pontos.length - 1].lng - minX) * s} cy={h - pad - (pontos[pontos.length - 1].lat - minY) * s} r={5} fill="#ef4444" stroke="white" strokeWidth={1.5} />
-        </svg>
-    );
 }
 
 /* ======================= Página ======================= */
@@ -254,189 +119,134 @@ export default function TelemetriaPage() {
     const [rows, setRows] = useState<TelemetriaRegistro[]>([]);
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
-
-    const [fltVeiculo, setFltVeiculo] = useState<string>("");
-    const [fltAgente, setFltAgente] = useState<string>("");
-    const [fltFalecido, setFltFalecido] = useState<string>("");
-
-    const [openKey, setOpenKey] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<TipoTab>("geral");
-
-    const pontosSessionRef = useRef<Ponto[]>([]);
-    const [gravando, setGravando] = useState(false);
-    const [amostras, setAmostras] = useState(0);
-
-    /* ========= 📡 NOVO: Listener para mensagens do Flutter ========== */
-    useEffect(() => {
-        (window as any).onNativeLocation = (data: any) => {
-            try {
-                const loc = typeof data === "string" ? JSON.parse(data) : data;
-                console.log("📍 Localização recebida do app nativo:", loc);
-                // Aqui você pode opcionalmente salvar no IndexedDB ou atualizar o mapa
-            } catch (err) {
-                console.error("Erro ao processar mensagem nativa:", err);
-            }
-        };
-    }, []);
-
-    /* ================================================================ */
-
-    const normalizeRow = (d: any): TelemetriaRegistro => {
-        const velocidade_max = d.velocidade_max ?? d.vel_max_kmh ?? d.vel_max ?? null;
-        const velocidade_media = d.velocidade_media ?? d.vel_media_kmh ?? d.vel_media ?? null;
-        const distancia_km = d.distancia_km ?? d.distancia_total_km ?? null;
-        const duracao_s = d.duracao_s ?? d.duracao_seg ?? null;
-        const inicio_iso = d.inicio_iso ?? d.inicio_ts ?? d.inicio ?? null;
-        const fim_iso = d.fim_iso ?? d.fim_ts ?? d.fim ?? null;
-        const pontos_json = d.pontos_json ?? d.pontos ?? null;
-
-        return {
-            id: Number(d.id),
-            sepultamento_id: d.sepultamento_id != null ? Number(d.sepultamento_id) : null,
-            agente: d.agente ?? d.usuario ?? null,
-            falecido: d.falecido ?? d.nome ?? null,
-            tipo: d.tipo ?? null,
-            veiculo_nome: d.veiculo_nome ?? null,
-            veiculo_obs: d.veiculo_obs ?? null,
-            inicio_iso, fim_iso,
-            velocidade_max: isFiniteNum(velocidade_max) ? Number(velocidade_max) : null,
-            velocidade_media: isFiniteNum(velocidade_media) ? Number(velocidade_media) : null,
-            distancia_km: isFiniteNum(distancia_km) ? Number(distancia_km) : null,
-            duracao_s: isFiniteNum(duracao_s) ? Number(duracao_s) : null,
-            paradas: isFiniteNum(d.paradas) ? Number(d.paradas) : null,
-            acel_fortes: isFiniteNum(d.acel_fortes) ? Number(d.acel_fortes) : null,
-            frenagens_fortes: isFiniteNum(d.frenagens_fortes) ? Number(d.frenagens_fortes) : null,
-            origem: d.origem ?? d.source_device ?? null,
-            observacao: d.observacao ?? d.veiculo_obs ?? null,
-            pontos_json,
-            eventos_json: d.eventos_json ?? null,
-            extra_json: d.extra_json ?? null,
-            criado_em: d.criado_em ?? d.created_at ?? null,
-            atualizado_em: d.atualizado_em ?? d.updated_at ?? null,
-        };
-    };
+    const [openId, setOpenId] = useState<number | null>(null);
 
     const fetchRows = useCallback(async () => {
         setLoading(true);
         setMsg(null);
         try {
-            const r = await fetch(`${API}/api/php/telemetria.php?listar=1&_t=${Date.now()}`, { credentials: "include", cache: "no-store" });
-            const payload: any = await r.json();
-            const list: any[] = Array.isArray(payload) ? payload : Array.isArray(payload?.dados) ? payload.dados : [];
-            if (!Array.isArray(list)) {
-                setRows([]); setMsg(payload?.msg || "Nenhum dado.");
-            } else {
-                setRows(list.map(normalizeRow));
-            }
+            const r = await fetch(`${API}/api/php/telemetria.php?listar=1&_t=${Date.now()}`, {
+                credentials: "include",
+                cache: "no-store",
+            });
+            const payload = await r.json();
+            const list = Array.isArray(payload)
+                ? payload
+                : Array.isArray(payload?.dados)
+                    ? payload.dados
+                    : [];
+            setRows(list.map(normalizeRow));
         } catch (e: any) {
-            setMsg(e?.message || "Falha ao carregar."); setRows([]);
-        } finally { setLoading(false); }
+            setMsg(e?.message || "Falha ao carregar dados.");
+        } finally {
+            setLoading(false);
+        }
     }, []);
-
-    useEffect(() => { fetchRows(); }, [fetchRows]);
-
-    /* ---------- 📍 Iniciar gravação ---------- */
-    const iniciarGravacao = async () => {
-        if (!("geolocation" in navigator)) { alert("Geolocalização não disponível."); return; }
-
-        // 🔹 NOVO: notifica o app Flutter, se estiver rodando dentro do WebView
-        if ((window as any).Native) {
-            (window as any).Native.postMessage(JSON.stringify({ type: "start_tracking" }));
-        }
-
-        pontosSessionRef.current = [];
-        setAmostras(0);
-        setGravando(true);
-        await requestWakeLock();
-
-        watchId = navigator.geolocation.watchPosition(
-            pos => {
-                const { latitude, longitude, speed } = pos.coords;
-                const t = Math.floor(Date.now() / 1000);
-                const v = Number.isFinite(speed) ? (speed as number) * 3.6 : undefined;
-                const p = { lat: latitude, lng: longitude, t, v };
-                pontosSessionRef.current.push(p);
-                setAmostras(pontosSessionRef.current.length);
-            },
-            err => { console.warn("GPS", err); },
-            { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
-        );
-    };
-
-    /* ---------- 📍 Encerrar ---------- */
-    const encerrarEEnfileirar = async (payloadBase: any) => {
-        // 🔹 NOVO: sinaliza o app Flutter para parar coleta
-        if ((window as any).Native) {
-            (window as any).Native.postMessage(JSON.stringify({ type: "stop_tracking" }));
-        }
-
-        if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-        releaseWakeLock();
-        setGravando(false);
-
-        const pts = pontosSessionRef.current.slice();
-        if (pts.length === 0) { alert("Sem pontos coletados."); return; }
-
-        const body = {
-            acao: "inserir",
-            ...payloadBase,
-            pontos_json: pts,
-            amostras: pts.length,
-            encerrado: 1,
-            source_device: "pwa",
-        };
-
-        await idbAdd({ createdAt: Date.now(), payload: body });
-        await flushQueueOnce();
-        await registerBackgroundSync();
-        pontosSessionRef.current = [];
-        setAmostras(0);
-        fetchRows();
-    };
 
     useEffect(() => {
-        const onOnline = () => { flushQueueOnce(); };
-        window.addEventListener("online", onOnline);
-        return () => window.removeEventListener("online", onOnline);
-    }, []);
+        fetchRows();
+    }, [fetchRows]);
 
     /* ---------- render ---------- */
     return (
         <div className="p-6">
-            <header className="mb-4 flex items-center justify-between gap-3">
+            <header className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Relatório de Telemetria</h1>
-                    <p className="text-sm text-slate-500">Sessões registradas com rota, velocidades e estatísticas.</p>
+                    <p className="text-sm text-slate-500">
+                        Sessões registradas com rotas e estatísticas de condução.
+                    </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button className="rounded-lg border px-3 py-2 text-sm" onClick={fetchRows} disabled={loading}>
-                        {loading ? "Atualizando..." : "Atualizar"}
-                    </button>
-                    {!gravando ? (
-                        <button className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground" onClick={iniciarGravacao}>
-                            Iniciar gravação
-                        </button>
-                    ) : (
-                        <button
-                            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white"
-                            onClick={() =>
-                                encerrarEEnfileirar({
-                                    tipo: "para_sepultamento",
-                                    sepultamento_id: 0,
-                                    falecido: "Sem nome",
-                                    veiculo_nome: "Veículo",
-                                })
-                            }
-                        >
-                            Encerrar & enviar ({amostras} pts)
-                        </button>
-                    )}
-                </div>
+                <button
+                    onClick={fetchRows}
+                    disabled={loading}
+                    className="rounded-lg border px-4 py-2 text-sm"
+                >
+                    {loading ? "Atualizando..." : "Atualizar"}
+                </button>
             </header>
 
-            {/* resto do layout inalterado */}
-            {/* ... */}
+            {msg && (
+                <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800 mb-3">
+                    {msg}
+                </div>
+            )}
+
+            {rows.length === 0 && !loading && (
+                <div className="text-slate-500 text-sm">Nenhum registro encontrado.</div>
+            )}
+
+            <div className="space-y-4">
+                {rows.map((row) => {
+                    const open = openId === row.id;
+                    const pontos = Array.isArray(row.pontos_json)
+                        ? (row.pontos_json as Ponto[])
+                        : parsePontosJson(row.pontos_json);
+
+                    return (
+                        <div
+                            key={row.id}
+                            className="rounded-xl border bg-white shadow-sm p-4"
+                        >
+                            <div
+                                className="flex justify-between items-center cursor-pointer"
+                                onClick={() => setOpenId(open ? null : row.id)}
+                            >
+                                <div>
+                                    <div className="font-medium text-slate-800">
+                                        {row.veiculo_nome || "Sem veículo"}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                        {row.falecido ? `Falecido: ${row.falecido}` : "Sem falecido"} •{" "}
+                                        {row.tipo || "tipo indefinido"}
+                                    </div>
+                                </div>
+                                <div className="text-xs text-slate-400">
+                                    {fmtDataHora(row.criado_em)}
+                                </div>
+                            </div>
+
+                            {open && (
+                                <div className="mt-4 space-y-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        <KPI label="Distância" value={fmtKm(row.distancia_km)} />
+                                        <KPI label="Velocidade Média" value={fmtKmH(row.velocidade_media)} />
+                                        <KPI label="Velocidade Máx." value={fmtKmH(row.velocidade_max)} />
+                                        <KPI label="Duração" value={fmtDur(row.duracao_s)} />
+                                    </div>
+
+                                    <MapRoute pontos={pontos} height={260} />
+
+                                    {row.observacao && (
+                                        <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600">
+                                            Observação: {row.observacao}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 }
 
+/* ======================= UI Componentes menores ======================= */
+function KPI({
+    label,
+    value,
+    sub,
+}: {
+    label: string;
+    value: string;
+    sub?: string;
+}) {
+    return (
+        <div className="rounded-lg border p-3 text-center">
+            <div className="text-xs text-slate-500">{label}</div>
+            <div className="text-lg font-semibold">{value}</div>
+            {sub && <div className="text-xs text-slate-400">{sub}</div>}
+        </div>
+    );
+}
