@@ -246,7 +246,7 @@ export default function TipsPage() {
                 </TabsList>
             </Tabs>
 
-            {/* Lista de dicas para usuarios (sem suporte/links externos) */}
+            {/* Lista de dicas para usuarios novos (sem suporte/links externos) */}
             {dicasFiltradas.length === 0 ? (
                 <Card className="p-6 text-center text-sm text-muted-foreground">Nenhum resultado para sua busca.</Card>
             ) : (
