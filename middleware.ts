@@ -35,7 +35,7 @@ const PROTECTED_SLUGS = new Set<string>([
 ]);
 
 // Rotas livres (além de estáticos e /api/php)
-// ⚠️ "/" NÃO aparece aqui, para que a Home exija login
+// ⚠️ "/" NÃO aparece aqui; a Home exige login
 const PUBLIC_PATHS = new Set<string>([
     "/login",
     "/ajuda",
@@ -48,23 +48,21 @@ function firstSlug(pathname: string): string {
 function pickFirstAllowedPath(perms: string[]): string {
     if (perms.includes("*")) return "/";
     for (const slug of perms) {
-        // Considera apenas slugs conhecidos/protegidos
         if (PROTECTED_SLUGS.has(slug)) return `/${slug}`;
     }
-    // fallback seguro
     return "/";
 }
 
 export async function middleware(req: NextRequest) {
     const { pathname, search } = req.nextUrl;
 
-    // Arquivos estáticos e APIs que SEMPRE passam
+    // 1) Arquivos estáticos e APIs PHP/WP/WC ficam sempre livres
     const isAssetOrApiPublic =
         pathname.startsWith("/_next") ||
         pathname.startsWith("/static") ||
         pathname.startsWith("/public") ||
         pathname.startsWith("/api/auth") ||
-        pathname.startsWith("/api/php") || // PHP fica livre; ele mesmo valida a sessão
+        pathname.startsWith("/api/php") || // proxy PHP deve ficar livre
         pathname.startsWith("/api/wp") ||
         pathname.startsWith("/api/wc") ||
         PUBLIC_FILE.test(pathname);
@@ -73,19 +71,33 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
-    // Páginas realmente públicas (ajuda, etc.), exceto /login que tratamos separado
+    // 2) Páginas públicas (exceto /login, que tratamos mais abaixo)
     if (pathname !== "/login" && PUBLIC_PATHS.has(pathname)) {
         return NextResponse.next();
     }
 
-    const hasAuthCookie = req.cookies.get("pai_auth")?.value === "1";
-    const cookieHeader = req.headers.get("cookie") || "";
     const origin = req.nextUrl.origin;
+    const cookieHeader = req.headers.get("cookie") || "";
+    const hasAuthCookie = req.cookies.get("pai_auth")?.value === "1";
 
-    // uid vindo do PHP (0 = não logado / sessão inválida)
-    let uid = 0;
+    // Helper para redirecionar ao login limpando cookie "fantasma"
+    const redirectToLogin = () => {
+        const loginUrl = new URL("/login", req.url);
+        const nextParam = pathname + (search || "");
+        loginUrl.searchParams.set("next", nextParam);
 
-    if (hasAuthCookie) {
+        const res = NextResponse.redirect(loginUrl);
+        if (hasAuthCookie) {
+            // zera o cookie para não ficar estado "meio logado"
+            res.cookies.set("pai_auth", "0", { path: "/", maxAge: 0 });
+        }
+        return res;
+    };
+
+    // Função para consultar whoami no PHP
+    async function fetchWhoami() {
+        if (!hasAuthCookie) return { uid: 0, userName: "" };
+
         try {
             const r1 = await fetch(`${origin}/api/php/pai_api.php?action=whoami`, {
                 headers: {
@@ -101,53 +113,51 @@ export async function middleware(req: NextRequest) {
             } catch {
                 who = null;
             }
-            uid = who?.id ? Number(who.id) : 0;
+
+            const uid = who?.id ? Number(who.id) : 0;
+            // ajuste os campos abaixo conforme o que o PHP retorna
+            const userName =
+                (who?.nome ?? who?.name ?? who?.usuario ?? "").toString().trim();
+
+            return { uid, userName };
         } catch {
-            // Falha de rede → trata como não autenticado
-            uid = 0;
+            return { uid: 0, userName: "" };
         }
     }
 
-    // --- Tratamento da tela de login ---
+    // 3) Tratamento da rota /login
     if (pathname === "/login") {
-        // Se PHP reconhece o usuário, manda para Home (ou outra segura)
-        if (uid > 0) {
+        const { uid, userName } = await fetchWhoami();
+
+        // Se PHP reconhece usuário + nome, manda direto para a Home
+        if (uid > 0 && userName) {
             return NextResponse.redirect(new URL("/", req.url));
         }
 
-        // Não está logado de verdade → permite ver o login
+        // Não logado de verdade → mostra o login e limpa cookie se houver
         const res = NextResponse.next();
-        // se existir cookie "fantasma", apaga
         if (hasAuthCookie) {
             res.cookies.set("pai_auth", "0", { path: "/", maxAge: 0 });
         }
         return res;
     }
 
-    // --- Todas as OUTRAS rotas privadas precisam de uid válido ---
-    if (!uid) {
-        const loginUrl = new URL("/login", req.url);
-        const nextParam = pathname + (search || "");
-        loginUrl.searchParams.set("next", nextParam);
+    // 4) Qualquer outra rota privada → exige usuário válido no PHP
+    const { uid, userName } = await fetchWhoami();
 
-        const res = NextResponse.redirect(loginUrl);
-        // garante que cookie de auth antigo não fique pendurado
-        if (hasAuthCookie) {
-            res.cookies.set("pai_auth", "0", { path: "/", maxAge: 0 });
-        }
-        return res;
+    if (!uid || !userName) {
+        // Sem usuário reconhecido → sempre login
+        return redirectToLogin();
     }
 
-    // A partir daqui: usuário está autenticado no PHP (uid > 0)
-
+    // 5) Usuário autenticado e com nome.
+    //    Se a rota não estiver na lista de slugs protegidos (inclui "/"), libera.
     const slug = firstSlug(pathname);
-
-    // Se não tiver slug protegido (ex.: "/", páginas não listadas), basta estar logado
     if (!slug || !PROTECTED_SLUGS.has(slug)) {
         return NextResponse.next();
     }
 
-    // --- Checagem de permissões por slug ---
+    // 6) Para slugs protegidos, checa permissões específicas
     let perms: string[] = [];
     try {
         const r2 = await fetch(
@@ -174,7 +184,7 @@ export async function middleware(req: NextRequest) {
     const allowed = perms.includes("*") || perms.includes(slug);
     if (allowed) return NextResponse.next();
 
-    // Sem permissão → redireciona para uma página segura permitida
+    // 7) Sem permissão → redireciona para uma página segura
     const to = new URL(pickFirstAllowedPath(perms), req.url);
     return NextResponse.redirect(to);
 }
