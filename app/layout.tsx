@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -51,23 +50,8 @@ export default async function RootLayout({
   // Chave do usuário (cookie setado pelo seu backend)
   const uidCookie = cookieStore.get("pai_uid")?.value || null;
 
-  // Cabeçalhos da requisição (no App Router é seguro usar aqui)
-  const h = await headers();
-  // Next costuma expor o path atual neste header; se não vier, cai em "/"
-  const currentPath = h.get("x-pathname") || "/";
-
-  // Rotas que não devem forçar redirect de login
-  const isPublicRoute = currentPath === "/login" || currentPath === "/ajuda";
-
   // SSR: pega permissões com os cookies da requisição
   const initialPerms = await getInitialPerms(); // [] se não logado
-
-  // 🔒 Guarda de servidor:
-  // se NÃO for rota pública e NÃO tiver uidCookie ou perms vazios → login.
-  if (!isPublicRoute && (!uidCookie || initialPerms.length === 0)) {
-    const nextParam = encodeURIComponent(currentPath);
-    redirect(`/login?next=${nextParam}`);
-  }
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
@@ -102,12 +86,7 @@ export default async function RootLayout({
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             {/* key = uidCookie → se mudar de usuário, remonta tudo. */}
-            <PermsProvider
-              key={uidCookie ?? "nouid"}
-              userKey={uidCookie}
-              initialPerms={initialPerms}
-            >
-              {/* AppShell some no /login; a guarda de login já foi feita acima */}
+            <PermsProvider key={uidCookie ?? "nouid"} userKey={uidCookie} initialPerms={initialPerms}>
               <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
             </PermsProvider>
           </ActiveThemeProvider>
