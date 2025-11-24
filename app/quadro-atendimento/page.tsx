@@ -631,9 +631,7 @@ export default function QuadroAtendimentoPage() {
                     resp.status,
                     resp.statusText
                 );
-                setTimelineError(
-                    "Não foi possível carregar o histórico deste atendimento."
-                );
+                setTimelineError("Não foi possível carregar o histórico deste atendimento.");
                 setTimelineLogs([]);
                 return;
             }
@@ -650,9 +648,7 @@ export default function QuadroAtendimentoPage() {
             setTimelineLogs(logs);
         } catch (e) {
             console.error(e);
-            setTimelineError(
-                "Não foi possível carregar o histórico deste atendimento."
-            );
+            setTimelineError("Não foi possível carregar o histórico deste atendimento.");
         } finally {
             setTimelineLoading(false);
         }
@@ -665,13 +661,9 @@ export default function QuadroAtendimentoPage() {
             : "Completo.";
 
     const missingEtapa0 = (r: Registro) =>
-        ["falecido", "contato", "religiao", "convenio"].filter(
-            (k) => !isFilled(r, k)
-        );
+        ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k));
     const missingEtapa1 = (r: Registro) =>
-        ["urna", "roupa", "assistencia", "tanato"].filter(
-            (k) => !isFilled(r, k)
-        );
+        ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k));
     const missingEtapa2 = (r: Registro) => {
         const miss: string[] = [];
         if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
@@ -691,7 +683,7 @@ export default function QuadroAtendimentoPage() {
     };
 
     return (
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
+        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
             {/* Header/clock + botão Linha do Tempo */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -701,8 +693,7 @@ export default function QuadroAtendimentoPage() {
                         </h1>
                         <p className="mt-1 text-sm text-muted-foreground">
                             Atualizado em tempo real —{" "}
-                            <span className="font-medium">{clockTime}</span> •{" "}
-                            {clockDate}
+                            <span className="font-medium">{clockTime}</span> • {clockDate}
                         </p>
                     </div>
                     <button
@@ -744,10 +735,7 @@ export default function QuadroAtendimentoPage() {
                                 ativos.map((r, i) => {
                                     const preenchidas = etapasPreenchidas(r);
                                     return (
-                                        <tr
-                                            key={i}
-                                            className="[&>td]:px-4 [&>td]:py-3"
-                                        >
+                                        <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
                                             <td>{dateOr(r.data)}</td>
                                             <td>
                                                 <button
@@ -767,14 +755,11 @@ export default function QuadroAtendimentoPage() {
                                                         r.status
                                                     )}`}
                                                 >
-                                                    {capStatus(r.status) ||
-                                                        "a definir"}
+                                                    {capStatus(r.status) || "a definir"}
                                                 </span>
                                             </td>
                                             <td>
-                                                <EtapasInlineDots
-                                                    filled={preenchidas}
-                                                />
+                                                <EtapasInlineDots filled={preenchidas} />
                                             </td>
                                         </tr>
                                     );
@@ -846,9 +831,7 @@ export default function QuadroAtendimentoPage() {
 
                                 {/* Linha 3: Local (velório) */}
                                 <div className="mt-2 text-sm">
-                                    <span className="text-muted-foreground">
-                                        Local:&nbsp;
-                                    </span>
+                                    <span className="text-muted-foreground">Local:&nbsp;</span>
                                     {shown(r.local_velorio)}
                                 </div>
 
@@ -870,9 +853,7 @@ export default function QuadroAtendimentoPage() {
 
                                 {/* Etapas coloridas */}
                                 <div className="mt-3">
-                                    <div className="text-xs text-muted-foreground">
-                                        Etapas:
-                                    </div>
+                                    <div className="text-xs text-muted-foreground">Etapas:</div>
                                     <EtapasInlineDots filled={preenchidas} />
                                 </div>
                             </div>
@@ -889,9 +870,7 @@ export default function QuadroAtendimentoPage() {
                 </p>
                 <div className="mt-4 space-y-2">
                     {avisos.length === 0 ? (
-                        <p className="text-muted-foreground">
-                            Nenhum aviso no momento.
-                        </p>
+                        <p className="text-muted-foreground">Nenhum aviso no momento.</p>
                     ) : (
                         avisos.map((a, i) => (
                             <div key={i} className="flex gap-2 text-sm">
@@ -928,20 +907,13 @@ export default function QuadroAtendimentoPage() {
                                     </h3>
                                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
                                         <span className="text-muted-foreground">
-                                            Data:{" "}
-                                            <b>{dateOr(detail.data)}</b>
+                                            Data: <b>{dateOr(detail.data)}</b>
                                         </span>
                                         <span className="text-muted-foreground">
-                                            • Hora:{" "}
-                                            <b>
-                                                {timeOr(
-                                                    detail.hora_fim_velorio
-                                                )}
-                                            </b>
+                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
                                         </span>
                                         <span className="text-muted-foreground">
-                                            • Agente:{" "}
-                                            <b>{shown(detail.agente)}</b>
+                                            • Agente: <b>{shown(detail.agente)}</b>
                                         </span>
                                     </div>
                                 </div>
@@ -957,10 +929,7 @@ export default function QuadroAtendimentoPage() {
                                     </span>
                                     <span className="hidden sm:inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         ATENDIMENTO{" "}
-                                        {shown(
-                                            detail.convenio,
-                                            "A DEFINIR"
-                                        ).toUpperCase()}
+                                        {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                     </span>
                                     <button
                                         onClick={handleCopy}
@@ -991,10 +960,7 @@ export default function QuadroAtendimentoPage() {
                                 </span>
                                 <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
                                     ATEND.{" "}
-                                    {shown(
-                                        detail.convenio,
-                                        "A DEFINIR"
-                                    ).toUpperCase()}
+                                    {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                 </span>
                             </div>
                         </div>
@@ -1026,28 +992,16 @@ export default function QuadroAtendimentoPage() {
                                     />
                                     <Field
                                         label="Obs. Atendimento"
-                                        value={shown(
-                                            detail.observacao_atendimento,
-                                            ""
-                                        )}
+                                        value={shown(detail.observacao_atendimento, "")}
                                         className="sm:col-span-2"
                                     />
                                 </div>
                             </Topic>
 
-                            <Topic
-                                title="ITENS"
-                                note={obsList(missingEtapa1(detail))}
-                            >
+                            <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field
-                                        label="Urna"
-                                        value={shown(detail.urna)}
-                                    />
-                                    <Field
-                                        label="Roupa"
-                                        value={shown(detail.roupa)}
-                                    />
+                                    <Field label="Urna" value={shown(detail.urna)} />
+                                    <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field
                                         label="Assistência"
                                         value={shown(detail.assistencia)}
@@ -1075,10 +1029,7 @@ export default function QuadroAtendimentoPage() {
                                     />
                                     <Field
                                         label="Obs. Itens"
-                                        value={shown(
-                                            detail.observacao_itens,
-                                            ""
-                                        )}
+                                        value={shown(detail.observacao_itens, "")}
                                         className="sm:col-span-2"
                                     />
                                 </div>
@@ -1095,59 +1046,41 @@ export default function QuadroAtendimentoPage() {
                                     />
                                     <Field
                                         label="Data Início Velório"
-                                        value={dateOr(
-                                            detail.data_inicio_velorio
-                                        )}
+                                        value={dateOr(detail.data_inicio_velorio)}
                                     />
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field
                                         label="Início Velório"
-                                        value={timeOr(
-                                            detail.hora_inicio_velorio
-                                        )}
+                                        value={timeOr(detail.hora_inicio_velorio)}
                                     />
                                     <Field
                                         label="Obs. Velório"
-                                        value={shown(
-                                            detail.observacao_velorio01,
-                                            ""
-                                        )}
+                                        value={shown(detail.observacao_velorio01, "")}
                                         className="sm:col-span-2"
                                     />
                                 </div>
                             </Topic>
 
-                            <Topic
-                                title="SEPULTAMENTO"
-                                note={noteEtapa3(detail)}
-                            >
+                            <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
                                     <Field
                                         label="Local"
                                         value={shown(
-                                            detail.local_sepultamento ||
-                                            detail.local
+                                            detail.local_sepultamento || detail.local
                                         )}
                                     />
                                     <Field
                                         label="Data"
-                                        value={dateOr(
-                                            detail.data_fim_velorio
-                                        )}
+                                        value={dateOr(detail.data_fim_velorio)}
                                     />
                                     <Field
                                         label="Hora"
-                                        value={timeOr(
-                                            detail.hora_fim_velorio
-                                        )}
+                                        value={timeOr(detail.hora_fim_velorio)}
                                     />
                                     <Field
                                         label="Obs. Sepultamento"
-                                        value={shown(
-                                            detail.observacao_velorio02,
-                                            ""
-                                        )}
+                                        value={shown(detail.observacao_velorio02, "")}
                                         className="sm:col-span-2"
                                     />
                                 </div>
@@ -1187,8 +1120,8 @@ export default function QuadroAtendimentoPage() {
                                         Linha do Tempo
                                     </h3>
                                     <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-                                        Selecione um falecido na lista para
-                                        visualizar a linha do tempo dos eventos.
+                                        Selecione um falecido na lista para visualizar a
+                                        linha do tempo dos eventos.
                                     </p>
                                 </div>
                                 <button
@@ -1209,8 +1142,7 @@ export default function QuadroAtendimentoPage() {
                                         Últimos falecidos
                                     </h4>
                                     <span className="text-[11px] text-muted-foreground">
-                                        Página {timelinePage + 1} de{" "}
-                                        {totalTimelinePages}
+                                        Página {timelinePage + 1} de {totalTimelinePages}
                                     </span>
                                 </div>
 
@@ -1219,9 +1151,7 @@ export default function QuadroAtendimentoPage() {
                                     <input
                                         type="text"
                                         value={timelineSearch}
-                                        onChange={(e) =>
-                                            setTimelineSearch(e.target.value)
-                                        }
+                                        onChange={(e) => setTimelineSearch(e.target.value)}
                                         placeholder="Pesquisar por nome..."
                                         className="w-full rounded-full border px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
@@ -1235,17 +1165,12 @@ export default function QuadroAtendimentoPage() {
                                     <ul className="space-y-2 text-sm">
                                         {falecidosPaginaAtual.map((r, idx) => {
                                             const isSelected =
-                                                selectedRegistro &&
-                                                selectedRegistro === r;
+                                                selectedRegistro && selectedRegistro === r;
                                             return (
                                                 <li key={idx}>
                                                     <button
                                                         type="button"
-                                                        onClick={() =>
-                                                            carregarHistorico(
-                                                                r
-                                                            )
-                                                        }
+                                                        onClick={() => carregarHistorico(r)}
                                                         className={`w-full text-left rounded-lg border px-3 py-2 transition shadow-sm ${isSelected
                                                                 ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
                                                                 : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
@@ -1254,9 +1179,7 @@ export default function QuadroAtendimentoPage() {
                                                         <div className="flex items-start justify-between gap-2">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="font-semibold text-[13px] sm:text-sm truncate">
-                                                                    {shown(
-                                                                        r.falecido
-                                                                    )}
+                                                                    {shown(r.falecido)}
                                                                 </div>
                                                                 <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
                                                                     {shown(
@@ -1265,9 +1188,7 @@ export default function QuadroAtendimentoPage() {
                                                                     )}
                                                                 </div>
                                                                 <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
-                                                                    {capStatus(
-                                                                        r.status
-                                                                    )}
+                                                                    {capStatus(r.status)}
                                                                 </div>
                                                             </div>
                                                             <span className="shrink-0 text-[11px] text-muted-foreground">
@@ -1286,9 +1207,7 @@ export default function QuadroAtendimentoPage() {
                                     <button
                                         type="button"
                                         onClick={() =>
-                                            setTimelinePage((p) =>
-                                                Math.max(0, p - 1)
-                                            )
+                                            setTimelinePage((p) => Math.max(0, p - 1))
                                         }
                                         disabled={timelinePage === 0}
                                         className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
@@ -1299,15 +1218,10 @@ export default function QuadroAtendimentoPage() {
                                         type="button"
                                         onClick={() =>
                                             setTimelinePage((p) =>
-                                                p + 1 < totalTimelinePages
-                                                    ? p + 1
-                                                    : p
+                                                p + 1 < totalTimelinePages ? p + 1 : p
                                             )
                                         }
-                                        disabled={
-                                            timelinePage + 1 >=
-                                            totalTimelinePages
-                                        }
+                                        disabled={timelinePage + 1 >= totalTimelinePages}
                                         className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
                                     >
                                         Próxima
@@ -1318,17 +1232,14 @@ export default function QuadroAtendimentoPage() {
                             {/* Linha do tempo do selecionado */}
                             <section className="rounded-xl border bg-background p-3 sm:p-4">
                                 {selectedRegistro ? (
-                                    <div className="max-w-xl mx-auto w-full">
+                                    <div className="w-full">
                                         <div className="mb-3">
                                             <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
                                                 Linha do tempo —{" "}
-                                                {shown(
-                                                    selectedRegistro.falecido
-                                                )}
+                                                {shown(selectedRegistro.falecido)}
                                             </h4>
                                             <p className="text-[11px] sm:text-xs text-muted-foreground">
-                                                Eventos registrados para este
-                                                atendimento.
+                                                Eventos registrados para este atendimento.
                                             </p>
                                         </div>
 
@@ -1348,8 +1259,7 @@ export default function QuadroAtendimentoPage() {
                                             !timelineError &&
                                             timelineLogs.length === 0 && (
                                                 <p className="text-sm text-muted-foreground">
-                                                    Nenhum log encontrado para
-                                                    este atendimento.
+                                                    Nenhum log encontrado para este atendimento.
                                                 </p>
                                             )}
 
@@ -1365,9 +1275,8 @@ export default function QuadroAtendimentoPage() {
                                 ) : (
                                     <div className="flex h-full items-center justify-center text-center">
                                         <p className="text-sm text-muted-foreground">
-                                            Selecione um falecido na lista ao
-                                            lado para visualizar a linha do
-                                            tempo dos eventos.
+                                            Selecione um falecido na lista ao lado para
+                                            visualizar a linha do tempo dos eventos.
                                         </p>
                                     </div>
                                 )}
@@ -1422,9 +1331,7 @@ function Field({
             <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
                 {label}:
             </span>
-            <span className="text-[13px] sm:text-sm text-slate-900">
-                {value}
-            </span>
+            <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
         </div>
     );
 }
@@ -1436,9 +1343,7 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
         <div className="mt-1 flex items-center gap-4">
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">
-                        {label}
-                    </span>
+                    <span className="text-[11px] text-muted-foreground">{label}</span>
                     <span
                         className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
                             }`}
@@ -1457,13 +1362,9 @@ function EtapasRow({ registro }: { registro: Registro }) {
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                        {label}
-                    </span>
+                    <span className="text-sm text-muted-foreground">{label}</span>
                     <span
-                        className={`h-4 w-4 rounded-full border ${preenchidas[k]
-                                ? STAGE_DOT_FILLED[k]
-                                : STAGE_DOT_EMPTY
+                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
                             }`}
                     />
                 </div>
@@ -1543,8 +1444,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             let nome = key.replace(/_/g, " ");
             nome = overrideCampoNome(key, titleCaseFromSnake(nome));
             let valFmt = valStr;
-            if (valFmt.toLowerCase().startsWith("fase"))
-                valFmt = traduzirFase(valFmt);
+            if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
             valFmt = formataSeDataIso(valFmt);
 
             nome = substituirRotuloVisual(nome);
@@ -1582,9 +1482,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
 
     const text = substituirRotuloVisual(String(obj));
     return text.trim() ? (
-        <div className="mt-2 text-sm break-words whitespace-pre-wrap">
-            {text}
-        </div>
+        <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
     ) : null;
 }
 
@@ -1604,12 +1502,10 @@ function LinhaDoTempoLogs({
     }
 
     return (
-        <div className="space-y-3 max-w-xl mx-auto w-full overflow-x-hidden">
+        <div className="space-y-3 w-full overflow-x-hidden">
             {logs.map((ent, i) => {
                 const acao = ent.acao ? capitalize(ent.acao) : "";
-                const statusLabel = ent.status_novo
-                    ? traduzirFase(ent.status_novo)
-                    : "";
+                const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const detalhes = buildDetalhesNodes(ent.detalhes);
 
                 return (
@@ -1617,8 +1513,8 @@ function LinhaDoTempoLogs({
                         key={i}
                         className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm overflow-hidden"
                     >
-                        <div className="flex gap-3">
-                            <div className="text-xl leading-none flex-shrink-0">
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-1">
                                 {iconForAction(ent.acao, ent.status_novo)}
                             </div>
                             <div className="flex-1 min-w-0">
