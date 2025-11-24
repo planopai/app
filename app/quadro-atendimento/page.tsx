@@ -380,7 +380,7 @@ function formataSeDataIso(value: string): string {
         const [yyyy, mm, dd] = v.split("-");
         return `${dd}/${mm}/${yyyy}`;
     }
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    if (/^\d{4}-\d{2}-\d2 \d{2}:\d{2}(:\d{2})?$/.test(v)) {
         const [datePart, timePart] = v.split(" ");
         const [yyyy, mm, dd] = datePart.split("-");
         const hhmm = timePart.slice(0, 5);
@@ -420,6 +420,7 @@ export default function QuadroAtendimentoPage() {
     // modal linha do tempo
     const [timelineOpen, setTimelineOpen] = useState(false);
     const [timelinePage, setTimelinePage] = useState(0);
+    const [timelineSearch, setTimelineSearch] = useState("");
     const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
     const [timelineLogs, setTimelineLogs] = useState<LogItem[]>([]);
     const [timelineLoading, setTimelineLoading] = useState(false);
@@ -461,7 +462,9 @@ export default function QuadroAtendimentoPage() {
     // avisos
     useEffect(() => {
         const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
+            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+            })
                 .then((r) => r.json())
                 .then((j) => setAvisos(Array.isArray(j) ? j : []))
                 .catch(() => setAvisos([]));
@@ -486,6 +489,7 @@ export default function QuadroAtendimentoPage() {
     function openTimeline() {
         setTimelineOpen(true);
         setTimelinePage(0);
+        setTimelineSearch("");
         setSelectedRegistro(null);
         setTimelineLogs([]);
         setTimelineError(null);
@@ -495,7 +499,14 @@ export default function QuadroAtendimentoPage() {
         setSelectedRegistro(null);
         setTimelineLogs([]);
         setTimelineError(null);
+        setTimelineSearch("");
+        setTimelinePage(0);
     }
+
+    // resetar página ao alterar busca
+    useEffect(() => {
+        setTimelinePage(0);
+    }, [timelineSearch]);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -533,7 +544,7 @@ export default function QuadroAtendimentoPage() {
         });
     }, [registros]);
 
-    // lista de falecidos ordenada para Linha do Tempo
+    // lista de falecidos ordenada para Linha do Tempo (mais recentes primeiro)
     const falecidosOrdenados = useMemo(
         () =>
             [...registros]
@@ -542,8 +553,15 @@ export default function QuadroAtendimentoPage() {
         [registros]
     );
 
-    const totalTimelinePages = Math.max(1, Math.ceil(falecidosOrdenados.length / PAGE_SIZE));
-    const falecidosPaginaAtual = falecidosOrdenados.slice(
+    // filtro por nome (busca)
+    const falecidosFiltrados = useMemo(() => {
+        const q = timelineSearch.trim().toLowerCase();
+        if (!q) return falecidosOrdenados;
+        return falecidosOrdenados.filter((r) => (r.falecido || "").toLowerCase().includes(q));
+    }, [falecidosOrdenados, timelineSearch]);
+
+    const totalTimelinePages = Math.max(1, Math.ceil(falecidosFiltrados.length / PAGE_SIZE));
+    const falecidosPaginaAtual = falecidosFiltrados.slice(
         timelinePage * PAGE_SIZE,
         timelinePage * PAGE_SIZE + PAGE_SIZE
     );
@@ -1020,7 +1038,7 @@ export default function QuadroAtendimentoPage() {
                         </div>
 
                         <div className="px-3 py-3 sm:px-4 sm:py-4 grid gap-4 sm:gap-6 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)]">
-                            {/* Lista de falecidos (paginada) */}
+                            {/* Lista de falecidos (paginada + busca) */}
                             <section className="rounded-xl border bg-background p-3 sm:p-4 flex flex-col">
                                 <div className="flex items-center justify-between gap-2 mb-3">
                                     <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
@@ -1029,6 +1047,17 @@ export default function QuadroAtendimentoPage() {
                                     <span className="text-[11px] text-muted-foreground">
                                         Página {timelinePage + 1} de {totalTimelinePages}
                                     </span>
+                                </div>
+
+                                {/* Barra de busca por nome */}
+                                <div className="mb-3">
+                                    <input
+                                        type="text"
+                                        value={timelineSearch}
+                                        onChange={(e) => setTimelineSearch(e.target.value)}
+                                        placeholder="Pesquisar nome do falecido..."
+                                        className="w-full rounded-full border px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
                                 </div>
 
                                 {falecidosPaginaAtual.length === 0 ? (
@@ -1045,26 +1074,26 @@ export default function QuadroAtendimentoPage() {
                                                         type="button"
                                                         onClick={() => carregarHistorico(r)}
                                                         className={`w-full text-left rounded-lg border px-3 py-2 transition shadow-sm ${isSelected
-                                                                ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
-                                                                : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
+                                                            ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
+                                                            : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
                                                             }`}
                                                     >
                                                         <div className="flex items-center justify-between gap-2">
-                                                            <span className="font-semibold text-[13px] sm:text-sm">
+                                                            <span className="font-semibold text-[13px] sm:text-sm truncate">
                                                                 {shown(r.falecido)}
                                                             </span>
-                                                            <span className="text-[11px] text-muted-foreground">
+                                                            <span className="text-[11px] text-muted-foreground shrink-0">
                                                                 {dateOr(r.data)}
                                                             </span>
                                                         </div>
                                                         <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
-                                                            <span>
+                                                            <span className="truncate max-w-[70%]">
                                                                 {shown(
                                                                     r.local_velorio,
                                                                     "Local a definir"
                                                                 )}
                                                             </span>
-                                                            <span>{capStatus(r.status)}</span>
+                                                            <span className="shrink-0">{capStatus(r.status)}</span>
                                                         </div>
                                                     </button>
                                                 </li>
@@ -1197,7 +1226,7 @@ function Field({
             <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
                 {label}:
             </span>
-            <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
+            <span className="text-[13px] sm:text-sm text-slate-900 break-words">{value}</span>
         </div>
     );
 }
@@ -1251,7 +1280,9 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             obj = JSON.parse(raw);
         } catch {
             const text = substituirRotuloVisual(raw.trim());
-            return text ? <div className="mt-2 text-sm">{text}</div> : null;
+            return text ? (
+                <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
+            ) : null;
         }
     }
 
@@ -1266,11 +1297,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             const value = plainObj[key];
 
             // Arrumação
-            if (
-                /^arrum[aã]cao(\s*json|_json)?$/i.test(key) &&
-                value &&
-                isPlainObject(value)
-            ) {
+            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
                 for (const [k, v] of Object.entries(value)) {
                     if (asBool(v)) {
                         arrItems.push(`✅ ${titleCaseFromSnake(k)}`);
@@ -1290,9 +1317,9 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                     chips.push(
                         <span
                             key={key}
-                            className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
+                            className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs mr-2 mb-2"
                         >
-                            <b>{nome}:</b> {valFmt}
+                            <b>{nome}:</b>&nbsp;{valFmt}
                         </span>
                     );
                 }
@@ -1316,22 +1343,22 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             chips.push(
                 <span
                     key={key}
-                    className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
+                    className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs mr-2 mb-2"
                 >
-                    <b>{nome}:</b> {valFmt}
+                    <b>{nome}:</b>&nbsp;{valFmt}
                 </span>
             );
         }
 
         return (
-            <div className="mt-2 text-xs">
+            <div className="mt-2 text-xs break-words">
                 {arrItems.length > 0 && (
                     <div className="mb-1">
                         <b>Arrumação:</b>{" "}
                         {arrItems.map((t, idx) => (
                             <span
                                 key={`arr-${idx}`}
-                                className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
+                                className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs mr-2 mb-2"
                             >
                                 {t}
                             </span>
@@ -1344,7 +1371,9 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
     }
 
     const text = substituirRotuloVisual(String(obj));
-    return text.trim() ? <div className="mt-2 text-sm">{text}</div> : null;
+    return text.trim() ? (
+        <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
+    ) : null;
 }
 
 function LinhaDoTempoLogs({
@@ -1362,29 +1391,30 @@ function LinhaDoTempoLogs({
         );
     }
 
+    // ordena cronologicamente pelo campo datahora
+    const ordenados = [...logs].sort((a, b) =>
+        (a.datahora || "").localeCompare(b.datahora || "")
+    );
+
     return (
         <div className="space-y-3">
-            {logs.map((ent, i) => {
+            {ordenados.map((ent, i) => {
                 const acao = ent.acao ? capitalize(ent.acao) : "";
-                const statusLabel = ent.status_novo
-                    ? traduzirFase(ent.status_novo)
-                    : "";
+                const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const detalhes = buildDetalhesNodes(ent.detalhes);
 
                 return (
                     <div
                         key={i}
-                        className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm"
+                        className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm break-words overflow-x-hidden"
                     >
                         <div className="flex gap-3">
-                            <div className="text-xl leading-none">
-                                {iconForAction(ent.acao, ent.status_novo)}
-                            </div>
-                            <div className="flex-1">
+                            <div className="text-xl leading-none shrink-0">{iconForAction(ent.acao, ent.status_novo)}</div>
+                            <div className="flex-1 min-w-0">
                                 <div className="text-xs text-muted-foreground">
                                     {formatLogDateTime(ent.datahora)}
                                 </div>
-                                <div className="text-sm">
+                                <div className="text-sm break-words">
                                     {acao}
                                     {statusLabel && (
                                         <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
@@ -1393,7 +1423,7 @@ function LinhaDoTempoLogs({
                                     )}
                                 </div>
                                 {usuarioVisivel && (
-                                    <div className="text-xs text-muted-foreground">
+                                    <div className="text-xs text-muted-foreground break-words">
                                         Usuário: {ent.usuario ?? ""}
                                     </div>
                                 )}
