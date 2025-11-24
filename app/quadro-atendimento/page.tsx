@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 /* =========================
    Tipos
@@ -31,8 +31,8 @@ type Registro = {
     tanato?: string;
 
     // >>> NOVOS CAMPOS <<<
-    ornamentacao?: string;       // coluna existente no BD
-    ornamentacao_tipo?: string;  // "natural" | "artificial" (ou semelhante)
+    ornamentacao?: string; // coluna existente no BD
+    ornamentacao_tipo?: string; // "natural" | "artificial" (ou semelhante)
 
     local?: string;
     local_sepultamento?: string;
@@ -46,6 +46,15 @@ type Registro = {
 };
 
 type Aviso = { usuario?: string; mensagem?: string };
+
+type LogItem = {
+    id?: number | string;
+    datahora?: string;
+    acao?: string;
+    status_novo?: string;
+    detalhes?: any;
+    usuario?: string;
+};
 
 /* =========================
    Helpers comuns
@@ -86,22 +95,22 @@ function timeOr(t?: string) {
 
 /* ----------- Normalização de status (texto → faseNN) ----------- */
 const ROTULO_PARA_FASE: Record<string, string> = {
-    "removendo": "fase01",
+    removendo: "fase01",
     "aguardando procedimento": "fase02",
-    "preparando": "fase03",
+    preparando: "fase03",
     "aguardando ornamentacao": "fase04",
-    "ornamentando": "fase05",
+    ornamentando: "fase05",
     "corpo pronto": "fase06",
-    "transportando": "fase07",
+    transportando: "fase07",
     "transportando p/ velorio": "fase07",
-    "velando": "fase08",
-    "sepultando": "fase09",
+    velando: "fase08",
+    sepultando: "fase09",
     "transportando p/ sepultamento": "fase09",
     "sepultamento concluido": "fase10",
     "sepultamento concluído": "fase10",
     "material recolhido": "fase11",
-    "concluido": "fase11",
-    "concluído": "fase11",
+    concluido: "fase11",
+    concluído: "fase11",
 };
 function normalizeKey(s: string) {
     return s
@@ -303,6 +312,97 @@ function isTerceiroRegistro(r: Registro) {
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
+/* ===== Helpers Linha do Tempo ===== */
+const PAGE_SIZE = 5;
+
+function parseRegistroDateTime(r: Registro) {
+    const d = (r.data || "").trim();
+    const h = (r.hora_fim_velorio || r.hora_inicio_velorio || "").trim() || "00:00";
+    if (!d) return 0;
+    const [yyyy, mm, dd] = d.split("-");
+    const iso = `${yyyy}-${mm}-${dd}T${h}:00`;
+    const ts = Date.parse(iso);
+    return Number.isNaN(ts) ? 0 : ts;
+}
+
+/* Helpers diversos usados também na Linha do Tempo */
+function capitalize(str?: string): string {
+    if (!str) return "";
+    const s = str.toString().trim();
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+}
+
+function formatLogDateTime(value?: string): string {
+    if (!value) return "";
+    const s = value.replace(" ", "T");
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return value;
+    const dd = d.getDate().toString().padStart(2, "0");
+    const mm = (d.getMonth() + 1).toString().padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = d.getHours().toString().padStart(2, "0");
+    const mi = d.getMinutes().toString().padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function asBool(val: unknown): boolean {
+    if (typeof val === "boolean") return val;
+    const s = String(val ?? "").trim().toLowerCase();
+    if (!s) return false;
+    return ["1", "true", "t", "sim", "s", "yes", "y"].includes(s);
+}
+
+function titleCaseFromSnake(key: string): string {
+    return key
+        .split("_")
+        .filter(Boolean)
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+        .join(" ");
+}
+
+function overrideCampoNome(key: string, defaultName: string): string {
+    // customizações caso queira mudar rótulos específicos
+    return defaultName;
+}
+
+function substituirRotuloVisual(text: string): string {
+    // aqui dá pra trocar termos internos por algo mais amigável, se quiser
+    return text;
+}
+
+function formataSeDataIso(value: string): string {
+    const v = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        const [yyyy, mm, dd] = v.split("-");
+        return `${dd}/${mm}/${yyyy}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) {
+        const [datePart, timePart] = v.split(" ");
+        const [yyyy, mm, dd] = datePart.split("-");
+        const hhmm = timePart.slice(0, 5);
+        return `${dd}/${mm}/${yyyy} ${hhmm}`;
+    }
+    return v;
+}
+
+function traduzirFase(s?: string) {
+    return capStatus(s) || (s ?? "");
+}
+
+function iconForAction(acao?: string, status?: string): string {
+    const a = (acao || "").toLowerCase();
+    if (a.includes("criou") || a.includes("novo") || a.includes("inser")) return "🟢";
+    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter")) return "✏️";
+    if (a.includes("exclu") || a.includes("delet") || a.includes("remove")) return "🗑️";
+    const st = (status || "").toLowerCase();
+    if (st.startsWith("fase")) return "🔁";
+    return "•";
+}
+
 /* =========================
    Página
    ========================= */
@@ -312,10 +412,18 @@ export default function QuadroAtendimentoPage() {
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [avisos, setAvisos] = useState<Aviso[]>([]);
 
-    // modal
+    // modal detalhes
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
     const [copied, setCopied] = useState(false);
+
+    // modal linha do tempo
+    const [timelineOpen, setTimelineOpen] = useState(false);
+    const [timelinePage, setTimelinePage] = useState(0);
+    const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
+    const [timelineLogs, setTimelineLogs] = useState<LogItem[]>([]);
+    const [timelineLoading, setTimelineLoading] = useState(false);
+    const [timelineError, setTimelineError] = useState<string | null>(null);
 
     // relógio
     useEffect(() => {
@@ -339,7 +447,9 @@ export default function QuadroAtendimentoPage() {
     // dados
     useEffect(() => {
         const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
+            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+            })
                 .then((r) => r.json())
                 .then((j) => setRegistros(Array.isArray(j) ? j : []))
                 .catch(() => setRegistros([]));
@@ -360,7 +470,7 @@ export default function QuadroAtendimentoPage() {
         return () => clearInterval(id);
     }, []);
 
-    // abrir/fechar modal
+    // abrir/fechar modal detalhes
     function showDetail(r: Registro) {
         setDetail(r);
         setOpen(true);
@@ -371,9 +481,28 @@ export default function QuadroAtendimentoPage() {
         setDetail(null);
         setCopied(false);
     }
+
+    // abrir/fechar Linha do Tempo
+    function openTimeline() {
+        setTimelineOpen(true);
+        setTimelinePage(0);
+        setSelectedRegistro(null);
+        setTimelineLogs([]);
+        setTimelineError(null);
+    }
+    function closeTimeline() {
+        setTimelineOpen(false);
+        setSelectedRegistro(null);
+        setTimelineLogs([]);
+        setTimelineError(null);
+    }
+
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") closeDetail();
+            if (e.key === "Escape") {
+                closeDetail();
+                closeTimeline();
+            }
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
@@ -404,6 +533,21 @@ export default function QuadroAtendimentoPage() {
         });
     }, [registros]);
 
+    // lista de falecidos ordenada para Linha do Tempo
+    const falecidosOrdenados = useMemo(
+        () =>
+            [...registros]
+                .filter((r) => r.falecido)
+                .sort((a, b) => parseRegistroDateTime(b) - parseRegistroDateTime(a)),
+        [registros]
+    );
+
+    const totalTimelinePages = Math.max(1, Math.ceil(falecidosOrdenados.length / PAGE_SIZE));
+    const falecidosPaginaAtual = falecidosOrdenados.slice(
+        timelinePage * PAGE_SIZE,
+        timelinePage * PAGE_SIZE + PAGE_SIZE
+    );
+
     // copiar para clipboard
     async function handleCopy() {
         if (!detail) return;
@@ -427,6 +571,33 @@ export default function QuadroAtendimentoPage() {
             } finally {
                 document.body.removeChild(ta);
             }
+        }
+    }
+
+    // carregar histórico da Linha do Tempo
+    async function carregarHistorico(r: Registro) {
+        setSelectedRegistro(r);
+        setTimelineLogs([]);
+        setTimelineError(null);
+        setTimelineLoading(true);
+
+        try {
+            const id = (r as any).id ?? (r as any).id_atendimento ?? (r as any).codigo;
+            if (!id) {
+                throw new Error("ID do atendimento não informado no registro.");
+            }
+
+            const resp = await fetch(
+                `https://planoassistencialintegrado.com.br/historico.php?id=${encodeURIComponent(id)}&_nocache=${Date.now()}`,
+                { cache: "no-store" }
+            );
+            const json = await resp.json();
+            setTimelineLogs(Array.isArray(json) ? (json as LogItem[]) : []);
+        } catch (e) {
+            console.error(e);
+            setTimelineError("Não foi possível carregar o histórico deste atendimento.");
+        } finally {
+            setTimelineLoading(false);
         }
     }
 
@@ -454,12 +625,23 @@ export default function QuadroAtendimentoPage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
-            {/* Header/clock */}
+            {/* Header/clock + botão Linha do Tempo */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={openTimeline}
+                        className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                        Linha do Tempo
+                    </button>
+                </div>
             </div>
 
             {/* Tabela (desktop) */}
@@ -504,7 +686,9 @@ export default function QuadroAtendimentoPage() {
                                             <td>{shown(r.agente)}</td>
                                             <td>
                                                 <span
-                                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}
+                                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
+                                                        r.status
+                                                    )}`}
                                                 >
                                                     {capStatus(r.status) || "a definir"}
                                                 </span>
@@ -524,7 +708,9 @@ export default function QuadroAtendimentoPage() {
             {/* Cards (mobile) */}
             <div className="sm:hidden space-y-3">
                 {ativos.length === 0 ? (
-                    <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">Nenhum atendimento encontrado.</div>
+                    <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
+                        Nenhum atendimento encontrado.
+                    </div>
                 ) : (
                     ativos.map((r, i) => {
                         const preenchidas = etapasPreenchidas(r);
@@ -551,7 +737,9 @@ export default function QuadroAtendimentoPage() {
                                 {/* Linha 2: Chips + Agente */}
                                 <div className="mt-2 flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
-                                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
+                                        <span
+                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
+                                        >
                                             {statusTxt}
                                         </span>
                                         <span
@@ -629,7 +817,9 @@ export default function QuadroAtendimentoPage() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">{shown(detail.falecido)}</h3>
+                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
+                                        {shown(detail.falecido)}
+                                    </h3>
                                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
                                         <span className="text-muted-foreground">
                                             Data: <b>{dateOr(detail.data)}</b>
@@ -645,7 +835,9 @@ export default function QuadroAtendimentoPage() {
 
                                 <div className="flex shrink-0 items-center gap-2">
                                     <span
-                                        className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(detail.status)}`}
+                                        className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(
+                                            detail.status
+                                        )}`}
                                         title="Status"
                                     >
                                         {capStatus(detail.status)}
@@ -661,7 +853,11 @@ export default function QuadroAtendimentoPage() {
                                     >
                                         {copied ? "Copiado!" : "Copiar"}
                                     </button>
-                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
+                                    <button
+                                        onClick={closeDetail}
+                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                        aria-label="Fechar"
+                                    >
                                         Fechar
                                     </button>
                                 </div>
@@ -669,7 +865,11 @@ export default function QuadroAtendimentoPage() {
 
                             {/* badges no mobile */}
                             <div className="mt-2 flex gap-2 sm:hidden">
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
+                                <span
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
+                                        detail.status
+                                    )}`}
+                                >
                                     {capStatus(detail.status)}
                                 </span>
                                 <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
@@ -687,7 +887,11 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
                                     {/* Observação da etapa */}
-                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Atendimento"
+                                        value={shown(detail.observacao_atendimento, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
@@ -708,20 +912,30 @@ export default function QuadroAtendimentoPage() {
                                         className="sm:col-span-2"
                                     />
                                     {/* Observação da etapa */}
-                                    <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Itens"
+                                        value={shown(detail.observacao_itens, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
                             <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
                                     <Field label="Local Velório" value={shown(detail.local_velorio)} />
-                                    <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                    {/* Removidos do modal: Data Fim Velório & Hora Fim Velório */}
+                                    <Field
+                                        label="Data Início Velório"
+                                        value={dateOr(detail.data_inicio_velorio)}
+                                    />
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
                                     {/* Observação da etapa */}
-                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Velório"
+                                        value={shown(detail.observacao_velorio01, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
@@ -731,14 +945,182 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
                                     {/* Observação da etapa */}
-                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Sepultamento"
+                                        value={shown(detail.observacao_velorio02, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
                             <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
+                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
+                                    Etapas preenchidas
+                                </div>
                                 <EtapasRow registro={detail} />
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== Modal Linha do Tempo ===== */}
+            {timelineOpen && (
+                <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
+                    <div className="absolute inset-0 bg-black/40" onClick={closeTimeline} aria-hidden />
+                    <div className="relative z-10 w-full max-w-5xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overscroll-contain">
+                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <div className="text-[12px] text-muted-foreground leading-tight">
+                                        Histórico de atendimentos
+                                    </div>
+                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
+                                        Linha do Tempo
+                                    </h3>
+                                    <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+                                        Selecione um falecido na lista para visualizar a linha do tempo dos
+                                        eventos.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={closeTimeline}
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                    aria-label="Fechar"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="px-3 py-3 sm:px-4 sm:py-4 grid gap-4 sm:gap-6 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)]">
+                            {/* Lista de falecidos (paginada) */}
+                            <section className="rounded-xl border bg-background p-3 sm:p-4 flex flex-col">
+                                <div className="flex items-center justify-between gap-2 mb-3">
+                                    <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
+                                        Últimos falecidos
+                                    </h4>
+                                    <span className="text-[11px] text-muted-foreground">
+                                        Página {timelinePage + 1} de {totalTimelinePages}
+                                    </span>
+                                </div>
+
+                                {falecidosPaginaAtual.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">
+                                        Nenhum falecido encontrado.
+                                    </p>
+                                ) : (
+                                    <ul className="space-y-2 text-sm">
+                                        {falecidosPaginaAtual.map((r, idx) => {
+                                            const isSelected = selectedRegistro && selectedRegistro === r;
+                                            return (
+                                                <li key={idx}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => carregarHistorico(r)}
+                                                        className={`w-full text-left rounded-lg border px-3 py-2 transition shadow-sm ${isSelected
+                                                                ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
+                                                                : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="font-semibold text-[13px] sm:text-sm">
+                                                                {shown(r.falecido)}
+                                                            </span>
+                                                            <span className="text-[11px] text-muted-foreground">
+                                                                {dateOr(r.data)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
+                                                            <span>
+                                                                {shown(
+                                                                    r.local_velorio,
+                                                                    "Local a definir"
+                                                                )}
+                                                            </span>
+                                                            <span>{capStatus(r.status)}</span>
+                                                        </div>
+                                                    </button>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+
+                                {/* Paginação */}
+                                <div className="mt-3 flex items-center justify-between gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTimelinePage((p) => Math.max(0, p - 1))}
+                                        disabled={timelinePage === 0}
+                                        className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
+                                    >
+                                        Anterior
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setTimelinePage((p) =>
+                                                p + 1 < totalTimelinePages ? p + 1 : p
+                                            )
+                                        }
+                                        disabled={timelinePage + 1 >= totalTimelinePages}
+                                        className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
+                                    >
+                                        Próxima
+                                    </button>
+                                </div>
+                            </section>
+
+                            {/* Linha do tempo do selecionado */}
+                            <section className="rounded-xl border bg-background p-3 sm:p-4">
+                                {selectedRegistro ? (
+                                    <>
+                                        <div className="mb-3">
+                                            <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
+                                                Linha do tempo — {shown(selectedRegistro.falecido)}
+                                            </h4>
+                                            <p className="text-[11px] sm:text-xs text-muted-foreground">
+                                                Eventos registrados para este atendimento.
+                                            </p>
+                                        </div>
+
+                                        {timelineLoading && (
+                                            <p className="text-sm text-muted-foreground">
+                                                Carregando histórico…
+                                            </p>
+                                        )}
+
+                                        {timelineError && (
+                                            <p className="text-sm text-red-600">{timelineError}</p>
+                                        )}
+
+                                        {!timelineLoading &&
+                                            !timelineError &&
+                                            timelineLogs.length === 0 && (
+                                                <p className="text-sm text-muted-foreground">
+                                                    Nenhum log encontrado para este atendimento.
+                                                </p>
+                                            )}
+
+                                        {!timelineLoading &&
+                                            !timelineError &&
+                                            timelineLogs.length > 0 && (
+                                                <LinhaDoTempoLogs
+                                                    logs={timelineLogs}
+                                                    usuarioVisivel
+                                                />
+                                            )}
+                                    </>
+                                ) : (
+                                    <div className="flex h-full items-center justify-center text-center">
+                                        <p className="text-sm text-muted-foreground">
+                                            Selecione um falecido na lista ao lado para
+                                            visualizar a linha do tempo dos eventos.
+                                        </p>
+                                    </div>
+                                )}
+                            </section>
                         </div>
                     </div>
                 </div>
@@ -749,22 +1131,46 @@ export default function QuadroAtendimentoPage() {
 
 /* ===== Componentes auxiliares ===== */
 
-function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
+function Topic({
+    title,
+    children,
+    note,
+}: {
+    title: string;
+    children: React.ReactNode;
+    note?: string;
+}) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
-                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
-                {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
+                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
+                    {title}
+                </h4>
+                {note && (
+                    <div className="text-[11px] sm:text-xs text-muted-foreground italic">
+                        {note}
+                    </div>
+                )}
             </div>
             {children}
         </section>
     );
 }
 
-function Field({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+function Field({
+    label,
+    value,
+    className = "",
+}: {
+    label: string;
+    value: string;
+    className?: string;
+}) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
+            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
+                {label}:
+            </span>
             <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
         </div>
     );
@@ -778,7 +1184,10 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
                 </div>
             ))}
         </div>
@@ -794,9 +1203,180 @@ function EtapasRow({ registro }: { registro: Registro }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{label}</span>
-                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
                 </div>
             ))}
+        </div>
+    );
+}
+
+/* ===== Linha do Tempo (Logs) ===== */
+
+function buildDetalhesNodes(raw: unknown): React.ReactNode {
+    if (raw == null || raw === "") return null;
+
+    let obj: unknown = raw;
+
+    if (typeof raw === "string") {
+        try {
+            obj = JSON.parse(raw);
+        } catch {
+            const text = substituirRotuloVisual(raw.trim());
+            return text ? <div className="mt-2 text-sm">{text}</div> : null;
+        }
+    }
+
+    if (isPlainObject(obj)) {
+        const plainObj = obj as Record<string, unknown>;
+        const chips: React.ReactNode[] = [];
+        const arrItems: string[] = [];
+
+        for (const key of Object.keys(plainObj)) {
+            if (["materiais_json", "id", "acao"].includes(key)) continue;
+
+            const value = plainObj[key];
+
+            // Arrumação
+            if (
+                /^arrum[aã]cao(\s*json|_json)?$/i.test(key) &&
+                value &&
+                isPlainObject(value)
+            ) {
+                for (const [k, v] of Object.entries(value)) {
+                    if (asBool(v)) {
+                        arrItems.push(`✅ ${titleCaseFromSnake(k)}`);
+                    }
+                }
+                continue;
+            }
+
+            // Materiais_*_qtd
+            const m = key.match(/^materiais_(.+?)_qtd$/i);
+            if (m) {
+                const valRaw = value;
+                if (valRaw != null && String(valRaw).trim() !== "") {
+                    const nomeBase = titleCaseFromSnake(m[1]);
+                    const nome = overrideCampoNome(m[1], nomeBase);
+                    const valFmt = formataSeDataIso(String(valRaw));
+                    chips.push(
+                        <span
+                            key={key}
+                            className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
+                        >
+                            <b>{nome}:</b> {valFmt}
+                        </span>
+                    );
+                }
+                continue;
+            }
+
+            if (value == null) continue;
+            if (typeof value === "object") continue;
+
+            const valStr = String(value).trim();
+            if (!valStr) continue;
+
+            let nome = key.replace(/_/g, " ");
+            nome = overrideCampoNome(key, titleCaseFromSnake(nome));
+            let valFmt = valStr;
+            if (valFmt.startsWith("fase")) valFmt = traduzirFase(valFmt);
+            valFmt = formataSeDataIso(valFmt);
+            nome = substituirRotuloVisual(nome);
+            valFmt = substituirRotuloVisual(valFmt);
+
+            chips.push(
+                <span
+                    key={key}
+                    className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
+                >
+                    <b>{nome}:</b> {valFmt}
+                </span>
+            );
+        }
+
+        return (
+            <div className="mt-2 text-xs">
+                {arrItems.length > 0 && (
+                    <div className="mb-1">
+                        <b>Arrumação:</b>{" "}
+                        {arrItems.map((t, idx) => (
+                            <span
+                                key={`arr-${idx}`}
+                                className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
+                            >
+                                {t}
+                            </span>
+                        ))}
+                    </div>
+                )}
+                {chips}
+            </div>
+        );
+    }
+
+    const text = substituirRotuloVisual(String(obj));
+    return text.trim() ? <div className="mt-2 text-sm">{text}</div> : null;
+}
+
+function LinhaDoTempoLogs({
+    logs,
+    usuarioVisivel = true,
+}: {
+    logs: LogItem[];
+    usuarioVisivel?: boolean;
+}) {
+    if (!logs || logs.length === 0) {
+        return (
+            <div className="p-4 text-center text-muted-foreground">
+                Nenhum log encontrado.
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-3">
+            {logs.map((ent, i) => {
+                const acao = ent.acao ? capitalize(ent.acao) : "";
+                const statusLabel = ent.status_novo
+                    ? traduzirFase(ent.status_novo)
+                    : "";
+                const detalhes = buildDetalhesNodes(ent.detalhes);
+
+                return (
+                    <div
+                        key={i}
+                        className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm"
+                    >
+                        <div className="flex gap-3">
+                            <div className="text-xl leading-none">
+                                {iconForAction(ent.acao, ent.status_novo)}
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-xs text-muted-foreground">
+                                    {formatLogDateTime(ent.datahora)}
+                                </div>
+                                <div className="text-sm">
+                                    {acao}
+                                    {statusLabel && (
+                                        <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
+                                            {statusLabel}
+                                        </span>
+                                    )}
+                                </div>
+                                {usuarioVisivel && (
+                                    <div className="text-xs text-muted-foreground">
+                                        Usuário: {ent.usuario ?? ""}
+                                    </div>
+                                )}
+                                {detalhes}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }
