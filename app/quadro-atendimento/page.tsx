@@ -380,7 +380,7 @@ function formataSeDataIso(value: string): string {
         const [yyyy, mm, dd] = v.split("-");
         return `${dd}/${mm}/${yyyy}`;
     }
-    if (/^\d{4}-\d{2}-\d2 \d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) {
         const [datePart, timePart] = v.split(" ");
         const [yyyy, mm, dd] = datePart.split("-");
         const hhmm = timePart.slice(0, 5);
@@ -668,7 +668,7 @@ export default function QuadroAtendimentoPage() {
     };
 
     return (
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
+        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
             {/* Header/clock + botão Linha do Tempo */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -855,7 +855,7 @@ export default function QuadroAtendimentoPage() {
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
 
                     {/* painel */}
-                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overscroll-contain">
+                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overflow-x-hidden overscroll-contain">
                         {/* header */}
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
@@ -967,10 +967,7 @@ export default function QuadroAtendimentoPage() {
                             <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
                                     <Field label="Local Velório" value={shown(detail.local_velorio)} />
-                                    <Field
-                                        label="Data Início Velório"
-                                        value={dateOr(detail.data_inicio_velorio)}
-                                    />
+                                    <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
@@ -1012,7 +1009,7 @@ export default function QuadroAtendimentoPage() {
             {timelineOpen && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeTimeline} aria-hidden />
-                    <div className="relative z-10 w-full max-w-5xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overscroll-contain">
+                    <div className="relative z-10 w-full max-w-5xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain">
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -1074,8 +1071,8 @@ export default function QuadroAtendimentoPage() {
                                                         type="button"
                                                         onClick={() => carregarHistorico(r)}
                                                         className={`w-full text-left rounded-lg border px-3 py-2 transition shadow-sm ${isSelected
-                                                            ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
-                                                            : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
+                                                                ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
+                                                                : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
                                                             }`}
                                                     >
                                                         <div className="flex items-center justify-between gap-2">
@@ -1128,7 +1125,7 @@ export default function QuadroAtendimentoPage() {
                             </section>
 
                             {/* Linha do tempo do selecionado */}
-                            <section className="rounded-xl border bg-background p-3 sm:p-4">
+                            <section className="rounded-xl border bg-background p-3 sm:p-4 overflow-x-hidden">
                                 {selectedRegistro ? (
                                     <>
                                         <div className="mb-3">
@@ -1202,7 +1199,7 @@ function Topic({
                     {title}
                 </h4>
                 {note && (
-                    <div className="text-[11px] sm:text-xs text-muted-foreground italic">
+                    <div className="text-[11px] sm:text-xs text-muted-foreground italic text-right">
                         {note}
                     </div>
                 )}
@@ -1226,7 +1223,9 @@ function Field({
             <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
                 {label}:
             </span>
-            <span className="text-[13px] sm:text-sm text-slate-900 break-words">{value}</span>
+            <span className="text-[13px] sm:text-sm text-slate-900 break-words whitespace-pre-wrap">
+                {value}
+            </span>
         </div>
     );
 }
@@ -1281,7 +1280,9 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         } catch {
             const text = substituirRotuloVisual(raw.trim());
             return text ? (
-                <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
+                <div className="mt-2 text-sm break-words whitespace-pre-wrap">
+                    {text}
+                </div>
             ) : null;
         }
     }
@@ -1317,7 +1318,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                     chips.push(
                         <span
                             key={key}
-                            className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs mr-2 mb-2"
+                            className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs"
                         >
                             <b>{nome}:</b>&nbsp;{valFmt}
                         </span>
@@ -1343,7 +1344,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             chips.push(
                 <span
                     key={key}
-                    className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs mr-2 mb-2"
+                    className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs"
                 >
                     <b>{nome}:</b>&nbsp;{valFmt}
                 </span>
@@ -1353,26 +1354,32 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         return (
             <div className="mt-2 text-xs break-words">
                 {arrItems.length > 0 && (
-                    <div className="mb-1">
-                        <b>Arrumação:</b>{" "}
+                    <div className="mb-1 flex flex-wrap gap-1">
+                        <span className="font-semibold">Arrumação:</span>
                         {arrItems.map((t, idx) => (
                             <span
                                 key={`arr-${idx}`}
-                                className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs mr-2 mb-2"
+                                className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs"
                             >
                                 {t}
                             </span>
                         ))}
                     </div>
                 )}
-                {chips}
+                {chips.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                        {chips}
+                    </div>
+                )}
             </div>
         );
     }
 
     const text = substituirRotuloVisual(String(obj));
     return text.trim() ? (
-        <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
+        <div className="mt-2 text-sm break-words whitespace-pre-wrap">
+            {text}
+        </div>
     ) : null;
 }
 
@@ -1397,7 +1404,7 @@ function LinhaDoTempoLogs({
     );
 
     return (
-        <div className="space-y-3">
+        <div className="space-y-3 max-w-full">
             {ordenados.map((ent, i) => {
                 const acao = ent.acao ? capitalize(ent.acao) : "";
                 const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
@@ -1406,10 +1413,12 @@ function LinhaDoTempoLogs({
                 return (
                     <div
                         key={i}
-                        className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm break-words overflow-x-hidden"
+                        className="log-entry w-full max-w-full rounded-xl border bg-background/60 p-3 shadow-sm break-words overflow-x-hidden"
                     >
                         <div className="flex gap-3">
-                            <div className="text-xl leading-none shrink-0">{iconForAction(ent.acao, ent.status_novo)}</div>
+                            <div className="text-xl leading-none shrink-0">
+                                {iconForAction(ent.acao, ent.status_novo)}
+                            </div>
                             <div className="flex-1 min-w-0">
                                 <div className="text-xs text-muted-foreground">
                                     {formatLogDateTime(ent.datahora)}
