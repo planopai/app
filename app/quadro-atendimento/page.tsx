@@ -18,8 +18,7 @@ type Registro = {
     religiao?: string;
     contato?: string;
     convenio?: string;
-    observacao?: string; // genérica (mantida p/ clipboard)
-    // novas observações por etapa
+    observacao?: string;
     observacao_atendimento?: string;
     observacao_itens?: string;
     observacao_velorio01?: string;
@@ -30,16 +29,14 @@ type Registro = {
     assistencia?: string;
     tanato?: string;
 
-    // >>> NOVOS CAMPOS <<<
-    ornamentacao?: string; // coluna existente no BD
-    ornamentacao_tipo?: string; // "natural" | "artificial" (ou semelhante)
+    ornamentacao?: string;
+    ornamentacao_tipo?: string;
 
     local?: string;
     local_sepultamento?: string;
     materiais?: string;
     material?: string;
 
-    /** quando presente já define claramente o fluxo */
     tipo_atendimento?: "funerario" | "terceiro";
 
     [key: string]: any;
@@ -210,7 +207,7 @@ const STAGE_DOT_FILLED = [
 const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
 
 /*
-  Regras das etapas (observação NÃO é obrigatória):
+  Regras das etapas:
   - D (0): falecido, contato, religiao, convenio (todos)
   - I (1): urna, roupa, assistencia, tanato (todos)
   - V (2): local_velorio e data_inicio_velorio e (local_sepultamento OU local)
@@ -225,7 +222,6 @@ const LABELS: Record<string, string> = {
     roupa: "Roupa",
     assistencia: "Assistência",
     tanato: "Tanatopraxia",
-    // Mantemos os labels clássicos usados nas pendências das etapas
     local_velorio: "Local do Velório",
     data_inicio_velorio: "Data Início Velório",
     data_fim_velorio: "Data Fim Velório",
@@ -264,13 +260,12 @@ function etapasPreenchidas(registro: Registro) {
 }
 
 /* =========================
-   Texto para copiar (mantido + Ornamentação)
+   Texto para copiar
    ========================= */
 function buildClipboardText(r: Registro) {
     const v = (k: string) => String(r?.[k] ?? "").trim();
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
 
-    // Normaliza tipo exibindo algo legível
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
     const ornTipo =
         ornTipoRaw
@@ -286,7 +281,6 @@ function buildClipboardText(r: Registro) {
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
-        // >>> NOVA LINHA: Ornamentação
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
         `*Local do Velório:* ${v("local_velorio") || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
@@ -296,7 +290,7 @@ function buildClipboardText(r: Registro) {
 }
 
 /* =========================
-   Regras do painel (quem permanece / sai)
+   Regras do painel
    ========================= */
 function isNao(v?: string) {
     const s = (v || "").toString().trim().toLowerCase();
@@ -308,7 +302,6 @@ function isSim(v?: string) {
 }
 function isTerceiroRegistro(r: Registro) {
     if ((r as any).tipo_atendimento === "terceiro") return true;
-    // heurística para registros antigos
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
@@ -365,12 +358,10 @@ function titleCaseFromSnake(key: string): string {
 }
 
 function overrideCampoNome(key: string, defaultName: string): string {
-    // customizações caso queira mudar rótulos específicos
     return defaultName;
 }
 
 function substituirRotuloVisual(text: string): string {
-    // aqui dá pra trocar termos internos por algo mais amigável, se quiser
     return text;
 }
 
@@ -462,9 +453,7 @@ export default function QuadroAtendimentoPage() {
     // avisos
     useEffect(() => {
         const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, {
-                cache: "no-store",
-            })
+            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .then((j) => setAvisos(Array.isArray(j) ? j : []))
                 .catch(() => setAvisos([]));
@@ -500,13 +489,7 @@ export default function QuadroAtendimentoPage() {
         setTimelineLogs([]);
         setTimelineError(null);
         setTimelineSearch("");
-        setTimelinePage(0);
     }
-
-    // resetar página ao alterar busca
-    useEffect(() => {
-        setTimelinePage(0);
-    }, [timelineSearch]);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -526,25 +509,21 @@ export default function QuadroAtendimentoPage() {
         return registros.filter((r) => {
             const status = normalizarStatus(r.status);
 
-            // 1) some sempre ao chegar em Material Recolhido
             if (status === "fase11") return false;
 
-            // tipo Serviço de Outra Empresa: termina em fase10
             if (isTerceiroRegistro(r)) {
                 return status !== "fase10";
             }
 
-            // funerário: se Assistência = Não, termina em fase10
             if (!isSim(r.assistencia)) {
                 return status !== "fase10";
             }
 
-            // funerário + Assistência = Sim -> continua visível mesmo em fase10
             return true;
         });
     }, [registros]);
 
-    // lista de falecidos ordenada para Linha do Tempo (mais recentes primeiro)
+    // lista completa ordenada por data/hora (mais recentes primeiro)
     const falecidosOrdenados = useMemo(
         () =>
             [...registros]
@@ -553,12 +532,19 @@ export default function QuadroAtendimentoPage() {
         [registros]
     );
 
-    // filtro por nome (busca)
+    // filtro por nome (barra de pesquisa)
     const falecidosFiltrados = useMemo(() => {
-        const q = timelineSearch.trim().toLowerCase();
-        if (!q) return falecidosOrdenados;
-        return falecidosOrdenados.filter((r) => (r.falecido || "").toLowerCase().includes(q));
+        const termo = timelineSearch.trim().toLowerCase();
+        if (!termo) return falecidosOrdenados;
+        return falecidosOrdenados.filter((r) =>
+            (r.falecido || "").toLowerCase().includes(termo)
+        );
     }, [falecidosOrdenados, timelineSearch]);
+
+    // resetar página quando o filtro mudar
+    useEffect(() => {
+        setTimelinePage(0);
+    }, [timelineSearch]);
 
     const totalTimelinePages = Math.max(1, Math.ceil(falecidosFiltrados.length / PAGE_SIZE));
     const falecidosPaginaAtual = falecidosFiltrados.slice(
@@ -600,7 +586,6 @@ export default function QuadroAtendimentoPage() {
         setTimelineLoading(true);
 
         try {
-            // ID esperado pela API de histórico (mesmo usado no relatório)
             const sepId =
                 (r as any).sepultamento_id ??
                 (r as any).sepultamentoId ??
@@ -611,6 +596,7 @@ export default function QuadroAtendimentoPage() {
             if (!sepId) {
                 console.warn("Registro sem sepultamento_id para histórico:", r);
                 setTimelineLogs([]);
+                setTimelineLoading(false);
                 return;
             }
 
@@ -668,7 +654,7 @@ export default function QuadroAtendimentoPage() {
     };
 
     return (
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
+        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
             {/* Header/clock + botão Linha do Tempo */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -851,12 +837,8 @@ export default function QuadroAtendimentoPage() {
             {/* ===== Modal de Detalhes ===== */}
             {open && detail && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
-                    {/* overlay */}
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
-
-                    {/* painel */}
-                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overflow-x-hidden overscroll-contain">
-                        {/* header */}
+                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overscroll-contain">
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -907,7 +889,6 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                             </div>
 
-                            {/* badges no mobile */}
                             <div className="mt-2 flex gap-2 sm:hidden">
                                 <span
                                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
@@ -922,7 +903,6 @@ export default function QuadroAtendimentoPage() {
                             </div>
                         </div>
 
-                        {/* conteúdo com TÓPICOS */}
                         <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
                             <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
@@ -930,7 +910,6 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Religião" value={shown(detail.religiao)} />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    {/* Observação da etapa */}
                                     <Field
                                         label="Obs. Atendimento"
                                         value={shown(detail.observacao_atendimento, "")}
@@ -945,7 +924,6 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                    {/* >>> NOVO CAMPO VISÍVEL NA SEÇÃO ITENS <<< */}
                                     <Field
                                         label="Ornamentação"
                                         value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
@@ -955,7 +933,6 @@ export default function QuadroAtendimentoPage() {
                                         value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")}
                                         className="sm:col-span-2"
                                     />
-                                    {/* Observação da etapa */}
                                     <Field
                                         label="Obs. Itens"
                                         value={shown(detail.observacao_itens, "")}
@@ -971,7 +948,6 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    {/* Observação da etapa */}
                                     <Field
                                         label="Obs. Velório"
                                         value={shown(detail.observacao_velorio01, "")}
@@ -985,7 +961,6 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    {/* Observação da etapa */}
                                     <Field
                                         label="Obs. Sepultamento"
                                         value={shown(detail.observacao_velorio02, "")}
@@ -1009,7 +984,7 @@ export default function QuadroAtendimentoPage() {
             {timelineOpen && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeTimeline} aria-hidden />
-                    <div className="relative z-10 w-full max-w-5xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain">
+                    <div className="relative z-10 w-full max-w-5xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overscroll-contain">
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -1037,7 +1012,7 @@ export default function QuadroAtendimentoPage() {
                         <div className="px-3 py-3 sm:px-4 sm:py-4 grid gap-4 sm:gap-6 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)]">
                             {/* Lista de falecidos (paginada + busca) */}
                             <section className="rounded-xl border bg-background p-3 sm:p-4 flex flex-col">
-                                <div className="flex items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center justify-between gap-2 mb-2">
                                     <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
                                         Últimos falecidos
                                     </h4>
@@ -1046,14 +1021,14 @@ export default function QuadroAtendimentoPage() {
                                     </span>
                                 </div>
 
-                                {/* Barra de busca por nome */}
+                                {/* Barra de pesquisa */}
                                 <div className="mb-3">
                                     <input
                                         type="text"
                                         value={timelineSearch}
                                         onChange={(e) => setTimelineSearch(e.target.value)}
-                                        placeholder="Pesquisar nome do falecido..."
-                                        className="w-full rounded-full border px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Pesquisar por nome..."
+                                        className="w-full rounded-full border px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
 
@@ -1076,21 +1051,21 @@ export default function QuadroAtendimentoPage() {
                                                             }`}
                                                     >
                                                         <div className="flex items-center justify-between gap-2">
-                                                            <span className="font-semibold text-[13px] sm:text-sm truncate">
+                                                            <span className="font-semibold text-[13px] sm:text-sm">
                                                                 {shown(r.falecido)}
                                                             </span>
-                                                            <span className="text-[11px] text-muted-foreground shrink-0">
+                                                            <span className="text-[11px] text-muted-foreground">
                                                                 {dateOr(r.data)}
                                                             </span>
                                                         </div>
                                                         <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
-                                                            <span className="truncate max-w-[70%]">
+                                                            <span>
                                                                 {shown(
                                                                     r.local_velorio,
                                                                     "Local a definir"
                                                                 )}
                                                             </span>
-                                                            <span className="shrink-0">{capStatus(r.status)}</span>
+                                                            <span>{capStatus(r.status)}</span>
                                                         </div>
                                                     </button>
                                                 </li>
@@ -1125,9 +1100,9 @@ export default function QuadroAtendimentoPage() {
                             </section>
 
                             {/* Linha do tempo do selecionado */}
-                            <section className="rounded-xl border bg-background p-3 sm:p-4 overflow-x-hidden">
+                            <section className="rounded-xl border bg-background p-3 sm:p-4">
                                 {selectedRegistro ? (
-                                    <>
+                                    <div className="max-w-xl mx-auto">
                                         <div className="mb-3">
                                             <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
                                                 Linha do tempo — {shown(selectedRegistro.falecido)}
@@ -1163,7 +1138,7 @@ export default function QuadroAtendimentoPage() {
                                                     usuarioVisivel
                                                 />
                                             )}
-                                    </>
+                                    </div>
                                 ) : (
                                     <div className="flex h-full items-center justify-center text-center">
                                         <p className="text-sm text-muted-foreground">
@@ -1199,7 +1174,7 @@ function Topic({
                     {title}
                 </h4>
                 {note && (
-                    <div className="text-[11px] sm:text-xs text-muted-foreground italic text-right">
+                    <div className="text-[11px] sm:text-xs text-muted-foreground italic">
                         {note}
                     </div>
                 )}
@@ -1223,9 +1198,7 @@ function Field({
             <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
                 {label}:
             </span>
-            <span className="text-[13px] sm:text-sm text-slate-900 break-words whitespace-pre-wrap">
-                {value}
-            </span>
+            <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
         </div>
     );
 }
@@ -1280,9 +1253,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         } catch {
             const text = substituirRotuloVisual(raw.trim());
             return text ? (
-                <div className="mt-2 text-sm break-words whitespace-pre-wrap">
-                    {text}
-                </div>
+                <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
             ) : null;
         }
     }
@@ -1298,7 +1269,11 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             const value = plainObj[key];
 
             // Arrumação
-            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
+            if (
+                /^arrum[aã]cao(\s*json|_json)?$/i.test(key) &&
+                value &&
+                isPlainObject(value)
+            ) {
                 for (const [k, v] of Object.entries(value)) {
                     if (asBool(v)) {
                         arrItems.push(`✅ ${titleCaseFromSnake(k)}`);
@@ -1318,9 +1293,9 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                     chips.push(
                         <span
                             key={key}
-                            className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs"
+                            className="inline-block max-w-full break-words whitespace-pre-wrap rounded border px-2 py-1 text-xs mr-2 mb-2"
                         >
-                            <b>{nome}:</b>&nbsp;{valFmt}
+                            <b>{nome}:</b> {valFmt}
                         </span>
                     );
                 }
@@ -1344,42 +1319,36 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             chips.push(
                 <span
                     key={key}
-                    className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs"
+                    className="inline-block max-w-full break-words whitespace-pre-wrap rounded border px-2 py-1 text-xs mr-2 mb-2"
                 >
-                    <b>{nome}:</b>&nbsp;{valFmt}
+                    <b>{nome}:</b> {valFmt}
                 </span>
             );
         }
 
         return (
-            <div className="mt-2 text-xs break-words">
+            <div className="mt-2 text-xs break-words whitespace-pre-wrap">
                 {arrItems.length > 0 && (
-                    <div className="mb-1 flex flex-wrap gap-1">
-                        <span className="font-semibold">Arrumação:</span>
+                    <div className="mb-1">
+                        <b>Arrumação:</b>{" "}
                         {arrItems.map((t, idx) => (
                             <span
                                 key={`arr-${idx}`}
-                                className="inline-flex max-w-full flex-wrap break-words rounded border px-2 py-1 text-xs"
+                                className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"
                             >
                                 {t}
                             </span>
                         ))}
                     </div>
                 )}
-                {chips.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                        {chips}
-                    </div>
-                )}
+                {chips}
             </div>
         );
     }
 
     const text = substituirRotuloVisual(String(obj));
     return text.trim() ? (
-        <div className="mt-2 text-sm break-words whitespace-pre-wrap">
-            {text}
-        </div>
+        <div className="mt-2 text-sm break-words whitespace-pre-wrap">{text}</div>
     ) : null;
 }
 
@@ -1398,14 +1367,9 @@ function LinhaDoTempoLogs({
         );
     }
 
-    // ordena cronologicamente pelo campo datahora
-    const ordenados = [...logs].sort((a, b) =>
-        (a.datahora || "").localeCompare(b.datahora || "")
-    );
-
     return (
-        <div className="space-y-3 max-w-full">
-            {ordenados.map((ent, i) => {
+        <div className="space-y-3 max-w-xl mx-auto">
+            {logs.map((ent, i) => {
                 const acao = ent.acao ? capitalize(ent.acao) : "";
                 const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
                 const detalhes = buildDetalhesNodes(ent.detalhes);
@@ -1413,17 +1377,17 @@ function LinhaDoTempoLogs({
                 return (
                     <div
                         key={i}
-                        className="log-entry w-full max-w-full rounded-xl border bg-background/60 p-3 shadow-sm break-words overflow-x-hidden"
+                        className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm overflow-hidden"
                     >
                         <div className="flex gap-3">
-                            <div className="text-xl leading-none shrink-0">
+                            <div className="text-xl leading-none flex-shrink-0">
                                 {iconForAction(ent.acao, ent.status_novo)}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <div className="text-xs text-muted-foreground">
                                     {formatLogDateTime(ent.datahora)}
                                 </div>
-                                <div className="text-sm break-words">
+                                <div className="text-sm">
                                     {acao}
                                     {statusLabel && (
                                         <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
@@ -1432,7 +1396,7 @@ function LinhaDoTempoLogs({
                                     )}
                                 </div>
                                 {usuarioVisivel && (
-                                    <div className="text-xs text-muted-foreground break-words">
+                                    <div className="text-xs text-muted-foreground">
                                         Usuário: {ent.usuario ?? ""}
                                     </div>
                                 )}
