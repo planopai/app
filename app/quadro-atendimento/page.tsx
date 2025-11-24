@@ -838,7 +838,8 @@ export default function QuadroAtendimentoPage() {
             {open && detail && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
-                    <div className="relative z-10 w-full max-w-4xl mx-2 sm:mx-4 rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overscroll-contain">
+                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overscroll-contain">
+                        {/* header */}
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -889,6 +890,7 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                             </div>
 
+                            {/* badges no mobile */}
                             <div className="mt-2 flex gap-2 sm:hidden">
                                 <span
                                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
@@ -903,6 +905,7 @@ export default function QuadroAtendimentoPage() {
                             </div>
                         </div>
 
+                        {/* conteúdo com TÓPICOS */}
                         <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
                             <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
@@ -970,7 +973,9 @@ export default function QuadroAtendimentoPage() {
                             </Topic>
 
                             <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
+                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
+                                    Etapas preenchidas
+                                </div>
                                 <EtapasRow registro={detail} />
                             </div>
                         </div>
@@ -982,14 +987,16 @@ export default function QuadroAtendimentoPage() {
             {timelineOpen && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeTimeline} aria-hidden />
-                    <div className="relative z-10 w-full max-w-5xl mx-2 sm:mx-4 rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overscroll-contain">
+                    <div className="relative z-10 w-full max-w-5xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overscroll-contain">
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <div className="text-[12px] text-muted-foreground leading-tight">
                                         Histórico de atendimentos
                                     </div>
-                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">Linha do Tempo</h3>
+                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">
+                                        Linha do Tempo
+                                    </h3>
                                     <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
                                         Selecione um falecido na lista para visualizar a linha do tempo dos eventos.
                                     </p>
@@ -1006,9 +1013,11 @@ export default function QuadroAtendimentoPage() {
 
                         <div className="px-3 py-3 sm:px-4 sm:py-4 grid gap-4 sm:gap-6 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)]">
                             {/* Lista de falecidos (paginada + busca) */}
-                            <section className="rounded-xl border bg-background p-3 sm:p-4 flex flex-col overflow-x-hidden">
+                            <section className="rounded-xl border bg-background p-3 sm:p-4 flex flex-col">
                                 <div className="flex items-center justify-between gap-2 mb-2">
-                                    <h4 className="text-xs sm:text-sm font-semibold text-slate-700">Últimos falecidos</h4>
+                                    <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
+                                        Últimos falecidos
+                                    </h4>
                                     <span className="text-[11px] text-muted-foreground">
                                         Página {timelinePage + 1} de {totalTimelinePages}
                                     </span>
@@ -1030,28 +1039,32 @@ export default function QuadroAtendimentoPage() {
                                 ) : (
                                     <ul className="space-y-2 text-sm">
                                         {falecidosPaginaAtual.map((r, idx) => {
-                                            const isSelected = selectedRegistro === r;
+                                            const isSelected = selectedRegistro && selectedRegistro === r;
                                             return (
                                                 <li key={idx}>
                                                     <button
                                                         type="button"
                                                         onClick={() => carregarHistorico(r)}
-                                                        className={`w-full text-left rounded-lg border px-3 py-2 transition shadow-sm max-w-full whitespace-normal ${isSelected
+                                                        className={`w-full text-left rounded-lg border px-3 py-2 transition shadow-sm ${isSelected
                                                                 ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
                                                                 : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
                                                             }`}
                                                     >
-                                                        <div className="font-semibold text-[13px] sm:text-sm break-words">
-                                                            {shown(r.falecido)}
-                                                        </div>
-                                                        <div className="mt-1 flex flex-wrap justify-between gap-1 text-[11px] text-muted-foreground">
-                                                            <span className="break-words">
-                                                                {shown(r.local_velorio, "Local a definir")}
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="font-semibold text-[13px] sm:text-sm truncate">
+                                                                    {shown(r.falecido)}
+                                                                </div>
+                                                                <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
+                                                                    {shown(r.local_velorio, "Local a definir")}
+                                                                </div>
+                                                                <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
+                                                                    {capStatus(r.status)}
+                                                                </div>
+                                                            </div>
+                                                            <span className="shrink-0 text-[11px] text-muted-foreground">
+                                                                {dateOr(r.data)}
                                                             </span>
-                                                            <span>{dateOr(r.data)}</span>
-                                                        </div>
-                                                        <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                                            {capStatus(r.status)}
                                                         </div>
                                                     </button>
                                                 </li>
@@ -1073,9 +1086,7 @@ export default function QuadroAtendimentoPage() {
                                     <button
                                         type="button"
                                         onClick={() =>
-                                            setTimelinePage((p) =>
-                                                p + 1 < totalTimelinePages ? p + 1 : p
-                                            )
+                                            setTimelinePage((p) => (p + 1 < totalTimelinePages ? p + 1 : p))
                                         }
                                         disabled={timelinePage + 1 >= totalTimelinePages}
                                         className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
@@ -1088,7 +1099,7 @@ export default function QuadroAtendimentoPage() {
                             {/* Linha do tempo do selecionado */}
                             <section className="rounded-xl border bg-background p-3 sm:p-4">
                                 {selectedRegistro ? (
-                                    <div className="max-w-xl mx-auto">
+                                    <div className="max-w-xl mx-auto w-full">
                                         <div className="mb-3">
                                             <h4 className="text-xs sm:text-sm font-semibold text-slate-700">
                                                 Linha do tempo — {shown(selectedRegistro.falecido)}
@@ -1147,8 +1158,12 @@ function Topic({
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
-                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
-                {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
+                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
+                    {title}
+                </h4>
+                {note && (
+                    <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>
+                )}
             </div>
             {children}
         </section>
@@ -1166,7 +1181,9 @@ function Field({
 }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
+            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
+                {label}:
+            </span>
             <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
         </div>
     );
@@ -1180,7 +1197,10 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
                 </div>
             ))}
         </div>
@@ -1196,7 +1216,10 @@ function EtapasRow({ registro }: { registro: Registro }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{label}</span>
-                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
                 </div>
             ))}
         </div>
@@ -1205,11 +1228,16 @@ function EtapasRow({ registro }: { registro: Registro }) {
 
 /* ===== Linha do Tempo (Logs) ===== */
 
+/**
+ * Gera os “detalhes” do log em UMA COLUNA,
+ * responsivo, sem ultrapassar a largura no mobile.
+ */
 function buildDetalhesNodes(raw: unknown): React.ReactNode {
     if (raw == null || raw === "") return null;
 
     let obj: unknown = raw;
 
+    // pode vir como string JSON
     if (typeof raw === "string") {
         try {
             obj = JSON.parse(raw);
@@ -1223,19 +1251,19 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
 
     if (isPlainObject(obj)) {
         const plainObj = obj as Record<string, unknown>;
-        const chips: React.ReactNode[] = [];
         const arrItems: string[] = [];
+        const rows: { id: string; label: string; value: string }[] = [];
 
         for (const key of Object.keys(plainObj)) {
             if (["materiais_json", "id", "acao"].includes(key)) continue;
 
             const value = plainObj[key];
 
-            // Arrumação
+            // Arrumação JSON
             if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
                 for (const [k, v] of Object.entries(value)) {
                     if (asBool(v)) {
-                        arrItems.push(`✅ ${titleCaseFromSnake(k)}`);
+                        arrItems.push(titleCaseFromSnake(k));
                     }
                 }
                 continue;
@@ -1249,14 +1277,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                     const nomeBase = titleCaseFromSnake(m[1]);
                     const nome = overrideCampoNome(m[1], nomeBase);
                     const valFmt = formataSeDataIso(String(valRaw));
-                    chips.push(
-                        <span
-                            key={key}
-                            className="inline-block max-w-full break-words whitespace-pre-wrap rounded border px-2 py-1 text-xs mr-2 mb-2"
-                        >
-                            <b>{nome}:</b> {valFmt}
-                        </span>
-                    );
+                    rows.push({ id: key, label: nome, value: valFmt });
                 }
                 continue;
             }
@@ -1270,34 +1291,38 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             let nome = key.replace(/_/g, " ");
             nome = overrideCampoNome(key, titleCaseFromSnake(nome));
             let valFmt = valStr;
-            if (valFmt.startsWith("fase")) valFmt = traduzirFase(valFmt);
+            if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
             valFmt = formataSeDataIso(valFmt);
+
             nome = substituirRotuloVisual(nome);
             valFmt = substituirRotuloVisual(valFmt);
 
-            chips.push(
-                <span
-                    key={key}
-                    className="inline-block max-w-full break-words whitespace-pre-wrap rounded border px-2 py-1 text-xs mr-2 mb-2"
-                >
-                    <b>{nome}:</b> {valFmt}
-                </span>
-            );
+            rows.push({ id: key, label: nome, value: valFmt });
         }
 
+        if (rows.length === 0 && arrItems.length === 0) return null;
+
         return (
-            <div className="mt-2 text-xs break-words whitespace-pre-wrap">
+            <div className="mt-3 space-y-2 w-full">
                 {arrItems.length > 0 && (
-                    <div className="mb-1">
-                        <b>Arrumação:</b>{" "}
-                        {arrItems.map((t, idx) => (
-                            <span key={`arr-${idx}`} className="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
-                                {t}
-                            </span>
-                        ))}
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs break-words whitespace-pre-wrap">
+                        <div className="font-semibold mb-1">Arrumação:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {arrItems.map((t, idx) => (
+                                <li key={idx}>{t}</li>
+                            ))}
+                        </ul>
                     </div>
                 )}
-                {chips}
+                {rows.map((row) => (
+                    <div
+                        key={row.id}
+                        className="rounded-lg border bg-background px-3 py-2 text-xs break-words whitespace-pre-wrap"
+                    >
+                        <span className="font-semibold">{row.label}: </span>
+                        <span>{row.value}</span>
+                    </div>
+                ))}
             </div>
         );
     }
@@ -1316,11 +1341,15 @@ function LinhaDoTempoLogs({
     usuarioVisivel?: boolean;
 }) {
     if (!logs || logs.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
+        return (
+            <div className="p-4 text-center text-muted-foreground">
+                Nenhum log encontrado.
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-3 max-w-xl mx-auto">
+        <div className="space-y-3 max-w-xl mx-auto w-full overflow-x-hidden">
             {logs.map((ent, i) => {
                 const acao = ent.acao ? capitalize(ent.acao) : "";
                 const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
