@@ -582,17 +582,43 @@ export default function QuadroAtendimentoPage() {
         setTimelineLoading(true);
 
         try {
-            const id = (r as any).id ?? (r as any).id_atendimento ?? (r as any).codigo;
-            if (!id) {
-                throw new Error("ID do atendimento não informado no registro.");
+            // ID esperado pela API de histórico (mesmo usado no relatório)
+            const sepId =
+                (r as any).sepultamento_id ??
+                (r as any).sepultamentoId ??
+                (r as any).id ??
+                (r as any).id_atendimento ??
+                (r as any).codigo;
+
+            if (!sepId) {
+                console.warn("Registro sem sepultamento_id para histórico:", r);
+                setTimelineLogs([]);
+                return;
             }
 
-            const resp = await fetch(
-                `https://planoassistencialintegrado.com.br/historico.php?id=${encodeURIComponent(id)}&_nocache=${Date.now()}`,
-                { cache: "no-store" }
-            );
-            const json = await resp.json();
-            setTimelineLogs(Array.isArray(json) ? (json as LogItem[]) : []);
+            const url = `https://planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
+                String(sepId)
+            )}&_nocache=${Date.now()}`;
+
+            const resp = await fetch(url, { cache: "no-store" });
+
+            if (!resp.ok) {
+                console.error("Falha HTTP ao buscar histórico:", resp.status, resp.statusText);
+                setTimelineError("Não foi possível carregar o histórico deste atendimento.");
+                setTimelineLogs([]);
+                return;
+            }
+
+            const json: any = await resp.json();
+
+            let logs: LogItem[] = [];
+            if (Array.isArray(json)) {
+                logs = json as LogItem[];
+            } else if (json?.sucesso && Array.isArray(json.dados)) {
+                logs = json.dados as LogItem[];
+            }
+
+            setTimelineLogs(logs);
         } catch (e) {
             console.error(e);
             setTimelineError("Não foi possível carregar o histórico deste atendimento.");
