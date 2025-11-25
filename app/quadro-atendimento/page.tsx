@@ -210,6 +210,13 @@ const STAGE_DOT_FILLED = [
 ];
 const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
 
+/*
+  Regras das etapas:
+  - D (0): falecido, contato, religiao, convenio (todos)
+  - I (1): urna, roupa, assistencia, tanato (todos)
+  - V (2): local_velorio e data_inicio_velorio e (local_sepultamento OU local)
+  - S (3): hora_inicio_velorio OU (data_fim_velorio E hora_fim_velorio)
+*/
 const LABELS: Record<string, string> = {
     falecido: "Falecido",
     contato: "Contato",
@@ -301,9 +308,7 @@ function isTerceiroRegistro(r: Registro) {
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
-/* ===== Helpers Linha do Tempo ===== */
-const PAGE_SIZE = 5;
-
+/* ===== Helpers diversos ===== */
 function parseRegistroDateTime(r: Registro) {
     const d = (r.data || "").trim();
     const h = (r.hora_fim_velorio || r.hora_inicio_velorio || "").trim() || "00:00";
@@ -314,7 +319,6 @@ function parseRegistroDateTime(r: Registro) {
     return Number.isNaN(ts) ? 0 : ts;
 }
 
-/* Helpers diversos usados também na Linha do Tempo */
 function capitalize(str?: string): string {
     if (!str) return "";
     const s = str.toString().trim();
@@ -353,7 +357,7 @@ function titleCaseFromSnake(key: string): string {
         .join(" ");
 }
 
-function overrideCampoNome(key: string, defaultName: string): string {
+function overrideCampoNome(_key: string, defaultName: string): string {
     return defaultName;
 }
 
@@ -404,14 +408,11 @@ export default function QuadroAtendimentoPage() {
     const [detail, setDetail] = useState<Registro | null>(null);
     const [copied, setCopied] = useState(false);
 
-    // modal linha do tempo
-    const [timelineOpen, setTimelineOpen] = useState(false);
-    const [timelinePage, setTimelinePage] = useState(0);
-    const [timelineSearch, setTimelineSearch] = useState("");
-    const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
-    const [timelineLogs, setTimelineLogs] = useState<LogItem[]>([]);
-    const [timelineLoading, setTimelineLoading] = useState(false);
-    const [timelineError, setTimelineError] = useState<string | null>(null);
+    // ✅ Linha do Tempo agora é dentro do modal de detalhes
+    const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
+    const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
+    const [detailLogsLoading, setDetailLogsLoading] = useState(false);
+    const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
     // relógio
     useEffect(() => {
@@ -443,10 +444,9 @@ export default function QuadroAtendimentoPage() {
     // dados
     useEffect(() => {
         const load = () =>
-            fetch(
-                `https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`,
-                { cache: "no-store" }
-            )
+            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+            })
                 .then((r) => r.json())
                 .then((j) => setRegistros(Array.isArray(j) ? j : []))
                 .catch(() => setRegistros([]));
@@ -458,10 +458,9 @@ export default function QuadroAtendimentoPage() {
     // avisos
     useEffect(() => {
         const load = () =>
-            fetch(
-                `https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`,
-                { cache: "no-store" }
-            )
+            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+            })
                 .then((r) => r.json())
                 .then((j) => setAvisos(Array.isArray(j) ? j : []))
                 .catch(() => setAvisos([]));
@@ -475,35 +474,28 @@ export default function QuadroAtendimentoPage() {
         setDetail(r);
         setOpen(true);
         setCopied(false);
+
+        // reset da timeline do detalhe
+        setDetailTimelineOpen(false);
+        setDetailLogs([]);
+        setDetailLogsLoading(false);
+        setDetailLogsError(null);
     }
     function closeDetail() {
         setOpen(false);
         setDetail(null);
         setCopied(false);
-    }
 
-    // abrir/fechar Linha do Tempo
-    function openTimeline() {
-        setTimelineOpen(true);
-        setTimelinePage(0);
-        setTimelineSearch("");
-        setSelectedRegistro(null);
-        setTimelineLogs([]);
-        setTimelineError(null);
-    }
-    function closeTimeline() {
-        setTimelineOpen(false);
-        setSelectedRegistro(null);
-        setTimelineLogs([]);
-        setTimelineError(null);
-        setTimelineSearch("");
+        setDetailTimelineOpen(false);
+        setDetailLogs([]);
+        setDetailLogsLoading(false);
+        setDetailLogsError(null);
     }
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 closeDetail();
-                closeTimeline();
             }
         };
         window.addEventListener("keydown", onKey);
@@ -531,33 +523,6 @@ export default function QuadroAtendimentoPage() {
         });
     }, [registros]);
 
-    // lista completa ordenada por data/hora (mais recentes primeiro)
-    const falecidosOrdenados = useMemo(
-        () =>
-            [...registros]
-                .filter((r) => r.falecido)
-                .sort((a, b) => parseRegistroDateTime(b) - parseRegistroDateTime(a)),
-        [registros]
-    );
-
-    // filtro por nome (barra de pesquisa)
-    const falecidosFiltrados = useMemo(() => {
-        const termo = timelineSearch.trim().toLowerCase();
-        if (!termo) return falecidosOrdenados;
-        return falecidosOrdenados.filter((r) => (r.falecido || "").toLowerCase().includes(termo));
-    }, [falecidosOrdenados, timelineSearch]);
-
-    // resetar página quando o filtro mudar
-    useEffect(() => {
-        setTimelinePage(0);
-    }, [timelineSearch]);
-
-    const totalTimelinePages = Math.max(1, Math.ceil(falecidosFiltrados.length / PAGE_SIZE));
-    const falecidosPaginaAtual = falecidosFiltrados.slice(
-        timelinePage * PAGE_SIZE,
-        timelinePage * PAGE_SIZE + PAGE_SIZE
-    );
-
     // copiar para clipboard
     async function handleCopy() {
         if (!detail) return;
@@ -584,12 +549,11 @@ export default function QuadroAtendimentoPage() {
         }
     }
 
-    // carregar histórico da Linha do Tempo
-    async function carregarHistorico(r: Registro) {
-        setSelectedRegistro(r);
-        setTimelineLogs([]);
-        setTimelineError(null);
-        setTimelineLoading(true);
+    // ✅ carregar logs SOMENTE do falecido em detalhe
+    async function carregarHistoricoDoDetalhe(r: Registro) {
+        setDetailLogs([]);
+        setDetailLogsError(null);
+        setDetailLogsLoading(true);
 
         try {
             const sepId =
@@ -601,8 +565,8 @@ export default function QuadroAtendimentoPage() {
 
             if (!sepId) {
                 console.warn("Registro sem sepultamento_id para histórico:", r);
-                setTimelineLogs([]);
-                setTimelineLoading(false);
+                setDetailLogs([]);
+                setDetailLogsLoading(false);
                 return;
             }
 
@@ -614,8 +578,8 @@ export default function QuadroAtendimentoPage() {
 
             if (!resp.ok) {
                 console.error("Falha HTTP ao buscar histórico:", resp.status, resp.statusText);
-                setTimelineError("Não foi possível carregar o histórico deste atendimento.");
-                setTimelineLogs([]);
+                setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
+                setDetailLogs([]);
                 return;
             }
 
@@ -628,12 +592,30 @@ export default function QuadroAtendimentoPage() {
                 logs = json.dados as LogItem[];
             }
 
-            setTimelineLogs(logs);
+            // opcional: ordenar por datahora (se vier fora de ordem)
+            logs = [...logs].sort((a, b) => {
+                const ta = Date.parse(String(a.datahora ?? "").replace(" ", "T")) || 0;
+                const tb = Date.parse(String(b.datahora ?? "").replace(" ", "T")) || 0;
+                return tb - ta;
+            });
+
+            setDetailLogs(logs);
         } catch (e) {
             console.error(e);
-            setTimelineError("Não foi possível carregar o histórico deste atendimento.");
+            setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
         } finally {
-            setTimelineLoading(false);
+            setDetailLogsLoading(false);
+        }
+    }
+
+    async function toggleTimelineDetalhe() {
+        if (!detail) return;
+        const next = !detailTimelineOpen;
+        setDetailTimelineOpen(next);
+
+        // carregar só quando abrir e ainda não carregou
+        if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
+            await carregarHistoricoDoDetalhe(detail);
         }
     }
 
@@ -641,10 +623,8 @@ export default function QuadroAtendimentoPage() {
     const obsList = (missing: string[]) =>
         missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.";
 
-    const missingEtapa0 = (r: Registro) =>
-        ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k));
-    const missingEtapa1 = (r: Registro) =>
-        ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k));
+    const missingEtapa0 = (r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k));
+    const missingEtapa1 = (r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k));
     const missingEtapa2 = (r: Registro) => {
         const miss: string[] = [];
         if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
@@ -663,7 +643,7 @@ export default function QuadroAtendimentoPage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
-            {/* Header/clock + botão Linha do Tempo */}
+            {/* Header/clock (REMOVIDO botão Linha do Tempo) */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -672,13 +652,6 @@ export default function QuadroAtendimentoPage() {
                             Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
                         </p>
                     </div>
-                    <button
-                        type="button"
-                        onClick={openTimeline}
-                        className="inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                    >
-                        Linha do Tempo
-                    </button>
                 </div>
             </div>
 
@@ -705,38 +678,41 @@ export default function QuadroAtendimentoPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                ativos.map((r, i) => {
-                                    const preenchidas = etapasPreenchidas(r);
-                                    return (
-                                        <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
-                                            <td>{dateOr(r.data)}</td>
-                                            <td>
-                                                <button
-                                                    className="font-semibold underline-offset-2 hover:underline"
-                                                    onClick={() => showDetail(r)}
-                                                    title="Ver detalhes"
-                                                >
-                                                    {shown(r.falecido)}
-                                                </button>
-                                            </td>
-                                            <td>{shown(r.local_velorio)}</td>
-                                            <td>{timeOr(r.hora_fim_velorio)}</td>
-                                            <td>{shown(r.agente)}</td>
-                                            <td>
-                                                <span
-                                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
-                                                        r.status
-                                                    )}`}
-                                                >
-                                                    {capStatus(r.status) || "a definir"}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <EtapasInlineDots filled={preenchidas} />
-                                            </td>
-                                        </tr>
-                                    );
-                                })
+                                ativos
+                                    .slice()
+                                    .sort((a, b) => parseRegistroDateTime(b) - parseRegistroDateTime(a))
+                                    .map((r, i) => {
+                                        const preenchidas = etapasPreenchidas(r);
+                                        return (
+                                            <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
+                                                <td>{dateOr(r.data)}</td>
+                                                <td>
+                                                    <button
+                                                        className="font-semibold underline-offset-2 hover:underline"
+                                                        onClick={() => showDetail(r)}
+                                                        title="Ver detalhes"
+                                                    >
+                                                        {shown(r.falecido)}
+                                                    </button>
+                                                </td>
+                                                <td>{shown(r.local_velorio)}</td>
+                                                <td>{timeOr(r.hora_fim_velorio)}</td>
+                                                <td>{shown(r.agente)}</td>
+                                                <td>
+                                                    <span
+                                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
+                                                            r.status
+                                                        )}`}
+                                                    >
+                                                        {capStatus(r.status) || "a definir"}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <EtapasInlineDots filled={preenchidas} />
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
                             )}
                         </tbody>
                     </table>
@@ -750,78 +726,74 @@ export default function QuadroAtendimentoPage() {
                         Nenhum atendimento encontrado.
                     </div>
                 ) : (
-                    ativos.map((r, i) => {
-                        const preenchidas = etapasPreenchidas(r);
-                        const dataBR = dateOr(r.data);
-                        const hora = timeOr(r.hora_fim_velorio);
-                        const statusTxt = capStatus(r.status) || "a definir";
-                        const statusBg = badgeClass(r.status);
-                        const localSep = shown(r.local_sepultamento || r.local);
-                        const convKind = normalizeConvenio(r.convenio);
-                        return (
-                            <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
-                                {/* Linha 1: Título + Data */}
-                                <div className="flex items-start justify-between gap-3">
-                                    <button
-                                        className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
-                                        onClick={() => showDetail(r)}
-                                        title="Ver detalhes"
-                                    >
-                                        {shown(r.falecido)}
-                                    </button>
-                                    <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
-                                </div>
+                    ativos
+                        .slice()
+                        .sort((a, b) => parseRegistroDateTime(b) - parseRegistroDateTime(a))
+                        .map((r, i) => {
+                            const preenchidas = etapasPreenchidas(r);
+                            const dataBR = dateOr(r.data);
+                            const hora = timeOr(r.hora_fim_velorio);
+                            const statusTxt = capStatus(r.status) || "a definir";
+                            const statusBg = badgeClass(r.status);
+                            const localSep = shown(r.local_sepultamento || r.local);
+                            const convKind = normalizeConvenio(r.convenio);
 
-                                {/* Linha 2: Chips + Agente */}
-                                <div className="mt-2 flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <span
-                                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
+                            return (
+                                <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <button
+                                            className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
+                                            onClick={() => showDetail(r)}
+                                            title="Ver detalhes"
                                         >
-                                            {statusTxt}
-                                        </span>
-                                        <span
-                                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
-                                                convKind
-                                            )}`}
-                                            title="Convênio"
-                                        >
-                                            {convKind}
-                                        </span>
+                                            {shown(r.falecido)}
+                                        </button>
+                                        <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
                                     </div>
 
-                                    <div className="text-xs">
-                                        <span className="text-muted-foreground">Agente:&nbsp;</span>
-                                        <b>{shown(r.agente)}</b>
+                                    <div className="mt-2 flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
+                                                {statusTxt}
+                                            </span>
+                                            <span
+                                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
+                                                    convKind
+                                                )}`}
+                                                title="Convênio"
+                                            >
+                                                {convKind}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs">
+                                            <span className="text-muted-foreground">Agente:&nbsp;</span>
+                                            <b>{shown(r.agente)}</b>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-2 text-sm">
+                                        <span className="text-muted-foreground">Local:&nbsp;</span>
+                                        {shown(r.local_velorio)}
+                                    </div>
+
+                                    <div className="mt-3 rounded-lg border bg-background p-3">
+                                        <div className="text-sm">
+                                            <span className="text-muted-foreground">Sepultamento&nbsp;</span>
+                                            <b>{localSep}</b>
+                                        </div>
+                                        <div className="mt-1 grid grid-cols-2 text-sm">
+                                            <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
+                                            <div className="text-right">{hora}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-3">
+                                        <div className="text-xs text-muted-foreground">Etapas:</div>
+                                        <EtapasInlineDots filled={preenchidas} />
                                     </div>
                                 </div>
-
-                                {/* Linha 3: Local (velório) */}
-                                <div className="mt-2 text-sm">
-                                    <span className="text-muted-foreground">Local:&nbsp;</span>
-                                    {shown(r.local_velorio)}
-                                </div>
-
-                                {/* Bloco: Sepultamento */}
-                                <div className="mt-3 rounded-lg border bg-background p-3">
-                                    <div className="text-sm">
-                                        <span className="text-muted-foreground">Sepultamento&nbsp;</span>
-                                        <b>{localSep}</b>
-                                    </div>
-                                    <div className="mt-1 grid grid-cols-2 text-sm">
-                                        <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
-                                        <div className="text-right">{hora}</div>
-                                    </div>
-                                </div>
-
-                                {/* Etapas coloridas */}
-                                <div className="mt-3">
-                                    <div className="text-xs text-muted-foreground">Etapas:</div>
-                                    <EtapasInlineDots filled={preenchidas} />
-                                </div>
-                            </div>
-                        );
-                    })
+                            );
+                        })
                 )}
             </div>
 
@@ -843,14 +815,15 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* ===== Modal de Detalhes ===== */}
+            {/* ===== Modal de Detalhes (com Linha do Tempo dentro) ===== */}
             {open && detail && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
-                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[80vh] overflow-y-auto overscroll-contain">
+
+                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain">
                         {/* header */}
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
-                            <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start justify-between gap-3 min-w-0">
                                 <div className="min-w-0">
                                     <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
                                     <h3 className="truncate text-base sm:text-lg font-bold leading-tight">{shown(detail.falecido)}</h3>
@@ -876,9 +849,21 @@ export default function QuadroAtendimentoPage() {
                                     >
                                         {capStatus(detail.status)}
                                     </span>
+
                                     <span className="hidden sm:inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         ATENDIMENTO {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                     </span>
+
+                                    {/* ✅ Botão Linha do Tempo agora aqui */}
+                                    <button
+                                        onClick={toggleTimelineDetalhe}
+                                        className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
+                                        aria-label="Linha do tempo"
+                                        title="Ver linha do tempo deste atendimento"
+                                    >
+                                        Linha do tempo
+                                    </button>
+
                                     <button
                                         onClick={handleCopy}
                                         className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
@@ -887,6 +872,7 @@ export default function QuadroAtendimentoPage() {
                                     >
                                         {copied ? "Copiado!" : "Copiar"}
                                     </button>
+
                                     <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
                                         Fechar
                                     </button>
@@ -894,7 +880,7 @@ export default function QuadroAtendimentoPage() {
                             </div>
 
                             {/* badges no mobile */}
-                            <div className="mt-2 flex gap-2 sm:hidden">
+                            <div className="mt-2 flex flex-wrap gap-2 sm:hidden">
                                 <span
                                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
                                         detail.status
@@ -906,6 +892,40 @@ export default function QuadroAtendimentoPage() {
                                     ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                 </span>
                             </div>
+
+                            {/* ✅ Conteúdo da Linha do Tempo (colapsável) */}
+                            {detailTimelineOpen && (
+                                <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
+                                    <div className="flex items-start justify-between gap-2 min-w-0">
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
+                                            <div className="text-[11px] text-muted-foreground break-words">
+                                                Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setDetailTimelineOpen(false)}
+                                            className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
+                                            aria-label="Ocultar linha do tempo"
+                                        >
+                                            Ocultar
+                                        </button>
+                                    </div>
+
+                                    {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
+                                    {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words">{detailLogsError}</p>}
+
+                                    {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
+                                        <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
+                                    )}
+
+                                    {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
+                                        <div className="mt-2">
+                                            <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* conteúdo com TÓPICOS */}
@@ -916,11 +936,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Religião" value={shown(detail.religiao)} />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    <Field
-                                        label="Obs. Atendimento"
-                                        value={shown(detail.observacao_atendimento, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -956,11 +972,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    <Field
-                                        label="Obs. Sepultamento"
-                                        value={shown(detail.observacao_velorio02, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -972,172 +984,13 @@ export default function QuadroAtendimentoPage() {
                     </div>
                 </div>
             )}
-
-            {/* ===== Modal Linha do Tempo (CORRIGIDO: sem scroll horizontal) ===== */}
-            {timelineOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-4" aria-modal role="dialog">
-                    <div className="absolute inset-0 bg-black/40" onClick={closeTimeline} aria-hidden />
-
-                    <div
-                        className="
-              relative z-10 w-full max-w-5xl
-              rounded-xl border bg-card shadow-2xl
-              max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain
-            "
-                    >
-                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4">
-                            <div className="flex items-start justify-between gap-3 min-w-0">
-                                <div className="min-w-0">
-                                    <div className="text-[12px] text-muted-foreground leading-tight">Histórico de atendimentos</div>
-                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">Linha do Tempo</h3>
-                                    <p className="mt-1 text-[11px] sm:text-xs text-muted-foreground">
-                                        Selecione um falecido na lista para visualizar os eventos.
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={closeTimeline}
-                                    className="shrink-0 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Fechar"
-                                >
-                                    Fechar
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* ✅ 1 coluna até lg; 2 colunas só em telas grandes */}
-                        <div className="px-2 py-2 sm:px-4 sm:py-3 grid gap-3 lg:gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] min-w-0">
-                            {/* Lista de falecidos (paginada + busca) */}
-                            <section className="rounded-xl border bg-background p-2 sm:p-3 flex flex-col min-w-0 overflow-x-hidden">
-                                <div className="flex items-center justify-between gap-2 mb-2 min-w-0">
-                                    <h4 className="text-[12px] sm:text-sm font-semibold text-slate-700 truncate">Últimos falecidos</h4>
-                                    <span className="shrink-0 text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap">
-                                        Pág. {timelinePage + 1}/{totalTimelinePages}
-                                    </span>
-                                </div>
-
-                                <div className="mb-2">
-                                    <input
-                                        type="text"
-                                        value={timelineSearch}
-                                        onChange={(e) => setTimelineSearch(e.target.value)}
-                                        placeholder="Pesquisar por nome..."
-                                        className="w-full rounded-full border px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-
-                                {falecidosPaginaAtual.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground">Nenhum falecido encontrado.</p>
-                                ) : (
-                                    <ul className="space-y-2 text-sm min-w-0">
-                                        {falecidosPaginaAtual.map((r, idx) => {
-                                            const isSelected = selectedRegistro === r;
-                                            return (
-                                                <li key={idx} className="min-w-0">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => carregarHistorico(r)}
-                                                        className={`
-                              w-full text-left rounded-lg border px-3 py-2
-                              transition shadow-sm min-w-0 overflow-hidden
-                              ${isSelected
-                                                                ? "border-blue-600 bg-blue-50/80 dark:bg-blue-950/40"
-                                                                : "border-transparent bg-background hover:border-blue-200 hover:bg-muted/60"
-                                                            }
-                            `}
-                                                    >
-                                                        <div className="flex items-start justify-between gap-2 min-w-0">
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="font-semibold text-[13px] sm:text-sm truncate">{shown(r.falecido)}</div>
-                                                                <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
-                                                                    {shown(r.local_velorio, "Local a definir")}
-                                                                </div>
-                                                                <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
-                                                                    {capStatus(r.status)}
-                                                                </div>
-                                                            </div>
-                                                            <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
-                                                                {dateOr(r.data)}
-                                                            </span>
-                                                        </div>
-                                                    </button>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-
-                                <div className="mt-2 flex items-center justify-between gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setTimelinePage((p) => Math.max(0, p - 1))}
-                                        disabled={timelinePage === 0}
-                                        className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
-                                    >
-                                        Anterior
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setTimelinePage((p) => (p + 1 < totalTimelinePages ? p + 1 : p))}
-                                        disabled={timelinePage + 1 >= totalTimelinePages}
-                                        className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50 hover:bg-muted"
-                                    >
-                                        Próxima
-                                    </button>
-                                </div>
-                            </section>
-
-                            {/* Linha do tempo do selecionado */}
-                            <section className="rounded-xl border bg-background p-2 sm:p-3 min-w-0 overflow-x-hidden">
-                                {selectedRegistro ? (
-                                    <div className="w-full min-w-0">
-                                        <div className="mb-2 min-w-0">
-                                            <h4 className="text-[12px] sm:text-sm font-semibold text-slate-700 break-words">
-                                                Linha do tempo — {shown(selectedRegistro.falecido)}
-                                            </h4>
-                                            <p className="text-[10px] sm:text-[11px] text-muted-foreground">
-                                                Eventos registrados para este atendimento.
-                                            </p>
-                                        </div>
-
-                                        {timelineLoading && <p className="text-sm text-muted-foreground">Carregando histórico…</p>}
-
-                                        {timelineError && <p className="text-sm text-red-600 break-words">{timelineError}</p>}
-
-                                        {!timelineLoading && !timelineError && timelineLogs.length === 0 && (
-                                            <p className="text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
-                                        )}
-
-                                        {!timelineLoading && !timelineError && timelineLogs.length > 0 && (
-                                            <LinhaDoTempoLogs logs={timelineLogs} usuarioVisivel />
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex h-full items-center justify-center text-center p-3">
-                                        <p className="text-sm text-muted-foreground">
-                                            Selecione um falecido na lista acima para visualizar a linha do tempo.
-                                        </p>
-                                    </div>
-                                )}
-                            </section>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
 
 /* ===== Componentes auxiliares ===== */
 
-function Topic({
-    title,
-    children,
-    note,
-}: {
-    title: string;
-    children: React.ReactNode;
-    note?: string;
-}) {
+function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
@@ -1149,19 +1002,11 @@ function Topic({
     );
 }
 
-function Field({
-    label,
-    value,
-    className = "",
-}: {
-    label: string;
-    value: string;
-    className?: string;
-}) {
+function Field({ label, value, className = "" }: { label: string; value: string; className?: string }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
             <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
-            <span className="text-[13px] sm:text-sm text-slate-900">{value}</span>
+            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">{value}</span>
         </div>
     );
 }
@@ -1199,10 +1044,6 @@ function EtapasRow({ registro }: { registro: Registro }) {
 
 /* ===== Linha do Tempo (Logs) ===== */
 
-/**
- * Gera os “detalhes” do log em UMA COLUNA,
- * responsivo, sem ultrapassar a largura no mobile.
- */
 function buildDetalhesNodes(raw: unknown): React.ReactNode {
     if (raw == null || raw === "") return null;
 
@@ -1215,7 +1056,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         } catch {
             const text = substituirRotuloVisual(raw.trim());
             return text ? (
-                <div className="mt-2 text-sm break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div>
+                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
             ) : null;
         }
     }
@@ -1233,9 +1074,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             // Arrumação JSON
             if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
                 for (const [k, v] of Object.entries(value)) {
-                    if (asBool(v)) {
-                        arrItems.push(titleCaseFromSnake(k));
-                    }
+                    if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
                 }
                 continue;
             }
@@ -1303,17 +1142,11 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
 
     const text = substituirRotuloVisual(String(obj));
     return text.trim() ? (
-        <div className="mt-2 text-sm break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div>
+        <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
     ) : null;
 }
 
-function LinhaDoTempoLogs({
-    logs,
-    usuarioVisivel = true,
-}: {
-    logs: LogItem[];
-    usuarioVisivel?: boolean;
-}) {
+function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
     if (!logs || logs.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
     }
@@ -1326,19 +1159,12 @@ function LinhaDoTempoLogs({
                 const detalhes = buildDetalhesNodes(ent.detalhes);
 
                 return (
-                    <div
-                        key={i}
-                        className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0"
-                    >
+                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">
-                                {iconForAction(ent.acao, ent.status_novo)}
-                            </div>
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
 
                             <div className="flex-1 min-w-0">
-                                <div className="text-[11px] text-muted-foreground whitespace-nowrap">
-                                    {formatLogDateTime(ent.datahora)}
-                                </div>
+                                <div className="text-[11px] text-muted-foreground whitespace-nowrap">{formatLogDateTime(ent.datahora)}</div>
 
                                 <div className="text-sm flex flex-wrap items-center gap-1 min-w-0">
                                     <span className="break-words [overflow-wrap:anywhere]">{acao}</span>
