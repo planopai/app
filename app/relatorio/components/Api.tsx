@@ -6,52 +6,101 @@ import { FalecidoItem, LogItem, RegistroAnalise } from "./TiposHistorico";
 export const LISTAR_FALECIDOS =
     "/api/php/historico_sepultamentos.php?listar_falecidos=1";
 
-export const LISTAR_ANALITICO =
-    "/api/php/informativo.php?listar=1";
+export const LISTAR_ANALITICO = "/api/php/informativo.php?listar=1";
 
 export const LOG_POR_ID = (id: string) =>
     `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
-/* ======================== Helpers ======================== */
+/* ======================== Cache simples (client) ======================== */
+/**
+ * Cache em memória com TTL para deixar a tela “snappy”
+ * sem depender do cache do fetch (você usa no-store).
+ */
+type CacheEntry = { exp: number; data: any };
+const MEM_CACHE = new Map<string, CacheEntry>();
 
-async function fetchJson<T = any>(url: string): Promise<T> {
-    // evita cache agressivo (Vercel)
-    const sep = url.includes("?") ? "&" : "?";
-    const res = await fetch(`${url}${sep}_nocache=${Date.now()}`, {
-        cache: "no-store",
-        credentials: "include",
-    });
-    return res.json();
+function getCache<T>(key: string): T | null {
+    const hit = MEM_CACHE.get(key);
+    if (!hit) return null;
+    if (Date.now() > hit.exp) {
+        MEM_CACHE.delete(key);
+        return null;
+    }
+    return hit.data as T;
 }
+function setCache(key: string, data: any, ttlMs: number) {
+    MEM_CACHE.set(key, { exp: Date.now() + ttlMs, data });
+}
+
+async function fetchJson<T = any>(
+    url: string,
+    opts?: { ttlMs?: number; timeoutMs?: number; useCache?: boolean }
+): Promise<T> {
+    const ttlMs = opts?.ttlMs ?? 10_000; // 10s é suficiente p/ relatório
+    const timeoutMs = opts?.timeoutMs ?? 12_000;
+    const useCache = opts?.useCache ?? true;
+
+    const cacheKey = url; // sem nocache, pra poder reutilizar
+    if (useCache) {
+        const cached = getCache<T>(cacheKey);
+        if (cached) return cached;
+    }
+
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+
+    try {
+        // Mantém no-store para evitar cache “agressivo” de infra,
+        // mas usamos nosso cache em memória pra ficar rápido no front.
+        const res = await fetch(url, {
+            cache: "no-store",
+            credentials: "include",
+            signal: ac.signal,
+        });
+
+        // evita erro silencioso / JSON inválido
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        }
+
+        const data = (await res.json()) as T;
+        if (useCache) setCache(cacheKey, data, ttlMs);
+        return data;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+/* ======================== Helpers ======================== */
 
 function primeiroLogDatahora(logs: LogItem[]): string {
     if (!logs?.length) return "";
-    const ord = logs.slice().sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    // logs podem vir ASC do PHP: primeiro já é a criação
+    const first = logs[0]?.datahora || "";
+    if (first) return first;
+    // fallback
+    const ord = logs
+        .slice()
+        .sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     return ord[0]?.datahora || "";
 }
 
 /**
  * Normaliza URLs de assinaturas para evitar erro de CORS.
- * - Se for relativo (/uploads/assinaturas/...), converte para proxy local.
- * - Se for do domínio errado (pai.), corrige para o principal.
- * - Caso contrário, mantém a URL original.
  */
 export function normalizarUrlAssinatura(url?: string): string | undefined {
     if (!url) return undefined;
     let u = String(url).trim();
 
-    // Se vier só o caminho relativo (/uploads/...)
     if (u.startsWith("/uploads/")) {
         return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(u)}`;
     }
 
-    // Se vier do domínio principal, converte para proxy (evita CORS)
     if (u.startsWith("https://planoassistencialintegrado.com.br/uploads/")) {
         const path = u.replace("https://planoassistencialintegrado.com.br", "");
         return `/api/php/proxy_assinatura.php?file=${encodeURIComponent(path)}`;
     }
 
-    // Se vier com o subdomínio pai., troca para o principal
     u = u.replace(
         "https://pai.planoassistencialintegrado.com.br",
         "https://planoassistencialintegrado.com.br"
@@ -60,7 +109,7 @@ export function normalizarUrlAssinatura(url?: string): string | undefined {
     return u;
 }
 
-/* ===== NOVO: Buscar nome/cpf/url das assinaturas direto do banco ===== */
+/* ===== Assinaturas ===== */
 
 export type AssinaturaInfo = {
     sucesso?: boolean;
@@ -68,7 +117,6 @@ export type AssinaturaInfo = {
     requerente?: { url?: string; nome?: string; cpf?: string };
 };
 
-/** Retorna nome/cpf/url das assinaturas para um sepultamento. */
 export async function pegarAssinaturasInfoPorId(
     id: string | number
 ): Promise<AssinaturaInfo> {
@@ -77,8 +125,7 @@ export async function pegarAssinaturasInfoPorId(
         const url = `/api/php/proxy_assinatura.php?info=1&id=${encodeURIComponent(
             String(id)
         )}`;
-        const json = await fetchJson<AssinaturaInfo>(url);
-        return json || {};
+        return (await fetchJson<AssinaturaInfo>(url, { ttlMs: 30_000 })) || {};
     } catch {
         return {};
     }
@@ -88,7 +135,7 @@ export async function pegarAssinaturasInfoPorId(
 
 export async function listarFalecidos(): Promise<FalecidoItem[]> {
     try {
-        const json = await fetchJson<any>(LISTAR_FALECIDOS);
+        const json = await fetchJson<any>(LISTAR_FALECIDOS, { ttlMs: 10_000 });
         if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as FalecidoItem[];
         if (Array.isArray(json)) return json as FalecidoItem[];
         return [];
@@ -99,7 +146,7 @@ export async function listarFalecidos(): Promise<FalecidoItem[]> {
 
 export async function listarLogPorId(id: string): Promise<LogItem[]> {
     try {
-        const json = await fetchJson<any>(LOG_POR_ID(id));
+        const json = await fetchJson<any>(LOG_POR_ID(id), { ttlMs: 20_000 });
         if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as LogItem[];
         if (Array.isArray(json)) return json as LogItem[];
         return [];
@@ -110,7 +157,7 @@ export async function listarLogPorId(id: string): Promise<LogItem[]> {
 
 export async function listarAnalitico(): Promise<RegistroAnalise[]> {
     try {
-        const json = await fetchJson<any>(LISTAR_ANALITICO);
+        const json = await fetchJson<any>(LISTAR_ANALITICO, { ttlMs: 10_000 });
         if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as RegistroAnalise[];
         if (Array.isArray(json)) return json as RegistroAnalise[];
         return [];
@@ -119,51 +166,27 @@ export async function listarAnalitico(): Promise<RegistroAnalise[]> {
     }
 }
 
-/* ======================== Carregar CRIAÇÃO junto com a lista ======================== */
+/* ======================== Lista com criação (SEM N+1) ======================== */
 
 export type FalecidoComCriacao = FalecidoItem & { criacao?: string };
 
-/** Busca as datas de criação (primeiro log) com limite de concorrência. */
-export async function pegarCriacoes(
-    ids: string[],
-    maxConc = 8
-): Promise<Record<string, string>> {
-    const pend = Array.from(new Set(ids.filter(Boolean)));
-    const out: Record<string, string> = {};
-    let i = 0;
-
-    async function worker() {
-        while (i < pend.length) {
-            const id = pend[i++];
-            try {
-                const logs = await listarLogPorId(id);
-                out[id] = primeiroLogDatahora(logs);
-            } catch {
-                out[id] = "";
-            }
-        }
-    }
-
-    const workers = Array.from({ length: Math.min(maxConc, pend.length) }, worker);
-    await Promise.all(workers);
-    return out;
-}
-
 /**
- * Retorna a lista **já com** a data de criação resolvida.
- * Use esta função na tela para evitar o “piscar” das datas.
+ * Agora a criação vem do backend (campo `criacao` do seu SQL).
+ * Zero chamadas extras de log: MUITO mais rápido.
  */
-export async function listarFalecidosComCriacao(
-    maxConc = 8
-): Promise<{ lista: FalecidoComCriacao[]; criacaoMap: Record<string, string> }> {
-    const lista = await listarFalecidos();
-    const ids = lista.map((r) => String(r.sepultamento_id || ""));
-    const criacaoMap = await pegarCriacoes(ids, maxConc);
+export async function listarFalecidosComCriacao(): Promise<{
+    lista: FalecidoComCriacao[];
+    criacaoMap: Record<string, string>;
+}> {
+    const listaRaw = await listarFalecidos();
 
-    const listaCom = lista.map<FalecidoComCriacao>((r) => ({
-        ...r,
-        criacao: criacaoMap[String(r.sepultamento_id || "")] || r.ultima_datahora || "",
-    }));
+    const criacaoMap: Record<string, string> = {};
+    const lista = (listaRaw || []).map((r: any) => {
+        const id = String(r.sepultamento_id || "");
+        const criacao = String(r.criacao || r.ultima_datahora || r.ultima_datahora || "");
+        criacaoMap[id] = criacao;
+        return { ...r, criacao } as FalecidoComCriacao;
+    });
 
-    return { lista: listaCom, criacaoMap };
+    return { lista, criacaoMap };
 }
