@@ -1,6 +1,82 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+/* =========================
+   Cache rápido (memória + localStorage)
+   ========================= */
+type CacheEntry = { exp: number; data: any };
+const MEM_CACHE = new Map<string, CacheEntry>();
+const INFLIGHT = new Map<string, Promise<any>>();
+
+function getMem<T>(k: string): T | null {
+    const hit = MEM_CACHE.get(k);
+    if (!hit) return null;
+    if (Date.now() > hit.exp) {
+        MEM_CACHE.delete(k);
+        return null;
+    }
+    return hit.data as T;
+}
+function setMem(k: string, data: any, ttlMs: number) {
+    MEM_CACHE.set(k, { exp: Date.now() + ttlMs, data });
+}
+
+function readLS<T>(k: string): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = localStorage.getItem(k);
+        if (!raw) return null;
+        return JSON.parse(raw) as T;
+    } catch {
+        return null;
+    }
+}
+function writeLS(k: string, v: any) {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(k, JSON.stringify(v));
+    } catch {
+        // ignore
+    }
+}
+
+async function fetchJsonFast<T = any>(
+    url: string,
+    opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
+): Promise<T> {
+    const ttlMs = opts?.ttlMs ?? 8_000;
+    const timeoutMs = opts?.timeoutMs ?? 12_000;
+    const cacheKey = opts?.cacheKey ?? url;
+
+    const cached = getMem<T>(cacheKey);
+    if (cached) return cached;
+
+    const inF = INFLIGHT.get(cacheKey);
+    if (inF) return (await inF) as T;
+
+    const p = (async () => {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), timeoutMs);
+        try {
+            const resp = await fetch(url, {
+                cache: "no-store",
+                credentials: "include",
+                signal: ac.signal,
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = (await resp.json()) as T;
+            setMem(cacheKey, data, ttlMs);
+            return data;
+        } finally {
+            clearTimeout(t);
+            INFLIGHT.delete(cacheKey);
+        }
+    })();
+
+    INFLIGHT.set(cacheKey, p);
+    return (await p) as T;
+}
 
 /* =========================
    Tipos
@@ -208,15 +284,9 @@ const STAGE_DOT_FILLED = [
     "bg-violet-500 border-violet-600", // V
     "bg-amber-500 border-amber-600", // S
 ];
-const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
+const STAGE_DOT_EMPTY =
+    "bg-transparent border-slate-300 dark:border-slate-600";
 
-/*
-  Regras das etapas:
-  - D (0): falecido, contato, religiao, convenio (todos)
-  - I (1): urna, roupa, assistencia, tanato (todos)
-  - V (2): local_velorio e data_inicio_velorio e (local_sepultamento OU local)
-  - S (3): hora_inicio_velorio OU (data_fim_velorio E hora_fim_velorio)
-*/
 const LABELS: Record<string, string> = {
     falecido: "Falecido",
     contato: "Contato",
@@ -242,7 +312,11 @@ const isFilled = (registro: Registro, key?: string) => {
     const s = String(v).trim().toLowerCase();
     if (!s) return false;
     if (["selecionar...", "selecione...", "a definir"].includes(s)) return false;
-    if (key.startsWith("data") && (s === "0000-00-00" || s === "00/00/0000")) return false;
+    if (
+        key.startsWith("data") &&
+        (s === "0000-00-00" || s === "00/00/0000")
+    )
+        return false;
     if (key.startsWith("hora") && s.startsWith("00:00")) return false;
     return true;
 };
@@ -250,15 +324,20 @@ const isFilled = (registro: Registro, key?: string) => {
 function etapasPreenchidas(registro: Registro) {
     const d = [false, false, false, false];
 
-    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) => isFilled(registro, k));
-    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) => isFilled(registro, k));
+    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) =>
+        isFilled(registro, k)
+    );
+    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) =>
+        isFilled(registro, k)
+    );
     d[2] =
         isFilled(registro, "local_velorio") &&
         isFilled(registro, "data_inicio_velorio") &&
         (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
     d[3] =
         isFilled(registro, "hora_inicio_velorio") ||
-        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
+        (isFilled(registro, "data_fim_velorio") &&
+            isFilled(registro, "hora_fim_velorio"));
 
     return d;
 }
@@ -272,7 +351,10 @@ function buildClipboardText(r: Registro) {
 
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
     const ornTipo = ornTipoRaw
-        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
+        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(
+            /\s+/g,
+            " "
+        )
         : "A DEFINIR";
 
     const lines = [
@@ -393,9 +475,12 @@ function traduzirFase(s?: string) {
 
 function iconForAction(acao?: string, status?: string): string {
     const a = (acao || "").toLowerCase();
-    if (a.includes("criou") || a.includes("novo") || a.includes("inser")) return "🟢";
-    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter")) return "✏️";
-    if (a.includes("exclu") || a.includes("delet") || a.includes("remove")) return "🗑️";
+    if (a.includes("criou") || a.includes("novo") || a.includes("inser"))
+        return "🟢";
+    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter"))
+        return "✏️";
+    if (a.includes("exclu") || a.includes("delet") || a.includes("remove"))
+        return "🗑️";
     const st = (status || "").toLowerCase();
     if (st.startsWith("fase")) return "🔁";
     return "•";
@@ -404,11 +489,27 @@ function iconForAction(acao?: string, status?: string): string {
 /* =========================
    Página
    ========================= */
+const DIAS = [
+    "Domingo",
+    "Segunda-feira",
+    "Terça-feira",
+    "Quarta-feira",
+    "Quinta-feira",
+    "Sexta-feira",
+    "Sábado",
+];
+
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
-    const [registros, setRegistros] = useState<Registro[]>([]);
-    const [avisos, setAvisos] = useState<Aviso[]>([]);
+
+    // ✅ começa imediato com cache local (se existir)
+    const [registros, setRegistros] = useState<Registro[]>(
+        () => readLS<Registro[]>("qa_registros") ?? []
+    );
+    const [avisos, setAvisos] = useState<Aviso[]>(
+        () => readLS<Aviso[]>("qa_avisos") ?? []
+    );
 
     // modal detalhes
     const [open, setOpen] = useState(false);
@@ -421,7 +522,7 @@ export default function QuadroAtendimentoPage() {
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
-    // relógio
+    // relógio (ok manter; a lista pesada está memoizada embaixo)
     useEffect(() => {
         const update = () => {
             const now = new Date();
@@ -429,73 +530,101 @@ export default function QuadroAtendimentoPage() {
             const m = now.getMinutes().toString().padStart(2, "0");
             const s = now.getSeconds().toString().padStart(2, "0");
             setClockTime(`${h}:${m}:${s}`);
-            const dias = [
-                "Domingo",
-                "Segunda-feira",
-                "Terça-feira",
-                "Quarta-feira",
-                "Quinta-feira",
-                "Sexta-feira",
-                "Sábado",
-            ];
+
             const dd = now.getDate().toString().padStart(2, "0");
             const mm = (now.getMonth() + 1).toString().padStart(2, "0");
             const yyyy = now.getFullYear();
-            setClockDate(`${dias[now.getDay()]}, ${dd}/${mm}/${yyyy}`);
+            setClockDate(`${DIAS[now.getDay()]}, ${dd}/${mm}/${yyyy}`);
         };
         update();
         const id = setInterval(update, 1000);
         return () => clearInterval(id);
     }, []);
 
-    // dados
+    // ✅ DADOS (carrega rápido + não zera em erro + cache TTL)
     useEffect(() => {
-        const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/informativo.php?listar=1&_nocache=${Date.now()}`, {
-                cache: "no-store",
-            })
-                .then((r) => r.json())
-                .then((j) => setRegistros(Array.isArray(j) ? j : []))
-                .catch(() => setRegistros([]));
+        let alive = true;
+
+        // usando seu proxy Next (mais rápido/sem CORS)
+        const BASE = "/api/php/informativo.php?listar=1";
+
+        async function load() {
+            try {
+                const url = `${BASE}&_ts=${Date.now()}`; // evita cache de infra, mas mantemos cacheKey fixo
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 6_000,
+                    cacheKey: "informativo_listar",
+                });
+                if (!alive) return;
+                const arr = Array.isArray(j) ? (j as Registro[]) : [];
+                setRegistros(arr);
+                writeLS("qa_registros", arr);
+            } catch {
+                // mantém o que já tem (sem “piscar”)
+            }
+        }
+
         load();
         const id = setInterval(load, 8000);
-        return () => clearInterval(id);
+        return () => {
+            alive = false;
+            clearInterval(id);
+        };
     }, []);
 
-    // avisos
+    // ✅ AVISOS (cache TTL + não zera em erro)
     useEffect(() => {
-        const load = () =>
-            fetch(`https://planoassistencialintegrado.com.br/avisos.php?listar=1&_nocache=${Date.now()}`, {
-                cache: "no-store",
-            })
-                .then((r) => r.json())
-                .then((j) => setAvisos(Array.isArray(j) ? j : []))
-                .catch(() => setAvisos([]));
+        let alive = true;
+
+        const BASE = "/api/php/avisos.php?listar=1";
+
+        async function load() {
+            try {
+                const url = `${BASE}&_ts=${Date.now()}`;
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 15_000,
+                    cacheKey: "avisos_listar",
+                });
+                if (!alive) return;
+                const arr = Array.isArray(j) ? (j as Aviso[]) : [];
+                setAvisos(arr);
+                writeLS("qa_avisos", arr);
+            } catch {
+                // mantém o que já tem
+            }
+        }
+
         load();
         const id = setInterval(load, 20000);
-        return () => clearInterval(id);
+        return () => {
+            alive = false;
+            clearInterval(id);
+        };
     }, []);
 
-    function resetDetailTimeline() {
+    const resetDetailTimeline = useCallback(() => {
         setDetailTimelineOpen(false);
         setDetailLogs([]);
         setDetailLogsLoading(false);
         setDetailLogsError(null);
-    }
+    }, []);
 
-    function showDetail(r: Registro) {
-        setDetail(r);
-        setOpen(true);
-        setCopied(false);
-        resetDetailTimeline();
-    }
+    const showDetail = useCallback(
+        (r: Registro) => {
+            setDetail(r);
+            setOpen(true);
+            setCopied(false);
+            resetDetailTimeline();
+        },
+        [resetDetailTimeline]
+    );
 
-    function closeDetail() {
+    const closeDetail = useCallback(() => {
         setOpen(false);
         setDetail(null);
         setCopied(false);
         resetDetailTimeline();
-    }
+    }, [resetDetailTimeline]);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -503,27 +632,29 @@ export default function QuadroAtendimentoPage() {
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, []);
+    }, [closeDetail]);
 
     /* =========================
-       ATIVOS: aplica as 3 regras do painel
+       ATIVOS + ORDENADOS (UMA VEZ)
        ========================= */
-    const ativos = useMemo(() => {
-        return registros.filter((r) => {
+    const ativosOrdenados = useMemo(() => {
+        const base = (registros || []).filter((r) => {
             const status = normalizarStatus(r.status);
 
             if (status === "fase11") return false;
-
             if (isTerceiroRegistro(r)) return status !== "fase10";
-
             if (!isSim(r.assistencia)) return status !== "fase10";
-
             return true;
         });
+
+        // pré-computa timestamp 1x e ordena DESC
+        const withTs = base.map((r) => ({ r, ts: parseRegistroDateTime(r) }));
+        withTs.sort((a, b) => b.ts - a.ts);
+        return withTs.map((x) => x.r);
     }, [registros]);
 
     // copiar para clipboard
-    async function handleCopy() {
+    const handleCopy = useCallback(async () => {
         if (!detail) return;
         const text = buildClipboardText(detail);
         try {
@@ -546,10 +677,10 @@ export default function QuadroAtendimentoPage() {
                 document.body.removeChild(ta);
             }
         }
-    }
+    }, [detail]);
 
-    // carregar logs SOMENTE do falecido em detalhe
-    async function carregarHistoricoDoDetalhe(r: Registro) {
+    // carregar logs SOMENTE do falecido em detalhe (agora via proxy + cache TTL)
+    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
         setDetailLogs([]);
         setDetailLogsError(null);
         setDetailLogsLoading(true);
@@ -565,32 +696,26 @@ export default function QuadroAtendimentoPage() {
             if (!sepId) {
                 console.warn("Registro sem sepultamento_id para histórico:", r);
                 setDetailLogs([]);
-                setDetailLogsLoading(false);
                 return;
             }
 
-            const url = `https://planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
+            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
                 String(sepId)
-            )}&_nocache=${Date.now()}`;
+            )}`;
+            const url = `${BASE}&_ts=${Date.now()}`;
 
-            const resp = await fetch(url, { cache: "no-store" });
-
-            if (!resp.ok) {
-                console.error("Falha HTTP ao buscar histórico:", resp.status, resp.statusText);
-                setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
-                setDetailLogs([]);
-                return;
-            }
-
-            const json: any = await resp.json();
+            const json: any = await fetchJsonFast<any>(url, {
+                ttlMs: 20_000,
+                cacheKey: `hist_${sepId}`,
+            });
 
             let logs: LogItem[] = [];
             if (Array.isArray(json)) logs = json as LogItem[];
-            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
+            else if (json?.sucesso && Array.isArray(json.dados))
+                logs = json.dados as LogItem[];
 
-            // ✅ ORDEM CORRETA: primeiro "Criou" e depois atualizações (cronológica)
+            // cronológica (criação primeiro)
             logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
-
             setDetailLogs(logs);
         } catch (e) {
             console.error(e);
@@ -598,9 +723,9 @@ export default function QuadroAtendimentoPage() {
         } finally {
             setDetailLogsLoading(false);
         }
-    }
+    }, []);
 
-    async function toggleTimelineDetalhe() {
+    const toggleTimelineDetalhe = useCallback(async () => {
         if (!detail) return;
         const next = !detailTimelineOpen;
         setDetailTimelineOpen(next);
@@ -608,29 +733,48 @@ export default function QuadroAtendimentoPage() {
         if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
             await carregarHistoricoDoDetalhe(detail);
         }
-    }
+    }, [
+        detail,
+        detailTimelineOpen,
+        detailLogsLoading,
+        detailLogs.length,
+        detailLogsError,
+        carregarHistoricoDoDetalhe,
+    ]);
 
     // helpers para observações por container
-    const obsList = (missing: string[]) =>
-        missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.";
+    const obsList = useCallback(
+        (missing: string[]) =>
+            missing.length
+                ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.`
+                : "Completo.",
+        []
+    );
 
-    const missingEtapa0 = (r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k));
-    const missingEtapa1 = (r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k));
-    const missingEtapa2 = (r: Registro) => {
+    const missingEtapa0 = useCallback(
+        (r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)),
+        []
+    );
+    const missingEtapa1 = useCallback(
+        (r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)),
+        []
+    );
+    const missingEtapa2 = useCallback((r: Registro) => {
         const miss: string[] = [];
         if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
         if (!isFilled(r, "data_inicio_velorio")) miss.push("data_inicio_velorio");
-        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local"))) miss.push("local_sepultamento");
+        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local")))
+            miss.push("local_sepultamento");
         return miss;
-    };
-    const noteEtapa3 = (r: Registro) => {
+    }, []);
+    const noteEtapa3 = useCallback((r: Registro) => {
         const hasInicio = isFilled(r, "hora_inicio_velorio");
         const hasFim = isFilled(r, "data_fim_velorio") && isFilled(r, "hora_fim_velorio");
         if (hasInicio && hasFim) return "Horários definidos.";
         if (hasInicio) return "Horário de início definido.";
         if (hasFim) return "Horário de encerramento definido.";
         return "Pendências de horário.";
-    };
+    }, []);
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
@@ -647,151 +791,17 @@ export default function QuadroAtendimentoPage() {
             </div>
 
             {/* Tabela (desktop) */}
-            <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
-                <div className="overflow-x-auto rounded-2xl">
-                    <table className="min-w-full text-sm">
-                        <thead className="bg-muted/60 text-muted-foreground">
-                            <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left">
-                                <th>Data</th>
-                                <th>Falecido(a)</th>
-                                <th>Local</th>
-                                <th>Hora</th>
-                                <th>Agente</th>
-                                <th>Status</th>
-                                <th>Etapas</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                            {ativos.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
-                                        Nenhum atendimento encontrado.
-                                    </td>
-                                </tr>
-                            ) : (
-                                ativos
-                                    .slice()
-                                    .sort((a, b) => parseRegistroDateTime(b) - parseRegistroDateTime(a))
-                                    .map((r, i) => {
-                                        const preenchidas = etapasPreenchidas(r);
-                                        return (
-                                            <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
-                                                <td>{dateOr(r.data)}</td>
-                                                <td>
-                                                    <button
-                                                        className="font-semibold underline-offset-2 hover:underline"
-                                                        onClick={() => showDetail(r)}
-                                                        title="Ver detalhes"
-                                                    >
-                                                        {shown(r.falecido)}
-                                                    </button>
-                                                </td>
-                                                <td>{shown(r.local_velorio)}</td>
-                                                <td>{timeOr(r.hora_fim_velorio)}</td>
-                                                <td>{shown(r.agente)}</td>
-                                                <td>
-                                                    <span
-                                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
-                                                            r.status
-                                                        )}`}
-                                                    >
-                                                        {capStatus(r.status) || "a definir"}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <EtapasInlineDots filled={preenchidas} />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} />
 
             {/* Cards (mobile) */}
-            <div className="sm:hidden space-y-3">
-                {ativos.length === 0 ? (
-                    <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
-                        Nenhum atendimento encontrado.
-                    </div>
-                ) : (
-                    ativos
-                        .slice()
-                        .sort((a, b) => parseRegistroDateTime(b) - parseRegistroDateTime(a))
-                        .map((r, i) => {
-                            const preenchidas = etapasPreenchidas(r);
-                            const dataBR = dateOr(r.data);
-                            const hora = timeOr(r.hora_fim_velorio);
-                            const statusTxt = capStatus(r.status) || "a definir";
-                            const statusBg = badgeClass(r.status);
-                            const localSep = shown(r.local_sepultamento || r.local);
-                            const convKind = normalizeConvenio(r.convenio);
-
-                            return (
-                                <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <button
-                                            className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
-                                            onClick={() => showDetail(r)}
-                                            title="Ver detalhes"
-                                        >
-                                            {shown(r.falecido)}
-                                        </button>
-                                        <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
-                                    </div>
-
-                                    <div className="mt-2 flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
-                                                {statusTxt}
-                                            </span>
-                                            <span
-                                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
-                                                    convKind
-                                                )}`}
-                                                title="Convênio"
-                                            >
-                                                {convKind}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs">
-                                            <span className="text-muted-foreground">Agente:&nbsp;</span>
-                                            <b>{shown(r.agente)}</b>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-2 text-sm">
-                                        <span className="text-muted-foreground">Local:&nbsp;</span>
-                                        {shown(r.local_velorio)}
-                                    </div>
-
-                                    <div className="mt-3 rounded-lg border bg-background p-3">
-                                        <div className="text-sm">
-                                            <span className="text-muted-foreground">Sepultamento&nbsp;</span>
-                                            <b>{localSep}</b>
-                                        </div>
-                                        <div className="mt-1 grid grid-cols-2 text-sm">
-                                            <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
-                                            <div className="text-right">{hora}</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-3">
-                                        <div className="text-xs text-muted-foreground">Etapas:</div>
-                                        <EtapasInlineDots filled={preenchidas} />
-                                    </div>
-                                </div>
-                            );
-                        })
-                )}
-            </div>
+            <MobileCards ativos={ativosOrdenados} onSelect={showDetail} />
 
             {/* Avisos */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                    Mensagens importantes do sistema
+                </p>
                 <div className="mt-4 space-y-2">
                     {avisos.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
@@ -834,14 +844,20 @@ export default function QuadroAtendimentoPage() {
                                     {copied ? "Copiado!" : "Copiar"}
                                 </button>
 
-                                <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
+                                <button
+                                    onClick={closeDetail}
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                    aria-label="Fechar"
+                                >
                                     Fechar
                                 </button>
                             </div>
 
-                            {/* ✅ infos embaixo dos botões (não encolhe mais) */}
+                            {/* ✅ infos embaixo dos botões */}
                             <div className="mt-3">
-                                <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
+                                <div className="text-[12px] text-muted-foreground leading-tight">
+                                    Detalhes do atendimento
+                                </div>
                                 <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
                                     {shown(detail.falecido)}
                                 </h3>
@@ -859,7 +875,9 @@ export default function QuadroAtendimentoPage() {
                                 </div>
 
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
+                                    <span
+                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}
+                                    >
                                         {capStatus(detail.status)}
                                     </span>
                                     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
@@ -872,9 +890,12 @@ export default function QuadroAtendimentoPage() {
                                     <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
                                         <div className="flex items-start justify-between gap-2 min-w-0">
                                             <div className="min-w-0">
-                                                <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
+                                                <div className="text-xs font-semibold text-slate-700">
+                                                    Linha do Tempo
+                                                </div>
                                                 <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                    Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
+                                                    Logs deste atendimento:{" "}
+                                                    <b className="font-semibold">{shown(detail.falecido)}</b>
                                                 </div>
                                             </div>
                                             <button
@@ -886,11 +907,17 @@ export default function QuadroAtendimentoPage() {
                                             </button>
                                         </div>
 
-                                        {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
-                                        {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
+                                        {detailLogsLoading && (
+                                            <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>
+                                        )}
+                                        {detailLogsError && (
+                                            <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>
+                                        )}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
+                                            <p className="mt-2 text-sm text-muted-foreground">
+                                                Nenhum log encontrado para este atendimento.
+                                            </p>
                                         )}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
@@ -911,7 +938,11 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Religião" value={shown(detail.religiao)} />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Atendimento"
+                                        value={shown(detail.observacao_atendimento, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
@@ -921,13 +952,20 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                    <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
+                                    <Field
+                                        label="Ornamentação"
+                                        value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
+                                    />
                                     <Field
                                         label="Materiais"
                                         value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")}
                                         className="sm:col-span-2"
                                     />
-                                    <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Itens"
+                                        value={shown(detail.observacao_itens, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
@@ -938,7 +976,11 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Velório"
+                                        value={shown(detail.observacao_velorio01, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
@@ -947,12 +989,18 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
+                                    <Field
+                                        label="Obs. Sepultamento"
+                                        value={shown(detail.observacao_velorio02, "")}
+                                        className="sm:col-span-2"
+                                    />
                                 </div>
                             </Topic>
 
                             <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
+                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
+                                    Etapas preenchidas
+                                </div>
                                 <EtapasRow registro={detail} />
                             </div>
                         </div>
@@ -963,13 +1011,181 @@ export default function QuadroAtendimentoPage() {
     );
 }
 
+/* ===== Listas Memoizadas (não re-renderizam a cada 1s do relógio) ===== */
+
+const DesktopTable = React.memo(function DesktopTable({
+    ativos,
+    onSelect,
+}: {
+    ativos: Registro[];
+    onSelect: (r: Registro) => void;
+}) {
+    return (
+        <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
+            <div className="overflow-x-auto rounded-2xl">
+                <table className="min-w-full text-sm">
+                    <thead className="bg-muted/60 text-muted-foreground">
+                        <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left">
+                            <th>Data</th>
+                            <th>Falecido(a)</th>
+                            <th>Local</th>
+                            <th>Hora</th>
+                            <th>Agente</th>
+                            <th>Status</th>
+                            <th>Etapas</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                        {ativos.length === 0 ? (
+                            <tr>
+                                <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                                    Nenhum atendimento encontrado.
+                                </td>
+                            </tr>
+                        ) : (
+                            ativos.map((r, i) => {
+                                const preenchidas = etapasPreenchidas(r);
+                                return (
+                                    <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
+                                        <td>{dateOr(r.data)}</td>
+                                        <td>
+                                            <button
+                                                className="font-semibold underline-offset-2 hover:underline"
+                                                onClick={() => onSelect(r)}
+                                                title="Ver detalhes"
+                                            >
+                                                {shown(r.falecido)}
+                                            </button>
+                                        </td>
+                                        <td>{shown(r.local_velorio)}</td>
+                                        <td>{timeOr(r.hora_fim_velorio)}</td>
+                                        <td>{shown(r.agente)}</td>
+                                        <td>
+                                            <span
+                                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
+                                                    r.status
+                                                )}`}
+                                            >
+                                                {capStatus(r.status) || "a definir"}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <EtapasInlineDots filled={preenchidas} />
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+});
+
+const MobileCards = React.memo(function MobileCards({
+    ativos,
+    onSelect,
+}: {
+    ativos: Registro[];
+    onSelect: (r: Registro) => void;
+}) {
+    return (
+        <div className="sm:hidden space-y-3">
+            {ativos.length === 0 ? (
+                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
+                    Nenhum atendimento encontrado.
+                </div>
+            ) : (
+                ativos.map((r, i) => {
+                    const preenchidas = etapasPreenchidas(r);
+                    const dataBR = dateOr(r.data);
+                    const hora = timeOr(r.hora_fim_velorio);
+                    const statusTxt = capStatus(r.status) || "a definir";
+                    const statusBg = badgeClass(r.status);
+                    const localSep = shown(r.local_sepultamento || r.local);
+                    const convKind = normalizeConvenio(r.convenio);
+
+                    return (
+                        <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <button
+                                    className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
+                                    onClick={() => onSelect(r)}
+                                    title="Ver detalhes"
+                                >
+                                    {shown(r.falecido)}
+                                </button>
+                                <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                    <span
+                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
+                                    >
+                                        {statusTxt}
+                                    </span>
+                                    <span
+                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
+                                            convKind
+                                        )}`}
+                                        title="Convênio"
+                                    >
+                                        {convKind}
+                                    </span>
+                                </div>
+                                <div className="text-xs">
+                                    <span className="text-muted-foreground">Agente:&nbsp;</span>
+                                    <b>{shown(r.agente)}</b>
+                                </div>
+                            </div>
+
+                            <div className="mt-2 text-sm">
+                                <span className="text-muted-foreground">Local:&nbsp;</span>
+                                {shown(r.local_velorio)}
+                            </div>
+
+                            <div className="mt-3 rounded-lg border bg-background p-3">
+                                <div className="text-sm">
+                                    <span className="text-muted-foreground">Sepultamento&nbsp;</span>
+                                    <b>{localSep}</b>
+                                </div>
+                                <div className="mt-1 grid grid-cols-2 text-sm">
+                                    <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
+                                    <div className="text-right">{hora}</div>
+                                </div>
+                            </div>
+
+                            <div className="mt-3">
+                                <div className="text-xs text-muted-foreground">Etapas:</div>
+                                <EtapasInlineDots filled={preenchidas} />
+                            </div>
+                        </div>
+                    );
+                })
+            )}
+        </div>
+    );
+});
+
 /* ===== Componentes auxiliares ===== */
 
-function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
+function Topic({
+    title,
+    children,
+    note,
+}: {
+    title: string;
+    children: React.ReactNode;
+    note?: string;
+}) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
-                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
+                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
+                    {title}
+                </h4>
                 {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
             </div>
             {children}
@@ -977,11 +1193,23 @@ function Topic({ title, children, note }: { title: string; children: React.React
     );
 }
 
-function Field({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+function Field({
+    label,
+    value,
+    className = "",
+}: {
+    label: string;
+    value: string;
+    className?: string;
+}) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
-            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">{value}</span>
+            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
+                {label}:
+            </span>
+            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">
+                {value}
+            </span>
         </div>
     );
 }
@@ -994,7 +1222,10 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
                 </div>
             ))}
         </div>
@@ -1010,7 +1241,10 @@ function EtapasRow({ registro }: { registro: Registro }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{label}</span>
-                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                            }`}
+                    />
                 </div>
             ))}
         </div>
@@ -1025,22 +1259,26 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
     let boolish = 0;
     for (const [, v] of entries) {
         const s = String(v ?? "").trim().toLowerCase();
-        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
+        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s))
+            boolish++;
     }
     return boolish / entries.length >= 0.8;
 }
 
 function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
     const trimmed = raw.trim();
-    // 1) se já é JSON puro
-    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    // 1) JSON puro
+    if (
+        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
         try {
             return JSON.parse(trimmed);
         } catch {
             /* ignore */
         }
     }
-    // 2) se tem JSON embutido no texto (ex: "Arrumacao json: {...}")
+    // 2) JSON embutido
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
     if (start >= 0 && end > start) {
@@ -1054,28 +1292,24 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
     return null;
 }
 
-/**
- * Detalhes do log em UMA COLUNA, responsivo.
- * ✅ Corrige "arrumacao json: {...}" para lista bonita.
- */
 function buildDetalhesNodes(raw: unknown): React.ReactNode {
     if (raw == null || raw === "") return null;
 
     let obj: unknown = raw;
 
-    // pode vir como string (JSON puro, ou JSON embutido — ex: "Arrumacao json: {...}")
     if (typeof raw === "string") {
         const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
         if (parsed != null) obj = parsed;
         else {
             const text = substituirRotuloVisual(raw.trim());
             return text ? (
-                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
+                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                    {text}
+                </div>
             ) : null;
         }
     }
 
-    // ✅ se o objeto inteiro for um map de booleanos (arrumação), renderiza só a lista
     if (isPlainObject(obj)) {
         const plainObj = obj as Record<string, unknown>;
 
@@ -1108,7 +1342,6 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
 
             const value = plainObj[key];
 
-            // Arrumação JSON (quando vem dentro da chave)
             if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
                 for (const [k, v] of Object.entries(value)) {
                     if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
@@ -1116,7 +1349,6 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                 continue;
             }
 
-            // Materiais_*_qtd
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (m) {
                 const valRaw = value;
@@ -1130,8 +1362,6 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             }
 
             if (value == null) continue;
-
-            // se for objeto, tenta parsear bonito (ex: string com JSON embutido)
             if (typeof value === "object") continue;
 
             const valStr = String(value).trim();
@@ -1141,16 +1371,17 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             nome = overrideCampoNome(key, titleCaseFromSnake(nome));
             let valFmt = valStr;
 
-            // ✅ se o valor for string com JSON embutido de arrumação, transforma em lista (igual quarta imagem)
             const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
-            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
+            if (
+                maybeEmbedded &&
+                isPlainObject(maybeEmbedded) &&
+                isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)
+            ) {
                 const map = maybeEmbedded as Record<string, unknown>;
                 const items = Object.entries(map)
                     .filter(([, v]) => asBool(v))
                     .map(([k]) => titleCaseFromSnake(k));
-                if (items.length) {
-                    arrItems.push(...items);
-                }
+                if (items.length) arrItems.push(...items);
                 continue;
             }
 
@@ -1199,7 +1430,13 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
     ) : null;
 }
 
-function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
+function LinhaDoTempoLogs({
+    logs,
+    usuarioVisivel = true,
+}: {
+    logs: LogItem[];
+    usuarioVisivel?: boolean;
+}) {
     if (!logs || logs.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
     }
@@ -1212,9 +1449,14 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                 const detalhes = buildDetalhesNodes(ent.detalhes);
 
                 return (
-                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
+                    <div
+                        key={i}
+                        className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0"
+                    >
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">
+                                {iconForAction(ent.acao, ent.status_novo)}
+                            </div>
 
                             <div className="flex-1 min-w-0">
                                 <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
