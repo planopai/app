@@ -91,11 +91,6 @@ const STATUS_OPTIONS: Array<{ value: WcOrder["status"] | "all"; label: string }>
     { value: "failed", label: "Falhou" },
 ];
 
-const STATUS_LABEL: Record<string, string> = STATUS_OPTIONS.reduce((acc, cur) => {
-    acc[cur.value] = cur.label;
-    return acc;
-}, {} as Record<string, string>);
-
 function formatCurrency(v: string | number, currency = "BRL") {
     const num = typeof v === "string" ? Number(v) : v;
     if (Number.isNaN(num)) return v + "";
@@ -249,7 +244,9 @@ async function convertToJpegWithWhiteBg(blob: Blob): Promise<Blob> {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const out: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.92)!);
+        const out: Blob = await new Promise((resolve) =>
+            canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.92)!
+        );
         return out;
     } finally {
         URL.revokeObjectURL(imgUrl);
@@ -290,48 +287,6 @@ async function shareImageUrl(imageUrl: string) {
 }
 
 /* =========================
-   Cache in-memory (ultra-rápido na UX)
-   - Mostra instantâneo do que já foi carregado
-   - Revalida em background (sem travar UI)
-   ========================= */
-type CacheEntry<T> = { value: T; ts: number };
-const memCache = new Map<string, CacheEntry<any>>();
-const inflight = new Map<string, Promise<any>>();
-const now = () => Date.now();
-const CACHE_TTL_MS = 25_000; // curto, mas suficiente p/ navegação rápida
-
-function cacheGet<T>(key: string): T | null {
-    const hit = memCache.get(key);
-    if (!hit) return null;
-    if (now() - hit.ts > CACHE_TTL_MS) return hit.value; // stale-ok (usamos e revalidamos)
-    return hit.value;
-}
-function cacheSet<T>(key: string, value: T) {
-    memCache.set(key, { value, ts: now() });
-}
-
-async function cachedJson<T>(key: string, url: string, signal?: AbortSignal): Promise<T> {
-    // Dedup de requests simultâneas
-    if (inflight.has(key)) return inflight.get(key)!;
-
-    const p = (async () => {
-        const res = await fetch(url, {
-            cache: "no-store",
-            signal,
-            headers: { "Accept": "application/json" },
-        });
-        if (!res.ok) throw new Error(`Falha (${res.status})`);
-        const data = (await res.json()) as T;
-        cacheSet(key, data);
-        return data;
-    })()
-        .finally(() => inflight.delete(key));
-
-    inflight.set(key, p);
-    return p;
-}
-
-/* =========================
    Página
    ========================= */
 export const dynamic = "force-dynamic";
@@ -346,13 +301,13 @@ export default function Page() {
     const [page, setPage] = React.useState(1);
     const [perPage, setPerPage] = React.useState(20);
 
-    const [orders, setOrders] = React.useState<WcOrder[]>(() => []);
-    const [meta, setMeta] = React.useState<OrdersResponse["meta"]>(() => ({
+    const [orders, setOrders] = React.useState<WcOrder[]>([]);
+    const [meta, setMeta] = React.useState<OrdersResponse["meta"]>({
         page: 1,
         per_page: 20,
         total: 0,
         totalPages: 0,
-    }));
+    });
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
@@ -368,239 +323,122 @@ export default function Page() {
     // atualização de status
     const [updating, setUpdating] = React.useState(false);
 
-    // cancela fetch em troca rápida de páginas/filtros
-    const listAbortRef = React.useRef<AbortController | null>(null);
-    const detailAbortRef = React.useRef<AbortController | null>(null);
+    async function fetchOrders() {
+        setLoading(true);
+        setError(null);
+        try {
+            const u = new URL("/api/wc/orders", window.location.origin);
+            u.searchParams.set("page", String(page));
+            u.searchParams.set("per_page", String(perPage));
+            if (q.trim()) u.searchParams.set("search", q.trim());
+            if (status !== "all") u.searchParams.set("status", status);
+            if (after) u.searchParams.set("after", new Date(after).toISOString());
+            if (before) {
+                const d = new Date(before);
+                d.setHours(23, 59, 59, 999);
+                u.searchParams.set("before", d.toISOString());
+            }
 
-    // refs dos filtros para evitar “stale reads” e manter fetch bem rápido
-    const filtersRef = React.useRef({ q, status, after, before, page, perPage });
-    React.useEffect(() => {
-        filtersRef.current = { q, status, after, before, page, perPage };
-    }, [q, status, after, before, page, perPage]);
-
-    const buildListUrl = React.useCallback(() => {
-        const f = filtersRef.current;
-        const u = new URL("/api/wc/orders", window.location.origin);
-        u.searchParams.set("page", String(f.page));
-        u.searchParams.set("per_page", String(f.perPage));
-        if (f.q.trim()) u.searchParams.set("search", f.q.trim());
-        if (f.status !== "all") u.searchParams.set("status", f.status);
-        if (f.after) u.searchParams.set("after", new Date(f.after).toISOString());
-        if (f.before) {
-            const d = new Date(f.before);
-            d.setHours(23, 59, 59, 999);
-            u.searchParams.set("before", d.toISOString());
+            const res = await fetch(u.toString(), { cache: "no-store" });
+            if (!res.ok) throw new Error(`Falha ao buscar pedidos (${res.status})`);
+            const json: OrdersResponse = await res.json();
+            setOrders(json.data);
+            setMeta(json.meta);
+        } catch (e: any) {
+            setError(e?.message || "Erro ao carregar pedidos");
+        } finally {
+            setLoading(false);
         }
-        return u.toString();
-    }, []);
+    }
 
-    const listCacheKey = React.useCallback(() => {
-        const f = filtersRef.current;
-        return `orders:list:${f.page}:${f.perPage}:${f.status}:${f.q.trim()}:${f.after}:${f.before}`;
-    }, []);
-
-    const fetchOrders = React.useCallback(
-        async (opts?: { preferCache?: boolean }) => {
-            const key = listCacheKey();
-            const url = buildListUrl();
-
-            // 1) mostra cache instantâneo (UX “sem demora”)
-            if (opts?.preferCache !== false) {
-                const cached = cacheGet<OrdersResponse>(key);
-                if (cached) {
-                    setOrders(cached.data);
-                    setMeta(cached.meta);
-                    setError(null);
-                }
-            }
-
-            // 2) revalida em background (sem “apagar” a lista da tela)
-            if (listAbortRef.current) listAbortRef.current.abort();
-            const ac = new AbortController();
-            listAbortRef.current = ac;
-
-            setLoading(true);
-            setError(null);
-            try {
-                const json = await cachedJson<OrdersResponse>(key, url, ac.signal);
-                setOrders(json.data);
-                setMeta(json.meta);
-
-                // micro-otimização: pré-carrega detalhes dos primeiros itens em idle
-                const ids = json.data.slice(0, 6).map((o) => o.id);
-                const idle = (cb: () => void) =>
-                    "requestIdleCallback" in window ? (window as any).requestIdleCallback(cb) : setTimeout(cb, 0);
-                idle(() => {
-                    ids.forEach((id) => void prefetchOrderDetail(id));
-                });
-            } catch (e: any) {
-                if (e?.name !== "AbortError") setError(e?.message || "Erro ao carregar pedidos");
-            } finally {
-                setLoading(false);
-            }
-        },
-        [buildListUrl, listCacheKey]
-    );
+    React.useEffect(() => {
+        fetchOrders();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, perPage]);
 
     function onSubmitFilters(e: React.FormEvent) {
         e.preventDefault();
         setPage(1);
-        // prioridade total pra UX: usa cache + revalida
-        void fetchOrders({ preferCache: true });
+        fetchOrders();
     }
 
-    React.useEffect(() => {
-        void fetchOrders({ preferCache: true });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, perPage]);
-
-    const computeDetailImageFast = React.useCallback(async (data: WcOrderFull) => {
-        const fromOrder = data.line_items?.find((li) => li.image?.src)?.image?.src || null;
-        if (fromOrder) return fromOrder;
-
-        const first = data.line_items?.[0];
-        const pid = first?.product_id;
-        const vid = first?.variation_id;
-        if (!pid) return null;
-
-        const imgKey = `orders:image:${data.id}`;
-        const hit = cacheGet<string | null>(imgKey);
-        if (hit !== null) return hit;
-
+    async function openDetail(id: number) {
+        setDetail(null);
+        setDetailImage(null);
+        setCopied(false);
+        setOpen(true);
+        setDetailLoading(true);
         try {
-            const url = vid ? `/api/wc/products/${pid}/variations/${vid}` : `/api/wc/products/${pid}`;
-            const prod = await cachedJson<any>(`prod:${pid}:${vid || 0}`, url);
-            const src: string | undefined = prod?.image?.src || prod?.images?.[0]?.src;
-            cacheSet(imgKey, src || null);
-            return src || null;
-        } catch {
-            cacheSet(imgKey, null);
-            return null;
-        }
-    }, []);
+            const res = await fetch(`/api/wc/orders/${id}`, { cache: "no-store" });
+            if (!res.ok) throw new Error(`Falha ao carregar pedido #${id}`);
+            const data: WcOrderFull = await res.json();
+            setDetail(data);
 
-    const openDetail = React.useCallback(
-        async (id: number) => {
-            setCopied(false);
-            setOpen(true);
-
-            // 1) mostra detalhe instantâneo se já estiver em cache
-            const key = `orders:detail:${id}`;
-            const cached = cacheGet<WcOrderFull>(key);
-            if (cached) {
-                setDetail(cached);
-                setDetailLoading(false);
-                setDetailImage((cacheGet<string | null>(`orders:image:${id}`) ?? null) as any);
-                // revalida em background sem travar
-                void (async () => {
-                    try {
-                        const img = await computeDetailImageFast(cached);
-                        setDetailImage(img);
-                    } catch { }
-                })();
+            const fromOrder = data.line_items?.find((li) => li.image?.src)?.image?.src || null;
+            if (fromOrder) {
+                setDetailImage(fromOrder);
             } else {
-                setDetail(null);
-                setDetailImage(null);
-                setDetailLoading(true);
-            }
-
-            // 2) revalida (sempre) — mas sem “piscar” se já houver cache
-            if (detailAbortRef.current) detailAbortRef.current.abort();
-            const ac = new AbortController();
-            detailAbortRef.current = ac;
-
-            try {
-                const data = await cachedJson<WcOrderFull>(key, `/api/wc/orders/${id}`, ac.signal);
-                setDetail(data);
-
-                // imagem em paralelo / rápido
-                const img = await computeDetailImageFast(data);
-                setDetailImage(img);
-            } catch (e: any) {
-                if (e?.name === "AbortError") return;
-                setDetail({
-                    id,
-                    number: String(id),
-                    status: "failed",
-                    date_created: new Date().toISOString(),
-                    currency: "BRL",
-                    total: "0",
-                    customer_note: e?.message || "Erro ao carregar",
-                } as any);
-            } finally {
-                setDetailLoading(false);
-            }
-        },
-        [computeDetailImageFast]
-    );
-
-    const prefetchOrderDetail = React.useCallback(
-        async (id: number) => {
-            const key = `orders:detail:${id}`;
-            if (cacheGet<WcOrderFull>(key)) return;
-            try {
-                const data = await cachedJson<WcOrderFull>(key, `/api/wc/orders/${id}`);
-                // pré-calcula imagem em background
-                void (async () => {
-                    const img = await computeDetailImageFast(data);
-                    cacheSet(`orders:image:${id}`, img);
-                })();
-            } catch { }
-        },
-        [computeDetailImageFast]
-    );
-
-    const updateStatus = React.useCallback(
-        async (id: number, newStatus: WcOrder["status"]) => {
-            // Optimistic UI (parece instantâneo)
-            setUpdating(true);
-
-            setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: newStatus } : o)));
-            setDetail((prev) => (prev && prev.id === id ? ({ ...prev, status: newStatus } as any) : prev));
-
-            // mantém cache coerente
-            const detailKey = `orders:detail:${id}`;
-            const cachedDetail = cacheGet<WcOrderFull>(detailKey);
-            if (cachedDetail) cacheSet(detailKey, { ...cachedDetail, status: newStatus });
-
-            try {
-                const res = await fetch(`/api/wc/orders/${id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: newStatus }),
-                });
-                if (!res.ok) {
-                    const msg = await res.text();
-                    throw new Error(msg || `Falha ao atualizar status`);
+                const pid = data.line_items?.[0]?.product_id;
+                const vid = data.line_items?.[0]?.variation_id;
+                if (pid) {
+                    try {
+                        const url = vid ? `/api/wc/products/${pid}/variations/${vid}` : `/api/wc/products/${pid}`;
+                        const pr = await fetch(url, { cache: "no-store" });
+                        if (pr.ok) {
+                            const prod = await pr.json();
+                            const src: string | undefined = prod?.image?.src || prod?.images?.[0]?.src;
+                            if (src) setDetailImage(src);
+                        }
+                    } catch { }
                 }
-
-                // revalida lista em background (não bloquear)
-                void fetchOrders({ preferCache: true });
-            } catch (e: any) {
-                alert(e?.message || "Não foi possível atualizar o status.");
-                // tenta revalidar para voltar ao estado real
-                void fetchOrders({ preferCache: true });
-                if (detail?.id === id) void openDetail(id);
-            } finally {
-                setUpdating(false);
             }
-        },
-        [detail?.id, fetchOrders, openDetail]
-    );
+        } catch (e: any) {
+            setDetail({
+                id,
+                number: String(id),
+                status: "failed",
+                date_created: new Date().toISOString(),
+                currency: "BRL",
+                total: "0",
+                customer_note: e?.message || "Erro ao carregar",
+            } as any);
+        } finally {
+            setDetailLoading(false);
+        }
+    }
 
-    const notifyWhatsApp = React.useCallback(async (orderId: number) => {
+    async function updateStatus(id: number, newStatus: WcOrder["status"]) {
+        setUpdating(true);
         try {
-            const key = `orders:detail:${orderId}`;
-            const cached = cacheGet<WcOrderFull>(key);
-            const full =
-                cached ||
-                (await cachedJson<WcOrderFull>(key, `/api/wc/orders/${orderId}`));
+            const res = await fetch(`/api/wc/orders/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus }),
+            });
+            if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg || `Falha ao atualizar status`);
+            }
+            await fetchOrders();
+            if (detail?.id === id) await openDetail(id);
+        } catch (e: any) {
+            alert(e?.message || "Não foi possível atualizar o status.");
+        } finally {
+            setUpdating(false);
+        }
+    }
+
+    async function notifyWhatsApp(orderId: number) {
+        try {
+            const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "no-store" });
+            if (!res.ok) throw new Error(`Falha ao carregar o pedido #${orderId}`);
+            const full: WcOrderFull = await res.json();
             const text = buildWhatsAppText(full);
             await shareOrOpenWhatsApp(text);
         } catch (e: any) {
             alert(e?.message || "Não foi possível abrir o WhatsApp.");
         }
-    }, []);
+    }
 
     async function copyDetailToClipboard() {
         try {
@@ -622,7 +460,7 @@ export default function Page() {
         await shareImageUrl(detailImage);
     }
 
-    const canNotifyRow = React.useCallback((o: WcOrder) => o.status === "completed", []);
+    const canNotifyRow = (o: WcOrder) => o.status === "completed";
     const canNotifyDetail = detail?.status === "completed";
 
     /* ===== Render ===== */
@@ -632,11 +470,13 @@ export default function Page() {
             <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-6">
                 <div>
                     <h1 className="text-xl font-semibold">Pedidos — Coroas de Flores</h1>
-                    <p className="text-sm text-muted-foreground">Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.</p>
+                    <p className="text-sm text-muted-foreground">
+                        Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.
+                    </p>
                 </div>
                 <button
-                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                    onClick={() => fetchOrders({ preferCache: true })}
+                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                    onClick={() => fetchOrders()}
                     disabled={loading}
                     title="Recarregar"
                 >
@@ -700,7 +540,7 @@ export default function Page() {
                 <div className="flex gap-2">
                     <button
                         type="submit"
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
                         disabled={loading}
                     >
                         <IconSearch className="size-4" />
@@ -715,7 +555,7 @@ export default function Page() {
                             setAfter("");
                             setBefore("");
                             setPage(1);
-                            void fetchOrders({ preferCache: true });
+                            fetchOrders();
                         }}
                     >
                         Limpar
@@ -727,14 +567,11 @@ export default function Page() {
             <div className="px-4 pb-6 lg:px-6 md:hidden">
                 <div className="space-y-3">
                     {orders.map((o) => {
-                        const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                        const cliente =
+                            `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                         const disabled = !canNotifyRow(o);
                         return (
-                            <div
-                                key={o.id}
-                                className="rounded-lg border bg-card p-3"
-                                onTouchStart={() => void prefetchOrderDetail(o.id)}
-                            >
+                            <div key={o.id} className="rounded-lg border bg-card p-3">
                                 <div className="flex items-center justify-between gap-2">
                                     <div className="text-xs text-muted-foreground">
                                         Nº <b>{o.number || o.id}</b> • {formatDate(o.date_created)}
@@ -744,19 +581,21 @@ export default function Page() {
                                             o.status
                                         )}`}
                                     >
-                                        {STATUS_LABEL[o.status] ?? o.status}
+                                        {STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
                                     </span>
                                 </div>
 
                                 <div className="mt-2 text-sm">
                                     <div className="font-medium leading-tight">{cliente}</div>
-                                    <div className="text-muted-foreground mt-1">{formatCurrency(o.total, o.currency || "BRL")}</div>
+                                    <div className="text-muted-foreground mt-1">
+                                        {formatCurrency(o.total, o.currency || "BRL")}
+                                    </div>
                                 </div>
 
                                 <div className="mt-3 flex items-center gap-2">
                                     <button
                                         className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-muted"
-                                        onClick={() => void openDetail(o.id)}
+                                        onClick={() => openDetail(o.id)}
                                         title="Ver detalhes"
                                     >
                                         <IconEye className="size-4" />
@@ -764,9 +603,11 @@ export default function Page() {
                                     </button>
                                     <button
                                         className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-50"
-                                        onClick={() => void notifyWhatsApp(o.id)}
+                                        onClick={() => notifyWhatsApp(o.id)}
                                         disabled={disabled}
-                                        title={disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp"}
+                                        title={
+                                            disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp"
+                                        }
                                     >
                                         <IconSend className="size-4" />
                                         Notificar
@@ -778,17 +619,13 @@ export default function Page() {
                     {!loading && orders.length === 0 && (
                         <div className="text-center text-sm text-muted-foreground">Nenhum pedido encontrado.</div>
                     )}
-                    {loading && orders.length === 0 && (
-                        <div className="text-center text-sm text-muted-foreground">Carregando pedidos…</div>
-                    )}
+                    {loading && <div className="text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
                     {error && <div className="text-rose-600 text-sm">{error}</div>}
                 </div>
 
                 {/* paginação (mobile) */}
                 <div className="mt-4 flex items-center justify-between gap-3">
-                    <div className="text-xs text-muted-foreground">
-                        Página {meta.page} de {meta.totalPages}
-                    </div>
+                    <div className="text-xs text-muted-foreground">Página {meta.page} de {meta.totalPages}</div>
                     <div className="flex items-center gap-2">
                         <button
                             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
@@ -800,7 +637,9 @@ export default function Page() {
                         </button>
                         <button
                             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                            onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
+                            onClick={() =>
+                                setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))
+                            }
                             disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
                         >
                             Próxima
@@ -835,16 +674,12 @@ export default function Page() {
                                 )}
 
                                 {orders.map((o) => {
-                                    const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
+                                    const cliente =
+                                        `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                                     const disabled = !canNotifyRow(o);
                                     const reason = disabled ? "Só é possível notificar pedidos Concluídos." : "Enviar via WhatsApp";
                                     return (
-                                        <tr
-                                            key={o.id}
-                                            className="border-t"
-                                            onMouseEnter={() => void prefetchOrderDetail(o.id)}
-                                            onFocus={() => void prefetchOrderDetail(o.id)}
-                                        >
+                                        <tr key={o.id} className="border-t">
                                             <td className="px-3 py-2">{o.number || o.id}</td>
                                             <td className="px-3 py-2">{formatDate(o.date_created)}</td>
                                             <td className="px-3 py-2">{cliente}</td>
@@ -855,14 +690,14 @@ export default function Page() {
                                                         o.status
                                                     )}`}
                                                 >
-                                                    {STATUS_LABEL[o.status] ?? o.status}
+                                                    {STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
                                                 </span>
                                             </td>
                                             <td className="px-3 py-2">
                                                 <div className="flex items-center justify-end gap-2">
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                                                        onClick={() => void openDetail(o.id)}
+                                                        onClick={() => openDetail(o.id)}
                                                         title="Ver detalhes"
                                                     >
                                                         <IconEye className="size-4" />
@@ -871,7 +706,7 @@ export default function Page() {
 
                                                     <button
                                                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                                                        onClick={() => void notifyWhatsApp(o.id)}
+                                                        onClick={() => notifyWhatsApp(o.id)}
                                                         title={reason}
                                                         disabled={disabled}
                                                     >
@@ -886,8 +721,10 @@ export default function Page() {
                             </tbody>
                         </table>
 
-                        {loading && orders.length === 0 && (
-                            <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">Carregando pedidos…</div>
+                        {loading && (
+                            <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                                Carregando pedidos…
+                            </div>
                         )}
                         {error && <div className="px-3 pb-3 text-sm text-rose-600">{error}</div>}
                     </div>
@@ -908,7 +745,9 @@ export default function Page() {
                             </button>
                             <button
                                 className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
+                                onClick={() =>
+                                    setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))
+                                }
                                 disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
                             >
                                 Próxima
@@ -955,13 +794,7 @@ export default function Page() {
                                 {/* Imagem do item */}
                                 {detailImage && (
                                     <div className="overflow-hidden rounded-lg border bg-white">
-                                        <img
-                                            src={detailImage}
-                                            alt={detail.line_items?.[0]?.name || "Produto"}
-                                            className="w-full object-cover"
-                                            loading="eager"
-                                            decoding="async"
-                                        />
+                                        <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
                                     </div>
                                 )}
 
@@ -969,7 +802,8 @@ export default function Page() {
                                 <div className="rounded-lg border p-3 text-sm leading-6">
                                     <div>
                                         <b>Pedido:</b>{" "}
-                                        {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}
+                                        {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") ||
+                                            `#${detail.number || detail.id}`}
                                     </div>
                                     <div>
                                         <b>Origem:</b> Loja On-line
@@ -984,24 +818,31 @@ export default function Page() {
                                         <b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}
                                     </div>
                                     <div>
-                                        <b>Local de Entrega:</b> {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}
+                                        <b>Local de Entrega:</b>{" "}
+                                        {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}
                                     </div>
                                     <div>
                                         <b>Falecido(a):</b>{" "}
-                                        {findMetaValue(detail.meta_data, ["shipping_falecido_nome", "falecido_nome", "nome_falecido", "nome_do_falecido"]) ||
-                                            detail.shipping?.first_name ||
-                                            "—"}
+                                        {findMetaValue(detail.meta_data, [
+                                            "shipping_falecido_nome",
+                                            "falecido_nome",
+                                            "nome_falecido",
+                                            "nome_do_falecido",
+                                        ]) || detail.shipping?.first_name || "—"}
                                     </div>
                                     <div>
                                         <b>Frase da Coroa:</b>{" "}
-                                        {findMetaValue(detail.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
-                                            findMetaValue(detail.line_items?.flatMap((li) => li.meta_data || []), [
-                                                "frase_para_a_faixa",
-                                                "frase da coroa",
-                                                "frase da faixa",
-                                                "faixa",
-                                                "mensagem",
-                                            ]) ||
+                                        {findMetaValue(detail.meta_data, [
+                                            "frase_para_a_faixa",
+                                            "frase da coroa",
+                                            "frase da faixa",
+                                            "faixa",
+                                            "mensagem",
+                                        ]) ||
+                                            findMetaValue(
+                                                detail.line_items?.flatMap((li) => li.meta_data || []),
+                                                ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]
+                                            ) ||
                                             "—"}
                                     </div>
                                 </div>
@@ -1014,18 +855,18 @@ export default function Page() {
                                                 detail.status
                                             )}`}
                                         >
-                                            {STATUS_LABEL[detail.status] ?? detail.status}
+                                            {STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
                                         </span>
                                         <div className="flex flex-wrap gap-2">
                                             {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
                                                 <button
                                                     key={s}
                                                     className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                                                    onClick={() => void updateStatus(detail.id, s)}
+                                                    onClick={() => updateStatus(detail.id, s)}
                                                     disabled={updating || detail.status === s}
                                                 >
                                                     <IconCheck className="size-4" />
-                                                    {STATUS_LABEL[s]}
+                                                    {STATUS_OPTIONS.find((o) => o.value === s)?.label}
                                                 </button>
                                             ))}
                                         </div>
@@ -1062,9 +903,13 @@ export default function Page() {
                                     {/* Notificar (WhatsApp) */}
                                     <button
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                                        onClick={() => detail && void notifyWhatsApp(detail.id)}
+                                        onClick={() => detail && notifyWhatsApp(detail.id)}
                                         disabled={!canNotifyDetail}
-                                        title={canNotifyDetail ? "Compartilhar mensagem e escolher o WhatsApp" : "Só é possível notificar pedidos Concluídos."}
+                                        title={
+                                            canNotifyDetail
+                                                ? "Compartilhar mensagem e escolher o WhatsApp"
+                                                : "Só é possível notificar pedidos Concluídos."
+                                        }
                                     >
                                         <IconSend className="size-4" />
                                         Notificar (WhatsApp)
