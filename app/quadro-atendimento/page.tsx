@@ -308,7 +308,7 @@ function isTerceiroRegistro(r: Registro) {
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
-/* ===== Helpers diversos ===== */
+/* ===== Helpers Linha do Tempo ===== */
 function parseRegistroDateTime(r: Registro) {
     const d = (r.data || "").trim();
     const h = (r.hora_fim_velorio || r.hora_inicio_velorio || "").trim() || "00:00";
@@ -319,6 +319,7 @@ function parseRegistroDateTime(r: Registro) {
     return Number.isNaN(ts) ? 0 : ts;
 }
 
+/* Helpers diversos usados também na Linha do Tempo */
 function capitalize(str?: string): string {
     if (!str) return "";
     const s = str.toString().trim();
@@ -336,6 +337,12 @@ function formatLogDateTime(value?: string): string {
     const hh = d.getHours().toString().padStart(2, "0");
     const mi = d.getMinutes().toString().padStart(2, "0");
     return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+}
+
+function parseLogTs(value?: string): number {
+    if (!value) return 0;
+    const ts = Date.parse(String(value).replace(" ", "T"));
+    return Number.isNaN(ts) ? 0 : ts;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -408,7 +415,7 @@ export default function QuadroAtendimentoPage() {
     const [detail, setDetail] = useState<Registro | null>(null);
     const [copied, setCopied] = useState(false);
 
-    // ✅ Linha do Tempo agora é dentro do modal de detalhes
+    // Linha do Tempo (dentro do modal de detalhes)
     const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
@@ -469,34 +476,30 @@ export default function QuadroAtendimentoPage() {
         return () => clearInterval(id);
     }, []);
 
-    // abrir/fechar modal detalhes
+    function resetDetailTimeline() {
+        setDetailTimelineOpen(false);
+        setDetailLogs([]);
+        setDetailLogsLoading(false);
+        setDetailLogsError(null);
+    }
+
     function showDetail(r: Registro) {
         setDetail(r);
         setOpen(true);
         setCopied(false);
-
-        // reset da timeline do detalhe
-        setDetailTimelineOpen(false);
-        setDetailLogs([]);
-        setDetailLogsLoading(false);
-        setDetailLogsError(null);
+        resetDetailTimeline();
     }
+
     function closeDetail() {
         setOpen(false);
         setDetail(null);
         setCopied(false);
-
-        setDetailTimelineOpen(false);
-        setDetailLogs([]);
-        setDetailLogsLoading(false);
-        setDetailLogsError(null);
+        resetDetailTimeline();
     }
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                closeDetail();
-            }
+            if (e.key === "Escape") closeDetail();
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
@@ -511,13 +514,9 @@ export default function QuadroAtendimentoPage() {
 
             if (status === "fase11") return false;
 
-            if (isTerceiroRegistro(r)) {
-                return status !== "fase10";
-            }
+            if (isTerceiroRegistro(r)) return status !== "fase10";
 
-            if (!isSim(r.assistencia)) {
-                return status !== "fase10";
-            }
+            if (!isSim(r.assistencia)) return status !== "fase10";
 
             return true;
         });
@@ -549,7 +548,7 @@ export default function QuadroAtendimentoPage() {
         }
     }
 
-    // ✅ carregar logs SOMENTE do falecido em detalhe
+    // carregar logs SOMENTE do falecido em detalhe
     async function carregarHistoricoDoDetalhe(r: Registro) {
         setDetailLogs([]);
         setDetailLogsError(null);
@@ -586,18 +585,11 @@ export default function QuadroAtendimentoPage() {
             const json: any = await resp.json();
 
             let logs: LogItem[] = [];
-            if (Array.isArray(json)) {
-                logs = json as LogItem[];
-            } else if (json?.sucesso && Array.isArray(json.dados)) {
-                logs = json.dados as LogItem[];
-            }
+            if (Array.isArray(json)) logs = json as LogItem[];
+            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
 
-            // opcional: ordenar por datahora (se vier fora de ordem)
-            logs = [...logs].sort((a, b) => {
-                const ta = Date.parse(String(a.datahora ?? "").replace(" ", "T")) || 0;
-                const tb = Date.parse(String(b.datahora ?? "").replace(" ", "T")) || 0;
-                return tb - ta;
-            });
+            // ✅ ORDEM CORRETA: primeiro "Criou" e depois atualizações (cronológica)
+            logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
 
             setDetailLogs(logs);
         } catch (e) {
@@ -613,7 +605,6 @@ export default function QuadroAtendimentoPage() {
         const next = !detailTimelineOpen;
         setDetailTimelineOpen(next);
 
-        // carregar só quando abrir e ainda não carregou
         if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
             await carregarHistoricoDoDetalhe(detail);
         }
@@ -643,7 +634,7 @@ export default function QuadroAtendimentoPage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
-            {/* Header/clock (REMOVIDO botão Linha do Tempo) */}
+            {/* Header/clock */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -820,112 +811,96 @@ export default function QuadroAtendimentoPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
 
-                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden overscroll-contain">
-                        {/* header */}
-                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3">
-                            <div className="flex items-start justify-between gap-3 min-w-0">
-                                <div className="min-w-0">
-                                    <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                    <h3 className="truncate text-base sm:text-lg font-bold leading-tight">{shown(detail.falecido)}</h3>
-                                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                        <span className="text-muted-foreground">
-                                            Data: <b>{dateOr(detail.data)}</b>
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            • Agente: <b>{shown(detail.agente)}</b>
-                                        </span>
-                                    </div>
+                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain">
+                        {/* header sticky */}
+                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3 overflow-x-hidden">
+                            {/* ✅ só os 3 botões no topo, centralizados */}
+                            <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
+                                <button
+                                    onClick={toggleTimelineDetalhe}
+                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
+                                    aria-label="Linha do tempo"
+                                    title="Ver linha do tempo deste atendimento"
+                                >
+                                    Linha do tempo
+                                </button>
+
+                                <button
+                                    onClick={handleCopy}
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                    aria-label="Copiar"
+                                    title="Copiar informações"
+                                >
+                                    {copied ? "Copiado!" : "Copiar"}
+                                </button>
+
+                                <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
+                                    Fechar
+                                </button>
+                            </div>
+
+                            {/* ✅ infos embaixo dos botões (não encolhe mais) */}
+                            <div className="mt-3">
+                                <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
+                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
+                                    {shown(detail.falecido)}
+                                </h3>
+
+                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
+                                    <span className="text-muted-foreground">
+                                        Data: <b>{dateOr(detail.data)}</b>
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        • Agente: <b>{shown(detail.agente)}</b>
+                                    </span>
                                 </div>
 
-                                <div className="flex shrink-0 items-center gap-2">
-                                    <span
-                                        className={`hidden sm:inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${badgeClass(
-                                            detail.status
-                                        )}`}
-                                        title="Status"
-                                    >
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
                                         {capStatus(detail.status)}
                                     </span>
-
-                                    <span className="hidden sm:inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                                        ATENDIMENTO {shown(detail.convenio, "A DEFINIR").toUpperCase()}
+                                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                        ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
                                     </span>
-
-                                    {/* ✅ Botão Linha do Tempo agora aqui */}
-                                    <button
-                                        onClick={toggleTimelineDetalhe}
-                                        className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
-                                        aria-label="Linha do tempo"
-                                        title="Ver linha do tempo deste atendimento"
-                                    >
-                                        Linha do tempo
-                                    </button>
-
-                                    <button
-                                        onClick={handleCopy}
-                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                        aria-label="Copiar"
-                                        title="Copiar informações"
-                                    >
-                                        {copied ? "Copiado!" : "Copiar"}
-                                    </button>
-
-                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
-                                        Fechar
-                                    </button>
                                 </div>
-                            </div>
 
-                            {/* badges no mobile */}
-                            <div className="mt-2 flex flex-wrap gap-2 sm:hidden">
-                                <span
-                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
-                                        detail.status
-                                    )}`}
-                                >
-                                    {capStatus(detail.status)}
-                                </span>
-                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                                    ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
-                                </span>
-                            </div>
-
-                            {/* ✅ Conteúdo da Linha do Tempo (colapsável) */}
-                            {detailTimelineOpen && (
-                                <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
-                                    <div className="flex items-start justify-between gap-2 min-w-0">
-                                        <div className="min-w-0">
-                                            <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
-                                            <div className="text-[11px] text-muted-foreground break-words">
-                                                Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
+                                {/* ✅ Linha do Tempo colapsável */}
+                                {detailTimelineOpen && (
+                                    <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
+                                        <div className="flex items-start justify-between gap-2 min-w-0">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
+                                                <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                                    Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
+                                                </div>
                                             </div>
+                                            <button
+                                                onClick={() => setDetailTimelineOpen(false)}
+                                                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
+                                                aria-label="Ocultar linha do tempo"
+                                            >
+                                                Ocultar
+                                            </button>
                                         </div>
-                                        <button
-                                            onClick={() => setDetailTimelineOpen(false)}
-                                            className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
-                                            aria-label="Ocultar linha do tempo"
-                                        >
-                                            Ocultar
-                                        </button>
+
+                                        {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
+                                        {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
+
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
+                                            <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
+                                        )}
+
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
+                                            <div className="mt-2">
+                                                <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
+                                            </div>
+                                        )}
                                     </div>
-
-                                    {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
-                                    {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words">{detailLogsError}</p>}
-
-                                    {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                        <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
-                                    )}
-
-                                    {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
-                                        <div className="mt-2">
-                                            <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
 
                         {/* conteúdo com TÓPICOS */}
@@ -1044,16 +1019,55 @@ function EtapasRow({ registro }: { registro: Registro }) {
 
 /* ===== Linha do Tempo (Logs) ===== */
 
+function isLikelyBooleanMap(obj: Record<string, unknown>) {
+    const entries = Object.entries(obj);
+    if (entries.length === 0) return false;
+    let boolish = 0;
+    for (const [, v] of entries) {
+        const s = String(v ?? "").trim().toLowerCase();
+        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
+    }
+    return boolish / entries.length >= 0.8;
+}
+
+function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
+    const trimmed = raw.trim();
+    // 1) se já é JSON puro
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        try {
+            return JSON.parse(trimmed);
+        } catch {
+            /* ignore */
+        }
+    }
+    // 2) se tem JSON embutido no texto (ex: "Arrumacao json: {...}")
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+        const slice = trimmed.slice(start, end + 1);
+        try {
+            return JSON.parse(slice);
+        } catch {
+            /* ignore */
+        }
+    }
+    return null;
+}
+
+/**
+ * Detalhes do log em UMA COLUNA, responsivo.
+ * ✅ Corrige "arrumacao json: {...}" para lista bonita.
+ */
 function buildDetalhesNodes(raw: unknown): React.ReactNode {
     if (raw == null || raw === "") return null;
 
     let obj: unknown = raw;
 
-    // pode vir como string JSON
+    // pode vir como string (JSON puro, ou JSON embutido — ex: "Arrumacao json: {...}")
     if (typeof raw === "string") {
-        try {
-            obj = JSON.parse(raw);
-        } catch {
+        const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
+        if (parsed != null) obj = parsed;
+        else {
             const text = substituirRotuloVisual(raw.trim());
             return text ? (
                 <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
@@ -1061,8 +1075,31 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         }
     }
 
+    // ✅ se o objeto inteiro for um map de booleanos (arrumação), renderiza só a lista
     if (isPlainObject(obj)) {
         const plainObj = obj as Record<string, unknown>;
+
+        if (isLikelyBooleanMap(plainObj)) {
+            const arrItems = Object.entries(plainObj)
+                .filter(([, v]) => asBool(v))
+                .map(([k]) => titleCaseFromSnake(k));
+
+            return arrItems.length ? (
+                <div className="mt-3 w-full min-w-0">
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
+                        <div className="font-semibold mb-1">Arrumação:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {arrItems.map((t, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {t}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            ) : null;
+        }
+
         const arrItems: string[] = [];
         const rows: { id: string; label: string; value: string }[] = [];
 
@@ -1071,7 +1108,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
 
             const value = plainObj[key];
 
-            // Arrumação JSON
+            // Arrumação JSON (quando vem dentro da chave)
             if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
                 for (const [k, v] of Object.entries(value)) {
                     if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
@@ -1093,6 +1130,8 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             }
 
             if (value == null) continue;
+
+            // se for objeto, tenta parsear bonito (ex: string com JSON embutido)
             if (typeof value === "object") continue;
 
             const valStr = String(value).trim();
@@ -1101,6 +1140,20 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             let nome = key.replace(/_/g, " ");
             nome = overrideCampoNome(key, titleCaseFromSnake(nome));
             let valFmt = valStr;
+
+            // ✅ se o valor for string com JSON embutido de arrumação, transforma em lista (igual quarta imagem)
+            const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
+            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
+                const map = maybeEmbedded as Record<string, unknown>;
+                const items = Object.entries(map)
+                    .filter(([, v]) => asBool(v))
+                    .map(([k]) => titleCaseFromSnake(k));
+                if (items.length) {
+                    arrItems.push(...items);
+                }
+                continue;
+            }
+
             if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
             valFmt = formataSeDataIso(valFmt);
 
@@ -1115,10 +1168,10 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         return (
             <div className="mt-3 space-y-2 w-full min-w-0">
                 {arrItems.length > 0 && (
-                    <div className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
                         <div className="font-semibold mb-1">Arrumação:</div>
                         <ul className="list-disc pl-4 space-y-0.5">
-                            {arrItems.map((t, idx) => (
+                            {[...new Set(arrItems)].map((t, idx) => (
                                 <li key={idx} className="break-words [overflow-wrap:anywhere]">
                                     {t}
                                 </li>
@@ -1164,7 +1217,7 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                             <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
 
                             <div className="flex-1 min-w-0">
-                                <div className="text-[11px] text-muted-foreground whitespace-nowrap">{formatLogDateTime(ent.datahora)}</div>
+                                <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
 
                                 <div className="text-sm flex flex-wrap items-center gap-1 min-w-0">
                                     <span className="break-words [overflow-wrap:anywhere]">{acao}</span>
