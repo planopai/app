@@ -1325,7 +1325,7 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
             /* ignore */
         }
     }
-    // 2) JSON embutido
+    // 2) JSON já embutido
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
     if (start >= 0 && end > start) {
@@ -1333,7 +1333,7 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
         try {
             return JSON.parse(slice);
         } catch {
-            /* ignore */
+            /* ignorar */
         }
     }
     return null;
