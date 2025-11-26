@@ -26,7 +26,7 @@ export function defaultArrumacao(): ArrumacaoState {
         fluido_cavitario: false,
         formol: false,
         mascara: false,
-        invol: false
+    
     };
 }
 

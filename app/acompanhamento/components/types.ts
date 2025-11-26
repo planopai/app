@@ -30,7 +30,7 @@ export type ArrumacaoState = {
     fluido_cavitario?: boolean;
     formol: boolean;
     mascara: boolean;
-    invol: boolean;
+    
 };
 
 export type Registro = {
