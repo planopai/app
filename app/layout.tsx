@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
 import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
+import RegisterSW from "@/components/RegisterSW";
 
 import { PermsProvider } from "./_perms/PermsProvider";
 import { getInitialPerms } from "./_perms/getPermsServer";
@@ -57,7 +58,8 @@ export default async function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
         {/* PWA Essentials */}
-        <link rel="manifest" href="/manifest.json" />
+        {/* ✅ manter consistente com metadata.manifest */}
+        <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#059de0" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="icon" href="/favicon.ico" />
@@ -68,6 +70,7 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="App Plano PAI 2.0" />
       </head>
+
       <body
         className={cn(
           "bg-background overscroll-none font-sans antialiased",
@@ -75,6 +78,9 @@ export default async function RootLayout({
           isScaled ? "theme-scaled" : ""
         )}
       >
+        {/* ✅ registra o SW sempre (sem isso, o app pode não abrir offline) */}
+        <RegisterSW />
+
         <OneSignalInit />
 
         <ThemeProvider
@@ -86,7 +92,11 @@ export default async function RootLayout({
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
             {/* key = uidCookie → se mudar de usuário, remonta tudo. */}
-            <PermsProvider key={uidCookie ?? "nouid"} userKey={uidCookie} initialPerms={initialPerms}>
+            <PermsProvider
+              key={uidCookie ?? "nouid"}
+              userKey={uidCookie}
+              initialPerms={initialPerms}
+            >
               <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
             </PermsProvider>
           </ActiveThemeProvider>
