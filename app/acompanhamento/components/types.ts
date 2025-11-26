@@ -30,7 +30,6 @@ export type ArrumacaoState = {
     fluido_cavitario?: boolean;
     formol: boolean;
     mascara: boolean;
-    
 };
 
 export type Registro = {
@@ -45,11 +44,14 @@ export type Registro = {
     roupa?: string;
 
     assistencia?: string; // "Sim" | "Não"
-    tanato?: string;      // "Sim" | "Não"
+    tanato?: string; // "Sim" | "Não"
 
-    /** ✅ NOVOS CAMPOS */
-    ornamentacao?: string;       // "Sim" | "Não"
-    ornamentacao_tipo?: string;  // "Natural" | "Artificial"
+    /** ✅ CAMPOS */
+    ornamentacao?: string; // "Sim" | "Não"
+    ornamentacao_tipo?: string; // "Natural" | "Artificial"
+
+    /** ✅ NOVO: INVOL (Sim/Não) */
+    invol?: string;
 
     /** ✅ identifica o tipo do fluxo do registro */
     tipo_atendimento?: "funerario" | "terceiro";

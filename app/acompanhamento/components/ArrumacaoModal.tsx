@@ -28,7 +28,6 @@ export default function ArrumacaoModal({
         { key: "fluido_cavitario", label: "Fluído Cavitário" },
         { key: "formol", label: "Formol" },
         { key: "mascara", label: "Máscara" },
-        
     ];
 
     return (

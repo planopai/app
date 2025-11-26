@@ -1,13 +1,12 @@
 "use client";
 
-import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from "react";
-import { ArrumacaoState, MateriaisState, Registro, Aviso } from "./components/types";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+    ArrumacaoState,
+    MateriaisState,
+    Registro,
+    Aviso,
+} from "./components/types";
 import {
     API,
     obrigatorios as obrigatoriosPadrao,
@@ -33,7 +32,10 @@ import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
-import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
+import TelemetriaModal, {
+    TipoTele,
+    TelemetriaHandle,
+} from "./components/TelemetriaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -102,21 +104,28 @@ export default function AcompanhamentoPage() {
 
     // Avisos
     const [avisos, setAvisos] = useState<Aviso[]>([]);
-    const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(
+        null
+    );
     const avisoInputRef = useRef<HTMLInputElement>(null);
 
     // Tipo do cadastro atual
-    const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>("funerario");
+    const [tipoAtendimento, setTipoAtendimento] =
+        useState<TipoAtendimento>("funerario");
 
     // Wizard
     const [wizardOpen, setWizardOpen] = useState(false);
     const [wizardTitle, setWizardTitle] = useState("Novo Registro");
     const [wizardEditing, setWizardEditing] = useState(false);
     const [wizardIdx, setWizardIdx] = useState<number | null>(null);
-    const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(null);
+    const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(
+        null
+    );
     const [wizardStep, setWizardStep] = useState(0);
     const [wizardData, setWizardData] = useState<Registro>({});
-    const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(
+        null
+    );
     const [wizardSubmitting, setWizardSubmitting] = useState(false);
 
     // selects
@@ -134,7 +143,9 @@ export default function AcompanhamentoPage() {
     // Ações (por ID)
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
-    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(
+        null
+    );
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
     // Info
@@ -143,7 +154,9 @@ export default function AcompanhamentoPage() {
 
     // Assinatura
     const [signOpen, setSignOpen] = useState(false);
-    const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
+    const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">(
+        "recebimento"
+    );
     const [signIdx, setSignIdx] = useState<number | null>(null);
 
     // Modal: escolher tipo no novo registro
@@ -154,7 +167,9 @@ export default function AcompanhamentoPage() {
     const [teleOpen, setTeleOpen] = useState(false);
     const [teleFase, setTeleFase] = useState<string>("fase01");
     const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
-    const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
+    const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(
+        null
+    );
 
     // Controle de sessão ativa de telemetria (para sabermos em qual "par" parar)
     const [teleActive, setTeleActive] = useState(false);
@@ -206,9 +221,10 @@ export default function AcompanhamentoPage() {
 
     const fetchAvisos = useCallback(async () => {
         try {
-            const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
-                credentials: "include",
-            });
+            const r = await fetch(
+                `${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`,
+                { credentials: "include" }
+            );
             if (r.status === 401) return;
             const data = await r.json().catch(() => null);
             if (data?.need_login) return;
@@ -377,14 +393,34 @@ export default function AcompanhamentoPage() {
         return base;
     };
 
+    // ✅ atualizado: além do arrumacao_json, aceita colunas diretas (ex: invol)
     const parseArrumacaoFromRegistro = (r: Registro): ArrumacaoState => {
+        const base = defaultArrumacao();
+
+        // 1) merge do JSON (quando existir)
         if (r.arrumacao_json) {
             try {
                 const parsed = JSON.parse(String(r.arrumacao_json));
-                return { ...defaultArrumacao(), ...parsed };
+                Object.assign(base, parsed);
             } catch { }
         }
-        return defaultArrumacao();
+
+        // 2) fallback/override por colunas diretas (quando backend enviar/guardar em colunas)
+        (Object.keys(base) as Array<keyof ArrumacaoState>).forEach((k) => {
+            const col = (r as any)[k];
+            if (col == null) return;
+
+            if (typeof col === "boolean") base[k] = col;
+            else if (typeof col === "number") base[k] = col === 1;
+            else if (typeof col === "string") {
+                const s = col.trim().toLowerCase();
+                base[k] = s === "1" || s === "true" || s === "sim" || s === "s";
+            } else {
+                base[k] = !!col;
+            }
+        });
+
+        return base;
     };
 
     /* -------------------- Aberturas -------------------- */
@@ -536,7 +572,8 @@ export default function AcompanhamentoPage() {
             if (json?.sucesso) {
                 setWizardMsg({ text: "Registro salvo!", ok: true });
                 if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
-                    const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
+                    const novoId =
+                        json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
                     addTerceiroIdToSession(novoId);
                 }
                 fetchRegistros();
@@ -586,7 +623,10 @@ export default function AcompanhamentoPage() {
                 });
 
                 if (json?.sucesso) {
-                    setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(acao)}"`, ok: true });
+                    setAcaoMsg({
+                        text: `Status alterado para "${capitalizeStatus(acao)}"`,
+                        ok: true,
+                    });
 
                     // se a ação é uma "parada" da telemetria ativa, para e salva automaticamente
                     if (
@@ -603,7 +643,10 @@ export default function AcompanhamentoPage() {
                     await fetchRegistros();
                     setAcaoOpen(false);
                 } else {
-                    setAcaoMsg({ text: json?.erro || "Erro ao atualizar status.", ok: false });
+                    setAcaoMsg({
+                        text: json?.erro || "Erro ao atualizar status.",
+                        ok: false,
+                    });
                 }
             } catch (e: any) {
                 setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
@@ -632,7 +675,10 @@ export default function AcompanhamentoPage() {
     /* -------------------- Info por ID (estável) -------------------- */
 
     const registroInfo = useMemo(
-        () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
+        () =>
+            infoId != null
+                ? registros.find((x) => String(x.id) === String(infoId)) ?? null
+                : null,
         [registros, infoId]
     );
 
@@ -671,11 +717,14 @@ export default function AcompanhamentoPage() {
     );
 
     /* -------------------- Assinatura (fora do Info) -------------------- */
-    const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
-        setSignIdx(idx);
-        setSignTipo(tipo);
-        setSignOpen(true);
-    }, []);
+    const abrirAssinatura = useCallback(
+        (idx: number, tipo: "recebimento" | "requisicao") => {
+            setSignIdx(idx);
+            setSignTipo(tipo);
+            setSignOpen(true);
+        },
+        []
+    );
 
     /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
     const handleVeiculoRequired = useCallback(
@@ -709,6 +758,7 @@ export default function AcompanhamentoPage() {
         return list.join(" • ");
     }, [wizardData.materiais, materiais]);
 
+    // ✅ atualizado: inclui TA-32, fluido_cavitario, formol, mascara e INVOL no resumo
     const arrumacaoSelecionadaResumo = useMemo(() => {
         const mapa: { key: keyof ArrumacaoState; label: string }[] = [
             { key: "luvas", label: "Luvas" },
@@ -718,10 +768,15 @@ export default function AcompanhamentoPage() {
             { key: "algodao", label: "Algodão" },
             { key: "cordao", label: "Cordão" },
             { key: "barba", label: "Barba" },
+            { key: "ta32", label: "TA-32" },
+            { key: "fluido_cavitario", label: "Fluído Cavitário" },
+            { key: "formol", label: "Formol" },
+            { key: "mascara", label: "Máscara" },
+            
         ];
         const arr = wizardData.arrumacao || arrumacao;
         return mapa
-            .filter((o) => (arr as any)[o.key])
+            .filter((o) => !!(arr as any)?.[o.key])
             .map((o) => o.label)
             .join(" • ");
     }, [wizardData.arrumacao, arrumacao]);
@@ -769,7 +824,12 @@ export default function AcompanhamentoPage() {
             />
 
             {/* Modal de escolha: tipo do novo registro */}
-            <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
+            <Modal
+                open={chooseTipoOpen}
+                onClose={() => setChooseTipoOpen(false)}
+                ariaLabel="Escolher tipo"
+                maxWidth={420}
+            >
                 <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
                 <div className="mt-4 grid gap-2">
                     <button

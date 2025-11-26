@@ -4,23 +4,24 @@ import type { MaterialKey } from "./types";
 export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamento"];
 
 /**
- * ✅ ATUALIZADO: dois campos foram adicionados após “tanato”,
- * então os índices seguintes andam +2.
+ * ✅ ATUALIZADO:
+ * Adicionamos o campo "invol" após "ornamentacao_tipo".
+ * Isso desloca em +1 todos os índices a partir do antigo "arrumacao".
  */
 export const wizardStepIndexes = [
-    // Atendimento → observação agora no índice 17
-    [0, 1, 2, 3, 17],
+    // Atendimento → observação agora no índice 18
+    [0, 1, 2, 3, 18],
 
     // Itens:
     // Urna(4), Roupa(5), Assistência(6), Tanato(7),
-    // Ornamentação(8), Tipo(9), Conservação do Corpo(10), Obs Itens(18)
-    [4, 5, 6, 7, 8, 9, 10, 18],
+    // Ornamentação(8), Tipo(9), Invol(10), Conservação do Corpo(11), Obs Itens(19)
+    [4, 5, 6, 7, 8, 9, 10, 11, 19],
 
-    // Velório 01 → Local(11), Local Velório(12), Data Início(13), Obs(19)
-    [11, 12, 13, 19],
+    // Velório 01 → Local(12), Local Velório(13), Data Início(14), Obs(20)
+    [12, 13, 14, 20],
 
-    // Velório 02 → Data Fim(14), Hora Início(15), Hora Fim(16), Obs(20)
-    [14, 15, 16, 20],
+    // Velório 02 → Data Fim(15), Hora Início(16), Hora Fim(17), Obs(21)
+    [15, 16, 17, 21],
 ];
 
 export const steps = [
@@ -36,14 +37,7 @@ export const steps = [
         label: "Convênio",
         id: "convenio",
         type: "select",
-        options: [
-            "",
-            "Particular",
-            "Prefeitura de Barreiras",
-            "Prefeitura de Angical",
-            "Prefeitura de São Desidério",
-            "Associado(a)",
-        ],
+        options: ["", "Particular", "Prefeitura de Barreiras", "Prefeitura de Angical", "Prefeitura de São Desidério", "Associado(a)"],
     },
     { label: "Urna", id: "urna", type: "input", placeholder: "Digite o Modelo Da Urna" },
 
@@ -81,7 +75,7 @@ export const steps = [
     // Tanatopraxia
     { label: "Tanatopraxia", id: "tanato", type: "select", options: ["", "Sim", "Não"] },
 
-    // ✅ NOVOS CAMPOS
+    // Ornamentação
     { label: "Ornamentação", id: "ornamentacao", type: "select", options: ["", "Sim", "Não"] },
     {
         label: "Tipo de Ornamentação",
@@ -90,12 +84,16 @@ export const steps = [
         options: ["", "Natural", "Artificial"],
     },
 
-    // Conservação do Corpo (custom abre modal)
+    // ✅ NOVO: INVOL (fica na aba Itens, abaixo do Tipo de Ornamentação)
     {
-        label: "Conservação do Corpo",
-        id: "arrumacao",
-        type: "custom",
+        label: "Invol",
+        id: "invol",
+        type: "select",
+        options: ["", "Sim", "Não"],
     },
+
+    // Conservação do Corpo (custom abre modal)
+    { label: "Conservação do Corpo", id: "arrumacao", type: "custom" },
 
     {
         label: "Local do Sepultamento",

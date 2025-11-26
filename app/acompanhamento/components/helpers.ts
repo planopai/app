@@ -26,7 +26,6 @@ export function defaultArrumacao(): ArrumacaoState {
         fluido_cavitario: false,
         formol: false,
         mascara: false,
-    
     };
 }
 
@@ -34,7 +33,9 @@ export function defaultArrumacao(): ArrumacaoState {
 export function redirectToLogin(loginUrl?: string, msg?: string) {
     if (IS_REDIRECTING) return;
     IS_REDIRECTING = true;
-    try { if (msg) alert(msg); } catch { /* noop */ }
+    try {
+        if (msg) alert(msg);
+    } catch { }
     const url = (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
     try {
         window.location.replace(url);
@@ -78,15 +79,15 @@ export async function jsonWith401(url: string, init?: RequestInit) {
 
 /* -------------------- Status <-> rótulos -------------------- */
 const ROTULO_PARA_FASE: Record<string, string> = {
-    "removendo": "fase01",
+    removendo: "fase01",
     "aguardando procedimento": "fase02",
-    "preparando": "fase03",
+    preparando: "fase03",
     "aguardando ornamentacao": "fase04",
-    "ornamentando": "fase05",
+    ornamentando: "fase05",
     "corpo pronto": "fase06",
-    "transportando": "fase07",
-    "velando": "fase08",
-    "sepultando": "fase09",
+    transportando: "fase07",
+    velando: "fase08",
+    sepultando: "fase09",
     "sepultamento concluido": "fase10",
     "material recolhido": "fase11",
 };
@@ -115,18 +116,30 @@ export function normalizarStatus(status?: string): string | undefined {
 /* -------------------- Textos -------------------- */
 export function capitalizeStatus(s?: string) {
     switch (s) {
-        case "fase01": return "Removendo";
-        case "fase02": return "Aguardando Procedimento";
-        case "fase03": return "Preparando";
-        case "fase04": return "Aguardando Ornamentação";
-        case "fase05": return "Ornamentando";
-        case "fase06": return "Corpo Pronto";
-        case "fase07": return "Transportando";
-        case "fase08": return "Velando";
-        case "fase09": return "Sepultando";
-        case "fase10": return "Sepultamento Concluído";
-        case "fase11": return "Material Recolhido";
-        default: return "Aguardando";
+        case "fase01":
+            return "Removendo";
+        case "fase02":
+            return "Aguardando Procedimento";
+        case "fase03":
+            return "Preparando";
+        case "fase04":
+            return "Aguardando Ornamentação";
+        case "fase05":
+            return "Ornamentando";
+        case "fase06":
+            return "Corpo Pronto";
+        case "fase07":
+            return "Transportando";
+        case "fase08":
+            return "Velando";
+        case "fase09":
+            return "Sepultando";
+        case "fase10":
+            return "Sepultamento Concluído";
+        case "fase11":
+            return "Material Recolhido";
+        default:
+            return "Aguardando";
     }
 }
 
@@ -188,7 +201,7 @@ export async function enviarRegistroPHP(data: any) {
 /* -------------------- Consulta status no backend -------------------- */
 export type StatusConsulta = {
     id: string;
-    status: string;          // sempre normalizado "faseNN"
+    status: string; // sempre normalizado "faseNN"
     local_velorio: string;
     tanato: string;
 };
@@ -224,29 +237,39 @@ export function proximaFaseDoRegistro(
 
     const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
     const skipConservacao = isTanatoNo(r.tanato);
-    const skipOrnamentacao = String(r.ornamentacao || "").toLowerCase() === "não" || String(r.ornamentacao || "").toLowerCase() === "nao";
-    const skipMaterialRecolhido = String(r.assistencia || "").toLowerCase() === "não" || String(r.assistencia || "").toLowerCase() === "nao";
+    const skipOrnamentacao =
+        String(r.ornamentacao || "").toLowerCase() === "não" ||
+        String(r.ornamentacao || "").toLowerCase() === "nao";
+    const skipMaterialRecolhido =
+        String(r.assistencia || "").toLowerCase() === "não" ||
+        String(r.assistencia || "").toLowerCase() === "nao";
 
     while (nextIdx < fases.length) {
         const next = fases[nextIdx];
 
-        if (skipTransportando && next === "fase07") { nextIdx++; continue; }
-        if (skipConservacao && (next === "fase03" || next === "fase04")) { nextIdx++; continue; }
-        if (skipOrnamentacao && (next === "fase05" || next === "fase06")) { nextIdx++; continue; }
-        if (skipMaterialRecolhido && next === "fase11") { nextIdx++; continue; }
+        if (skipTransportando && next === "fase07") {
+            nextIdx++;
+            continue;
+        }
+        if (skipConservacao && (next === "fase03" || next === "fase04")) {
+            nextIdx++;
+            continue;
+        }
+        if (skipOrnamentacao && (next === "fase05" || next === "fase06")) {
+            nextIdx++;
+            continue;
+        }
+        if (skipMaterialRecolhido && next === "fase11") {
+            nextIdx++;
+            continue;
+        }
 
         return next;
     }
     return null;
 }
 
-export async function proximaFaseOnline(
-    id: number | string,
-    fases: readonly string[]
-): Promise<string | null> {
+export async function proximaFaseOnline(id: number | string, fases: readonly string[]): Promise<string | null> {
     const s = await consultarStatusAtual(id);
-    return proximaFaseDoRegistro(
-        { status: s.status, local_velorio: s.local_velorio, tanato: s.tanato },
-        fases
-    );
+    return proximaFaseDoRegistro({ status: s.status, local_velorio: s.local_velorio, tanato: s.tanato }, fases);
 }
