@@ -1,12 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-    ArrumacaoState,
-    MateriaisState,
-    Registro,
-    Aviso,
-} from "./components/types";
+import { ArrumacaoState, MateriaisState, Registro, Aviso } from "./components/types";
 import {
     API,
     obrigatorios as obrigatoriosPadrao,
@@ -32,10 +27,7 @@ import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
-import TelemetriaModal, {
-    TipoTele,
-    TelemetriaHandle,
-} from "./components/TelemetriaModal";
+import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -98,34 +90,85 @@ const STOP_BY_START: Record<string, string> = {
     fase09: "fase10", // Sepultamento Concluído
 };
 
+/* =======================================================================
+   ✅ MODO OFFLINE (fila local + reenvio automático ao voltar a internet)
+   - Sem libs, sem mexer no backend (desde que o endpoint aceite receber depois)
+   - Armazena o payload inteiro (todas as informações do registro e ações).
+   ======================================================================= */
+type OfflineQueueItem = {
+    qid: string;
+    createdAt: number;
+    tries: number;
+    lastError?: string;
+    payload: any; // payload do enviarRegistroPHP
+};
+
+const OFFLINE_QUEUE_KEY = "acomp_offline_queue_v1";
+
+function safeReadQueue(): OfflineQueueItem[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? (parsed as OfflineQueueItem[]) : [];
+    } catch {
+        return [];
+    }
+}
+
+function safeWriteQueue(items: OfflineQueueItem[]) {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
+    } catch {
+        // ignore
+    }
+}
+
+function genQid() {
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function isOnlineNow() {
+    if (typeof window === "undefined") return true;
+    return navigator.onLine !== false;
+}
+
+function enqueueOffline(payload: any, errMsg?: string) {
+    const items = safeReadQueue();
+    items.push({
+        qid: genQid(),
+        createdAt: Date.now(),
+        tries: 0,
+        lastError: errMsg,
+        payload,
+    });
+    safeWriteQueue(items);
+    return items.length;
+}
+
 export default function AcompanhamentoPage() {
     // Tabela
     const [registros, setRegistros] = useState<Registro[]>([]);
 
     // Avisos
     const [avisos, setAvisos] = useState<Aviso[]>([]);
-    const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(
-        null
-    );
+    const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const avisoInputRef = useRef<HTMLInputElement>(null);
 
     // Tipo do cadastro atual
-    const [tipoAtendimento, setTipoAtendimento] =
-        useState<TipoAtendimento>("funerario");
+    const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>("funerario");
 
     // Wizard
     const [wizardOpen, setWizardOpen] = useState(false);
     const [wizardTitle, setWizardTitle] = useState("Novo Registro");
     const [wizardEditing, setWizardEditing] = useState(false);
     const [wizardIdx, setWizardIdx] = useState<number | null>(null);
-    const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(
-        null
-    );
+    const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(null);
     const [wizardStep, setWizardStep] = useState(0);
     const [wizardData, setWizardData] = useState<Registro>({});
-    const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(
-        null
-    );
+    const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [wizardSubmitting, setWizardSubmitting] = useState(false);
 
     // selects
@@ -143,9 +186,7 @@ export default function AcompanhamentoPage() {
     // Ações (por ID)
     const [acaoOpen, setAcaoOpen] = useState(false);
     const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
-    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(
-        null
-    );
+    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
     // Info
@@ -154,9 +195,7 @@ export default function AcompanhamentoPage() {
 
     // Assinatura
     const [signOpen, setSignOpen] = useState(false);
-    const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">(
-        "recebimento"
-    );
+    const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
     const [signIdx, setSignIdx] = useState<number | null>(null);
 
     // Modal: escolher tipo no novo registro
@@ -167,9 +206,7 @@ export default function AcompanhamentoPage() {
     const [teleOpen, setTeleOpen] = useState(false);
     const [teleFase, setTeleFase] = useState<string>("fase01");
     const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
-    const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(
-        null
-    );
+    const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
 
     // Controle de sessão ativa de telemetria (para sabermos em qual "par" parar)
     const [teleActive, setTeleActive] = useState(false);
@@ -183,22 +220,96 @@ export default function AcompanhamentoPage() {
         steps: stepsForTipo,
     } = useMemo(() => getWizardConfig(tipoAtendimento), [tipoAtendimento]);
 
+    /* ===========================
+       ✅ OFFLINE: Flush da fila
+       =========================== */
+    const flushingRef = useRef(false);
+
+    const flushOfflineQueue = useCallback(async () => {
+        if (typeof window === "undefined") return;
+        if (!isOnlineNow()) return;
+        if (flushingRef.current) return;
+
+        const items = safeReadQueue();
+        if (!items.length) return;
+
+        flushingRef.current = true;
+        try {
+            let queue = items;
+
+            // envia em ordem (mais antigo primeiro)
+            queue = [...queue].sort((a, b) => a.createdAt - b.createdAt);
+
+            for (const item of queue) {
+                try {
+                    const json = await enviarRegistroPHP(item.payload);
+
+                    if (json?.sucesso) {
+                        // se era "novo" de terceiro, guarda o novo id na sessão
+                        try {
+                            const acao = String(item.payload?.acao ?? "");
+                            const tipoAt = String(item.payload?.tipo_atendimento ?? "");
+                            if (acao === "novo" && tipoAt === "terceiro") {
+                                const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? null;
+                                addTerceiroIdToSession(novoId);
+                            }
+                        } catch {
+                            // ignore
+                        }
+
+                        // remove este item da fila
+                        const after = safeReadQueue().filter((x) => x.qid !== item.qid);
+                        safeWriteQueue(after);
+                    } else {
+                        // falhou no servidor -> incrementa tries e para (evita loop infinito)
+                        const after = safeReadQueue().map((x) =>
+                            x.qid === item.qid
+                                ? {
+                                    ...x,
+                                    tries: (x.tries ?? 0) + 1,
+                                    lastError: json?.erro || "Erro ao enviar (offline queue).",
+                                }
+                                : x
+                        );
+                        safeWriteQueue(after);
+                        break;
+                    }
+                } catch (e: any) {
+                    // falha de rede/timeout -> incrementa tries e para
+                    const after = safeReadQueue().map((x) =>
+                        x.qid === item.qid
+                            ? {
+                                ...x,
+                                tries: (x.tries ?? 0) + 1,
+                                lastError: e?.message || "Falha ao enviar (offline queue).",
+                            }
+                            : x
+                    );
+                    safeWriteQueue(after);
+                    break;
+                }
+            }
+
+            // após reenvio, refaz a lista
+            await fetchRegistrosSafe();
+        } finally {
+            flushingRef.current = false;
+        }
+    }, []);
+
     /* -------------------- Fetch helpers -------------------- */
 
     const fetchRegistros = useCallback(async () => {
         try {
-            const r = await fetch(
-                `${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`,
-                {
-                    cache: "no-store",
-                    headers: {
-                        Pragma: "no-cache",
-                        Expires: "0",
-                        "Cache-Control": "no-cache, no-store, must-revalidate",
-                    },
-                    credentials: "include",
-                }
-            );
+            const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+                headers: {
+                    Pragma: "no-cache",
+                    Expires: "0",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                },
+                credentials: "include",
+            });
 
             if (r.status === 401) return;
 
@@ -219,12 +330,17 @@ export default function AcompanhamentoPage() {
         }
     }, []);
 
+    // helper para não depender da ordem do arquivo (flush usa isso)
+    const fetchRegistrosSafe = useCallback(async () => {
+        // mesmo comportamento do fetchRegistros, só encapsulado pro flush
+        await fetchRegistros();
+    }, [fetchRegistros]);
+
     const fetchAvisos = useCallback(async () => {
         try {
-            const r = await fetch(
-                `${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`,
-                { credentials: "include" }
-            );
+            const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
+                credentials: "include",
+            });
             if (r.status === 401) return;
             const data = await r.json().catch(() => null);
             if (data?.need_login) return;
@@ -331,23 +447,42 @@ export default function AcompanhamentoPage() {
     useEffect(() => {
         fetchRegistros();
         fetchAvisos();
-    }, [fetchRegistros, fetchAvisos]);
+        // ✅ ao abrir o app/página, tenta reenviar pendências imediatamente
+        flushOfflineQueue();
+    }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
 
     useEffect(() => {
         const intReg = setInterval(fetchRegistros, 10000);
         const intAv = setInterval(fetchAvisos, 3000);
 
+        // ✅ enquanto estiver online, tenta reenviar pendências periodicamente
+        const intFlush = setInterval(() => {
+            flushOfflineQueue();
+        }, 20000);
+
         const onVis = () => {
-            if (!document.hidden) fetchRegistros();
+            if (!document.hidden) {
+                fetchRegistros();
+                // ✅ ao voltar pra aba, tenta reenviar
+                flushOfflineQueue();
+            }
         };
         document.addEventListener("visibilitychange", onVis);
+
+        // ✅ quando a internet volta
+        const onOnline = () => {
+            flushOfflineQueue();
+        };
+        window.addEventListener("online", onOnline);
 
         return () => {
             clearInterval(intReg);
             clearInterval(intAv);
+            clearInterval(intFlush);
             document.removeEventListener("visibilitychange", onVis);
+            window.removeEventListener("online", onOnline);
         };
-    }, [fetchRegistros, fetchAvisos]);
+    }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
 
     useEffect(() => {
         const onEsc = (e: KeyboardEvent) => {
@@ -511,10 +646,7 @@ export default function AcompanhamentoPage() {
 
         for (const idx of grupo) {
             const s = (stepsForTipo as any)[idx] as any;
-            const el = document.getElementById("wizard-" + s.id) as
-                | HTMLInputElement
-                | HTMLTextAreaElement
-                | null;
+            const el = document.getElementById("wizard-" + s.id) as HTMLInputElement | HTMLTextAreaElement | null;
             const v = (el?.value ?? "").trim();
 
             if (obrigatoriosForTipo.includes(s.id) && !v) {
@@ -565,6 +697,26 @@ export default function AcompanhamentoPage() {
             }
         }
 
+        // ✅ OFFLINE: se não tiver internet, guarda o payload inteiro e sai
+        if (!isOnlineNow()) {
+            try {
+                setWizardSubmitting(true);
+                const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+                enqueueOffline(payload, "offline");
+                setWizardMsg({
+                    text: "Sem internet: registro salvo offline e será enviado automaticamente quando a conexão voltar.",
+                    ok: true,
+                });
+                // fecha como se tivesse salvado
+                setTimeout(() => setWizardOpen(false), 950);
+            } catch (e: any) {
+                setWizardMsg({ text: e?.message || "Não foi possível salvar offline.", ok: false });
+            } finally {
+                setWizardSubmitting(false);
+            }
+            return;
+        }
+
         try {
             setWizardSubmitting(true);
             const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
@@ -572,8 +724,7 @@ export default function AcompanhamentoPage() {
             if (json?.sucesso) {
                 setWizardMsg({ text: "Registro salvo!", ok: true });
                 if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
-                    const novoId =
-                        json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
+                    const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
                     addTerceiroIdToSession(novoId);
                 }
                 fetchRegistros();
@@ -582,9 +733,17 @@ export default function AcompanhamentoPage() {
                 setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
             }
         } catch (e: any) {
-            setWizardMsg({ text: e?.message || "Erro ao salvar!", ok: false });
+            // ✅ se falhar por rede, guarda na fila
+            enqueueOffline({ ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" }, e?.message);
+            setWizardMsg({
+                text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
+                ok: true,
+            });
+            setTimeout(() => setWizardOpen(false), 950);
         } finally {
             setWizardSubmitting(false);
+            // tenta reenviar caso a net volte logo após
+            flushOfflineQueue();
         }
     }, [
         salvarGrupoWizard,
@@ -595,6 +754,12 @@ export default function AcompanhamentoPage() {
         obrigatoriosForTipo,
         wizardStepIndexesForTipo,
         stepsForTipo,
+        wizardStep,
+        wizardData,
+        materiais,
+        arrumacao,
+        tipoAtendimento,
+        flushOfflineQueue,
     ]);
 
     /* -------------------- Ações (status) -------------------- */
@@ -614,6 +779,22 @@ export default function AcompanhamentoPage() {
             const ok = window.confirm("Deseja confirmar essa ação?");
             if (!ok) return;
 
+            // ✅ OFFLINE: guarda a ação e fecha
+            if (!isOnlineNow()) {
+                try {
+                    setAcaoSubmitting(true);
+                    enqueueOffline({ acao: "atualizar_status", id: acaoId, status: acao }, "offline");
+                    setAcaoMsg({
+                        text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+                        ok: true,
+                    });
+                    setAcaoOpen(false);
+                } finally {
+                    setAcaoSubmitting(false);
+                }
+                return;
+            }
+
             setAcaoSubmitting(true);
             try {
                 const json = await enviarRegistroPHP({
@@ -629,12 +810,7 @@ export default function AcompanhamentoPage() {
                     });
 
                     // se a ação é uma "parada" da telemetria ativa, para e salva automaticamente
-                    if (
-                        teleActive &&
-                        teleStartFase &&
-                        STOP_BY_START[teleStartFase] &&
-                        STOP_BY_START[teleStartFase] === acao
-                    ) {
+                    if (teleActive && teleStartFase && STOP_BY_START[teleStartFase] && STOP_BY_START[teleStartFase] === acao) {
                         await teleRef.current?.stopAndSave();
                         setTeleActive(false);
                         setTeleStartFase(null);
@@ -649,12 +825,19 @@ export default function AcompanhamentoPage() {
                     });
                 }
             } catch (e: any) {
-                setAcaoMsg({ text: e?.message || "Erro ao atualizar status.", ok: false });
+                // ✅ se falhar por rede, salva offline
+                enqueueOffline({ acao: "atualizar_status", id: acaoId, status: acao }, e?.message);
+                setAcaoMsg({
+                    text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+                    ok: true,
+                });
+                setAcaoOpen(false);
             } finally {
                 setAcaoSubmitting(false);
+                flushOfflineQueue();
             }
         },
-        [acaoId, fetchRegistros, acaoSubmitting, teleActive, teleStartFase]
+        [acaoId, fetchRegistros, acaoSubmitting, teleActive, teleStartFase, flushOfflineQueue]
     );
 
     /* ---- Confirmação silenciosa para a TelemetriaModal (start) ---- */
@@ -662,23 +845,33 @@ export default function AcompanhamentoPage() {
         async (fase: string) => {
             const id = teleRegistroId ?? acaoId;
             if (id == null) return;
-            await enviarRegistroPHP({
-                acao: "atualizar_status",
-                id,
-                status: fase,
-            });
-            await fetchRegistros();
+
+            // ✅ OFFLINE: guarda e retorna (sem UI)
+            if (!isOnlineNow()) {
+                enqueueOffline({ acao: "atualizar_status", id, status: fase }, "offline");
+                return;
+            }
+
+            try {
+                await enviarRegistroPHP({
+                    acao: "atualizar_status",
+                    id,
+                    status: fase,
+                });
+                await fetchRegistros();
+            } catch (e: any) {
+                enqueueOffline({ acao: "atualizar_status", id, status: fase }, e?.message);
+            } finally {
+                flushOfflineQueue();
+            }
         },
-        [teleRegistroId, acaoId, fetchRegistros]
+        [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue]
     );
 
     /* -------------------- Info por ID (estável) -------------------- */
 
     const registroInfo = useMemo(
-        () =>
-            infoId != null
-                ? registros.find((x) => String(x.id) === String(infoId)) ?? null
-                : null,
+        () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
         [registros, infoId]
     );
 
@@ -717,14 +910,11 @@ export default function AcompanhamentoPage() {
     );
 
     /* -------------------- Assinatura (fora do Info) -------------------- */
-    const abrirAssinatura = useCallback(
-        (idx: number, tipo: "recebimento" | "requisicao") => {
-            setSignIdx(idx);
-            setSignTipo(tipo);
-            setSignOpen(true);
-        },
-        []
-    );
+    const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
+        setSignIdx(idx);
+        setSignTipo(tipo);
+        setSignOpen(true);
+    }, []);
 
     /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
     const handleVeiculoRequired = useCallback(
@@ -772,7 +962,6 @@ export default function AcompanhamentoPage() {
             { key: "fluido_cavitario", label: "Fluído Cavitário" },
             { key: "formol", label: "Formol" },
             { key: "mascara", label: "Máscara" },
-            
         ];
         const arr = wizardData.arrumacao || arrumacao;
         return mapa
@@ -794,9 +983,7 @@ export default function AcompanhamentoPage() {
             <header className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Cadastre, acompanhe e atualize o status dos atendimentos.
-                    </p>
+                    <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
                 </div>
                 <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -806,11 +993,7 @@ export default function AcompanhamentoPage() {
                 </button>
             </header>
 
-            <TabelaAtendimentos
-                registros={registros}
-                onAcao={(id) => abrirPopupAcaoPorId(id)}
-                onInfo={(id) => abrirInfoPorId(id)}
-            />
+            <TabelaAtendimentos registros={registros} onAcao={(id) => abrirPopupAcaoPorId(id)} onInfo={(id) => abrirInfoPorId(id)} />
 
             <AvisosBox
                 avisos={avisos}
@@ -824,12 +1007,7 @@ export default function AcompanhamentoPage() {
             />
 
             {/* Modal de escolha: tipo do novo registro */}
-            <Modal
-                open={chooseTipoOpen}
-                onClose={() => setChooseTipoOpen(false)}
-                ariaLabel="Escolher tipo"
-                maxWidth={420}
-            >
+            <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
                 <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
                 <div className="mt-4 grid gap-2">
                     <button
@@ -873,21 +1051,9 @@ export default function AcompanhamentoPage() {
                 wizardSubmitting={wizardSubmitting}
             />
 
-            <MateriaisModal
-                open={materiaisOpen}
-                setOpen={setMateriaisOpen}
-                materiais={materiais}
-                setMateriais={setMateriais}
-                setWizardData={setWizardData}
-            />
+            <MateriaisModal open={materiaisOpen} setOpen={setMateriaisOpen} materiais={materiais} setMateriais={setMateriais} setWizardData={setWizardData} />
 
-            <ArrumacaoModal
-                open={arrumacaoOpen}
-                setOpen={setArrumacaoOpen}
-                arrumacao={arrumacao}
-                setArrumacao={setArrumacao}
-                setWizardData={setWizardData}
-            />
+            <ArrumacaoModal open={arrumacaoOpen} setOpen={setArrumacaoOpen} arrumacao={arrumacao} setArrumacao={setArrumacao} setWizardData={setWizardData} />
 
             <AcaoModal
                 open={acaoOpen}
