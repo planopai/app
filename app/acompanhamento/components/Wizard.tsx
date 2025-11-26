@@ -84,11 +84,6 @@ export default function Wizard({
     const [gpsMsg, setGpsMsg] = useState<string | null>(null);
     const localVelorioRef = useRef<HTMLInputElement>(null);
 
-    function isLikelyUrl(v?: string) {
-        const s = String(v || "").trim();
-        return /^https?:\/\//i.test(s);
-    }
-
     async function preencherLocalVelorioComGPS() {
         setGpsMsg(null);
 
@@ -158,12 +153,15 @@ export default function Wizard({
                         aria-live="polite"
                     >
                         <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path
-                                className="opacity-75"
-                                fill="currentColor"
-                                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                            <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
                             />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                         </svg>
                         Salvando…
                     </span>
@@ -194,7 +192,6 @@ export default function Wizard({
                     if (step.id === "local_velorio" && step.type === "datalist") {
                         const listId = `dl-${step.id}`;
                         const currentText = String((wizardData as any)[step.id] ?? "");
-                        const currentVal = localVelorioRef.current?.value || currentText;
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
@@ -236,18 +233,6 @@ export default function Wizard({
                                         >
                                             Limpar
                                         </button>
-
-                                        {isLikelyUrl(currentVal) && (
-                                            <a
-                                                className="rounded-md bg-emerald-600 px-3 py-2 text-xs text-white text-center hover:opacity-90"
-                                                href={currentVal}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                title="Abrir link"
-                                            >
-                                                Abrir
-                                            </a>
-                                        )}
                                     </div>
                                 </div>
 
@@ -258,7 +243,10 @@ export default function Wizard({
                                 </datalist>
 
                                 {gpsMsg && (
-                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>
+                                    <div
+                                        className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"
+                                            }`}
+                                    >
                                         {gpsMsg}
                                     </div>
                                 )}
@@ -368,7 +356,9 @@ export default function Wizard({
                                         const v = e.target.value;
                                         setOrnamentacaoVal(v);
                                         if (v !== "Sim") {
-                                            const el = document.getElementById("wizard-ornamentacao_tipo") as HTMLSelectElement | null;
+                                            const el = document.getElementById(
+                                                "wizard-ornamentacao_tipo"
+                                            ) as HTMLSelectElement | null;
                                             if (el) el.value = "";
                                         }
                                     }}
