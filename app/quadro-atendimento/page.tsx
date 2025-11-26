@@ -105,6 +105,9 @@ type Registro = {
     assistencia?: string;
     tanato?: string;
 
+    // ✅ novo campo (Invol)
+    invol?: any;
+
     ornamentacao?: string;
     ornamentacao_tipo?: string;
 
@@ -180,6 +183,7 @@ const ROTULO_PARA_FASE: Record<string, string> = {
     "corpo pronto": "fase06",
     transportando: "fase07",
     "transportando p/ velorio": "fase07",
+    "transportando p/ velório": "fase07",
     velando: "fase08",
     sepultando: "fase09",
     "transportando p/ sepultamento": "fase09",
@@ -284,8 +288,7 @@ const STAGE_DOT_FILLED = [
     "bg-violet-500 border-violet-600", // V
     "bg-amber-500 border-amber-600", // S
 ];
-const STAGE_DOT_EMPTY =
-    "bg-transparent border-slate-300 dark:border-slate-600";
+const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
 
 const LABELS: Record<string, string> = {
     falecido: "Falecido",
@@ -296,6 +299,7 @@ const LABELS: Record<string, string> = {
     roupa: "Roupa",
     assistencia: "Assistência",
     tanato: "Tanatopraxia",
+    invol: "Invol",
     local_velorio: "Local do Velório",
     data_inicio_velorio: "Data Início Velório",
     data_fim_velorio: "Data Fim Velório",
@@ -312,11 +316,7 @@ const isFilled = (registro: Registro, key?: string) => {
     const s = String(v).trim().toLowerCase();
     if (!s) return false;
     if (["selecionar...", "selecione...", "a definir"].includes(s)) return false;
-    if (
-        key.startsWith("data") &&
-        (s === "0000-00-00" || s === "00/00/0000")
-    )
-        return false;
+    if (key.startsWith("data") && (s === "0000-00-00" || s === "00/00/0000")) return false;
     if (key.startsWith("hora") && s.startsWith("00:00")) return false;
     return true;
 };
@@ -324,20 +324,15 @@ const isFilled = (registro: Registro, key?: string) => {
 function etapasPreenchidas(registro: Registro) {
     const d = [false, false, false, false];
 
-    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) =>
-        isFilled(registro, k)
-    );
-    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) =>
-        isFilled(registro, k)
-    );
+    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) => isFilled(registro, k));
+    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) => isFilled(registro, k));
     d[2] =
         isFilled(registro, "local_velorio") &&
         isFilled(registro, "data_inicio_velorio") &&
         (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
     d[3] =
         isFilled(registro, "hora_inicio_velorio") ||
-        (isFilled(registro, "data_fim_velorio") &&
-            isFilled(registro, "hora_fim_velorio"));
+        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
 
     return d;
 }
@@ -351,11 +346,13 @@ function buildClipboardText(r: Registro) {
 
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
     const ornTipo = ornTipoRaw
-        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(
-            /\s+/g,
-            " "
-        )
+        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
         : "A DEFINIR";
+
+    // ✅ invol em SIM/NÃO (default: NÃO)
+    const involRaw = r?.invol;
+    const involStr = String(involRaw ?? "").trim().toLowerCase();
+    const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
 
     const lines = [
         `*ATENDIMENTO ${atend}*`,
@@ -366,6 +363,7 @@ function buildClipboardText(r: Registro) {
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
+        `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
         `*Local do Velório:* ${v("local_velorio") || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
@@ -388,6 +386,14 @@ function isSim(v?: string) {
 function isTerceiroRegistro(r: Registro) {
     if ((r as any).tipo_atendimento === "terceiro") return true;
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
+}
+
+// ✅ Invol em “Sim/Não” pro modal (default: "Não")
+function involSimNao(value: any): string {
+    const s = String(value ?? "").trim().toLowerCase();
+    if (!s) return "Não";
+    if (["1", "true", "t", "sim", "s", "yes", "y"].includes(s)) return "Sim";
+    return "Não";
 }
 
 /* ===== Helpers Linha do Tempo ===== */
@@ -475,12 +481,9 @@ function traduzirFase(s?: string) {
 
 function iconForAction(acao?: string, status?: string): string {
     const a = (acao || "").toLowerCase();
-    if (a.includes("criou") || a.includes("novo") || a.includes("inser"))
-        return "🟢";
-    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter"))
-        return "✏️";
-    if (a.includes("exclu") || a.includes("delet") || a.includes("remove"))
-        return "🗑️";
+    if (a.includes("criou") || a.includes("novo") || a.includes("inser")) return "🟢";
+    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter")) return "✏️";
+    if (a.includes("exclu") || a.includes("delet") || a.includes("remove")) return "🗑️";
     const st = (status || "").toLowerCase();
     if (st.startsWith("fase")) return "🔁";
     return "•";
@@ -504,12 +507,8 @@ export default function QuadroAtendimentoPage() {
     const [clockDate, setClockDate] = useState("");
 
     // ✅ começa imediato com cache local (se existir)
-    const [registros, setRegistros] = useState<Registro[]>(
-        () => readLS<Registro[]>("qa_registros") ?? []
-    );
-    const [avisos, setAvisos] = useState<Aviso[]>(
-        () => readLS<Aviso[]>("qa_avisos") ?? []
-    );
+    const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
+    const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
 
     // modal detalhes
     const [open, setOpen] = useState(false);
@@ -699,9 +698,7 @@ export default function QuadroAtendimentoPage() {
                 return;
             }
 
-            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
-                String(sepId)
-            )}`;
+            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
             const url = `${BASE}&_ts=${Date.now()}`;
 
             const json: any = await fetchJsonFast<any>(url, {
@@ -711,8 +708,7 @@ export default function QuadroAtendimentoPage() {
 
             let logs: LogItem[] = [];
             if (Array.isArray(json)) logs = json as LogItem[];
-            else if (json?.sucesso && Array.isArray(json.dados))
-                logs = json.dados as LogItem[];
+            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
 
             // cronológica (criação primeiro)
             logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
@@ -745,9 +741,7 @@ export default function QuadroAtendimentoPage() {
     // helpers para observações por container
     const obsList = useCallback(
         (missing: string[]) =>
-            missing.length
-                ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.`
-                : "Completo.",
+            missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.",
         []
     );
 
@@ -763,8 +757,7 @@ export default function QuadroAtendimentoPage() {
         const miss: string[] = [];
         if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
         if (!isFilled(r, "data_inicio_velorio")) miss.push("data_inicio_velorio");
-        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local")))
-            miss.push("local_sepultamento");
+        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local"))) miss.push("local_sepultamento");
         return miss;
     }, []);
     const noteEtapa3 = useCallback((r: Registro) => {
@@ -799,9 +792,7 @@ export default function QuadroAtendimentoPage() {
             {/* Avisos */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Mensagens importantes do sistema
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
                 <div className="mt-4 space-y-2">
                     {avisos.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
@@ -828,7 +819,8 @@ export default function QuadroAtendimentoPage() {
                             <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
                                 <button
                                     onClick={toggleTimelineDetalhe}
-                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
+                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""
+                                        }`}
                                     aria-label="Linha do tempo"
                                     title="Ver linha do tempo deste atendimento"
                                 >
@@ -855,9 +847,7 @@ export default function QuadroAtendimentoPage() {
 
                             {/* ✅ infos embaixo dos botões */}
                             <div className="mt-3">
-                                <div className="text-[12px] text-muted-foreground leading-tight">
-                                    Detalhes do atendimento
-                                </div>
+                                <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
                                 <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
                                     {shown(detail.falecido)}
                                 </h3>
@@ -876,7 +866,9 @@ export default function QuadroAtendimentoPage() {
 
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
                                     <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}
+                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
+                                            detail.status
+                                        )}`}
                                     >
                                         {capStatus(detail.status)}
                                     </span>
@@ -890,9 +882,7 @@ export default function QuadroAtendimentoPage() {
                                     <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
                                         <div className="flex items-start justify-between gap-2 min-w-0">
                                             <div className="min-w-0">
-                                                <div className="text-xs font-semibold text-slate-700">
-                                                    Linha do Tempo
-                                                </div>
+                                                <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
                                                 <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
                                                     Logs deste atendimento:{" "}
                                                     <b className="font-semibold">{shown(detail.falecido)}</b>
@@ -911,7 +901,9 @@ export default function QuadroAtendimentoPage() {
                                             <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>
                                         )}
                                         {detailLogsError && (
-                                            <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>
+                                            <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">
+                                                {detailLogsError}
+                                            </p>
                                         )}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
@@ -952,6 +944,10 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+
+                                    {/* ✅ NOVO: Invol (Sim/Não) */}
+                                    <Field label="Invol" value={involSimNao(detail.invol)} />
+
                                     <Field
                                         label="Ornamentação"
                                         value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
@@ -998,9 +994,7 @@ export default function QuadroAtendimentoPage() {
                             </Topic>
 
                             <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">
-                                    Etapas preenchidas
-                                </div>
+                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
                                 <EtapasRow registro={detail} />
                             </div>
                         </div>
@@ -1183,9 +1177,7 @@ function Topic({
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
-                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">
-                    {title}
-                </h4>
+                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
                 {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
             </div>
             {children}
@@ -1204,12 +1196,8 @@ function Field({
 }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">
-                {label}:
-            </span>
-            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">
-                {value}
-            </span>
+            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
+            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">{value}</span>
         </div>
     );
 }
@@ -1222,10 +1210,7 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span
-                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
-                            }`}
-                    />
+                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
                 </div>
             ))}
         </div>
@@ -1241,10 +1226,7 @@ function EtapasRow({ registro }: { registro: Registro }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">{label}</span>
-                    <span
-                        className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
-                            }`}
-                    />
+                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
                 </div>
             ))}
         </div>
@@ -1259,8 +1241,7 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
     let boolish = 0;
     for (const [, v] of entries) {
         const s = String(v ?? "").trim().toLowerCase();
-        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s))
-            boolish++;
+        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
     }
     return boolish / entries.length >= 0.8;
 }
@@ -1268,10 +1249,7 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
 function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
     const trimmed = raw.trim();
     // 1) JSON puro
-    if (
-        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-        (trimmed.startsWith("[") && trimmed.endsWith("]"))
-    ) {
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
         try {
             return JSON.parse(trimmed);
         } catch {
@@ -1303,9 +1281,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         else {
             const text = substituirRotuloVisual(raw.trim());
             return text ? (
-                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                    {text}
-                </div>
+                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
             ) : null;
         }
     }
@@ -1372,11 +1348,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             let valFmt = valStr;
 
             const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
-            if (
-                maybeEmbedded &&
-                isPlainObject(maybeEmbedded) &&
-                isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)
-            ) {
+            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
                 const map = maybeEmbedded as Record<string, unknown>;
                 const items = Object.entries(map)
                     .filter(([, v]) => asBool(v))
