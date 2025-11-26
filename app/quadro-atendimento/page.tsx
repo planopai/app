@@ -149,6 +149,69 @@ const shown = (v?: string, fallback = "a definir") => {
     return s ? sanitize(s) : fallback;
 };
 
+/* =========================
+   Local do Velório: rota (Google Maps)
+   ========================= */
+function ensureHttpsUrl(raw: string): string {
+    const s = String(raw ?? "").trim();
+    if (!s) return s;
+
+    // já tem protocolo -> garante https se vier http
+    if (/^https?:\/\//i.test(s)) {
+        return s.replace(/^http:\/\//i, "https://");
+    }
+
+    // sem protocolo: se parece URL, prefixa https://
+    if (/^(www\.)/i.test(s)) return `https://${s}`;
+    if (/^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s))
+        return `https://${s}`;
+
+    return s;
+}
+
+function isGoogleMapsRota(raw?: string): boolean {
+    const s = String(raw ?? "").trim().toLowerCase();
+    if (!s) return false;
+
+    const noProto = s.replace(/^https?:\/\//, "");
+    // rota típica (inclui o formato gerado pelo GPS no wizard)
+    if (noProto.includes("google.com/maps/dir")) return true;
+    if (noProto.includes("maps.google.com/maps/dir")) return true;
+    // encurtadores comuns (podem apontar pra rota)
+    if (noProto.startsWith("maps.app.goo.gl/")) return true;
+    if (noProto.startsWith("goo.gl/maps/")) return true;
+
+    return false;
+}
+
+function LocalVelorioValue({
+    value,
+    fallback = "a definir",
+}: {
+    value?: string;
+    fallback?: string;
+}) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return <span>{fallback}</span>;
+
+    if (isGoogleMapsRota(raw)) {
+        const url = ensureHttpsUrl(raw);
+        return (
+            <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-blue-600 hover:underline underline-offset-2"
+                title="Abrir rota no Google Maps"
+            >
+                Abrir Rota
+            </a>
+        );
+    }
+
+    return <span>{shown(raw, fallback)}</span>;
+}
+
 /* Datas/horas → “a definir” para zeros e vazios */
 const formatDateBr = (d?: string) =>
     !d
@@ -354,6 +417,10 @@ function buildClipboardText(r: Registro) {
     const involStr = String(involRaw ?? "").trim().toLowerCase();
     const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
 
+    // ✅ se for rota, garante link clicável com https://
+    const localVelRaw = v("local_velorio") || "A DEFINIR";
+    const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
+
     const lines = [
         `*ATENDIMENTO ${atend}*`,
         `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
@@ -365,7 +432,7 @@ function buildClipboardText(r: Registro) {
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
-        `*Local do Velório:* ${v("local_velorio") || "A DEFINIR"}`,
+        `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
     ];
@@ -967,7 +1034,7 @@ export default function QuadroAtendimentoPage() {
 
                             <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field label="Local Velório" value={shown(detail.local_velorio)} />
+                                    <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
                                     <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
@@ -1051,7 +1118,9 @@ const DesktopTable = React.memo(function DesktopTable({
                                                 {shown(r.falecido)}
                                             </button>
                                         </td>
-                                        <td>{shown(r.local_velorio)}</td>
+                                        <td>
+                                            <LocalVelorioValue value={r.local_velorio} />
+                                        </td>
                                         <td>{timeOr(r.hora_fim_velorio)}</td>
                                         <td>{shown(r.agente)}</td>
                                         <td>
@@ -1137,7 +1206,7 @@ const MobileCards = React.memo(function MobileCards({
 
                             <div className="mt-2 text-sm">
                                 <span className="text-muted-foreground">Local:&nbsp;</span>
-                                {shown(r.local_velorio)}
+                                <LocalVelorioValue value={r.local_velorio} />
                             </div>
 
                             <div className="mt-3 rounded-lg border bg-background p-3">
@@ -1191,7 +1260,7 @@ function Field({
     className = "",
 }: {
     label: string;
-    value: string;
+    value: React.ReactNode;
     className?: string;
 }) {
     return (

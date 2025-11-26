@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
 
@@ -79,6 +79,53 @@ export default function Wizard({
         setOrnamentacaoVal(String(wizardData.ornamentacao ?? ""));
     }, [open, wizardData.ornamentacao]);
 
+    // ✅ GPS p/ Local do Velório (link de rota + manual)
+    const [gpsLoading, setGpsLoading] = useState(false);
+    const [gpsMsg, setGpsMsg] = useState<string | null>(null);
+    const localVelorioRef = useRef<HTMLInputElement>(null);
+
+    function isLikelyUrl(v?: string) {
+        const s = String(v || "").trim();
+        return /^https?:\/\//i.test(s);
+    }
+
+    async function preencherLocalVelorioComGPS() {
+        setGpsMsg(null);
+
+        if (typeof window === "undefined") return;
+        if (!("geolocation" in navigator)) {
+            setGpsMsg("Este dispositivo/navegador não suporta GPS (geolocalização).");
+            return;
+        }
+
+        setGpsLoading(true);
+
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+
+                // Link de ROTA (o Google Maps assume sua localização como origem)
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+
+                const el = localVelorioRef.current;
+                if (el) el.value = url;
+
+                setGpsMsg("Localização capturada e link gerado!");
+                setGpsLoading(false);
+            },
+            (err) => {
+                let msg = "Não foi possível obter a localização.";
+                if (err?.code === 1) msg = "Permissão de localização negada.";
+                if (err?.code === 2) msg = "Localização indisponível no momento (GPS sem sinal).";
+                if (err?.code === 3) msg = "Tempo esgotado ao tentar obter localização.";
+                setGpsMsg(msg);
+                setGpsLoading(false);
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+    }
+
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
 
@@ -110,19 +157,8 @@ export default function Wizard({
                         className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
                         aria-live="polite"
                     >
-                        <svg
-                            className="h-3 w-3 animate-spin text-blue-600"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                        >
-                            <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                            />
+                        <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path
                                 className="opacity-75"
                                 fill="currentColor"
@@ -152,6 +188,82 @@ export default function Wizard({
                     // 👉 mostra "Tipo de Ornamentação" somente quando Ornamentação = "Sim"
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") {
                         return null;
+                    }
+
+                    // ✅ Local do Velório (datalist + GPS + opção manual)
+                    if (step.id === "local_velorio" && step.type === "datalist") {
+                        const listId = `dl-${step.id}`;
+                        const currentText = String((wizardData as any)[step.id] ?? "");
+                        const currentVal = localVelorioRef.current?.value || currentText;
+
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label} <span className="text-xs text-muted-foreground">(endereço ou link)</span>
+                                </label>
+
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <input
+                                        ref={localVelorioRef}
+                                        id={`wizard-${step.id}`}
+                                        list={listId}
+                                        placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
+                                        defaultValue={currentText}
+                                        className="w-full flex-1 rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                        disabled={wizardSubmitting}
+                                    />
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                                            onClick={preencherLocalVelorioComGPS}
+                                            disabled={wizardSubmitting || gpsLoading}
+                                            title="Capturar localização e gerar link de rota"
+                                        >
+                                            {gpsLoading ? "Capturando…" : "Usar GPS"}
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                                            onClick={() => {
+                                                if (localVelorioRef.current) localVelorioRef.current.value = "";
+                                                setGpsMsg(null);
+                                            }}
+                                            disabled={wizardSubmitting}
+                                            title="Limpar para digitar manualmente"
+                                        >
+                                            Limpar
+                                        </button>
+
+                                        {isLikelyUrl(currentVal) && (
+                                            <a
+                                                className="rounded-md bg-emerald-600 px-3 py-2 text-xs text-white text-center hover:opacity-90"
+                                                href={currentVal}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                title="Abrir link"
+                                            >
+                                                Abrir
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <datalist id={listId}>
+                                    {(step.datalist || []).map((op) => (
+                                        <option key={op} value={op} />
+                                    ))}
+                                </datalist>
+
+                                {gpsMsg && (
+                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>
+                                        {gpsMsg}
+                                    </div>
+                                )}
+                            </div>
+                        );
                     }
 
                     // Campo custom (abre Arrumação)
@@ -256,9 +368,7 @@ export default function Wizard({
                                         const v = e.target.value;
                                         setOrnamentacaoVal(v);
                                         if (v !== "Sim") {
-                                            const el = document.getElementById(
-                                                "wizard-ornamentacao_tipo"
-                                            ) as HTMLSelectElement | null;
+                                            const el = document.getElementById("wizard-ornamentacao_tipo") as HTMLSelectElement | null;
                                             if (el) el.value = "";
                                         }
                                     }}
