@@ -58,9 +58,9 @@ type ModalModel =
         ativo: boolean;
     };
 
-// ✅ MUDE APENAS ISTO se seu PHP tiver outro nome
+// ✅ ajuste se o nome do arquivo PHP for outro
 const PHP_FILE = "materiais_admin.php";
-// ✅ tudo via proxy: app/api/php/[...path]/route.ts
+// ✅ via proxy: app/api/php/[...path]/route.ts
 const PROXY_BASE = "/api/php";
 
 export default function MateriaisAdminPage() {
@@ -70,9 +70,8 @@ export default function MateriaisAdminPage() {
     const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [modal, setModal] = useState<ModalModel>({ open: false });
 
-    // ✅ NOVO: seleção/visualização por categoria + busca
-    const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
-    const [catQuery, setCatQuery] = useState("");
+    // ✅ NOVO: acordeão por categoria (uma coluna). Só abre ao clicar no nome.
+    const [openCatId, setOpenCatId] = useState<string | null>(null);
 
     const endpoint = useMemo(() => `${PROXY_BASE}/${PHP_FILE}`, []);
 
@@ -137,15 +136,15 @@ export default function MateriaisAdminPage() {
 
             setTree(sane);
 
-            // ✅ mantém seleção coerente (se deletou a categoria selecionada)
-            setSelectedCatId((prev) => {
-                if (!prev) return sane[0]?.id != null ? String(sane[0].id) : null;
-                const exists = sane.some((c) => String(c.id) === String(prev));
-                return exists ? prev : sane[0]?.id != null ? String(sane[0].id) : null;
+            // ✅ se a categoria aberta não existe mais, fecha
+            setOpenCatId((prev) => {
+                if (!prev) return null;
+                const ok = sane.some((c) => String(c.id) === String(prev));
+                return ok ? prev : null;
             });
         } catch (e: any) {
             setTree([]);
-            setSelectedCatId(null);
+            setOpenCatId(null);
             setMsg({ ok: false, text: e?.message || "Falha ao carregar." });
         } finally {
             setLoading(false);
@@ -156,7 +155,6 @@ export default function MateriaisAdminPage() {
         loadTree();
     }, [loadTree]);
 
-    // ---------- Modais ----------
     const openCreateCategoria = () =>
         setModal({ open: true, kind: "categoria", mode: "create", nome: "", ordem: 0, ativo: true });
 
@@ -201,7 +199,6 @@ export default function MateriaisAdminPage() {
             ativo: asBool(s.ativo),
         });
 
-    // ---------- Deletes ----------
     const removeCategoria = async (id: Categoria["id"]) => {
         if (!window.confirm("Excluir a categoria? (itens/subitens serão apagados também)")) return;
         setMsg(null);
@@ -238,7 +235,6 @@ export default function MateriaisAdminPage() {
         }
     };
 
-    // ---------- Save ----------
     const saveModal = async () => {
         if (!modal.open) return;
         const nome = modal.nome.trim();
@@ -253,10 +249,8 @@ export default function MateriaisAdminPage() {
                 if (modal.mode === "create") {
                     const r = await apiJSON("categoria_create", { nome, ativo: modal.ativo, ordem: modal.ordem });
                     setMsg({ ok: true, text: "Categoria criada." });
-
-                    // ✅ seleciona a categoria recém-criada, se vier id
                     const newId = (r as any)?.id;
-                    if (newId != null) setSelectedCatId(String(newId));
+                    if (newId != null) setOpenCatId(String(newId)); // abre a recém-criada
                 } else {
                     await apiJSON("categoria_update", { id: modal.id, nome, ativo: modal.ativo, ordem: modal.ordem });
                     setMsg({ ok: true, text: "Categoria atualizada." });
@@ -272,6 +266,7 @@ export default function MateriaisAdminPage() {
                         ordem: modal.ordem,
                     });
                     setMsg({ ok: true, text: "Item criado." });
+                    setOpenCatId(String(modal.categoria_id)); // garante categoria aberta
                 } else {
                     await apiJSON("item_update", {
                         id: modal.id,
@@ -281,6 +276,7 @@ export default function MateriaisAdminPage() {
                         ordem: modal.ordem,
                     });
                     setMsg({ ok: true, text: "Item atualizado." });
+                    setOpenCatId(String(modal.categoria_id));
                 }
             }
 
@@ -312,7 +308,6 @@ export default function MateriaisAdminPage() {
         }
     };
 
-    // ---------- Stats / Selected ----------
     const stats = useMemo(() => {
         const cats = tree.length;
         let itens = 0;
@@ -324,28 +319,9 @@ export default function MateriaisAdminPage() {
         return { cats, itens, subs };
     }, [tree]);
 
-    const filteredCats = useMemo(() => {
-        const q = catQuery.trim().toLowerCase();
-        if (!q) return tree;
-        return tree.filter((c) => String(c.nome ?? "").toLowerCase().includes(q));
-    }, [tree, catQuery]);
-
-    const selectedCat = useMemo(() => {
-        if (!selectedCatId) return null;
-        return tree.find((c) => String(c.id) === String(selectedCatId)) ?? null;
-    }, [tree, selectedCatId]);
-
-    // Se o filtro removeu a categoria selecionada da lista, seleciona a primeira do filtro
-    useEffect(() => {
-        if (!filteredCats.length) return;
-        if (!selectedCatId) {
-            setSelectedCatId(String(filteredCats[0].id));
-            return;
-        }
-        const existsInFilter = filteredCats.some((c) => String(c.id) === String(selectedCatId));
-        if (!existsInFilter) setSelectedCatId(String(filteredCats[0].id));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [catQuery, filteredCats.length]);
+    const toggleOpenCategory = (cid: string) => {
+        setOpenCatId((prev) => (prev === cid ? null : cid));
+    };
 
     return (
         <div className="p-6">
@@ -392,175 +368,120 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
-            {/* ✅ NOVO LAYOUT: sidebar de categorias + detalhe */}
-            <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-                {/* Sidebar */}
-                <aside className="rounded-xl border bg-background p-3 shadow-sm">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                        <div className="text-sm font-semibold">Categorias</div>
-                        <div className="text-xs text-muted-foreground">{filteredCats.length}</div>
-                    </div>
+            <div className="grid gap-3">
+                {tree.length === 0 && !loading ? (
+                    <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum registro encontrado.</div>
+                ) : null}
 
-                    <input
-                        className="mb-3 w-full rounded-md border px-3 py-2 text-sm"
-                        placeholder="Buscar categoria..."
-                        value={catQuery}
-                        onChange={(e) => setCatQuery(e.target.value)}
-                    />
+                {tree.map((c) => {
+                    const cid = String(c.id);
+                    const isOpen = openCatId === cid;
 
-                    <div className="max-h-[70vh] overflow-auto pr-1">
-                        {filteredCats.length === 0 ? (
-                            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Nenhuma categoria.</div>
-                        ) : (
-                            <div className="grid gap-2">
-                                {filteredCats.map((c) => {
-                                    const active = String(c.id) === String(selectedCatId);
-                                    const itensCount = c.itens?.length ?? 0;
-                                    const subsCount =
-                                        c.itens?.reduce((acc, i) => acc + (i.subitens?.length ?? 0), 0) ?? 0;
-
-                                    return (
-                                        <button
-                                            key={String(c.id)}
-                                            onClick={() => setSelectedCatId(String(c.id))}
-                                            className={[
-                                                "w-full rounded-lg border px-3 py-2 text-left transition",
-                                                active ? "border-primary bg-primary/5" : "hover:bg-muted",
-                                            ].join(" ")}
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span
-                                                        className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"
-                                                            }`}
-                                                    />
-                                                    <span className="text-sm font-medium">{c.nome}</span>
-                                                </div>
-                                                <span className="text-[11px] text-muted-foreground">
-                                                    {itensCount}/{subsCount}
-                                                </span>
-                                            </div>
-                                            <div className="mt-1 text-[11px] text-muted-foreground">
-                                                ID: <span className="font-mono">{String(c.id)}</span> • Ordem:{" "}
-                                                <span className="font-mono">{String(c.ordem ?? 0)}</span>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="mt-3 grid gap-2">
-                        <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={openCreateCategoria}>
-                            + Nova categoria
-                        </button>
-                    </div>
-                </aside>
-
-                {/* Detalhe */}
-                <section className="min-h-[200px]">
-                    {!selectedCat ? (
-                        <div className="rounded-xl border bg-background p-6 text-sm text-muted-foreground">
-                            Selecione uma categoria à esquerda.
-                        </div>
-                    ) : (
-                        <div key={String(selectedCat.id)} className="rounded-xl border bg-background p-4 shadow-sm">
+                    return (
+                        <div key={cid} className="rounded-xl border bg-background p-4 shadow-sm">
+                            {/* Linha principal da categoria (lista). Só abre ao clicar no nome. */}
                             <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="min-w-[240px]">
+                                <button
+                                    type="button"
+                                    className="min-w-[240px] text-left focus:outline-none"
+                                    onClick={() => toggleOpenCategory(cid)}
+                                    aria-expanded={isOpen}
+                                >
                                     <div className="flex items-center gap-2">
-                                        <span
-                                            className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(selectedCat.ativo) ? "bg-emerald-500" : "bg-slate-300"
-                                                }`}
-                                        />
-                                        <h2 className="text-base font-semibold">{selectedCat.nome}</h2>
+                                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                        <h2 className="text-base font-semibold">
+                                            {c.nome} <span className="ml-2 text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
+                                        </h2>
                                     </div>
                                     <div className="mt-1 text-xs text-muted-foreground">
-                                        ID: <span className="font-mono">{String(selectedCat.id)}</span> • Ordem:{" "}
-                                        <span className="font-mono">{String(selectedCat.ordem ?? 0)}</span>
+                                        ID: <span className="font-mono">{cid}</span> • Ordem:{" "}
+                                        <span className="font-mono">{String(c.ordem ?? 0)}</span>
                                     </div>
-                                </div>
+                                    <div className="mt-1 text-[11px] text-muted-foreground">
+                                        {(c.itens ?? []).length} item(ns)
+                                    </div>
+                                </button>
 
                                 <div className="flex flex-wrap gap-2">
-                                    <button
-                                        className="rounded-md border px-3 py-2 text-xs hover:bg-muted"
-                                        onClick={() => openCreateItem(selectedCat.id)}
-                                    >
+                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateItem(c.id)}>
                                         + Item
                                     </button>
-                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(selectedCat)}>
+                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(c)}>
                                         Editar
                                     </button>
-                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(selectedCat.id)}>
+                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(c.id)}>
                                         Excluir
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="mt-4 grid gap-2">
-                                {(selectedCat.itens ?? []).length === 0 ? (
-                                    <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Sem itens nesta categoria.</div>
-                                ) : null}
+                            {/* Conteúdo (itens/subitens) só aparece quando a categoria está aberta */}
+                            {isOpen ? (
+                                <div className="mt-4 grid gap-2">
+                                    {(c.itens ?? []).length === 0 ? (
+                                        <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Sem itens nesta categoria.</div>
+                                    ) : null}
 
-                                {(selectedCat.itens ?? []).map((i) => (
-                                    <div key={String(i.id)} className="rounded-lg border p-3">
-                                        <div className="flex flex-wrap items-start justify-between gap-2">
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(i.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                                    <div className="font-medium">{i.nome}</div>
+                                    {(c.itens ?? []).map((i) => (
+                                        <div key={String(i.id)} className="rounded-lg border p-3">
+                                            <div className="flex flex-wrap items-start justify-between gap-2">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(i.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                                        <div className="font-medium">{i.nome}</div>
+                                                    </div>
+                                                    <div className="mt-1 text-[11px] text-muted-foreground">
+                                                        Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem:{" "}
+                                                        <span className="font-mono">{String(i.ordem ?? 0)}</span>
+                                                    </div>
                                                 </div>
-                                                <div className="mt-1 text-[11px] text-muted-foreground">
-                                                    Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem:{" "}
-                                                    <span className="font-mono">{String(i.ordem ?? 0)}</span>
+
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)}>
+                                                        + Subitem
+                                                    </button>
+                                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)}>
+                                                        Editar
+                                                    </button>
+                                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)}>
+                                                        Excluir
+                                                    </button>
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-wrap gap-2">
-                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)}>
-                                                    + Subitem
-                                                </button>
-                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)}>
-                                                    Editar
-                                                </button>
-                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)}>
-                                                    Excluir
-                                                </button>
-                                            </div>
-                                        </div>
+                                            <div className="mt-3 grid gap-2 pl-2">
+                                                {(i.subitens ?? []).length === 0 ? (
+                                                    <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">Sem subitens.</div>
+                                                ) : null}
 
-                                        <div className="mt-3 grid gap-2 pl-2">
-                                            {(i.subitens ?? []).length === 0 ? (
-                                                <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">Sem subitens.</div>
-                                            ) : null}
+                                                {(i.subitens ?? []).map((s) => (
+                                                    <div key={String(s.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                                                        <div className="flex min-w-[220px] items-center gap-2">
+                                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(s.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                                            <div className="text-sm">{s.nome}</div>
+                                                            <div className="text-[11px] text-muted-foreground">
+                                                                (ordem: <span className="font-mono">{String(s.ordem ?? 0)}</span>)
+                                                            </div>
+                                                        </div>
 
-                                            {(i.subitens ?? []).map((s) => (
-                                                <div key={String(s.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
-                                                    <div className="flex min-w-[220px] items-center gap-2">
-                                                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(s.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                                        <div className="text-sm">{s.nome}</div>
-                                                        <div className="text-[11px] text-muted-foreground">
-                                                            (ordem: <span className="font-mono">{String(s.ordem ?? 0)}</span>)
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)}>
+                                                                Editar
+                                                            </button>
+                                                            <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)}>
+                                                                Excluir
+                                                            </button>
                                                         </div>
                                                     </div>
-
-                                                    <div className="flex flex-wrap gap-2">
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)}>
-                                                            Editar
-                                                        </button>
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)}>
-                                                            Excluir
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            ) : null}
                         </div>
-                    )}
-                </section>
+                    );
+                })}
             </div>
 
             {/* Modal */}
