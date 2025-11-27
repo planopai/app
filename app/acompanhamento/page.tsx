@@ -16,6 +16,8 @@ import {
     enviarRegistroPHP,
     capitalizeStatus,
     normalizarStatus,
+    normalizeMateriaisState, // ✅ ADICIONE
+
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
@@ -504,28 +506,34 @@ export default function AcompanhamentoPage() {
     /* -------------------- Parsers locais -------------------- */
 
     const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
-        if (r.materiais_json) {
+        // ✅ novo formato (dinâmico): vem pronto no materiais_json
+        if ((r as any)?.materiais_json) {
             try {
-                const parsed = JSON.parse(String(r.materiais_json));
-                const base = defaultMateriais();
-                Object.keys(base).forEach((k) => {
-                    const qtdCol = (r as any)[`materiais_${k}_qtd`];
-                    const parsedItem = (parsed as any)?.[k];
-                    (base as any)[k] = {
-                        checked: !!parsedItem?.checked || Number(qtdCol) > 0 || !!parsedItem?.qtd,
-                        qtd: Number(parsedItem?.qtd ?? (qtdCol != null ? qtdCol : 0)),
-                    };
-                });
-                return base;
-            } catch { }
+                const parsed = JSON.parse(String((r as any).materiais_json));
+                return normalizeMateriaisState(parsed);
+            } catch {
+                // segue fallback
+            }
         }
-        const base = defaultMateriais();
-        Object.keys(base).forEach((k) => {
-            const qtdCol = (r as any)[`materiais_${k}_qtd`];
-            const qtd = Number(qtdCol ?? 0);
-            (base as any)[k] = { checked: qtd > 0, qtd };
-        });
-        return base;
+
+        // Fallback legado (se ainda existir no banco): materiais_*_qtd
+        const out: MateriaisState = {};
+        try {
+            for (const [k, v] of Object.entries(r as any)) {
+                if (!k.startsWith("materiais_") || !k.endsWith("_qtd")) continue;
+                const qtd = Math.max(0, Math.floor(Number(v ?? 0)));
+                if (qtd <= 0) continue;
+
+                const nomeBase = k.replace(/^materiais_/, "").replace(/_qtd$/, "");
+                out[nomeBase] = {
+                    checked: true,
+                    qtd,
+                    nome: nomeBase.replace(/_/g, " "),
+                } as any;
+            }
+        } catch { }
+
+        return out;
     };
 
     // ✅ atualizado: além do arrumacao_json, aceita colunas diretas (ex: invol)
@@ -936,17 +944,18 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
-        const list: string[] = [];
-        const mats = wizardData.materiais || materiais;
-        Object.keys(mats || {}).forEach((key) => {
-            const it = (mats as any)[key];
-            if (it?.checked) {
-                const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-                list.push(`${label} (${it.qtd})`);
-            }
-        });
-        return list.join(" • ");
-    }, [wizardData.materiais, materiais]);
+        const matsPrefer = (wizardData as any)?.materiais;
+        const mats: any =
+            matsPrefer && typeof matsPrefer === "object" && Object.keys(matsPrefer).length > 0
+                ? matsPrefer
+                : materiais;
+
+        const list = Object.values(mats || {})
+            .filter((it: any) => it?.checked && Number(it?.qtd ?? 0) > 0)
+            .map((it: any) => `${String(it?.nome || "Item")} (${Number(it?.qtd ?? 1)})`);
+
+        return list.length ? list.join(" • ") : "Nenhum material selecionado";
+    }, [wizardData, materiais]);
 
     // ✅ atualizado: inclui TA-32, fluido_cavitario, formol, mascara e INVOL no resumo
     const arrumacaoSelecionadaResumo = useMemo(() => {
