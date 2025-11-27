@@ -1,16 +1,14 @@
 "use client";
 
-import { API, LOGIN_ABSOLUTE, materiaisConfig, salasMemorial } from "./constants";
+import { API, LOGIN_ABSOLUTE, salasMemorial } from "./constants";
 import type { ArrumacaoState, MateriaisState } from "./types";
 
 let IS_REDIRECTING = false;
 
 /* -------------------- Defaults -------------------- */
 export function defaultMateriais(): MateriaisState {
-    return materiaisConfig.reduce((acc, m) => {
-        acc[m.key] = { checked: false, qtd: 0 };
-        return acc;
-    }, {} as MateriaisState);
+    // Agora é dinâmico (por itemId), começa vazio.
+    return {};
 }
 
 export function defaultArrumacao(): ArrumacaoState {
@@ -33,10 +31,13 @@ export function defaultArrumacao(): ArrumacaoState {
 export function redirectToLogin(loginUrl?: string, msg?: string) {
     if (IS_REDIRECTING) return;
     IS_REDIRECTING = true;
+
     try {
         if (msg) alert(msg);
     } catch { }
+
     const url = (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
+
     try {
         window.location.replace(url);
         setTimeout(() => {
@@ -103,12 +104,14 @@ function normalizeKey(s: string) {
 /** Converte “Velando”, “Transportando”, etc. (ou “faseXX”) em “faseXX”. */
 export function normalizarStatus(status?: string): string | undefined {
     if (!status) return undefined;
+
     const s = String(status).trim();
     if (s.startsWith("fase")) {
         const digits = s.replace(/[^0-9]/g, "");
         if (!digits) return s;
         return `fase${digits.padStart(2, "0")}`;
     }
+
     const mapeado = ROTULO_PARA_FASE[normalizeKey(s)];
     return mapeado ?? undefined;
 }
@@ -166,18 +169,34 @@ export function isTanatoNo(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
-export async function enviarRegistroPHP(data: any) {
-    let materiais_json = "";
-    const flatQtd: Record<string, string> = {};
+/* -------------------- Materiais: saneamento -------------------- */
+export function normalizeMateriaisState(input: any): MateriaisState {
+    const out: MateriaisState = {};
+    if (!input || typeof input !== "object") return out;
 
+    for (const [k, v] of Object.entries(input)) {
+        const o: any = v || {};
+        const qtd = Math.max(0, Math.floor(Number(o.qtd ?? 0)));
+        const checked = !!o.checked || qtd > 0;
+
+        out[String(k)] = {
+            checked,
+            qtd,
+            nome: String(o.nome ?? ""),
+            categoria_id: o.categoria_id ?? undefined,
+        };
+    }
+
+    return out;
+}
+
+/* -------------------- Envio de registro -------------------- */
+export async function enviarRegistroPHP(data: any) {
+    // Agora materiais é dinâmico: sempre vai só em materiais_json
+    // (não vamos mais “achatar” em colunas materiais_*_qtd)
+    let materiais_json = "";
     if (data.materiais) {
-        materiais_json = JSON.stringify(data.materiais);
-        materiaisConfig.forEach((m) => {
-            const q = Number(data.materiais?.[m.key]?.qtd ?? 0);
-            const c = !!data.materiais?.[m.key]?.checked;
-            const col = `materiais_${m.key}_qtd`;
-            flatQtd[col] = c && q > 0 ? String(q) : "";
-        });
+        materiais_json = JSON.stringify(normalizeMateriaisState(data.materiais));
     }
 
     let arrumacao_json = "";
@@ -188,7 +207,6 @@ export async function enviarRegistroPHP(data: any) {
         local: data.local || "",
         materiais_json,
         arrumacao_json,
-        ...flatQtd,
     };
 
     return jsonWith401(`${API}/api/php/informativo.php`, {
@@ -209,9 +227,9 @@ export type StatusConsulta = {
 export async function consultarStatusAtual(id: number | string): Promise<StatusConsulta> {
     const url = `${API}/api/php/informativo.php?status_atual=1&id=${encodeURIComponent(String(id))}`;
     const data = await jsonWith401(url);
-    if (!data?.sucesso) {
-        throw new Error(data?.msg || "Falha ao consultar status.");
-    }
+
+    if (!data?.sucesso) throw new Error(data?.msg || "Falha ao consultar status.");
+
     const status = normalizarStatus(data.status) ?? "fase00";
     return {
         id: String(data.id ?? id),
@@ -221,7 +239,7 @@ export async function consultarStatusAtual(id: number | string): Promise<StatusC
     };
 }
 
-/* -------------------- Próxima fase (com novas regras) -------------------- */
+/* -------------------- Próxima fase (com regras) -------------------- */
 export function proximaFaseDoRegistro(
     r: {
         status?: string;
@@ -266,6 +284,7 @@ export function proximaFaseDoRegistro(
 
         return next;
     }
+
     return null;
 }
 

@@ -1,22 +1,38 @@
 "use client";
 
-export type MaterialKey =
-    | "cadeiras"
-    | "bebedouros"
-    | "suporte_coroa"
-    | "kit_lanche"
-    | "velas"
-    | "tenda"
-    | "placa"
-    | "paramentacao";
+export type MateriaisItemState = {
+    checked: boolean;
+    qtd: number;
+    nome: string;
+    categoria_id?: number | string;
+};
 
-export type MateriaisState = Record<
-    MaterialKey,
-    {
-        checked: boolean;
-        qtd: number;
-    }
->;
+export type MateriaisState = Record<string, MateriaisItemState>; // key = itemId (string)
+
+export type SubItem = {
+    id: number | string;
+    item_id: number | string;
+    nome: string;
+    ativo: number | boolean;
+    ordem: number | string;
+};
+
+export type Item = {
+    id: number | string;
+    categoria_id: number | string;
+    nome: string;
+    ativo: number | boolean;
+    ordem: number | string;
+    subitens?: SubItem[];
+};
+
+export type Categoria = {
+    id: number | string;
+    nome: string;
+    ativo: number | boolean;
+    ordem: number | string;
+    itens?: Item[];
+};
 
 export type ArrumacaoState = {
     luvas: boolean;
@@ -34,7 +50,7 @@ export type ArrumacaoState = {
 
 export type Registro = {
     id?: number | string;
-    status?: string; // fase01..fase11
+    status?: string;
     falecido?: string;
     agente?: string;
     contato?: string;
@@ -43,17 +59,13 @@ export type Registro = {
     urna?: string;
     roupa?: string;
 
-    assistencia?: string; // "Sim" | "Não"
-    tanato?: string; // "Sim" | "Não"
+    assistencia?: string;
+    tanato?: string;
 
-    /** ✅ CAMPOS */
-    ornamentacao?: string; // "Sim" | "Não"
-    ornamentacao_tipo?: string; // "Natural" | "Artificial"
-
-    /** ✅ NOVO: INVOL (Sim/Não) */
+    ornamentacao?: string;
+    ornamentacao_tipo?: string;
     invol?: string;
 
-    /** ✅ identifica o tipo do fluxo do registro */
     tipo_atendimento?: "funerario" | "terceiro";
 
     local?: string;
@@ -69,15 +81,6 @@ export type Registro = {
     observacao_velorio02?: string;
 
     materiais_json?: string;
-    materiais_cadeiras_qtd?: string | number;
-    materiais_bebedouros_qtd?: string | number;
-    materiais_suporte_coroa_qtd?: string | number;
-    materiais_kit_lanche_qtd?: string | number;
-    materiais_velas_qtd?: string | number;
-    materiais_tenda_qtd?: string | number;
-    materiais_placa_qtd?: string | number;
-    materiais_paramentacao_qtd?: string | number;
-
     arrumacao_json?: string;
 
     materiais?: MateriaisState;
