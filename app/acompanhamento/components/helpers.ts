@@ -7,7 +7,7 @@ let IS_REDIRECTING = false;
 
 /* -------------------- Defaults -------------------- */
 export function defaultMateriais(): MateriaisState {
-    // Agora é dinâmico (por itemId), começa vazio.
+    // Dinâmico (item/subitem), começa vazio.
     return {};
 }
 
@@ -170,41 +170,68 @@ export function isTanatoNo(v?: string) {
 }
 
 /* -------------------- Materiais: saneamento -------------------- */
+/**
+ * Aceita o formato antigo (id -> {...}) e o novo (item:ID / subitem:ID),
+ * mantém campos extras sem quebrar o PHP, e evita enviar itens desmarcados.
+ */
 export function normalizeMateriaisState(input: any): MateriaisState {
-    const out: MateriaisState = {};
+    const out: any = {};
     if (!input || typeof input !== "object") return out;
 
     for (const [k, v] of Object.entries(input)) {
         const o: any = v || {};
-        const qtd = Math.max(0, Math.floor(Number(o.qtd ?? 0)));
+        const qtdRaw = Number(o.qtd ?? 0);
+        const qtd = Number.isFinite(qtdRaw) ? Math.max(0, Math.floor(qtdRaw)) : 0;
         const checked = !!o.checked || qtd > 0;
 
+        // opcional (recomendado): só persiste selecionados
+        if (!checked) continue;
+
         out[String(k)] = {
-            checked,
-            qtd,
+            checked: true,
+            qtd: Math.max(1, qtd || 1),
             nome: String(o.nome ?? ""),
             categoria_id: o.categoria_id ?? undefined,
+
+            // extras do formato novo (não atrapalha o backend)
+            item_id: o.item_id ?? undefined,
+            tipo: o.tipo ?? undefined,
+            raw_id: o.raw_id ?? undefined,
         };
     }
 
-    return out;
+    return out as MateriaisState;
 }
 
 /* -------------------- Envio de registro -------------------- */
+/**
+ * ✅ Garante que materiais_json SEMPRE vá preenchido corretamente:
+ * - aceita data.materiais (obj)
+ * - aceita data.materiais_json já pronto (string ou obj)
+ * - nunca envia string vazia (manda "{}" no mínimo)
+ */
 export async function enviarRegistroPHP(data: any) {
-    // Agora materiais é dinâmico: sempre vai só em materiais_json
-    // (não vamos mais “achatar” em colunas materiais_*_qtd)
-    let materiais_json = "";
-    if (data.materiais) {
-        materiais_json = JSON.stringify(normalizeMateriaisState(data.materiais));
+    let materiais_json = "{}";
+    const srcMat = data?.materiais_json ?? data?.materiais;
+
+    if (typeof srcMat === "string" && srcMat.trim()) {
+        materiais_json = srcMat;
+    } else if (srcMat && typeof srcMat === "object") {
+        materiais_json = JSON.stringify(normalizeMateriaisState(srcMat));
     }
 
-    let arrumacao_json = "";
-    if (data.arrumacao) arrumacao_json = JSON.stringify(data.arrumacao);
+    let arrumacao_json = "{}";
+    const srcArr = data?.arrumacao_json ?? data?.arrumacao;
+
+    if (typeof srcArr === "string" && srcArr.trim()) {
+        arrumacao_json = srcArr;
+    } else if (srcArr && typeof srcArr === "object") {
+        arrumacao_json = JSON.stringify(srcArr);
+    }
 
     const body = {
         ...data,
-        local: data.local || "",
+        local: data?.local || "",
         materiais_json,
         arrumacao_json,
     };
