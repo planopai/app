@@ -190,11 +190,6 @@ const shown = (v?: any, fallback = "a definir") => {
 
 /* =========================
    Materiais (normalização para exibir no modal)
-   - Suporta:
-     - detail.materiais / detail.material (string)
-     - detail.materiais_json / detail.material_json (obj/string JSON)
-     - chaves avulsas: materiais_<nome> (bool/num), materiais_<nome>_qtd
-   - ✅ FIX: decodifica &quot; e extrai "nome" corretamente quando vier JSON estruturado
    ========================= */
 
 function normalizeMateriaisFromRegistro(registro: Registro): string[] {
@@ -251,7 +246,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             }
 
             if (isPlainObject(node)) {
-                // caso 1: objeto já é um "item" com nome/checked
                 const maybeNome =
                     (node as any).nome ??
                     (node as any).name ??
@@ -265,24 +259,19 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
                 if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
                     items.push({ nome: maybeNome, qtd: qtdVal });
-                    // não retorna; pode ter sub-itens também, mas geralmente não precisa
                 }
 
-                // caso 2: contém um container
                 const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
                 for (const k of containerKeys) {
                     if ((node as any)[k] != null) walk((node as any)[k]);
                 }
 
-                // caso 3: mapa itemX -> objeto item
                 for (const [k, v] of Object.entries(node)) {
                     if (v == null) continue;
                     if (typeof v === "object") {
-                        // se for itemN / item_ etc, geralmente v tem {checked,nome,qtd}
                         if (/^item\d+$/i.test(k) || /^item_/i.test(k)) {
                             walk(v);
                         } else {
-                            // ainda pode conter outros nodes com nome/checked
                             walk(v);
                         }
                     }
@@ -377,7 +366,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         // Array
         if (Array.isArray(raw)) {
-            // tenta extrair estruturado primeiro
             if (extractFromStructured(raw)) return;
             for (const it of raw) pushItem(it);
             return;
@@ -385,7 +373,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         // Objeto
         if (isPlainObject(raw)) {
-            // ✅ tenta extrair pelo "nome"
             if (extractFromStructured(raw)) return;
 
             const obj = raw as Record<string, unknown>;
@@ -399,29 +386,53 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             let s = decodeHtmlEntitiesDeep(raw).trim();
             if (!s) return;
 
+            // ✅ mantém original para detectar prefixo Json:
+            const original = s;
+
             // remove prefixos comuns tipo "Json:"
             s = s.replace(/^\s*json\s*:\s*/i, "").trim();
 
             // tenta JSON embutido
             const parsed = tryParseJsonFromStringMaybeEmbedded(s);
             if (parsed != null && parsed !== raw) {
-                // ✅ tenta extrair estruturado do JSON parseado
                 if (extractFromStructured(parsed)) return;
                 addFromUnknown(parsed);
                 return;
             }
 
+            // ✅ NOVO: se não parseou, tenta extrair por regex (mesmo com JSON “quebrado”)
+            const extracted = extractMateriaisByRegex(s);
+            if (extracted.length) {
+                extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
+                return;
+            }
+
+            // ✅ NOVO: se parece JSON de materiais, NÃO renderiza o JSON cru
+            if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
+
             // Se vier como CSV / separado por ; ou \n
             if (s.includes("\n")) {
-                s.split("\n").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s
+                    .split("\n")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
             if (s.includes(";")) {
-                s.split(";").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s
+                    .split(";")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
             if (s.includes(",")) {
-                s.split(",").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
 
@@ -515,13 +526,7 @@ function isGoogleMapsRota(raw?: string): boolean {
     return false;
 }
 
-function LocalVelorioValue({
-    value,
-    fallback = "a definir",
-}: {
-    value?: string;
-    fallback?: string;
-}) {
+function LocalVelorioValue({ value, fallback = "a definir" }: { value?: string; fallback?: string }) {
     const raw = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
     if (!raw) return <span>{fallback}</span>;
 
@@ -545,11 +550,7 @@ function LocalVelorioValue({
 
 /* Datas/horas → “a definir” para zeros e vazios */
 const formatDateBr = (d?: string) =>
-    !d
-        ? ""
-        : d.split("-").length === 3
-            ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
-            : d;
+    !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
 
 function dateOr(d?: string) {
     const raw = (d ?? "").trim();
@@ -724,9 +725,7 @@ function etapasPreenchidas(registro: Registro) {
         isFilled(registro, "local_velorio") &&
         isFilled(registro, "data_inicio_velorio") &&
         (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
-    d[3] =
-        isFilled(registro, "hora_inicio_velorio") ||
-        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
+    d[3] = isFilled(registro, "hora_inicio_velorio") || (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
 
     return d;
 }
@@ -739,9 +738,7 @@ function buildClipboardText(r: Registro) {
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
 
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
-    const ornTipo = ornTipoRaw
-        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
-        : "A DEFINIR";
+    const ornTipo = ornTipoRaw ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ") : "A DEFINIR";
 
     const involRaw = r?.invol;
     const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
@@ -890,15 +887,7 @@ function iconForAction(acao?: string, status?: string): string {
 /* =========================
    Página
    ========================= */
-const DIAS = [
-    "Domingo",
-    "Segunda-feira",
-    "Terça-feira",
-    "Quarta-feira",
-    "Quinta-feira",
-    "Sexta-feira",
-    "Sábado",
-];
+const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
@@ -1069,11 +1058,7 @@ export default function QuadroAtendimentoPage() {
 
         try {
             const sepId =
-                (r as any).sepultamento_id ??
-                (r as any).sepultamentoId ??
-                (r as any).id ??
-                (r as any).id_atendimento ??
-                (r as any).codigo;
+                (r as any).sepultamento_id ?? (r as any).sepultamentoId ?? (r as any).id ?? (r as any).id_atendimento ?? (r as any).codigo;
 
             if (!sepId) {
                 console.warn("Registro sem sepultamento_id para histórico:", r);
@@ -1111,29 +1096,15 @@ export default function QuadroAtendimentoPage() {
         if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
             await carregarHistoricoDoDetalhe(detail);
         }
-    }, [
-        detail,
-        detailTimelineOpen,
-        detailLogsLoading,
-        detailLogs.length,
-        detailLogsError,
-        carregarHistoricoDoDetalhe,
-    ]);
+    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const obsList = useCallback(
-        (missing: string[]) =>
-            missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.",
+        (missing: string[]) => (missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo."),
         []
     );
 
-    const missingEtapa0 = useCallback(
-        (r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)),
-        []
-    );
-    const missingEtapa1 = useCallback(
-        (r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)),
-        []
-    );
+    const missingEtapa0 = useCallback((r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)), []);
+    const missingEtapa1 = useCallback((r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)), []);
     const missingEtapa2 = useCallback((r: Registro) => {
         const miss: string[] = [];
         if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
@@ -1192,37 +1163,25 @@ export default function QuadroAtendimentoPage() {
                             <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
                                 <button
                                     onClick={toggleTimelineDetalhe}
-                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""
-                                        }`}
+                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
                                     aria-label="Linha do tempo"
                                     title="Ver linha do tempo deste atendimento"
                                 >
                                     Linha do tempo
                                 </button>
 
-                                <button
-                                    onClick={handleCopy}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Copiar"
-                                    title="Copiar informações"
-                                >
+                                <button onClick={handleCopy} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Copiar" title="Copiar informações">
                                     {copied ? "Copiado!" : "Copiar"}
                                 </button>
 
-                                <button
-                                    onClick={closeDetail}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Fechar"
-                                >
+                                <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
                                     Fechar
                                 </button>
                             </div>
 
                             <div className="mt-3">
                                 <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
-                                    {shown(detail.falecido)}
-                                </h3>
+                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">{shown(detail.falecido)}</h3>
 
                                 <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
                                     <span className="text-muted-foreground">
@@ -1237,11 +1196,7 @@ export default function QuadroAtendimentoPage() {
                                 </div>
 
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
-                                            detail.status
-                                        )}`}
-                                    >
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
                                         {capStatus(detail.status)}
                                     </span>
                                     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
@@ -1255,8 +1210,7 @@ export default function QuadroAtendimentoPage() {
                                             <div className="min-w-0">
                                                 <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
                                                 <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                    Logs deste atendimento:{" "}
-                                                    <b className="font-semibold">{shown(detail.falecido)}</b>
+                                                    Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
                                                 </div>
                                             </div>
                                             <button
@@ -1268,19 +1222,11 @@ export default function QuadroAtendimentoPage() {
                                             </button>
                                         </div>
 
-                                        {detailLogsLoading && (
-                                            <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>
-                                        )}
-                                        {detailLogsError && (
-                                            <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">
-                                                {detailLogsError}
-                                            </p>
-                                        )}
+                                        {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
+                                        {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="mt-2 text-sm text-muted-foreground">
-                                                Nenhum log encontrado para este atendimento.
-                                            </p>
+                                            <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
                                         )}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
@@ -1300,11 +1246,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Religião" value={shown(detail.religiao)} />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    <Field
-                                        label="Obs. Atendimento"
-                                        value={shown(detail.observacao_atendimento, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1317,23 +1259,12 @@ export default function QuadroAtendimentoPage() {
 
                                     <Field label="Invol" value={involSimNao(detail.invol)} />
 
-                                    <Field
-                                        label="Ornamentação"
-                                        value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
-                                    />
+                                    <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
                                     {/* ✅ Materiais agora exibe NOME dos itens (sem &quot; e sem Json:...) */}
-                                    <Field
-                                        label="Materiais"
-                                        value={<MateriaisValue registro={detail} />}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Materiais" value={<MateriaisValue registro={detail} />} className="sm:col-span-2" />
 
-                                    <Field
-                                        label="Obs. Itens"
-                                        value={shown(detail.observacao_itens, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1344,11 +1275,7 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    <Field
-                                        label="Obs. Velório"
-                                        value={shown(detail.observacao_velorio01, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1357,11 +1284,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    <Field
-                                        label="Obs. Sepultamento"
-                                        value={shown(detail.observacao_velorio02, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1379,13 +1302,7 @@ export default function QuadroAtendimentoPage() {
 
 /* ===== Listas Memoizadas ===== */
 
-const DesktopTable = React.memo(function DesktopTable({
-    ativos,
-    onSelect,
-}: {
-    ativos: Registro[];
-    onSelect: (r: Registro) => void;
-}) {
+const DesktopTable = React.memo(function DesktopTable({ ativos, onSelect }: { ativos: Registro[]; onSelect: (r: Registro) => void }) {
     return (
         <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
             <div className="overflow-x-auto rounded-2xl">
@@ -1415,11 +1332,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                     <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
                                         <td>{dateOr(r.data)}</td>
                                         <td>
-                                            <button
-                                                className="font-semibold underline-offset-2 hover:underline"
-                                                onClick={() => onSelect(r)}
-                                                title="Ver detalhes"
-                                            >
+                                            <button className="font-semibold underline-offset-2 hover:underline" onClick={() => onSelect(r)} title="Ver detalhes">
                                                 {shown(r.falecido)}
                                             </button>
                                         </td>
@@ -1429,11 +1342,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                         <td>{timeOr(r.hora_fim_velorio)}</td>
                                         <td>{shown(r.agente)}</td>
                                         <td>
-                                            <span
-                                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
-                                                    r.status
-                                                )}`}
-                                            >
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}>
                                                 {capStatus(r.status) || "a definir"}
                                             </span>
                                         </td>
@@ -1451,19 +1360,11 @@ const DesktopTable = React.memo(function DesktopTable({
     );
 });
 
-const MobileCards = React.memo(function MobileCards({
-    ativos,
-    onSelect,
-}: {
-    ativos: Registro[];
-    onSelect: (r: Registro) => void;
-}) {
+const MobileCards = React.memo(function MobileCards({ ativos, onSelect }: { ativos: Registro[]; onSelect: (r: Registro) => void }) {
     return (
         <div className="sm:hidden space-y-3">
             {ativos.length === 0 ? (
-                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
-                    Nenhum atendimento encontrado.
-                </div>
+                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">Nenhum atendimento encontrado.</div>
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
@@ -1489,15 +1390,11 @@ const MobileCards = React.memo(function MobileCards({
 
                             <div className="mt-2 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2">
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
-                                    >
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
                                         {statusTxt}
                                     </span>
                                     <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
-                                            convKind
-                                        )}`}
+                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(convKind)}`}
                                         title="Convênio"
                                     >
                                         {convKind}
@@ -1539,15 +1436,7 @@ const MobileCards = React.memo(function MobileCards({
 
 /* ===== Componentes auxiliares ===== */
 
-function Topic({
-    title,
-    children,
-    note,
-}: {
-    title: string;
-    children: React.ReactNode;
-    note?: string;
-}) {
+function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
@@ -1559,15 +1448,7 @@ function Topic({
     );
 }
 
-function Field({
-    label,
-    value,
-    className = "",
-}: {
-    label: string;
-    value: React.ReactNode;
-    className?: string;
-}) {
+function Field({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
             <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
@@ -1583,9 +1464,7 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span
-                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`}
-                    />
+                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
                 </div>
             ))}
         </div>
@@ -1618,6 +1497,31 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
         if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
     }
     return boolish / entries.length >= 0.8;
+}
+
+/* ✅ NOVO: detecta se a string “parece” ser JSON de materiais */
+function looksLikeMateriaisJson(s: string) {
+    const t = (s || "").toLowerCase();
+    return (t.includes('"nome"') && t.includes('"checked"')) || t.includes('"item');
+}
+
+/* ✅ NOVO: extrai nome/qtd mesmo se o JSON estiver “quebrado” e não der JSON.parse */
+function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: string }> {
+    const s = decodeHtmlEntitiesDeep(text)
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'");
+
+    const out: Array<{ nome: string; qtd?: string }> = [];
+    const re = /"nome"\s*:\s*"([^"]+)"/g;
+    let m: RegExpExecArray | null;
+
+    while ((m = re.exec(s))) {
+        const nome = m[1];
+        const near = s.slice(m.index, m.index + 220);
+        const qtd = near.match(/"qtd"\s*:\s*([0-9]+(?:[.,][0-9]+)?)/)?.[1];
+        out.push({ nome, qtd });
+    }
+    return out;
 }
 
 function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
@@ -1655,9 +1559,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         if (parsed != null) obj = parsed;
         else {
             const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
-            return text ? (
-                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
-            ) : null;
+            return text ? <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div> : null;
         }
     }
 
@@ -1759,10 +1661,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                 )}
 
                 {rows.map((row) => (
-                    <div
-                        key={row.id}
-                        className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0"
-                    >
+                    <div key={row.id} className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0">
                         <span className="font-semibold">{row.label}: </span>
                         <span className="break-words [overflow-wrap:anywhere]">{row.value}</span>
                     </div>
@@ -1772,18 +1671,10 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
     }
 
     const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
-    return text.trim() ? (
-        <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
-    ) : null;
+    return text.trim() ? <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div> : null;
 }
 
-function LinhaDoTempoLogs({
-    logs,
-    usuarioVisivel = true,
-}: {
-    logs: LogItem[];
-    usuarioVisivel?: boolean;
-}) {
+function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
     if (!logs || logs.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
     }
@@ -1796,14 +1687,9 @@ function LinhaDoTempoLogs({
                 const detalhes = buildDetalhesNodes(ent.detalhes);
 
                 return (
-                    <div
-                        key={i}
-                        className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0"
-                    >
+                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">
-                                {iconForAction(ent.acao, ent.status_novo)}
-                            </div>
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
 
                             <div className="flex-1 min-w-0">
                                 <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
@@ -1818,9 +1704,7 @@ function LinhaDoTempoLogs({
                                 </div>
 
                                 {usuarioVisivel && (
-                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                        Usuário: {ent.usuario ?? ""}
-                                    </div>
+                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">Usuário: {ent.usuario ?? ""}</div>
                                 )}
 
                                 {detalhes}
