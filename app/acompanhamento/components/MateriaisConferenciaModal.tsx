@@ -1,149 +1,177 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 
 export type MatCheckItem = {
-    /** chave única (ex: "item:12", "subitem:33" ou o próprio key do MateriaisState) */
     key: string;
     nome: string;
     qtd: number;
 };
 
-export default function MateriaisConferenciaModal({
-    open,
-    onClose,
-    onConfirm,
-    itens,
-    titulo,
-    subtitulo,
-    confirmLabel,
-}: {
+type ConfirmPayload = {
+    naoConforme: boolean;
+    observacao: string;
+};
+
+type Props = {
     open: boolean;
-    onClose: () => void;
-    onConfirm: () => void | Promise<void>;
     itens: MatCheckItem[];
-    /** opcional */
-    titulo?: string;
-    subtitulo?: string;
-    confirmLabel?: string;
-}) {
-    const [okMap, setOkMap] = useState<Record<string, boolean>>({});
+    onClose: () => void;
+
+    /**
+     * Mantive compatível com o que você já usa no page.tsx.
+     * Ele pode ser chamado sem parâmetro (como hoje), ou com o payload.
+     */
+    onConfirm: (payload?: ConfirmPayload) => void | Promise<void>;
+};
+
+export default function MateriaisConferenciaModal({ open, itens, onClose, onConfirm }: Props) {
+    const [naoConforme, setNaoConforme] = useState(false);
+    const [observacao, setObservacao] = useState("");
+    const [erro, setErro] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+
+    const obsRef = useRef<HTMLTextAreaElement>(null);
+
+    const totalItens = useMemo(() => {
+        return (itens || []).reduce((acc, it) => acc + (Number(it?.qtd ?? 0) > 0 ? 1 : 0), 0);
+    }, [itens]);
 
     useEffect(() => {
         if (!open) return;
-        const init: Record<string, boolean> = {};
-        for (const it of itens) init[it.key] = false;
-        setOkMap(init);
+        setNaoConforme(false);
+        setObservacao("");
+        setErro(null);
         setSubmitting(false);
-    }, [open, itens]);
+    }, [open]);
 
-    const total = itens.length;
-    const okCount = useMemo(() => itens.filter((it) => okMap[it.key]).length, [itens, okMap]);
-    const allOk = total === 0 ? true : okCount === total;
+    useEffect(() => {
+        if (open && naoConforme) {
+            // pequeno delay pra garantir render do textarea
+            setTimeout(() => obsRef.current?.focus(), 50);
+        }
+    }, [open, naoConforme]);
 
-    function setAll(v: boolean) {
-        const next: Record<string, boolean> = {};
-        for (const it of itens) next[it.key] = v;
-        setOkMap(next);
-    }
+    const handleConfirm = async () => {
+        if (submitting) return;
 
-    const resumo = useMemo(() => {
-        if (total === 0) return "Nenhum material para conferir.";
-        return `Confirmados: ${okCount} / ${total}`;
-    }, [okCount, total]);
+        setErro(null);
+
+        if (naoConforme) {
+            const obs = observacao.trim();
+            if (!obs) {
+                setErro("Informe uma observação para a opção “Não Conforme”.");
+                obsRef.current?.focus();
+                return;
+            }
+        }
+
+        try {
+            setSubmitting(true);
+            await onConfirm({
+                naoConforme,
+                observacao: observacao.trim(),
+            });
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Conferência de materiais" maxWidth={680}>
+        <Modal open={open} onClose={onClose} ariaLabel="Conferência de Materiais" maxWidth={560}>
             <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <h3 className="text-lg font-semibold">
-                        {titulo || "Conferência de Materiais (Assistência)"}
-                    </h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                        {subtitulo || "Marque OK em todos os itens e quantidades para liberar a confirmação."}
+                <div>
+                    <h3 className="text-lg font-semibold">Conferência de Materiais</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Confirme os materiais antes de marcar <span className="font-medium">Material Recolhido</span>.
                     </p>
                 </div>
 
-                <button
-                    className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
-                    onClick={onClose}
-                    disabled={submitting}
-                >
-                    Voltar
-                </button>
+                <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
+                    {totalItens} item(ns)
+                </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
-                <div>{resumo}</div>
+            <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border">
+                {(!itens || itens.length === 0) && (
+                    <div className="p-4 text-sm text-muted-foreground">Nenhum material selecionado para conferência.</div>
+                )}
 
-                {total > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                            type="button"
-                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
-                            onClick={() => setAll(true)}
-                            disabled={submitting}
-                        >
-                            Marcar todos
-                        </button>
-                        <button
-                            type="button"
-                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
-                            onClick={() => setAll(false)}
-                            disabled={submitting}
-                        >
-                            Desmarcar
-                        </button>
+                {(itens || []).map((it) => (
+                    <div key={it.key} className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0">
+                        <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{it.nome}</div>
+                            <div className="text-xs text-muted-foreground">Chave: {it.key}</div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Qtd</span>
+                            <span className="inline-flex min-w-[44px] justify-center rounded-md border bg-background px-2 py-1 text-sm">
+                                {Number(it.qtd ?? 0)}
+                            </span>
+                        </div>
                     </div>
+                ))}
+            </div>
+
+            {/* Não Conforme + Observação */}
+            <div className="mt-4 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-sm font-medium">Status da conferência</div>
+                        <div className="text-xs text-muted-foreground">
+                            Se houver divergência, marque <span className="font-medium">Não Conforme</span> e descreva o motivo.
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        className={[
+                            "shrink-0 rounded-md border px-3 py-2 text-sm transition",
+                            naoConforme ? "bg-destructive text-destructive-foreground border-destructive/40" : "hover:bg-muted",
+                        ].join(" ")}
+                        onClick={() => {
+                            setErro(null);
+                            setNaoConforme((v) => !v);
+                        }}
+                        aria-pressed={naoConforme}
+                    >
+                        Não Conforme
+                    </button>
+                </div>
+
+                {naoConforme && (
+                    <div className="mt-3">
+                        <label className="block text-sm font-medium" htmlFor="mat-check-obs">
+                            Observação
+                        </label>
+                        <textarea
+                            id="mat-check-obs"
+                            ref={obsRef}
+                            className="mt-2 w-full min-h-[88px] resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                            placeholder="Descreva o motivo da não conformidade (ex.: item faltando, quantidade divergente, avaria...)"
+                            value={observacao}
+                            onChange={(e) => setObservacao(e.target.value)}
+                            maxLength={600}
+                        />
+                        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{erro ? <span className="text-destructive">{erro}</span> : " "}</span>
+                            <span>{observacao.trim().length}/600</span>
+                        </div>
+                    </div>
+                )}
+
+                {!naoConforme && erro && (
+                    <div className="mt-2 text-xs text-destructive">{erro}</div>
                 )}
             </div>
 
-            {total === 0 ? (
-                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    Este registro não possui materiais cadastrados para conferência.
-                    <div className="mt-1 text-xs text-amber-800">
-                        Se isso estiver errado, edite o registro e selecione os materiais em “Assistência (Materiais)”.
-                    </div>
-                </div>
-            ) : (
-                <div className="mt-4 rounded-lg border p-3">
-                    <div className="mb-2 text-sm font-medium">Itens e quantidades</div>
-
-                    <div className="space-y-2">
-                        {itens.map((it) => {
-                            const checked = !!okMap[it.key];
-                            return (
-                                <div
-                                    key={it.key}
-                                    className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${checked ? "bg-emerald-50" : "bg-white"
-                                        }`}
-                                >
-                                    <div className="min-w-0">
-                                        <div className="truncate text-sm font-medium">{it.nome}</div>
-                                        <div className="text-xs text-muted-foreground">Qtd: {it.qtd}</div>
-                                    </div>
-
-                                    <label className="inline-flex items-center gap-2 text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={(e) => setOkMap((p) => ({ ...p, [it.key]: e.target.checked }))}
-                                            disabled={submitting}
-                                        />
-                                        OK
-                                    </label>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
+            {/* Footer */}
             <div className="mt-5 flex items-center justify-end gap-2">
                 <button
-                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                    type="button"
+                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
                     onClick={onClose}
                     disabled={submitting}
                 >
@@ -151,22 +179,12 @@ export default function MateriaisConferenciaModal({
                 </button>
 
                 <button
-                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                    disabled={!allOk || submitting}
-                    onClick={async () => {
-                        if (!allOk || submitting) return;
-                        try {
-                            setSubmitting(true);
-                            await onConfirm();
-                        } finally {
-                            setSubmitting(false);
-                        }
-                    }}
-                    title={!allOk ? "Confirme todos os itens para liberar" : "Confirmar"}
-                    aria-disabled={!allOk || submitting}
-                    aria-busy={submitting}
+                    type="button"
+                    className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                    onClick={handleConfirm}
+                    disabled={submitting}
                 >
-                    {submitting ? "Confirmando…" : confirmLabel || "Confirmar Material Recolhido"}
+                    {submitting ? "Salvando..." : "OK"}
                 </button>
             </div>
         </Modal>
