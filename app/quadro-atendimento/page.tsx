@@ -141,18 +141,51 @@ type LogItem = {
 /* =========================
    Helpers comuns
    ========================= */
-const sanitize = (t?: string) =>
-    t
-        ? t
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-        : "";
 
-const shown = (v?: string, fallback = "a definir") => {
-    const s = String(v ?? "").trim();
-    return s ? sanitize(s) : fallback;
+/**
+ * React já escapa strings.
+ * O seu problema real era o backend mandar entidades HTML (&quot; etc).
+ * Então aqui a gente DECODIFICA entidades para exibir bonito.
+ */
+function decodeHtmlEntitiesOnce(input: string): string {
+    if (!input) return input;
+
+    // Browser (client): usa textarea pra decodificar corretamente
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+        const ta = document.createElement("textarea");
+        ta.innerHTML = input;
+        return ta.value;
+    }
+
+    // Fallback (caso raríssimo)
+    return input
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#039;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)));
+}
+
+/** algumas vezes vem “duplamente escapado” (ex: &amp;quot;) */
+function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
+    let s = String(input ?? "");
+    for (let i = 0; i < maxPasses; i++) {
+        const next = decodeHtmlEntitiesOnce(s);
+        if (next === s) break;
+        s = next;
+    }
+    return s;
+}
+
+// antes era "sanitize" (escapava tudo e causava &quot; na tela)
+const sanitize = (t?: any) => decodeHtmlEntitiesDeep(String(t ?? ""));
+
+const shown = (v?: any, fallback = "a definir") => {
+    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim();
+    return s ? s : fallback;
 };
 
 /* =========================
@@ -161,14 +194,18 @@ const shown = (v?: string, fallback = "a definir") => {
      - detail.materiais / detail.material (string)
      - detail.materiais_json / detail.material_json (obj/string JSON)
      - chaves avulsas: materiais_<nome> (bool/num), materiais_<nome>_qtd
+   - ✅ FIX: decodifica &quot; e extrai "nome" corretamente quando vier JSON estruturado
    ========================= */
+
 function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     const out: string[] = [];
     const seen = new Set<string>();
 
     const pushItem = (raw: any) => {
-        const s = String(raw ?? "").trim();
+        const s0 = String(raw ?? "");
+        const s = decodeHtmlEntitiesDeep(s0).trim();
         if (!s) return;
+
         const low = s.toLowerCase();
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
@@ -177,6 +214,88 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         if (seen.has(clean)) return;
         seen.add(clean);
         out.push(clean);
+    };
+
+    const pushNomeQtd = (nomeRaw: any, qtdRaw?: any) => {
+        const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
+        if (!nome) return;
+
+        const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
+        if (qtdStr) {
+            const n = Number(qtdStr.replace(",", "."));
+            if (!Number.isNaN(n) && n > 0 && qtdStr !== "1") {
+                pushItem(`${nome} (${qtdStr})`);
+                return;
+            }
+        }
+        pushItem(nome);
+    };
+
+    /**
+     * Extrai materiais de JSON padrão do seu print:
+     * {
+     *   "item3": { "checked": true, "qtd": 1, "nome": "Extensão", ... },
+     *   "itemX": { ... }
+     * }
+     * ou array de objetos com {nome, checked, qtd}
+     */
+    const extractFromStructured = (raw: unknown): boolean => {
+        const items: { nome: any; qtd?: any }[] = [];
+
+        const walk = (node: any) => {
+            if (node == null) return;
+
+            if (Array.isArray(node)) {
+                node.forEach(walk);
+                return;
+            }
+
+            if (isPlainObject(node)) {
+                // caso 1: objeto já é um "item" com nome/checked
+                const maybeNome =
+                    (node as any).nome ??
+                    (node as any).name ??
+                    (node as any).descricao ??
+                    (node as any).descrição ??
+                    (node as any).material;
+
+                const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
+                const checkedVal = (node as any).checked;
+                const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
+
+                if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
+                    items.push({ nome: maybeNome, qtd: qtdVal });
+                    // não retorna; pode ter sub-itens também, mas geralmente não precisa
+                }
+
+                // caso 2: contém um container
+                const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
+                for (const k of containerKeys) {
+                    if ((node as any)[k] != null) walk((node as any)[k]);
+                }
+
+                // caso 3: mapa itemX -> objeto item
+                for (const [k, v] of Object.entries(node)) {
+                    if (v == null) continue;
+                    if (typeof v === "object") {
+                        // se for itemN / item_ etc, geralmente v tem {checked,nome,qtd}
+                        if (/^item\d+$/i.test(k) || /^item_/i.test(k)) {
+                            walk(v);
+                        } else {
+                            // ainda pode conter outros nodes com nome/checked
+                            walk(v);
+                        }
+                    }
+                }
+            }
+        };
+
+        walk(raw);
+
+        if (items.length === 0) return false;
+
+        for (const it of items) pushNomeQtd(it.nome, it.qtd);
+        return true;
     };
 
     const addFromBooleanMap = (obj: Record<string, unknown>) => {
@@ -193,7 +312,7 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         for (const [key, value] of Object.entries(obj)) {
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (!m) continue;
-            const valStr = String(value ?? "").trim();
+            const valStr = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
             if (!valStr) continue;
 
             const n = Number(valStr.replace(",", "."));
@@ -214,14 +333,12 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             const base = m[1];
             const nome = overrideCampoNome(base, titleCaseFromSnake(base));
 
-            // se bool -> mostra quando true
             if (asBool(value)) {
                 pushItem(nome);
                 continue;
             }
 
-            // se número -> mostra quando > 0
-            const valStr = String(value ?? "").trim();
+            const valStr = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
             if (!valStr) continue;
 
             const n = Number(valStr.replace(",", "."));
@@ -230,18 +347,17 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                 continue;
             }
 
-            // fallback texto
             pushItem(`${nome}: ${valStr}`);
         }
 
         // 3) se o objeto for um "mapa" comum de { item: qtd }
         for (const [k, v] of Object.entries(obj)) {
             if (k === "materiais_json" || k === "material_json") continue;
-            if (/^materiais_.+/i.test(k)) continue; // já tratado acima
+            if (/^materiais_.+/i.test(k)) continue;
             if (v == null) continue;
             if (typeof v === "object") continue;
 
-            const valStr = String(v).trim();
+            const valStr = decodeHtmlEntitiesDeep(String(v)).trim();
             if (!valStr) continue;
 
             const nome = overrideCampoNome(k, titleCaseFromSnake(k));
@@ -251,36 +367,46 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             } else if (asBool(valStr)) {
                 pushItem(nome);
             } else {
-                // quando for texto aleatório
                 pushItem(`${nome}: ${valStr}`);
             }
         }
     };
 
-    const addFromUnknown = (raw: unknown) => {
+    const addFromUnknown = ((raw: unknown) => {
         if (raw == null || raw === "") return;
 
-        // Array: aceita lista de strings/itens
+        // Array
         if (Array.isArray(raw)) {
+            // tenta extrair estruturado primeiro
+            if (extractFromStructured(raw)) return;
             for (const it of raw) pushItem(it);
             return;
         }
 
-        // Objeto: tenta boolean map | misto
+        // Objeto
         if (isPlainObject(raw)) {
+            // ✅ tenta extrair pelo "nome"
+            if (extractFromStructured(raw)) return;
+
             const obj = raw as Record<string, unknown>;
             if (isLikelyBooleanMap(obj)) addFromBooleanMap(obj);
             else addFromMixedObject(obj);
             return;
         }
 
-        // String: tenta JSON embutido
+        // String
         if (typeof raw === "string") {
-            const s = raw.trim();
+            let s = decodeHtmlEntitiesDeep(raw).trim();
             if (!s) return;
 
+            // remove prefixos comuns tipo "Json:"
+            s = s.replace(/^\s*json\s*:\s*/i, "").trim();
+
+            // tenta JSON embutido
             const parsed = tryParseJsonFromStringMaybeEmbedded(s);
             if (parsed != null && parsed !== raw) {
+                // ✅ tenta extrair estruturado do JSON parseado
+                if (extractFromStructured(parsed)) return;
                 addFromUnknown(parsed);
                 return;
             }
@@ -295,12 +421,10 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                 return;
             }
             if (s.includes(",")) {
-                // cuidado: às vezes é texto livre. aqui é o melhor chute.
                 s.split(",").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
                 return;
             }
 
-            // texto livre único
             pushItem(s);
             return;
         }
@@ -315,9 +439,8 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             return;
         }
 
-        // fallback
         pushItem(String(raw));
-    };
+    }) as (raw: unknown) => void;
 
     // 1) fontes diretas
     addFromUnknown((registro as any).materiais_json);
@@ -325,7 +448,7 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     addFromUnknown((registro as any).materiais);
     addFromUnknown((registro as any).material);
 
-    // 2) varredura por chaves materiais_* no próprio registro (muito comum no retorno do PHP)
+    // 2) varredura por chaves materiais_* no próprio registro
     if (isPlainObject(registro)) {
         const obj = registro as Record<string, unknown>;
         const picked: Record<string, unknown> = {};
@@ -350,12 +473,11 @@ function MateriaisValue({ registro, fallback = "a definir" }: { registro: Regist
 
     if (!itens || itens.length === 0) return <span>{fallback}</span>;
 
-    // Exibe como lista (bonito e legível)
     return (
         <ul className="list-disc pl-4 space-y-0.5">
             {itens.map((t, idx) => (
                 <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                    {sanitize(t)}
+                    {t}
                 </li>
             ))}
         </ul>
@@ -369,12 +491,10 @@ function ensureHttpsUrl(raw: string): string {
     const s = String(raw ?? "").trim();
     if (!s) return s;
 
-    // já tem protocolo -> garante https se vier http
     if (/^https?:\/\//i.test(s)) {
         return s.replace(/^http:\/\//i, "https://");
     }
 
-    // sem protocolo: se parece URL, prefixa https://
     if (/^(www\.)/i.test(s)) return `https://${s}`;
     if (/^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s))
         return `https://${s}`;
@@ -387,10 +507,8 @@ function isGoogleMapsRota(raw?: string): boolean {
     if (!s) return false;
 
     const noProto = s.replace(/^https?:\/\//, "");
-    // rota típica (inclui o formato gerado pelo GPS no wizard)
     if (noProto.includes("google.com/maps/dir")) return true;
     if (noProto.includes("maps.google.com/maps/dir")) return true;
-    // encurtadores comuns (podem apontar pra rota)
     if (noProto.startsWith("maps.app.goo.gl/")) return true;
     if (noProto.startsWith("goo.gl/maps/")) return true;
 
@@ -404,7 +522,7 @@ function LocalVelorioValue({
     value?: string;
     fallback?: string;
 }) {
-    const raw = String(value ?? "").trim();
+    const raw = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
     if (!raw) return <span>{fallback}</span>;
 
     if (isGoogleMapsRota(raw)) {
@@ -559,10 +677,10 @@ function convenioClass(kind: ConvenioKind) {
 
 /* ---------------- Etapas (bolinhas) ---------------- */
 const STAGE_DOT_FILLED = [
-    "bg-emerald-500 border-emerald-600", // D
-    "bg-sky-500 border-sky-600", // I
-    "bg-violet-500 border-violet-600", // V
-    "bg-amber-500 border-amber-600", // S
+    "bg-emerald-500 border-emerald-600",
+    "bg-sky-500 border-sky-600",
+    "bg-violet-500 border-violet-600",
+    "bg-amber-500 border-amber-600",
 ];
 const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
 
@@ -589,7 +707,7 @@ const isFilled = (registro: Registro, key?: string) => {
     if (!key) return false;
     const v = registro[key];
     if (v == null) return false;
-    const s = String(v).trim().toLowerCase();
+    const s = decodeHtmlEntitiesDeep(String(v)).trim().toLowerCase();
     if (!s) return false;
     if (["selecionar...", "selecione...", "a definir"].includes(s)) return false;
     if (key.startsWith("data") && (s === "0000-00-00" || s === "00/00/0000")) return false;
@@ -617,7 +735,7 @@ function etapasPreenchidas(registro: Registro) {
    Texto para copiar
    ========================= */
 function buildClipboardText(r: Registro) {
-    const v = (k: string) => String(r?.[k] ?? "").trim();
+    const v = (k: string) => decodeHtmlEntitiesDeep(String(r?.[k] ?? "")).trim();
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
 
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
@@ -625,16 +743,13 @@ function buildClipboardText(r: Registro) {
         ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
         : "A DEFINIR";
 
-    // ✅ invol em SIM/NÃO (default: NÃO)
     const involRaw = r?.invol;
-    const involStr = String(involRaw ?? "").trim().toLowerCase();
+    const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
     const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
 
-    // ✅ se for rota, garante link clicável com https://
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
-    // ✅ materiais (novo)
     const mats = normalizeMateriaisFromRegistro(r);
     const matsStr = mats.length ? mats.join(", ") : "A DEFINIR";
 
@@ -661,11 +776,11 @@ function buildClipboardText(r: Registro) {
    Regras do painel
    ========================= */
 function isNao(v?: string) {
-    const s = (v || "").toString().trim().toLowerCase();
+    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
 function isSim(v?: string) {
-    const s = (v || "").toString().trim().toLowerCase();
+    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
     return s === "sim" || s === "s";
 }
 function isTerceiroRegistro(r: Registro) {
@@ -673,9 +788,8 @@ function isTerceiroRegistro(r: Registro) {
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
-// ✅ Invol em “Sim/Não” pro modal (default: "Não")
 function involSimNao(value: any): string {
-    const s = String(value ?? "").trim().toLowerCase();
+    const s = decodeHtmlEntitiesDeep(String(value ?? "")).trim().toLowerCase();
     if (!s) return "Não";
     if (["1", "true", "t", "sim", "s", "yes", "y"].includes(s)) return "Sim";
     return "Não";
@@ -692,7 +806,6 @@ function parseRegistroDateTime(r: Registro) {
     return Number.isNaN(ts) ? 0 : ts;
 }
 
-/* Helpers diversos usados também na Linha do Tempo */
 function capitalize(str?: string): string {
     if (!str) return "";
     const s = str.toString().trim();
@@ -724,7 +837,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function asBool(val: unknown): boolean {
     if (typeof val === "boolean") return val;
-    const s = String(val ?? "").trim().toLowerCase();
+    const s = decodeHtmlEntitiesDeep(String(val ?? "")).trim().toLowerCase();
     if (!s) return false;
     return ["1", "true", "t", "sim", "s", "yes", "y"].includes(s);
 }
@@ -791,22 +904,18 @@ export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
 
-    // ✅ começa imediato com cache local (se existir)
     const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
     const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
 
-    // modal detalhes
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
     const [copied, setCopied] = useState(false);
 
-    // Linha do Tempo (dentro do modal de detalhes)
     const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
-    // relógio (ok manter; a lista pesada está memoizada embaixo)
     useEffect(() => {
         const update = () => {
             const now = new Date();
@@ -825,16 +934,13 @@ export default function QuadroAtendimentoPage() {
         return () => clearInterval(id);
     }, []);
 
-    // ✅ DADOS (carrega rápido + não zera em erro + cache TTL)
     useEffect(() => {
         let alive = true;
-
-        // usando seu proxy Next (mais rápido/sem CORS)
         const BASE = "/api/php/informativo.php?listar=1";
 
         async function load() {
             try {
-                const url = `${BASE}&_ts=${Date.now()}`; // evita cache de infra, mas mantemos cacheKey fixo
+                const url = `${BASE}&_ts=${Date.now()}`;
                 const j = await fetchJsonFast<any>(url, {
                     ttlMs: 6_000,
                     cacheKey: "informativo_listar",
@@ -844,7 +950,7 @@ export default function QuadroAtendimentoPage() {
                 setRegistros(arr);
                 writeLS("qa_registros", arr);
             } catch {
-                // mantém o que já tem (sem “piscar”)
+                // mantém o que já tem
             }
         }
 
@@ -856,10 +962,8 @@ export default function QuadroAtendimentoPage() {
         };
     }, []);
 
-    // ✅ AVISOS (cache TTL + não zera em erro)
     useEffect(() => {
         let alive = true;
-
         const BASE = "/api/php/avisos.php?listar=1";
 
         async function load() {
@@ -918,9 +1022,6 @@ export default function QuadroAtendimentoPage() {
         return () => window.removeEventListener("keydown", onKey);
     }, [closeDetail]);
 
-    /* =========================
-       ATIVOS + ORDENADOS (UMA VEZ)
-       ========================= */
     const ativosOrdenados = useMemo(() => {
         const base = (registros || []).filter((r) => {
             const status = normalizarStatus(r.status);
@@ -931,13 +1032,11 @@ export default function QuadroAtendimentoPage() {
             return true;
         });
 
-        // pré-computa timestamp 1x e ordena DESC
         const withTs = base.map((r) => ({ r, ts: parseRegistroDateTime(r) }));
         withTs.sort((a, b) => b.ts - a.ts);
         return withTs.map((x) => x.r);
     }, [registros]);
 
-    // copiar para clipboard
     const handleCopy = useCallback(async () => {
         if (!detail) return;
         const text = buildClipboardText(detail);
@@ -963,7 +1062,6 @@ export default function QuadroAtendimentoPage() {
         }
     }, [detail]);
 
-    // carregar logs SOMENTE do falecido em detalhe (agora via proxy + cache TTL)
     const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
         setDetailLogs([]);
         setDetailLogsError(null);
@@ -995,7 +1093,6 @@ export default function QuadroAtendimentoPage() {
             if (Array.isArray(json)) logs = json as LogItem[];
             else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
 
-            // cronológica (criação primeiro)
             logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
             setDetailLogs(logs);
         } catch (e) {
@@ -1023,7 +1120,6 @@ export default function QuadroAtendimentoPage() {
         carregarHistoricoDoDetalhe,
     ]);
 
-    // helpers para observações por container
     const obsList = useCallback(
         (missing: string[]) =>
             missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.",
@@ -1056,7 +1152,6 @@ export default function QuadroAtendimentoPage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
-            {/* Header/clock */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -1068,13 +1163,9 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            {/* Tabela (desktop) */}
             <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} />
-
-            {/* Cards (mobile) */}
             <MobileCards ativos={ativosOrdenados} onSelect={showDetail} />
 
-            {/* Avisos */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
@@ -1084,23 +1175,20 @@ export default function QuadroAtendimentoPage() {
                     ) : (
                         avisos.map((a, i) => (
                             <div key={i} className="flex gap-2 text-sm">
-                                <strong>{sanitize(a.usuario)}</strong>
-                                <span>{sanitize(a.mensagem)}</span>
+                                <strong>{shown(a.usuario, "")}</strong>
+                                <span>{shown(a.mensagem, "")}</span>
                             </div>
                         ))
                     )}
                 </div>
             </div>
 
-            {/* ===== Modal de Detalhes (com Linha do Tempo dentro) ===== */}
             {open && detail && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
                     <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
 
                     <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain">
-                        {/* header sticky */}
                         <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3 overflow-x-hidden">
-                            {/* ✅ só os 3 botões no topo, centralizados */}
                             <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
                                 <button
                                     onClick={toggleTimelineDetalhe}
@@ -1130,7 +1218,6 @@ export default function QuadroAtendimentoPage() {
                                 </button>
                             </div>
 
-                            {/* ✅ infos embaixo dos botões */}
                             <div className="mt-3">
                                 <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
                                 <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
@@ -1162,7 +1249,6 @@ export default function QuadroAtendimentoPage() {
                                     </span>
                                 </div>
 
-                                {/* ✅ Linha do Tempo colapsável */}
                                 {detailTimelineOpen && (
                                     <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
                                         <div className="flex items-start justify-between gap-2 min-w-0">
@@ -1207,7 +1293,6 @@ export default function QuadroAtendimentoPage() {
                             </div>
                         </div>
 
-                        {/* conteúdo com TÓPICOS */}
                         <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
                             <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
@@ -1230,7 +1315,6 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
 
-                                    {/* ✅ NOVO: Invol (Sim/Não) */}
                                     <Field label="Invol" value={involSimNao(detail.invol)} />
 
                                     <Field
@@ -1238,7 +1322,7 @@ export default function QuadroAtendimentoPage() {
                                         value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
                                     />
 
-                                    {/* ✅ ALTERAÇÃO: Materiais agora mostra os materiais selecionados (json, campos materiais_*, etc.) */}
+                                    {/* ✅ Materiais agora exibe NOME dos itens (sem &quot; e sem Json:...) */}
                                     <Field
                                         label="Materiais"
                                         value={<MateriaisValue registro={detail} />}
@@ -1293,7 +1377,7 @@ export default function QuadroAtendimentoPage() {
     );
 }
 
-/* ===== Listas Memoizadas (não re-renderizam a cada 1s do relógio) ===== */
+/* ===== Listas Memoizadas ===== */
 
 const DesktopTable = React.memo(function DesktopTable({
     ativos,
@@ -1492,7 +1576,6 @@ function Field({
     );
 }
 
-/* Dots coloridos inline */
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     const labels = ["D", "I", "V", "S"];
     return (
@@ -1509,7 +1592,6 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     );
 }
 
-/* Linha de etapas (modal) */
 function EtapasRow({ registro }: { registro: Registro }) {
     const preenchidas = etapasPreenchidas(registro);
     const labels = ["D", "I", "V", "S"];
@@ -1532,15 +1614,16 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
     if (entries.length === 0) return false;
     let boolish = 0;
     for (const [, v] of entries) {
-        const s = String(v ?? "").trim().toLowerCase();
+        const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
         if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
     }
     return boolish / entries.length >= 0.8;
 }
 
 function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
-    const trimmed = raw.trim();
-    // 1) JSON puro
+    const decoded = decodeHtmlEntitiesDeep(raw);
+    const trimmed = decoded.trim().replace(/^\s*json\s*:\s*/i, "").trim();
+
     if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
         try {
             return JSON.parse(trimmed);
@@ -1548,7 +1631,7 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
             /* ignore */
         }
     }
-    // 2) JSON já embutido
+
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
     if (start >= 0 && end > start) {
@@ -1571,7 +1654,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
         if (parsed != null) obj = parsed;
         else {
-            const text = substituirRotuloVisual(raw.trim());
+            const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
             return text ? (
                 <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
             ) : null;
@@ -1632,7 +1715,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
             if (value == null) continue;
             if (typeof value === "object") continue;
 
-            const valStr = String(value).trim();
+            const valStr = decodeHtmlEntitiesDeep(String(value)).trim();
             if (!valStr) continue;
 
             let nome = key.replace(/_/g, " ");
@@ -1688,7 +1771,7 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
         );
     }
 
-    const text = substituirRotuloVisual(String(obj));
+    const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
     return text.trim() ? (
         <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
     ) : null;
