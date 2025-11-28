@@ -113,8 +113,14 @@ type Registro = {
 
     local?: string;
     local_sepultamento?: string;
+
+    // campos antigos
     materiais?: string;
     material?: string;
+
+    // possíveis campos do backend/relatórios
+    materiais_json?: any;
+    material_json?: any;
 
     tipo_atendimento?: "funerario" | "terceiro";
 
@@ -148,6 +154,213 @@ const shown = (v?: string, fallback = "a definir") => {
     const s = String(v ?? "").trim();
     return s ? sanitize(s) : fallback;
 };
+
+/* =========================
+   Materiais (normalização para exibir no modal)
+   - Suporta:
+     - detail.materiais / detail.material (string)
+     - detail.materiais_json / detail.material_json (obj/string JSON)
+     - chaves avulsas: materiais_<nome> (bool/num), materiais_<nome>_qtd
+   ========================= */
+function normalizeMateriaisFromRegistro(registro: Registro): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+
+    const pushItem = (raw: any) => {
+        const s = String(raw ?? "").trim();
+        if (!s) return;
+        const low = s.toLowerCase();
+        if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
+
+        const clean = s.replace(/\s+/g, " ").trim();
+        if (!clean) return;
+        if (seen.has(clean)) return;
+        seen.add(clean);
+        out.push(clean);
+    };
+
+    const addFromBooleanMap = (obj: Record<string, unknown>) => {
+        for (const [k, v] of Object.entries(obj)) {
+            if (asBool(v)) {
+                const nome = overrideCampoNome(k, titleCaseFromSnake(k));
+                pushItem(nome);
+            }
+        }
+    };
+
+    const addFromMixedObject = (obj: Record<string, unknown>) => {
+        // 1) pega materiais_<nome>_qtd primeiro
+        for (const [key, value] of Object.entries(obj)) {
+            const m = key.match(/^materiais_(.+?)_qtd$/i);
+            if (!m) continue;
+            const valStr = String(value ?? "").trim();
+            if (!valStr) continue;
+
+            const n = Number(valStr.replace(",", "."));
+            if (!Number.isNaN(n) && n <= 0) continue;
+
+            const base = m[1];
+            const nome = overrideCampoNome(base, titleCaseFromSnake(base));
+            pushItem(`${nome} (${valStr})`);
+        }
+
+        // 2) booleans/números em materiais_<nome>
+        for (const [key, value] of Object.entries(obj)) {
+            if (/^materiais_.+?_qtd$/i.test(key)) continue;
+
+            const m = key.match(/^materiais_(.+)$/i);
+            if (!m) continue;
+
+            const base = m[1];
+            const nome = overrideCampoNome(base, titleCaseFromSnake(base));
+
+            // se bool -> mostra quando true
+            if (asBool(value)) {
+                pushItem(nome);
+                continue;
+            }
+
+            // se número -> mostra quando > 0
+            const valStr = String(value ?? "").trim();
+            if (!valStr) continue;
+
+            const n = Number(valStr.replace(",", "."));
+            if (!Number.isNaN(n)) {
+                if (n > 0) pushItem(`${nome} (${valStr})`);
+                continue;
+            }
+
+            // fallback texto
+            pushItem(`${nome}: ${valStr}`);
+        }
+
+        // 3) se o objeto for um "mapa" comum de { item: qtd }
+        for (const [k, v] of Object.entries(obj)) {
+            if (k === "materiais_json" || k === "material_json") continue;
+            if (/^materiais_.+/i.test(k)) continue; // já tratado acima
+            if (v == null) continue;
+            if (typeof v === "object") continue;
+
+            const valStr = String(v).trim();
+            if (!valStr) continue;
+
+            const nome = overrideCampoNome(k, titleCaseFromSnake(k));
+            const maybeNum = Number(valStr.replace(",", "."));
+            if (!Number.isNaN(maybeNum)) {
+                if (maybeNum > 0) pushItem(`${nome} (${valStr})`);
+            } else if (asBool(valStr)) {
+                pushItem(nome);
+            } else {
+                // quando for texto aleatório
+                pushItem(`${nome}: ${valStr}`);
+            }
+        }
+    };
+
+    const addFromUnknown = (raw: unknown) => {
+        if (raw == null || raw === "") return;
+
+        // Array: aceita lista de strings/itens
+        if (Array.isArray(raw)) {
+            for (const it of raw) pushItem(it);
+            return;
+        }
+
+        // Objeto: tenta boolean map | misto
+        if (isPlainObject(raw)) {
+            const obj = raw as Record<string, unknown>;
+            if (isLikelyBooleanMap(obj)) addFromBooleanMap(obj);
+            else addFromMixedObject(obj);
+            return;
+        }
+
+        // String: tenta JSON embutido
+        if (typeof raw === "string") {
+            const s = raw.trim();
+            if (!s) return;
+
+            const parsed = tryParseJsonFromStringMaybeEmbedded(s);
+            if (parsed != null && parsed !== raw) {
+                addFromUnknown(parsed);
+                return;
+            }
+
+            // Se vier como CSV / separado por ; ou \n
+            if (s.includes("\n")) {
+                s.split("\n").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                return;
+            }
+            if (s.includes(";")) {
+                s.split(";").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                return;
+            }
+            if (s.includes(",")) {
+                // cuidado: às vezes é texto livre. aqui é o melhor chute.
+                s.split(",").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                return;
+            }
+
+            // texto livre único
+            pushItem(s);
+            return;
+        }
+
+        // número/boolean
+        if (typeof raw === "number") {
+            if (raw > 0) pushItem(String(raw));
+            return;
+        }
+        if (typeof raw === "boolean") {
+            if (raw) pushItem("Sim");
+            return;
+        }
+
+        // fallback
+        pushItem(String(raw));
+    };
+
+    // 1) fontes diretas
+    addFromUnknown((registro as any).materiais_json);
+    addFromUnknown((registro as any).material_json);
+    addFromUnknown((registro as any).materiais);
+    addFromUnknown((registro as any).material);
+
+    // 2) varredura por chaves materiais_* no próprio registro (muito comum no retorno do PHP)
+    if (isPlainObject(registro)) {
+        const obj = registro as Record<string, unknown>;
+        const picked: Record<string, unknown> = {};
+        let hasAny = false;
+        for (const k of Object.keys(obj)) {
+            if (/^materiais_.+/i.test(k)) {
+                picked[k] = obj[k];
+                hasAny = true;
+            }
+        }
+        if (hasAny) {
+            if (isLikelyBooleanMap(picked)) addFromBooleanMap(picked);
+            else addFromMixedObject(picked);
+        }
+    }
+
+    return out;
+}
+
+function MateriaisValue({ registro, fallback = "a definir" }: { registro: Registro; fallback?: string }) {
+    const itens = normalizeMateriaisFromRegistro(registro);
+
+    if (!itens || itens.length === 0) return <span>{fallback}</span>;
+
+    // Exibe como lista (bonito e legível)
+    return (
+        <ul className="list-disc pl-4 space-y-0.5">
+            {itens.map((t, idx) => (
+                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                    {sanitize(t)}
+                </li>
+            ))}
+        </ul>
+    );
+}
 
 /* =========================
    Local do Velório: rota (Google Maps)
@@ -421,6 +634,10 @@ function buildClipboardText(r: Registro) {
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
+    // ✅ materiais (novo)
+    const mats = normalizeMateriaisFromRegistro(r);
+    const matsStr = mats.length ? mats.join(", ") : "A DEFINIR";
+
     const lines = [
         `*ATENDIMENTO ${atend}*`,
         `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
@@ -432,6 +649,7 @@ function buildClipboardText(r: Registro) {
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
+        `*Materiais:* ${matsStr}`,
         `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
@@ -1019,11 +1237,14 @@ export default function QuadroAtendimentoPage() {
                                         label="Ornamentação"
                                         value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
                                     />
+
+                                    {/* ✅ ALTERAÇÃO: Materiais agora mostra os materiais selecionados (json, campos materiais_*, etc.) */}
                                     <Field
                                         label="Materiais"
-                                        value={shown((detail.materiais ?? detail.material ?? "") as string, "a definir")}
+                                        value={<MateriaisValue registro={detail} />}
                                         className="sm:col-span-2"
                                     />
+
                                     <Field
                                         label="Obs. Itens"
                                         value={shown(detail.observacao_itens, "")}
@@ -1279,7 +1500,9 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
             {labels.map((label, k) => (
                 <div key={k} className="flex items-center gap-1.5">
                     <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                    <span
+                        className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`}
+                    />
                 </div>
             ))}
         </div>
