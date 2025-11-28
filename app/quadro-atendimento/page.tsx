@@ -201,16 +201,16 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         const s = decodeHtmlEntitiesDeep(s0).trim();
         if (!s) return;
 
-        const low = s.toLowerCase();
+        const low = s.toLowerCase().trim();
+
+        // 🔥 evita a linha "Json: {...}" virar item na lista
+        if (low.startsWith("json:")) return;
+        if (low.startsWith("{") || low.startsWith("[")) return;
+        if (looksLikeMateriaisJson(s)) return;
+
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        // ✅ melhora dedupe: normaliza espaços e parênteses
-        const clean = s
-            .replace(/\s+/g, " ")
-            .replace(/\(\s*/g, "(")
-            .replace(/\s*\)/g, ")")
-            .trim();
-
+        const clean = s.replace(/\s+/g, " ").trim();
         if (!clean) return;
         if (seen.has(clean)) return;
         seen.add(clean);
@@ -415,7 +415,18 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
             // 4) Caso não seja JSON, aí sim tenta listas normais
             if (s.includes("\n")) {
-                s.split("\n").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s
+                    .split("\n")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .filter((line) => {
+                        const low = line.toLowerCase().trim();
+                        if (low.startsWith("json:")) return false;
+                        if (low.startsWith("{") || low.startsWith("[")) return false;
+                        if (looksLikeMateriaisJson(line)) return false;
+                        return true;
+                    })
+                    .forEach(pushItem);
                 return;
             }
             if (s.includes(";")) {
@@ -1503,15 +1514,21 @@ function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: stri
         .replace(/[‘’]/g, "'");
 
     const out: Array<{ nome: string; qtd?: string }> = [];
-    const re = /"nome"\s*:\s*"([^"]+)"/g;
+
+    // pega nome com chave "nome" OU nome (sem aspas), e valor com "..." ou '...'
+    const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
     let m: RegExpExecArray | null;
 
-    while ((m = re.exec(s))) {
-        const nome = m[1];
-        const near = s.slice(m.index, m.index + 220);
-        const qtd = near.match(/"qtd"\s*:\s*([0-9]+(?:[.,][0-9]+)?)/)?.[1];
-        out.push({ nome, qtd });
+    while ((m = reNome.exec(s))) {
+        const nome = (m[1] || "").trim();
+        const near = s.slice(m.index, m.index + 260);
+
+        // pega qtd com chave "qtd" OU qtd, com ou sem aspas no valor
+        const qtd = near.match(/"?qtd"?\s*:\s*["']?([0-9]+(?:[.,][0-9]+)?)["']?/i)?.[1];
+
+        if (nome) out.push({ nome, qtd });
     }
+
     return out;
 }
 
