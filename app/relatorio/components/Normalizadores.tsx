@@ -1,4 +1,5 @@
 "use client";
+
 import React from "react";
 import { LogItem } from "./TiposHistorico";
 import { FASES_NOMES } from "./ConstantesFases";
@@ -17,11 +18,41 @@ export function asBool(v: any): boolean {
     return false;
 }
 
+function safeJsonParse(v: any) {
+    if (v == null) return null;
+    if (typeof v === "object") return v;
+    if (typeof v !== "string") return null;
+    try {
+        return JSON.parse(v);
+    } catch {
+        return null;
+    }
+}
+
+function isPlainObject(v: any) {
+    return v != null && typeof v === "object" && !Array.isArray(v);
+}
+
 export function isNoChangeKey(k: string) {
     return /^sem[\s_]*alterac(?:o|oe)es?$/i.test((k || "").trim());
 }
 
-/** Ignora "edições sem mudança" (igual ao grande) */
+/** Detecta se existe "algo selecionado" em materiais_json (novo) */
+function hasMateriaisJsonChanges(materiaisJson: any): boolean {
+    const mj = safeJsonParse(materiaisJson);
+    if (!mj || typeof mj !== "object") return false;
+
+    for (const [, vv] of Object.entries(mj)) {
+        const v: any = vv || {};
+        const qtdNum = Number(v?.qtd ?? 0);
+        const qtd = Number.isFinite(qtdNum) ? Math.max(0, Math.floor(qtdNum)) : 0;
+        const checked = asBool(v?.checked) || qtd > 0;
+        if (checked && qtd > 0) return true;
+    }
+    return false;
+}
+
+/** Ignora "edições sem mudança" */
 export function isNoChangeEntry(ent: LogItem): boolean {
     const ac = (ent.acao || "").toLowerCase();
     if (!ac.includes("editou")) return false;
@@ -36,23 +67,26 @@ export function isNoChangeEntry(ent: LogItem): boolean {
         // flag explícita
         if (asBool((obj as any).sem_alteracoes)) return true;
 
+        // ✅ novo: materiais_json
+        if (Object.prototype.hasOwnProperty.call(obj, "materiais_json")) {
+            if (hasMateriaisJsonChanges((obj as any).materiais_json)) return false;
+        }
+
         // varre campos e procura algo realmente informativo
         for (const key of Object.keys(obj)) {
-            if (["id", "acao"].includes(key)) continue;
+            if (["id", "acao", "materiais_json"].includes(key)) continue;
 
             // arrumacao_json
             if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
                 let aobj: any = obj[key];
-                if (typeof aobj === "string") {
-                    try { aobj = JSON.parse(aobj); } catch { aobj = {}; }
-                }
+                if (typeof aobj === "string") aobj = safeJsonParse(aobj) || {};
                 if (aobj && typeof aobj === "object") {
                     for (const v of Object.values(aobj)) if (asBool(v)) return false;
                 }
                 continue;
             }
 
-            // materiais_*_qtd
+            // materiais_*_qtd (legado)
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (m) {
                 const qtd = obj[key];
@@ -61,12 +95,13 @@ export function isNoChangeEntry(ent: LogItem): boolean {
             }
 
             // campos simples
-            const v = obj[key];
+            const v = (obj as any)[key];
             if (v == null) continue;
             if (typeof v === "object") continue;
             if (isNoChangeKey(key) && asBool(v)) continue;
             if (String(v).trim() !== "") return false;
         }
+
         return true;
     } catch {
         // texto cru: se sobrar algo não-vazio, considera que houve mudança
@@ -84,6 +119,47 @@ export function normalizaChave(k: string) {
     return k.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
+function labelFromKey(key: string) {
+    // suporta chaves novas tipo "item:123" / "subitem:45"
+    const m = String(key).match(/^(item|subitem)\s*:\s*(.+)$/i);
+    if (m) {
+        const tipo = m[1].toLowerCase() === "subitem" ? "Subitem" : "Item";
+        return `${tipo} ${String(m[2]).trim()}`;
+    }
+    return overrideCampoNome(key, titleCaseFromSnake(key.replace(/:/g, "_")));
+}
+
+/* ======================== Materiais ======================== */
+
+function extrairMateriaisResumo(materiaisJson: any): string | undefined {
+    const mj = safeJsonParse(materiaisJson);
+    if (!mj || typeof mj !== "object") return undefined;
+
+    const parts: string[] = [];
+
+    for (const [k, vv] of Object.entries(mj)) {
+        const v: any = vv || {};
+        const qtdNum = Number(v?.qtd ?? 0);
+        const qtd = Number.isFinite(qtdNum) ? Math.max(0, Math.floor(qtdNum)) : 0;
+        const checked = asBool(v?.checked) || qtd > 0;
+
+        if (!checked || qtd <= 0) continue;
+
+        const nome =
+            (typeof v?.nome === "string" && v.nome.trim()) ||
+            (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
+            (typeof v?.label === "string" && v.label.trim()) ||
+            labelFromKey(String(k));
+
+        parts.push(`${nome}: ${qtd}`);
+    }
+
+    if (!parts.length) return undefined;
+
+    parts.sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+    return parts.join(" • ");
+}
+
 /** Extrai pares chave→valor dos detalhes (JSON ou texto) — com correções visuais */
 export function extrairParesDoDetalhe(raw: any): Record<string, string> {
     const out: Record<string, string> = {};
@@ -92,15 +168,24 @@ export function extrairParesDoDetalhe(raw: any): Record<string, string> {
     try {
         const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
         if (obj && typeof obj === "object") {
+            // ✅ novo: materiais_json entra como campo "materiais" (legível)
+            if (Object.prototype.hasOwnProperty.call(obj, "materiais_json")) {
+                const resumoMats = extrairMateriaisResumo((obj as any).materiais_json);
+                if (resumoMats) out["materiais"] = substituirRotuloVisual(resumoMats);
+            }
+
             for (const key of Object.keys(obj)) {
                 if (["id", "acao", "materiais_json"].includes(key)) continue;
                 if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) continue;
                 if (/^materiais_.+?_qtd$/i.test(key)) continue;
 
                 const val = (obj as any)[key];
+
                 if (isNoChangeKey(key) && asBool(val)) continue;
                 if (val == null) continue;
-                if (typeof val === "object") continue;
+
+                // não entra objeto/array bruto no resumo final (exceto materiais_json que já tratamos)
+                if (isPlainObject(val) || Array.isArray(val)) continue;
 
                 let v = String(val).trim();
                 if (!v) continue;
@@ -125,11 +210,17 @@ export function extrairParesDoDetalhe(raw: any): Record<string, string> {
             if (isNoChangeKey(rot)) continue;
             const val = (m[2] || "").trim();
             if (!rot || !val) continue;
-            const nomeVis = overrideCampoNome(rot, rot.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()));
+
+            const nomeVis = overrideCampoNome(
+                rot,
+                rot.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+            );
+
             const kNorm = normalizaChave(nomeVis);
             out[kNorm] = formataSeDataIso(val);
         }
     }
+
     return out;
 }
 
@@ -141,7 +232,6 @@ export function montarResumoFinalDoLog(log: LogItem[]) {
         const pares = extrairParesDoDetalhe(ent.detalhes);
         for (const [k, v] of Object.entries(pares)) resumo[k] = v;
     }
-    // rótulos finais já vêm normalizados em extrairParesDoDetalhe
     return resumo;
 }
 

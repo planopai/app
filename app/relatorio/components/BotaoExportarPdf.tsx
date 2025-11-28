@@ -4,7 +4,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { LogItem } from "./TiposHistorico";
 import { RESUMO_ORDER } from "./ConstantesResumo";
 import { formataDataHora, formataSeDataIso } from "./UtilDatas";
-import { overrideCampoNome, substituirRotuloVisual, titleCaseFromSnake, capitalize } from "./UtilTexto";
+import {
+    overrideCampoNome,
+    substituirRotuloVisual,
+    titleCaseFromSnake,
+    capitalize,
+} from "./UtilTexto";
 import { traduzirFase } from "./ConstantesFases";
 import { asBool } from "./Normalizadores";
 
@@ -44,7 +49,8 @@ function useJsPdfCdn() {
             return;
         }
         const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+        script.src =
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
         script.async = true;
         script.onload = () => setReady(Boolean((window as any).jspdf?.jsPDF));
         script.onerror = () => setReady(false);
@@ -57,7 +63,9 @@ function useJsPdfCdn() {
 function isLikelyUrl(s?: string | null) {
     if (!s) return false;
     const v = String(s).trim();
-    return v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/uploads/");
+    return (
+        v.startsWith("http://") || v.startsWith("https://") || v.startsWith("/uploads/")
+    );
 }
 
 /** Carrega imagem em <img>. */
@@ -78,16 +86,26 @@ function loadImgFromBlob(blob: Blob): Promise<HTMLImageElement> {
 }
 
 /** Carrega + redimensiona + COMPRIME fundo como JPEG (rápido e leve). */
-async function loadAndCompressBackground(pathOrUrl: string, maxWidth = 1240, quality = 0.6): Promise<string | undefined> {
+async function loadAndCompressBackground(
+    pathOrUrl: string,
+    maxWidth = 1240,
+    quality = 0.6
+): Promise<string | undefined> {
     try {
         const res = await fetch(pathOrUrl, { cache: "no-store" });
         if (!res.ok) return undefined;
         const blob = await res.blob();
         const img = await loadImgFromBlob(blob);
 
-        const scale = Math.min(1, maxWidth / (img.naturalWidth || img.width || maxWidth));
+        const scale = Math.min(
+            1,
+            maxWidth / (img.naturalWidth || img.width || maxWidth)
+        );
         const w = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
-        const h = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+        const h = Math.max(
+            1,
+            Math.round((img.naturalHeight || img.height) * scale)
+        );
 
         const canvas = document.createElement("canvas");
         canvas.width = w;
@@ -137,15 +155,27 @@ function makeBackgroundDrawer(doc: any, bgB64?: string) {
 }
 
 /* =============== Buscas de assinatura (URLs) =============== */
-function assinaturaFromResumo(resumo?: Record<string, string>, key?: "responsavel" | "requerente") {
+function assinaturaFromResumo(
+    resumo?: Record<string, string>,
+    key?: "responsavel" | "requerente"
+) {
     if (!resumo) return undefined;
-    const k = key === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
-    const v = resumo[k] || resumo[k.toUpperCase()] || resumo[k.replace(/_/g, " ")] || resumo[k.replace(/_/g, "-")];
+    const k =
+        key === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
+    const v =
+        resumo[k] ||
+        resumo[k.toUpperCase()] ||
+        resumo[k.replace(/_/g, " ")] ||
+        resumo[k.replace(/_/g, "-")];
     return isLikelyUrl(v) ? String(v) : undefined;
 }
+
 function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente") {
-    const alvoCampo = tipo === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
-    const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+    const alvoCampo =
+        tipo === "responsavel" ? "assinatura_responsavel" : "assinatura_requerente";
+    const ordered = [...logs].sort((a, b) =>
+        (a.datahora || "").localeCompare(b.datahora || "")
+    );
     for (let i = ordered.length - 1; i >= 0; i--) {
         const l = ordered[i];
         const acao = (l.acao || "").toLowerCase();
@@ -167,7 +197,13 @@ function assinaturaFromLogs(logs: LogItem[], tipo: "responsavel" | "requerente")
 }
 
 /* =============== Helpers texto & layout =============== */
-function ensurePageSpace(doc: any, y: number, needed: number, drawBg?: (doc: any) => void, marginTop = 22) {
+function ensurePageSpace(
+    doc: any,
+    y: number,
+    needed: number,
+    drawBg?: (doc: any) => void,
+    marginTop = 22
+) {
     const pageH = doc.internal.pageSize.getHeight();
     if (y + needed > pageH - 20) {
         doc.addPage();
@@ -176,11 +212,20 @@ function ensurePageSpace(doc: any, y: number, needed: number, drawBg?: (doc: any
     }
     return y;
 }
-function textHeight(doc: any, text: string | string[], maxWidth: number, lineGap = 4) {
-    const lines = Array.isArray(text) ? text : doc.splitTextToSize(String(text || ""), maxWidth);
+
+function textHeight(
+    doc: any,
+    text: string | string[],
+    maxWidth: number,
+    lineGap = 4
+) {
+    const lines = Array.isArray(text)
+        ? text
+        : doc.splitTextToSize(String(text || ""), maxWidth);
     const h = lines.length * lineGap;
     return { lines, h };
 }
+
 function drawCard(
     doc: any,
     x: number,
@@ -190,7 +235,8 @@ function drawCard(
     value: string,
     fonts: { normal: [string, string]; title: [string, string] }
 ) {
-    const padX = 4, padY = 4;
+    const padX = 4,
+        padY = 4;
     doc.setFont(fonts.normal[0], fonts.normal[1]);
     doc.setFontSize(8.5);
     const { lines: labelLines, h: hLabel } = textHeight(doc, label, w - padX * 2, 3.8);
@@ -218,13 +264,23 @@ function drawCard(
 
     return cardH;
 }
-function drawParagraph(doc: any, text: string, x: number, y: number, maxWidth: number, font: [string, string], size = 11) {
+
+function drawParagraph(
+    doc: any,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    font: [string, string],
+    size = 11
+) {
     doc.setFont(font[0], font[1]);
     doc.setFontSize(size);
     const lines = doc.splitTextToSize(text, maxWidth);
     doc.text(lines, x, y);
     return lines.length * 6;
 }
+
 function drawLabelValueLine(
     doc: any,
     x: number,
@@ -252,6 +308,7 @@ function drawLabelValueLine(
     for (let i = 1; i < vLines.length; i++) doc.text(vLines[i], x, y + i * 6);
     return (vLines.length - 1) * 6 + 6;
 }
+
 function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidth: number) {
     const marker = "– ";
     const mW = doc.getTextWidth(marker);
@@ -261,7 +318,7 @@ function drawBulletWrapped(doc: any, x: number, y: number, text: string, maxWidt
     return (lines.length - 1) * 7.5 + 8;
 }
 
-/* ===== Parâmetros de assinatura (posicionamento e tamanho) ===== */
+/* ===== Parâmetros de assinatura ===== */
 const SIGN_IMG_W = 60;
 const SIGN_IMG_H = 26;
 const LINE_Y_OFFSET = 232;
@@ -330,6 +387,29 @@ function getNomeCpfAssinatura(
     return out;
 }
 
+/* ======================= Materiais (materiais_json) ======================= */
+/* Converte key "item:10"/"subitem:1" e afins para label bonito */
+function labelFromMateriaisKey(rawKey: string) {
+    const k = String(rawKey || "").trim();
+    const m = k.match(/^(item|subitem)\s*:\s*(.+)$/i);
+    if (m) {
+        const tipo = m[1].toLowerCase() === "subitem" ? "Subitem" : "Item";
+        return `${tipo} ${String(m[2]).trim()}`;
+    }
+    return overrideCampoNome(k, titleCaseFromSnake(k.replace(/:/g, "_")));
+}
+
+function safeJsonParse(v: any) {
+    if (v == null) return null;
+    if (typeof v === "object") return v;
+    if (typeof v !== "string") return null;
+    try {
+        return JSON.parse(v);
+    } catch {
+        return null;
+    }
+}
+
 /* =============== Página 1: Termo de Recebimento =============== */
 function desenharTermoRecebimento(doc: any, params: {
     responsavel: string;
@@ -348,15 +428,52 @@ function desenharTermoRecebimento(doc: any, params: {
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(14);
-    doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, { align: "center" });
+    doc.text("TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA", pageW / 2, y, {
+        align: "center",
+    });
     y += 12;
 
-    // Nome e CPF no topo (lado a lado)
-    y += drawLabelValueLine(doc, margin, y, "Responsável", params.responsavel || "________________________", maxW, params.fonts, 11);
-    y += drawLabelValueLine(doc, margin, y, "CPF", params.cpfResponsavel || "____.____.____-__", maxW, params.fonts, 11);
+    y += drawLabelValueLine(
+        doc,
+        margin,
+        y,
+        "Responsável",
+        params.responsavel || "________________________",
+        maxW,
+        params.fonts,
+        11
+    );
+    y += drawLabelValueLine(
+        doc,
+        margin,
+        y,
+        "CPF",
+        params.cpfResponsavel || "____.____.____-__",
+        maxW,
+        params.fonts,
+        11
+    );
 
-    y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
-    y += drawLabelValueLine(doc, margin, y, "Entregue por (Agente)", params.agente || "________________________", maxW, params.fonts, 11);
+    y += drawLabelValueLine(
+        doc,
+        margin,
+        y,
+        "Falecido(a)",
+        params.falecido || "________________________",
+        maxW,
+        params.fonts,
+        11
+    );
+    y += drawLabelValueLine(
+        doc,
+        margin,
+        y,
+        "Entregue por (Agente)",
+        params.agente || "________________________",
+        maxW,
+        params.fonts,
+        11
+    );
     y +=
         drawParagraph(
             doc,
@@ -377,7 +494,15 @@ function desenharTermoRecebimento(doc: any, params: {
 
     const itens = [...params.materiais].sort((a, b) => a.rotulo.localeCompare(b.rotulo));
     if (itens.length === 0) {
-        y += drawParagraph(doc, "— Nenhum item selecionado na assistência —", margin, y, maxW, params.fonts.normal, 11);
+        y += drawParagraph(
+            doc,
+            "— Nenhum item selecionado na assistência —",
+            margin,
+            y,
+            maxW,
+            params.fonts.normal,
+            11
+        );
     } else {
         for (const it of itens) {
             const used = drawBulletWrapped(doc, margin, y, `${it.rotulo}: ${it.qtd}`, maxW);
@@ -399,18 +524,33 @@ function desenharTermoRecebimento(doc: any, params: {
     if (params.assinaturaResponsavelB64) {
         const x = pageW / 2 - SIGN_IMG_W / 2;
         const imgY = lineY - SIGN_IMG_H - IMG_ABOVE_LINE_GAP;
-        doc.addImage(params.assinaturaResponsavelB64, "PNG", x, imgY, SIGN_IMG_W, SIGN_IMG_H, undefined, "FAST");
+        doc.addImage(
+            params.assinaturaResponsavelB64,
+            "PNG",
+            x,
+            imgY,
+            SIGN_IMG_W,
+            SIGN_IMG_H,
+            undefined,
+            "FAST"
+        );
     }
 
     doc.setFont(params.fonts.normal[0], params.fonts.normal[1]);
     doc.setFontSize(11);
-    doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, lineY + 7, { align: "center" });
+    doc.text("Responsável pelo recebimento (assinatura)", pageW / 2, lineY + 7, {
+        align: "center",
+    });
 
     // CPF e Nome embaixo da linha, lado a lado
     doc.setFontSize(10);
     const centerX = pageW / 2;
-    doc.text(params.cpfResponsavel || "____.____.____-__", centerX - 40, lineY + 14, { align: "center" });
-    doc.text(params.responsavel || "________________________", centerX + 40, lineY + 14, { align: "center" });
+    doc.text(params.cpfResponsavel || "____.____.____-__", centerX - 40, lineY + 14, {
+        align: "center",
+    });
+    doc.text(params.responsavel || "________________________", centerX + 40, lineY + 14, {
+        align: "center",
+    });
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.text(`Barreiras-BA, ${params.dataVelorio || "____/____/____"}`, margin + 6, lineY - 8);
@@ -433,11 +573,21 @@ function desenharRequisicaoVeiculo(doc: any, params: {
 
     doc.setFont(params.fonts.bold[0], params.fonts.bold[1]);
     doc.setFontSize(14);
-    doc.text("REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO", pageW / 2, y, { align: "center" });
+    doc.text("REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO", pageW / 2, y, {
+        align: "center",
+    });
     y += 12;
 
-    // Nome e CPF do requerente no topo
-    y += drawLabelValueLine(doc, margin, y, "Requerente", params.requerente || "________________________", maxW, params.fonts, 11);
+    y += drawLabelValueLine(
+        doc,
+        margin,
+        y,
+        "Requerente",
+        params.requerente || "________________________",
+        maxW,
+        params.fonts,
+        11
+    );
     y += drawLabelValueLine(doc, margin, y, "CPF", params.cpfRequerente || "____.____.____-__", maxW, params.fonts, 11);
 
     y += drawLabelValueLine(doc, margin, y, "Falecido(a)", params.falecido || "________________________", maxW, params.fonts, 11);
@@ -470,39 +620,48 @@ function desenharRequisicaoVeiculo(doc: any, params: {
     doc.setFontSize(11);
     doc.text("Requerente (assinatura)", pageW / 2, lineY + 7, { align: "center" });
 
-    // CPF e Nome embaixo da linha
     doc.setFontSize(10);
     const centerX = pageW / 2;
     doc.text(params.cpfRequerente || "____.____.____-__", centerX - 40, lineY + 14, { align: "center" });
     doc.text(params.requerente || "________________________", centerX + 40, lineY + 14, { align: "center" });
 }
 
-/* =============== Materiais (APENAS materiais_json) =============== */
+/* =============== Materiais (materiais_json) – pega últimos selecionados =============== */
 function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; qtd: number }> {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     let ultimoMj: any = null;
+
     for (let i = byDate.length - 1; i >= 0; i--) {
         const det = byDate[i]?.detalhes;
         if (!det) continue;
         try {
             const obj = typeof det === "string" ? JSON.parse(det) : det;
             if (obj && obj.materiais_json) {
-                ultimoMj = typeof obj.materiais_json === "string" ? JSON.parse(obj.materiais_json) : obj.materiais_json;
+                ultimoMj = typeof obj.materiais_json === "string" ? safeJsonParse(obj.materiais_json) : obj.materiais_json;
                 break;
             }
         } catch { }
     }
+
     const out: Array<{ rotulo: string; qtd: number }> = [];
     if (ultimoMj && typeof ultimoMj === "object") {
-        Object.entries(ultimoMj).forEach(([k, v]: any) => {
+        Object.entries(ultimoMj).forEach(([k, vv]: any) => {
+            const v: any = vv || {};
             const qtd = Number(v?.qtd ?? 0);
-            const marcado = String(v?.checked ?? "").toLowerCase();
-            if (qtd > 0 && (marcado === "true" || marcado === "1" || marcado === "sim")) {
-                const rot = (typeof v?.rotulo === "string" && v.rotulo.trim()) || overrideCampoNome(k, titleCaseFromSnake(k));
+            const checked = asBool(v?.checked) || qtd > 0;
+
+            if (qtd > 0 && checked) {
+                const rot =
+                    (typeof v?.nome === "string" && v.nome.trim()) ||
+                    (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
+                    (typeof v?.label === "string" && v.label.trim()) ||
+                    labelFromMateriaisKey(k);
+
                 out.push({ rotulo: rot, qtd });
             }
         });
     }
+
     return out;
 }
 
@@ -514,6 +673,7 @@ function normalizeKey(s: string) {
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-z0-9]+/g, "_");
 }
+
 function pegarUltimoValorDosLogs(logs: LogItem[], candidatas: string[]): string | undefined {
     const normSet = candidatas.map(normalizeKey);
     const ordered = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
@@ -542,11 +702,12 @@ function pegarUltimoValorDosLogs(logs: LogItem[], candidatas: string[]): string 
 function pegarAgenteEntrega(logs: LogItem[]): string {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     const fase8 = [...byDate].reverse().find(
-        (l) => (l.status_novo || "").toLowerCase() === "fase08" || /entrega.*corpo/i.test(l.status_novo || "")
+        (l) =>
+            (l.status_novo || "").toLowerCase() === "fase08" ||
+            /entrega.*corpo/i.test(l.status_novo || "")
     );
     if (fase8?.usuario) return fase8.usuario;
-    const ult = byDate.at(-1);
-    return ult?.usuario || "";
+    return byDate.at(-1)?.usuario || "";
 }
 
 /* ===== Tentar descobrir o ID do sepultamento ===== */
@@ -557,17 +718,15 @@ function inferirSepultamentoId(
 ): string | undefined {
     if (sepultamentoId != null && sepultamentoId !== "") return String(sepultamentoId);
 
-    // 1) resumoFinal: chaves comuns
     const keys = ["id", "sepultamento_id", "atendimento_id"];
     for (const k of keys) {
         const v = resumoFinal?.[k] || resumoFinal?.[k.toUpperCase()] || resumoFinal?.[k.replace(/_/g, " ")];
         if (v) return String(v);
     }
 
-    // 2) logs: campo direto ou dentro de detalhes
     if (logs && logs.length) {
         for (const l of logs) {
-            // @ts-ignore: pode existir em alguns payloads
+            // @ts-ignore
             if ((l as any).sepultamento_id) return String((l as any).sepultamento_id);
             const det = l.detalhes;
             try {
@@ -577,7 +736,6 @@ function inferirSepultamentoId(
             } catch { }
         }
     }
-
     return undefined;
 }
 
@@ -596,15 +754,27 @@ export default function BotaoExportarPdf({
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
 
-    const normLine = (s: string) => s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+    const normLine = (s: string) =>
+        s
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, " ");
 
     function mapAcaoTitulo(acaoRaw: string) {
         const a = (acaoRaw || "").toLowerCase();
         if (a.includes("assinou") && a.includes("assinatura_responsavel")) {
-            return { titulo: "Assinou o Termo de Recebimento de Material", assinatura: "responsavel" as const };
+            return {
+                titulo: "Assinou o Termo de Recebimento de Material",
+                assinatura: "responsavel" as const,
+            };
         }
         if (a.includes("assinou") && a.includes("assinatura_requerente")) {
-            return { titulo: "Assinou o Termo de Requisição de Veículo", assinatura: "requerente" as const };
+            return {
+                titulo: "Assinou o Termo de Requisição de Veículo",
+                assinatura: "requerente" as const,
+            };
         }
         return { titulo: capitalize(acaoRaw || ""), assinatura: null as null };
     }
@@ -618,7 +788,8 @@ export default function BotaoExportarPdf({
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
             const pageW = doc.internal.pageSize.getWidth();
-            const marginL = 14, marginR = 14;
+            const marginL = 14,
+                marginR = 14;
             const contentW = pageW - marginL - marginR;
 
             const titleFont: [string, string] = ["helvetica", "bold"];
@@ -635,7 +806,7 @@ export default function BotaoExportarPdf({
             const idInferido = inferirSepultamentoId(sepultamentoId, resumoFinal, logVisiveis);
             const assinDb = idInferido ? await pegarAssinaturasInfoPorId(idInferido) : {};
 
-            // Assinaturas (URLs) – prioriza banco; depois resumo; depois logs; depois props
+            // Assinaturas (URLs)
             const urlResp = normAssUrl(
                 assinaturaResponsavelUrl ||
                 (assinDb as any).responsavel?.url ||
@@ -743,7 +914,9 @@ export default function BotaoExportarPdf({
             }
 
             // Cards de Log
-            const cardPadX = 6, cardPadY = 6;
+            const cardPadX = 6,
+                cardPadY = 6;
+
             const writeLine = (text: string | string[], x: number, yy: number, size = 11, bold = false) => {
                 doc.setFont(bold ? titleFont[0] : normalFont[0], bold ? titleFont[1] : normalFont[1]);
                 doc.setFontSize(size);
@@ -780,8 +953,32 @@ export default function BotaoExportarPdf({
                 const materiaisLines: string[] = [];
 
                 try {
-                    const obj = raw && typeof raw === "string" ? (JSON.parse(raw) as Record<string, any>) : (raw as Record<string, any>);
+                    const obj =
+                        raw && typeof raw === "string"
+                            ? (JSON.parse(raw) as Record<string, any>)
+                            : (raw as Record<string, any>);
+
                     if (obj && typeof obj === "object") {
+                        // ✅ novo: materiais_json como linhas "Nome: qtd"
+                        if (!t.assinatura && obj.materiais_json) {
+                            const mj = safeJsonParse(obj.materiais_json) || obj.materiais_json;
+                            if (mj && typeof mj === "object") {
+                                for (const [k, vv] of Object.entries(mj)) {
+                                    const v: any = vv || {};
+                                    const qtd = Number(v?.qtd ?? 0);
+                                    const checked = asBool(v?.checked) || qtd > 0;
+                                    if (qtd > 0 && checked) {
+                                        const nome =
+                                            (typeof v?.nome === "string" && v.nome.trim()) ||
+                                            (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
+                                            (typeof v?.label === "string" && v.label.trim()) ||
+                                            labelFromMateriaisKey(String(k));
+                                        materiaisLines.push(`${nome}: ${qtd}`);
+                                    }
+                                }
+                            }
+                        }
+
                         if (!t.assinatura) {
                             for (const key of Object.keys(obj)) {
                                 if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
@@ -796,10 +993,14 @@ export default function BotaoExportarPdf({
                                             aobj = {};
                                         }
                                     } else if (typeof val === "object" && val) aobj = val;
-                                    for (const [k, v] of Object.entries(aobj)) if (asBool(v)) addLine(`${titleCaseFromSnake(k)}: Sim`);
+
+                                    for (const [k, v] of Object.entries(aobj)) {
+                                        if (asBool(v)) addLine(`${titleCaseFromSnake(k)}: Sim`);
+                                    }
                                     continue;
                                 }
 
+                                // legado (materiais_*_qtd)
                                 const m = key.match(/^materiais_(.+?)_qtd$/i);
                                 if (m) {
                                     const nomeBase = titleCaseFromSnake(m[1]);
@@ -810,6 +1011,7 @@ export default function BotaoExportarPdf({
                                 }
 
                                 if (typeof (obj as any)[key] === "object" && !Array.isArray((obj as any)[key])) continue;
+
                                 let v = (obj as any)[key];
                                 if (v == null || String(v).trim() === "") continue;
 
@@ -835,7 +1037,9 @@ export default function BotaoExportarPdf({
 
                 if (materiaisLines.length && !t.assinatura) {
                     addLine("Materiais:");
-                    for (const l of materiaisLines) addLine(`• ${l}`);
+                    materiaisLines
+                        .sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }))
+                        .forEach((l) => addLine(`• ${l}`));
                 }
 
                 doc.setFont(normalFont[0], normalFont[1]);
@@ -859,7 +1063,8 @@ export default function BotaoExportarPdf({
                 const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 5 : 0;
                 const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
 
-                const innerHeight = (hData ? hData + hUsuario + hDetalhes + 3 : hUsuario + hDetalhes + 3) + hAcao;
+                const innerHeight =
+                    (hData ? hData + hUsuario + hDetalhes + 3 : hUsuario + hDetalhes + 3) + hAcao;
                 const cardH = innerHeight + 2 * cardPadY;
 
                 y = ensurePageSpace(doc, y, cardH + 8, drawBg);
@@ -875,14 +1080,17 @@ export default function BotaoExportarPdf({
                 }
                 writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
                 yy += hAcao;
+
                 if (usuarioWrapped.length) {
                     writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
                     yy += usuarioWrapped.length * 5;
                 }
+
                 if (detalhesWrapped.length) {
                     writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
                     yy += detalhesWrapped.length * 5;
                 }
+
                 y += cardH + 8;
             }
 
@@ -896,7 +1104,11 @@ export default function BotaoExportarPdf({
 
             const dataFimVelorioRaw =
                 resumoFinal?.data_fim_velorio ||
-                pegarUltimoValorDosLogs(logsParaImprimir, ["data_fim_velorio", "data do fim do velorio", "data do sepultamento"]);
+                pegarUltimoValorDosLogs(logsParaImprimir, [
+                    "data_fim_velorio",
+                    "data do fim do velorio",
+                    "data do sepultamento",
+                ]);
 
             const horaFimVelorioRaw =
                 resumoFinal?.hora_fim_velorio ||
@@ -908,7 +1120,7 @@ export default function BotaoExportarPdf({
 
             // 1) Termo
             doc.addPage();
-            drawBg(doc); // página 2
+            drawBg(doc);
             desenharTermoRecebimento(doc, {
                 responsavel: respInfo.nome || "",
                 cpfResponsavel: respInfo.cpf || "",
@@ -922,7 +1134,7 @@ export default function BotaoExportarPdf({
 
             // 2) Requisição
             doc.addPage();
-            drawBg(doc); // página 3
+            drawBg(doc);
             desenharRequisicaoVeiculo(doc, {
                 requerente: reqInfo.nome || "",
                 cpfRequerente: reqInfo.cpf || "",
