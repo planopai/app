@@ -204,7 +204,13 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         const low = s.toLowerCase();
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        const clean = s.replace(/\s+/g, " ").trim();
+        // ✅ melhora dedupe: normaliza espaços e parênteses
+        const clean = s
+            .replace(/\s+/g, " ")
+            .replace(/\(\s*/g, "(")
+            .replace(/\s*\)/g, ")")
+            .trim();
+
         if (!clean) return;
         if (seen.has(clean)) return;
         seen.add(clean);
@@ -266,14 +272,10 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                     if ((node as any)[k] != null) walk((node as any)[k]);
                 }
 
-                for (const [k, v] of Object.entries(node)) {
+                for (const [, v] of Object.entries(node)) {
                     if (v == null) continue;
                     if (typeof v === "object") {
-                        if (/^item\d+$/i.test(k) || /^item_/i.test(k)) {
-                            walk(v);
-                        } else {
-                            walk(v);
-                        }
+                        walk(v);
                     }
                 }
             }
@@ -386,53 +388,42 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             let s = decodeHtmlEntitiesDeep(raw).trim();
             if (!s) return;
 
-            // ✅ mantém original para detectar prefixo Json:
             const original = s;
 
             // remove prefixos comuns tipo "Json:"
             s = s.replace(/^\s*json\s*:\s*/i, "").trim();
 
-            // tenta JSON embutido
+            // 1) Primeiro: tenta parsear JSON (quando vier válido)
             const parsed = tryParseJsonFromStringMaybeEmbedded(s);
-            if (parsed != null && parsed !== raw) {
+            if (parsed != null) {
+                // se conseguiu extrair, ótimo
                 if (extractFromStructured(parsed)) return;
-                addFromUnknown(parsed);
+
+                // se parseou mas não extraiu, NÃO deixa cair para split/push do JSON cru
                 return;
             }
 
-            // ✅ NOVO: se não parseou, tenta extrair por regex (mesmo com JSON “quebrado”)
+            // 2) Segundo: mesmo "quebrado", tenta extrair por regex (nome/qtd)
             const extracted = extractMateriaisByRegex(s);
             if (extracted.length) {
                 extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
-                return;
+                return; // ✅ para aqui — não faz split nem push do JSON cru
             }
 
-            // ✅ NOVO: se parece JSON de materiais, NÃO renderiza o JSON cru
+            // 3) Terceiro: se parece JSON de materiais, IGNORA (não renderiza cru)
             if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
 
-            // Se vier como CSV / separado por ; ou \n
+            // 4) Caso não seja JSON, aí sim tenta listas normais
             if (s.includes("\n")) {
-                s
-                    .split("\n")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .forEach(pushItem);
+                s.split("\n").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
                 return;
             }
             if (s.includes(";")) {
-                s
-                    .split(";")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .forEach(pushItem);
+                s.split(";").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
                 return;
             }
             if (s.includes(",")) {
-                s
-                    .split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .forEach(pushItem);
+                s.split(",").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
                 return;
             }
 
@@ -748,7 +739,6 @@ function buildClipboardText(r: Registro) {
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
     const mats = normalizeMateriaisFromRegistro(r);
-    const matsStr = mats.length ? mats.join(", ") : "A DEFINIR";
 
     const lines = [
         `*ATENDIMENTO ${atend}*`,
@@ -761,7 +751,8 @@ function buildClipboardText(r: Registro) {
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
-        `*Materiais:* ${matsStr}`,
+        // ✅ se não tiver materiais, NÃO inclui a linha de materiais (e nunca vai "Json: ...")
+        ...(mats.length ? [`*Materiais:* ${mats.join(", ")}`] : []),
         `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
@@ -1261,7 +1252,7 @@ export default function QuadroAtendimentoPage() {
 
                                     <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
-                                    {/* ✅ Materiais agora exibe NOME dos itens (sem &quot; e sem Json:...) */}
+                                    {/* ✅ Materiais agora exibe SOMENTE nome+qtd (sem Json:...) */}
                                     <Field label="Materiais" value={<MateriaisValue registro={detail} />} className="sm:col-span-2" />
 
                                     <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
@@ -1499,13 +1490,13 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
     return boolish / entries.length >= 0.8;
 }
 
-/* ✅ NOVO: detecta se a string “parece” ser JSON de materiais */
+/* ✅ detecta se a string “parece” ser JSON de materiais */
 function looksLikeMateriaisJson(s: string) {
     const t = (s || "").toLowerCase();
     return (t.includes('"nome"') && t.includes('"checked"')) || t.includes('"item');
 }
 
-/* ✅ NOVO: extrai nome/qtd mesmo se o JSON estiver “quebrado” e não der JSON.parse */
+/* ✅ extrai nome/qtd mesmo se o JSON estiver “quebrado” e não der JSON.parse */
 function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: string }> {
     const s = decodeHtmlEntitiesDeep(text)
         .replace(/[“”]/g, '"')
