@@ -16,8 +16,7 @@ import {
     enviarRegistroPHP,
     capitalizeStatus,
     normalizarStatus,
-    normalizeMateriaisState, // ✅ ADICIONE
-
+    normalizeMateriaisState,
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
@@ -30,6 +29,9 @@ import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
 import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
+
+// ✅ NOVO: modal de conferência antes do fase11
+import MateriaisConferenciaModal, { MatCheckItem } from "./components/MateriaisConferenciaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -191,6 +193,11 @@ export default function AcompanhamentoPage() {
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
+    // ✅ NOVO: conferência de materiais antes do "Material Recolhido"
+    const [matCheckOpen, setMatCheckOpen] = useState(false);
+    const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
+    const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
+
     // Info
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
@@ -227,80 +234,6 @@ export default function AcompanhamentoPage() {
        =========================== */
     const flushingRef = useRef(false);
 
-    const flushOfflineQueue = useCallback(async () => {
-        if (typeof window === "undefined") return;
-        if (!isOnlineNow()) return;
-        if (flushingRef.current) return;
-
-        const items = safeReadQueue();
-        if (!items.length) return;
-
-        flushingRef.current = true;
-        try {
-            let queue = items;
-
-            // envia em ordem (mais antigo primeiro)
-            queue = [...queue].sort((a, b) => a.createdAt - b.createdAt);
-
-            for (const item of queue) {
-                try {
-                    const json = await enviarRegistroPHP(item.payload);
-
-                    if (json?.sucesso) {
-                        // se era "novo" de terceiro, guarda o novo id na sessão
-                        try {
-                            const acao = String(item.payload?.acao ?? "");
-                            const tipoAt = String(item.payload?.tipo_atendimento ?? "");
-                            if (acao === "novo" && tipoAt === "terceiro") {
-                                const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? null;
-                                addTerceiroIdToSession(novoId);
-                            }
-                        } catch {
-                            // ignore
-                        }
-
-                        // remove este item da fila
-                        const after = safeReadQueue().filter((x) => x.qid !== item.qid);
-                        safeWriteQueue(after);
-                    } else {
-                        // falhou no servidor -> incrementa tries e para (evita loop infinito)
-                        const after = safeReadQueue().map((x) =>
-                            x.qid === item.qid
-                                ? {
-                                    ...x,
-                                    tries: (x.tries ?? 0) + 1,
-                                    lastError: json?.erro || "Erro ao enviar (offline queue).",
-                                }
-                                : x
-                        );
-                        safeWriteQueue(after);
-                        break;
-                    }
-                } catch (e: any) {
-                    // falha de rede/timeout -> incrementa tries e para
-                    const after = safeReadQueue().map((x) =>
-                        x.qid === item.qid
-                            ? {
-                                ...x,
-                                tries: (x.tries ?? 0) + 1,
-                                lastError: e?.message || "Falha ao enviar (offline queue).",
-                            }
-                            : x
-                    );
-                    safeWriteQueue(after);
-                    break;
-                }
-            }
-
-            // após reenvio, refaz a lista
-            await fetchRegistrosSafe();
-        } finally {
-            flushingRef.current = false;
-        }
-    }, []);
-
-    /* -------------------- Fetch helpers -------------------- */
-
     const fetchRegistros = useCallback(async () => {
         try {
             const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
@@ -334,10 +267,75 @@ export default function AcompanhamentoPage() {
 
     // helper para não depender da ordem do arquivo (flush usa isso)
     const fetchRegistrosSafe = useCallback(async () => {
-        // mesmo comportamento do fetchRegistros, só encapsulado pro flush
         await fetchRegistros();
     }, [fetchRegistros]);
 
+    const flushOfflineQueue = useCallback(async () => {
+        if (typeof window === "undefined") return;
+        if (!isOnlineNow()) return;
+        if (flushingRef.current) return;
+
+        const items = safeReadQueue();
+        if (!items.length) return;
+
+        flushingRef.current = true;
+        try {
+            let queue = items;
+            queue = [...queue].sort((a, b) => a.createdAt - b.createdAt);
+
+            for (const item of queue) {
+                try {
+                    const json = await enviarRegistroPHP(item.payload);
+
+                    if (json?.sucesso) {
+                        try {
+                            const acao = String(item.payload?.acao ?? "");
+                            const tipoAt = String(item.payload?.tipo_atendimento ?? "");
+                            if (acao === "novo" && tipoAt === "terceiro") {
+                                const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? null;
+                                addTerceiroIdToSession(novoId);
+                            }
+                        } catch {
+                            // ignore
+                        }
+
+                        const after = safeReadQueue().filter((x) => x.qid !== item.qid);
+                        safeWriteQueue(after);
+                    } else {
+                        const after = safeReadQueue().map((x) =>
+                            x.qid === item.qid
+                                ? {
+                                    ...x,
+                                    tries: (x.tries ?? 0) + 1,
+                                    lastError: json?.erro || "Erro ao enviar (offline queue).",
+                                }
+                                : x
+                        );
+                        safeWriteQueue(after);
+                        break;
+                    }
+                } catch (e: any) {
+                    const after = safeReadQueue().map((x) =>
+                        x.qid === item.qid
+                            ? {
+                                ...x,
+                                tries: (x.tries ?? 0) + 1,
+                                lastError: e?.message || "Falha ao enviar (offline queue).",
+                            }
+                            : x
+                    );
+                    safeWriteQueue(after);
+                    break;
+                }
+            }
+
+            await fetchRegistrosSafe();
+        } finally {
+            flushingRef.current = false;
+        }
+    }, [fetchRegistrosSafe]);
+
+    /* -------------------- Fetch helpers (avisos) -------------------- */
     const fetchAvisos = useCallback(async () => {
         try {
             const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
@@ -445,19 +443,15 @@ export default function AcompanhamentoPage() {
     );
 
     /* -------------------- Ciclos -------------------- */
-
     useEffect(() => {
         fetchRegistros();
         fetchAvisos();
-        // ✅ ao abrir o app/página, tenta reenviar pendências imediatamente
         flushOfflineQueue();
     }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
 
     useEffect(() => {
         const intReg = setInterval(fetchRegistros, 10000);
         const intAv = setInterval(fetchAvisos, 3000);
-
-        // ✅ enquanto estiver online, tenta reenviar pendências periodicamente
         const intFlush = setInterval(() => {
             flushOfflineQueue();
         }, 20000);
@@ -465,13 +459,11 @@ export default function AcompanhamentoPage() {
         const onVis = () => {
             if (!document.hidden) {
                 fetchRegistros();
-                // ✅ ao voltar pra aba, tenta reenviar
                 flushOfflineQueue();
             }
         };
         document.addEventListener("visibilitychange", onVis);
 
-        // ✅ quando a internet volta
         const onOnline = () => {
             flushOfflineQueue();
         };
@@ -497,6 +489,9 @@ export default function AcompanhamentoPage() {
                 setSignOpen(false);
                 setChooseTipoOpen(false);
                 setTeleOpen(false);
+
+                // ✅ fecha conferência também
+                setMatCheckOpen(false);
             }
         };
         window.addEventListener("keydown", onEsc);
@@ -504,7 +499,6 @@ export default function AcompanhamentoPage() {
     }, []);
 
     /* -------------------- Parsers locais -------------------- */
-
     const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
         // ✅ novo formato (dinâmico): vem pronto no materiais_json
         if ((r as any)?.materiais_json) {
@@ -567,43 +561,44 @@ export default function AcompanhamentoPage() {
     };
 
     /* -------------------- Aberturas -------------------- */
-
-    // Modal que pergunta o tipo
     const abrirNovoRegistro = useCallback(() => {
         setChooseTipoOpen(true);
     }, []);
 
-    const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
-        setChooseTipoOpen(false);
-        setTipoAtendimento(tipo);
+    const iniciarNovoRegistro = useCallback(
+        (tipo: TipoAtendimento) => {
+            setChooseTipoOpen(false);
+            setTipoAtendimento(tipo);
 
-        setWizardSubmitting(false);
-        setWizardEditing(false);
-        setWizardIdx(null);
-        setWizardRestrictGroup(null);
-        setWizardStep(0);
-        setWizardMsg(null);
-        setWizardTitle("Novo Registro");
+            setWizardSubmitting(false);
+            setWizardEditing(false);
+            setWizardIdx(null);
+            setWizardRestrictGroup(null);
+            setWizardStep(0);
+            setWizardMsg(null);
+            setWizardTitle("Novo Registro");
 
-        const empty: Registro = {};
-        (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+            const empty: Registro = {};
+            (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
 
-        if (tipo === "terceiro") {
-            empty.assistencia = "Não";
-            empty.tanato = "Não";
-            empty.ornamentacao = "Não";
-            (empty as any).tipo_atendimento = "terceiro";
-        } else {
-            (empty as any).tipo_atendimento = "funerario";
-        }
+            if (tipo === "terceiro") {
+                empty.assistencia = "Não";
+                empty.tanato = "Não";
+                empty.ornamentacao = "Não";
+                (empty as any).tipo_atendimento = "terceiro";
+            } else {
+                (empty as any).tipo_atendimento = "funerario";
+            }
 
-        setWizardData(empty);
-        setMateriais(defaultMateriais());
-        setArrumacao(defaultArrumacao());
-        setAssistenciaVal(String(empty.assistencia || ""));
-        setTanatoVal(String(empty.tanato || ""));
-        setWizardOpen(true);
-    }, []);
+            setWizardData(empty);
+            setMateriais(defaultMateriais());
+            setArrumacao(defaultArrumacao());
+            setAssistenciaVal(String(empty.assistencia || ""));
+            setTanatoVal(String(empty.tanato || ""));
+            setWizardOpen(true);
+        },
+        [wizardStepIndexesForTipo, wizardStep, wizardData] // deps não críticos aqui, mas ok
+    );
 
     const abrirWizard = useCallback(
         (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
@@ -715,7 +710,6 @@ export default function AcompanhamentoPage() {
                     text: "Sem internet: registro salvo offline e será enviado automaticamente quando a conexão voltar.",
                     ok: true,
                 });
-                // fecha como se tivesse salvado
                 setTimeout(() => setWizardOpen(false), 950);
             } catch (e: any) {
                 setWizardMsg({ text: e?.message || "Não foi possível salvar offline.", ok: false });
@@ -741,7 +735,6 @@ export default function AcompanhamentoPage() {
                 setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
             }
         } catch (e: any) {
-            // ✅ se falhar por rede, guarda na fila
             enqueueOffline({ ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" }, e?.message);
             setWizardMsg({
                 text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
@@ -750,7 +743,6 @@ export default function AcompanhamentoPage() {
             setTimeout(() => setWizardOpen(false), 950);
         } finally {
             setWizardSubmitting(false);
-            // tenta reenviar caso a net volte logo após
             flushOfflineQueue();
         }
     }, [
@@ -771,7 +763,6 @@ export default function AcompanhamentoPage() {
     ]);
 
     /* -------------------- Ações (status) -------------------- */
-
     const abrirPopupAcaoPorId = useCallback((id: Registro["id"]) => {
         setAcaoMsg(null);
         setAcaoId(id != null ? String(id) : null);
@@ -780,12 +771,39 @@ export default function AcompanhamentoPage() {
     }, []);
 
     const registrarAcao = useCallback(
-        async (acao: string) => {
+        async (
+            acao: string,
+            opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }
+        ) => {
             if (acaoSubmitting) return;
             if (acaoId == null) return;
 
-            const ok = window.confirm("Deseja confirmar essa ação?");
-            if (!ok) return;
+            // ✅ NOVA REGRA: antes de "Material Recolhido" (fase11), exigir conferência dos materiais
+            if (acao === "fase11" && !opts?.skipMaterialCheck) {
+                const reg = registros.find((x) => String(x.id) === String(acaoId));
+                const mats = reg ? parseMateriaisFromRegistro(reg) : {};
+
+                const itens: MatCheckItem[] = Object.entries(mats || {})
+                    .map(([k, it]: any) => ({
+                        key: String(k),
+                        nome: String(it?.nome || k),
+                        qtd: Number(it?.qtd ?? 0),
+                        checked: !!it?.checked,
+                    }))
+                    .filter((x) => x.checked && x.qtd > 0)
+                    .map((x) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
+
+                setMatCheckItens(itens);
+                setMatCheckReturnToAcao(true);
+                setAcaoOpen(false); // evita modal em cima de modal
+                setMatCheckOpen(true);
+                return;
+            }
+
+            if (!opts?.skipConfirm) {
+                const ok = window.confirm("Deseja confirmar essa ação?");
+                if (!ok) return;
+            }
 
             // ✅ OFFLINE: guarda a ação e fecha
             if (!isOnlineNow()) {
@@ -818,7 +836,12 @@ export default function AcompanhamentoPage() {
                     });
 
                     // se a ação é uma "parada" da telemetria ativa, para e salva automaticamente
-                    if (teleActive && teleStartFase && STOP_BY_START[teleStartFase] && STOP_BY_START[teleStartFase] === acao) {
+                    if (
+                        teleActive &&
+                        teleStartFase &&
+                        STOP_BY_START[teleStartFase] &&
+                        STOP_BY_START[teleStartFase] === acao
+                    ) {
                         await teleRef.current?.stopAndSave();
                         setTeleActive(false);
                         setTeleStartFase(null);
@@ -833,7 +856,6 @@ export default function AcompanhamentoPage() {
                     });
                 }
             } catch (e: any) {
-                // ✅ se falhar por rede, salva offline
                 enqueueOffline({ acao: "atualizar_status", id: acaoId, status: acao }, e?.message);
                 setAcaoMsg({
                     text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
@@ -845,7 +867,7 @@ export default function AcompanhamentoPage() {
                 flushOfflineQueue();
             }
         },
-        [acaoId, fetchRegistros, acaoSubmitting, teleActive, teleStartFase, flushOfflineQueue]
+        [acaoSubmitting, acaoId, registros, fetchRegistros, teleActive, teleStartFase, flushOfflineQueue]
     );
 
     /* ---- Confirmação silenciosa para a TelemetriaModal (start) ---- */
@@ -877,7 +899,6 @@ export default function AcompanhamentoPage() {
     );
 
     /* -------------------- Info por ID (estável) -------------------- */
-
     const registroInfo = useMemo(
         () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
         [registros, infoId]
@@ -946,9 +967,7 @@ export default function AcompanhamentoPage() {
     const materiaisSelecionadosResumo = useMemo(() => {
         const matsPrefer = (wizardData as any)?.materiais;
         const mats: any =
-            matsPrefer && typeof matsPrefer === "object" && Object.keys(matsPrefer).length > 0
-                ? matsPrefer
-                : materiais;
+            matsPrefer && typeof matsPrefer === "object" && Object.keys(matsPrefer).length > 0 ? matsPrefer : materiais;
 
         const list = Object.values(mats || {})
             .filter((it: any) => it?.checked && Number(it?.qtd ?? 0) > 0)
@@ -957,7 +976,6 @@ export default function AcompanhamentoPage() {
         return list.length ? list.join(" • ") : "Nenhum material selecionado";
     }, [wizardData, materiais]);
 
-    // ✅ atualizado: inclui TA-32, fluido_cavitario, formol, mascara e INVOL no resumo
     const arrumacaoSelecionadaResumo = useMemo(() => {
         const mapa: { key: keyof ArrumacaoState; label: string }[] = [
             { key: "luvas", label: "Luvas" },
@@ -992,7 +1010,9 @@ export default function AcompanhamentoPage() {
             <header className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-                    <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
+                    <p className="text-sm text-muted-foreground">
+                        Cadastre, acompanhe e atualize o status dos atendimentos.
+                    </p>
                 </div>
                 <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -1002,7 +1022,11 @@ export default function AcompanhamentoPage() {
                 </button>
             </header>
 
-            <TabelaAtendimentos registros={registros} onAcao={(id) => abrirPopupAcaoPorId(id)} onInfo={(id) => abrirInfoPorId(id)} />
+            <TabelaAtendimentos
+                registros={registros}
+                onAcao={(id) => abrirPopupAcaoPorId(id)}
+                onInfo={(id) => abrirInfoPorId(id)}
+            />
 
             <AvisosBox
                 avisos={avisos}
@@ -1060,9 +1084,21 @@ export default function AcompanhamentoPage() {
                 wizardSubmitting={wizardSubmitting}
             />
 
-            <MateriaisModal open={materiaisOpen} setOpen={setMateriaisOpen} materiais={materiais} setMateriais={setMateriais} setWizardData={setWizardData} />
+            <MateriaisModal
+                open={materiaisOpen}
+                setOpen={setMateriaisOpen}
+                materiais={materiais}
+                setMateriais={setMateriais}
+                setWizardData={setWizardData}
+            />
 
-            <ArrumacaoModal open={arrumacaoOpen} setOpen={setArrumacaoOpen} arrumacao={arrumacao} setArrumacao={setArrumacao} setWizardData={setWizardData} />
+            <ArrumacaoModal
+                open={arrumacaoOpen}
+                setOpen={setArrumacaoOpen}
+                arrumacao={arrumacao}
+                setArrumacao={setArrumacao}
+                setWizardData={setWizardData}
+            />
 
             <AcaoModal
                 open={acaoOpen}
@@ -1073,6 +1109,23 @@ export default function AcompanhamentoPage() {
                 acaoMsg={acaoMsg}
                 acaoSubmitting={acaoSubmitting}
                 onVeiculoRequired={handleVeiculoRequired}
+            />
+
+            {/* ✅ NOVO: Conferência obrigatória antes de Material Recolhido */}
+            <MateriaisConferenciaModal
+                open={matCheckOpen}
+                itens={matCheckItens}
+                onClose={() => {
+                    setMatCheckOpen(false);
+                    if (matCheckReturnToAcao) setAcaoOpen(true);
+                    setMatCheckReturnToAcao(false);
+                }}
+                onConfirm={async () => {
+                    setMatCheckOpen(false);
+                    setMatCheckReturnToAcao(false);
+                    // confirma fase11 sem reabrir a checagem e sem window.confirm
+                    await registrarAcao("fase11", { skipMaterialCheck: true, skipConfirm: true });
+                }}
             />
 
             <InfoModal
