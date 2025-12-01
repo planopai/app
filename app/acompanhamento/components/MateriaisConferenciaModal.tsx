@@ -151,7 +151,6 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 </div>
             </div>
 
-            {/* LISTA: no celular mantém botão lado a lado (não empilha). Só garante nome completo (quebra linha). */}
             <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border">
                 {(!itens || itens.length === 0) && (
                     <div className="p-4 text-sm text-muted-foreground">Nenhum material selecionado para conferência.</div>
@@ -177,11 +176,9 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
 
                     return (
                         <div key={k} className="border-b p-3 last:border-b-0">
-                            {/* Grid: Texto (coluna flexível) + Botões (coluna fixa) */}
                             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
                                 <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
-                                        {/* ✅ nome sempre inteiro: sem truncate, quebra linha */}
                                         <div className="text-base font-semibold leading-snug whitespace-normal break-words">
                                             {it.nome}
                                         </div>
@@ -193,7 +190,6 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                                     </div>
                                 </div>
 
-                                {/* ✅ mantém lado a lado sempre */}
                                 <div className="flex items-center gap-2 justify-end whitespace-nowrap">
                                     <button
                                         type="button"
@@ -225,7 +221,6 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 })}
             </div>
 
-            {/* Observação geral */}
             <div className="mt-4 rounded-lg border p-3">
                 <label className="block text-sm font-medium" htmlFor="mat-conf-obs">
                     Observação{" "}

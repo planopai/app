@@ -96,15 +96,13 @@ const STOP_BY_START: Record<string, string> = {
 
 /* =======================================================================
    ✅ MODO OFFLINE (fila local + reenvio automático ao voltar a internet)
-   - Sem libs, sem mexer no backend (desde que o endpoint aceite receber depois)
-   - Armazena o payload inteiro (todas as informações do registro e ações).
    ======================================================================= */
 type OfflineQueueItem = {
     qid: string;
     createdAt: number;
     tries: number;
     lastError?: string;
-    payload: any; // payload do enviarRegistroPHP
+    payload: any;
 };
 
 const OFFLINE_QUEUE_KEY = "acomp_offline_queue_v1";
@@ -125,9 +123,7 @@ function safeWriteQueue(items: OfflineQueueItem[]) {
     if (typeof window === "undefined") return;
     try {
         localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
-    } catch {
-        // ignore
-    }
+    } catch { }
 }
 
 function genQid() {
@@ -313,9 +309,7 @@ export default function AcompanhamentoPage() {
                                 const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? null;
                                 addTerceiroIdToSession(novoId);
                             }
-                        } catch {
-                            // ignore
-                        }
+                        } catch { }
 
                         const after = safeReadQueue().filter((x) => x.qid !== item.qid);
                         safeWriteQueue(after);
@@ -507,8 +501,6 @@ export default function AcompanhamentoPage() {
                 setSignOpen(false);
                 setChooseTipoOpen(false);
                 setTeleOpen(false);
-
-                // ✅ fecha conferência também
                 setMatCheckOpen(false);
             }
         };
@@ -518,17 +510,13 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Parsers locais -------------------- */
     const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
-        // ✅ novo formato (dinâmico): vem pronto no materiais_json
         if ((r as any)?.materiais_json) {
             try {
                 const parsed = JSON.parse(String((r as any).materiais_json));
                 return normalizeMateriaisState(parsed);
-            } catch {
-                // segue fallback
-            }
+            } catch { }
         }
 
-        // Fallback legado (se ainda existir no banco): materiais_*_qtd
         const out: MateriaisState = {};
         try {
             for (const [k, v] of Object.entries(r as any)) {
@@ -548,11 +536,9 @@ export default function AcompanhamentoPage() {
         return out;
     };
 
-    // ✅ atualizado: além do arrumacao_json, aceita colunas diretas (ex: invol)
     const parseArrumacaoFromRegistro = (r: Registro): ArrumacaoState => {
         const base = defaultArrumacao();
 
-        // 1) merge do JSON (quando existir)
         if (r.arrumacao_json) {
             try {
                 const parsed = JSON.parse(String(r.arrumacao_json));
@@ -560,7 +546,6 @@ export default function AcompanhamentoPage() {
             } catch { }
         }
 
-        // 2) fallback/override por colunas diretas (quando backend enviar/guardar em colunas)
         (Object.keys(base) as Array<keyof ArrumacaoState>).forEach((k) => {
             const col = (r as any)[k];
             if (col == null) return;
@@ -579,45 +564,41 @@ export default function AcompanhamentoPage() {
     };
 
     /* -------------------- salvar conferência no backend -------------------- */
-    const salvarConferenciaNoPHP = useCallback(
-        async (data: {
-            registro_id: string | number | null | undefined;
-            falecido_nome: string;
-            observacao: string;
-            itens: Array<{
-                key: string;
-                nome: string;
-                qtd: number;
-                ok: 0 | 1;
-                nao_conforme: 0 | 1;
-            }>;
-        }) => {
-            const registro_id = data.registro_id != null ? String(data.registro_id) : "";
-            if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+    const salvarConferenciaNoPHP = useCallback(async (data: {
+        registro_id: string | number | null | undefined;
+        falecido_nome: string;
+        observacao: string;
+        itens: Array<{
+            key: string;
+            nome: string;
+            qtd: number;
+            ok: 0 | 1;
+            nao_conforme: 0 | 1;
+        }>;
+    }) => {
+        const registro_id = data.registro_id != null ? String(data.registro_id) : "";
+        if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-            const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({
-                    registro_id,
-                    falecido_nome: String(data.falecido_nome || "").trim(),
-                    observacao: String(data.observacao || "").trim(),
-                    itens: Array.isArray(data.itens) ? data.itens : [],
-                }),
-            });
+        const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+                registro_id,
+                falecido_nome: String(data.falecido_nome || "").trim(),
+                observacao: String(data.observacao || "").trim(),
+                itens: Array.isArray(data.itens) ? data.itens : [],
+            }),
+        });
 
-            if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+        if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+        const json = await r.json().catch(() => null);
+        if (!json) throw new Error("Resposta inválida do servidor.");
+        if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+        if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
 
-            const json = await r.json().catch(() => null);
-            if (!json) throw new Error("Resposta inválida do servidor.");
-            if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-            if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
-
-            return json;
-        },
-        []
-    );
+        return json;
+    }, []);
 
     /* -------------------- Aberturas -------------------- */
     const abrirNovoRegistro = useCallback(() => {
@@ -829,10 +810,7 @@ export default function AcompanhamentoPage() {
     }, []);
 
     const registrarAcao = useCallback(
-        async (
-            acao: string,
-            opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }
-        ) => {
+        async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }) => {
             if (acaoSubmitting) return;
             if (acaoId == null) return;
 
@@ -1184,14 +1162,12 @@ export default function AcompanhamentoPage() {
                 onConfirm={async (result?: MateriaisConferenciaResult) => {
                     if (!result) return;
 
-                    // ✅ 1) salva no banco (materiais_conferencia / itens / observação)
                     try {
                         setMatCheckSaving(true);
 
-                        const registro_id = matCheckRegistroId ?? acaoId; // <- aqui é o correto (sem usar result.registroId)
+                        const registro_id = matCheckRegistroId ?? acaoId;
                         if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-                        // tenta usar nome guardado; se vazio, tenta achar no registro atual
                         let nomeFinal = (matCheckFalecidoNome || "").trim();
                         if (!nomeFinal) {
                             const reg = registros.find((x) => String(x.id) === String(registro_id));
@@ -1211,7 +1187,6 @@ export default function AcompanhamentoPage() {
                             })),
                         });
 
-                        // ✅ 2) fecha e aplica fase11 sem reabrir a checagem e sem confirmar
                         setMatCheckOpen(false);
                         setMatCheckReturnToAcao(false);
                         setMatCheckSaving(false);
