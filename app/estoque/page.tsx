@@ -23,7 +23,7 @@ const items = [
         desc: "Administre todos os materiais do estoque",
         icon: IconDoor,
     },
-    
+
 ];
 
 export default function MemorialPage() {
