@@ -9,9 +9,20 @@ export type MatCheckItem = {
     qtd: number;
 };
 
-type ConfirmPayload = {
+type PerItemState = {
+    ok: boolean;
     naoConforme: boolean;
-    observacao: string;
+};
+
+export type MateriaisConferenciaResult = {
+    itens: Array<{
+        key: string;
+        nome: string;
+        qtd: number;
+        ok: boolean;
+        naoConforme: boolean;
+    }>;
+    observacao: string; // observação geral (opcional)
 };
 
 type Props = {
@@ -20,76 +31,155 @@ type Props = {
     onClose: () => void;
 
     /**
-     * Mantive compatível com o que você já usa no page.tsx.
-     * Ele pode ser chamado sem parâmetro (como hoje), ou com o payload.
+     * Mantive compatível com seu fluxo atual:
+     * pode ignorar o parâmetro, ou receber o result para salvar/logar.
      */
-    onConfirm: (payload?: ConfirmPayload) => void | Promise<void>;
+    onConfirm: (result?: MateriaisConferenciaResult) => void | Promise<void>;
 };
 
 export default function MateriaisConferenciaModal({ open, itens, onClose, onConfirm }: Props) {
-    const [naoConforme, setNaoConforme] = useState(false);
+    const [states, setStates] = useState<Record<string, PerItemState>>({});
     const [observacao, setObservacao] = useState("");
     const [erro, setErro] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
     const obsRef = useRef<HTMLTextAreaElement>(null);
 
-    const totalItens = useMemo(() => {
-        return (itens || []).reduce((acc, it) => acc + (Number(it?.qtd ?? 0) > 0 ? 1 : 0), 0);
-    }, [itens]);
-
+    // inicializa estado quando abrir
     useEffect(() => {
         if (!open) return;
-        setNaoConforme(false);
+
+        const initial: Record<string, PerItemState> = {};
+        for (const it of itens || []) {
+            const k = String(it.key);
+            initial[k] = { ok: false, naoConforme: false };
+        }
+        setStates(initial);
         setObservacao("");
         setErro(null);
         setSubmitting(false);
-    }, [open]);
+    }, [open, itens]);
 
-    useEffect(() => {
-        if (open && naoConforme) {
-            // pequeno delay pra garantir render do textarea
-            setTimeout(() => obsRef.current?.focus(), 50);
+    const totals = useMemo(() => {
+        const keys = (itens || []).map((i) => String(i.key));
+        let ok = 0;
+        let nc = 0;
+        for (const k of keys) {
+            const st = states[k];
+            if (!st) continue;
+            if (st.ok) ok++;
+            if (st.naoConforme) nc++;
         }
-    }, [open, naoConforme]);
+        return { total: keys.length, ok, nc };
+    }, [itens, states]);
+
+    const allResolved = useMemo(() => {
+        if (!itens || itens.length === 0) return false;
+        return itens.every((it) => {
+            const st = states[String(it.key)];
+            return !!st && (st.ok || st.naoConforme);
+        });
+    }, [itens, states]);
+
+    const anyNaoConforme = useMemo(() => {
+        if (!itens || itens.length === 0) return false;
+        return itens.some((it) => states[String(it.key)]?.naoConforme);
+    }, [itens, states]);
+
+    const toggleOk = (key: string) => {
+        setErro(null);
+        setStates((prev) => {
+            const cur = prev[key] ?? { ok: false, naoConforme: false };
+            const nextOk = !cur.ok;
+            return {
+                ...prev,
+                [key]: {
+                    ok: nextOk,
+                    naoConforme: nextOk ? false : cur.naoConforme, // se marcou OK, desmarca NC
+                },
+            };
+        });
+    };
+
+    const toggleNaoConforme = (key: string) => {
+        setErro(null);
+        setStates((prev) => {
+            const cur = prev[key] ?? { ok: false, naoConforme: false };
+            const nextNc = !cur.naoConforme;
+            return {
+                ...prev,
+                [key]: {
+                    ok: nextNc ? false : cur.ok, // se marcou NC, desmarca OK
+                    naoConforme: nextNc,
+                },
+            };
+        });
+
+        // foca observação quando marcar algum NC
+        setTimeout(() => {
+            obsRef.current?.focus();
+        }, 50);
+    };
 
     const handleConfirm = async () => {
         if (submitting) return;
-
         setErro(null);
 
-        if (naoConforme) {
-            const obs = observacao.trim();
-            if (!obs) {
-                setErro("Informe uma observação para a opção “Não Conforme”.");
-                obsRef.current?.focus();
-                return;
-            }
+        if (!itens || itens.length === 0) {
+            setErro("Não há itens para conferir.");
+            return;
         }
+
+        if (!allResolved) {
+            setErro("Marque OK ou Não Conforme para todos os itens.");
+            return;
+        }
+
+        // Observação geral é opcional.
+        // Se quiser obrigatória quando tiver Não Conforme, descomente:
+        // if (anyNaoConforme && !observacao.trim()) {
+        //   setErro("Informe uma observação (há itens marcados como Não Conforme).");
+        //   obsRef.current?.focus();
+        //   return;
+        // }
+
+        const result: MateriaisConferenciaResult = {
+            itens: (itens || []).map((it) => {
+                const k = String(it.key);
+                const st = states[k] ?? { ok: false, naoConforme: false };
+                return { key: k, nome: it.nome, qtd: Number(it.qtd ?? 0), ok: !!st.ok, naoConforme: !!st.naoConforme };
+            }),
+            observacao: observacao.trim(),
+        };
 
         try {
             setSubmitting(true);
-            await onConfirm({
-                naoConforme,
-                observacao: observacao.trim(),
-            });
+            await onConfirm(result);
         } finally {
             setSubmitting(false);
         }
     };
 
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Conferência de Materiais" maxWidth={560}>
+        <Modal open={open} onClose={onClose} ariaLabel="Conferência de Materiais" maxWidth={680}>
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h3 className="text-lg font-semibold">Conferência de Materiais</h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Confirme os materiais antes de marcar <span className="font-medium">Material Recolhido</span>.
+                        Para confirmar <span className="font-medium">Material Recolhido</span>, marque{" "}
+                        <span className="font-medium">OK</span> ou <span className="font-medium">Não Conforme</span> em cada item.
                     </p>
                 </div>
 
-                <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
-                    {totalItens} item(ns)
+                <div className="shrink-0 text-right">
+                    <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                        {totals.ok}/{totals.total} OK
+                    </div>
+                    {totals.nc > 0 && (
+                        <div className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 border border-amber-200">
+                            {totals.nc} Não Conforme
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -98,80 +188,94 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                     <div className="p-4 text-sm text-muted-foreground">Nenhum material selecionado para conferência.</div>
                 )}
 
-                {(itens || []).map((it) => (
-                    <div key={it.key} className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0">
-                        <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">{it.nome}</div>
-                            <div className="text-xs text-muted-foreground">Chave: {it.key}</div>
-                        </div>
+                {(itens || []).map((it) => {
+                    const k = String(it.key);
+                    const st = states[k] ?? { ok: false, naoConforme: false };
 
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">Qtd</span>
-                            <span className="inline-flex min-w-[44px] justify-center rounded-md border bg-background px-2 py-1 text-sm">
-                                {Number(it.qtd ?? 0)}
+                    const pill =
+                        st.ok ? (
+                            <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                OK
                             </span>
+                        ) : st.naoConforme ? (
+                            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                Não Conforme
+                            </span>
+                        ) : (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                Pendente
+                            </span>
+                        );
+
+                    return (
+                        <div key={k} className="border-b p-3 last:border-b-0">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <div className="truncate text-sm font-medium">{it.nome}</div>
+                                        {pill}
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-muted-foreground">
+                                        Qtd: <span className="font-medium text-foreground">{Number(it.qtd ?? 0)}</span> • Chave: {k}
+                                    </div>
+                                </div>
+
+                                <div className="shrink-0 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleOk(k)}
+                                        className={[
+                                            "rounded-md border px-3 py-2 text-xs font-medium transition",
+                                            st.ok ? "bg-emerald-600 text-white border-emerald-700" : "hover:bg-muted",
+                                        ].join(" ")}
+                                        aria-pressed={st.ok}
+                                    >
+                                        OK
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleNaoConforme(k)}
+                                        className={[
+                                            "rounded-md border px-3 py-2 text-xs font-medium transition",
+                                            st.naoConforme ? "bg-amber-500 text-white border-amber-600" : "hover:bg-muted",
+                                        ].join(" ")}
+                                        aria-pressed={st.naoConforme}
+                                    >
+                                        Não Conforme
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
-            {/* Não Conforme + Observação */}
+            {/* Observação geral (sempre embaixo) */}
             <div className="mt-4 rounded-lg border p-3">
-                <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                        <div className="text-sm font-medium">Status da conferência</div>
-                        <div className="text-xs text-muted-foreground">
-                            Se houver divergência, marque <span className="font-medium">Não Conforme</span> e descreva o motivo.
-                        </div>
-                    </div>
-
-                    <button
-                        type="button"
-                        className={[
-                            "shrink-0 rounded-md border px-3 py-2 text-sm transition",
-                            naoConforme ? "bg-destructive text-destructive-foreground border-destructive/40" : "hover:bg-muted",
-                        ].join(" ")}
-                        onClick={() => {
-                            setErro(null);
-                            setNaoConforme((v) => !v);
-                        }}
-                        aria-pressed={naoConforme}
-                    >
-                        Não Conforme
-                    </button>
+                <label className="block text-sm font-medium" htmlFor="mat-conf-obs">
+                    Observação
+                    {anyNaoConforme ? <span className="ml-1 text-xs text-muted-foreground">(há itens não conformes)</span> : null}
+                </label>
+                <textarea
+                    id="mat-conf-obs"
+                    ref={obsRef}
+                    className="mt-2 w-full min-h-[92px] resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Descreva observações gerais (ex.: item faltando, quantidade divergente, avaria, devolução parcial...)"
+                    value={observacao}
+                    onChange={(e) => setObservacao(e.target.value)}
+                    maxLength={700}
+                />
+                <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className={erro ? "text-destructive" : ""}>{erro ? erro : " "}</span>
+                    <span>{observacao.trim().length}/700</span>
                 </div>
-
-                {naoConforme && (
-                    <div className="mt-3">
-                        <label className="block text-sm font-medium" htmlFor="mat-check-obs">
-                            Observação
-                        </label>
-                        <textarea
-                            id="mat-check-obs"
-                            ref={obsRef}
-                            className="mt-2 w-full min-h-[88px] resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                            placeholder="Descreva o motivo da não conformidade (ex.: item faltando, quantidade divergente, avaria...)"
-                            value={observacao}
-                            onChange={(e) => setObservacao(e.target.value)}
-                            maxLength={600}
-                        />
-                        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{erro ? <span className="text-destructive">{erro}</span> : " "}</span>
-                            <span>{observacao.trim().length}/600</span>
-                        </div>
-                    </div>
-                )}
-
-                {!naoConforme && erro && (
-                    <div className="mt-2 text-xs text-destructive">{erro}</div>
-                )}
             </div>
 
-            {/* Footer */}
             <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
                     onClick={onClose}
                     disabled={submitting}
                 >
@@ -182,9 +286,11 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                     type="button"
                     className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
                     onClick={handleConfirm}
-                    disabled={submitting}
+                    disabled={!allResolved || submitting}
+                    aria-busy={submitting}
+                    title={!allResolved ? "Marque OK ou Não Conforme para todos os itens" : "Confirmar conferência"}
                 >
-                    {submitting ? "Salvando..." : "OK"}
+                    {submitting ? "Salvando..." : "Confirmar"}
                 </button>
             </div>
         </Modal>
