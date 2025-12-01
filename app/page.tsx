@@ -70,6 +70,13 @@ const shortcutsBottom: Shortcut[] = [
     icon: IconReportAnalytics,
     slug: "relatorio",
   },
+  {
+    title: "Estoque",
+    href: "/estoque",
+    desc: "Controle geral do estoque",
+    icon: IconReportAnalytics,
+    slug: "estoque",
+  },
 ];
 
 export default function HomePage() {
