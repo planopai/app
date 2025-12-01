@@ -33,6 +33,7 @@ export const LINKS: LinkItem[] = [
     { slug: 'coroa-de-flores', label: 'Coroa de Flores', href: '/coroa-de-flores', Icon: IconFlower },
     { slug: 'relatorio', label: 'Relatório', href: '/relatorio', Icon: IconReportAnalytics },
     { slug: 'administrativo', label: 'Administrativo', href: '/administrativo', Icon: IconSettings },
+    { slug: 'estoque', label: 'Estoque', href: '/estoque', Icon: IconSettings },
 ];
 
 // se quiser listar "inicio" também, adicione { slug:'inicio', label:'Início', href:'/inicio', Icon: ... }
