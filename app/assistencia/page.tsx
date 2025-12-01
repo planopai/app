@@ -58,10 +58,45 @@ type ModalModel =
         ativo: boolean;
     };
 
+/* =======================
+   ✅ Conferências (Tipos)
+   ======================= */
+type ConferenciaRow = {
+    id: number | string;
+    registro_id: number | string;
+    falecido_nome?: string | null;
+    observacao?: string | null;
+    usuario_nome?: string | null;
+    criado_em?: string | null;
+    nao_conformes?: number | string | null;
+    total_itens?: number | string | null;
+};
+
+type ConferenciaDetalhe = ConferenciaRow & {
+    itens: Array<{
+        id: number | string;
+        conferencia_id: number | string;
+        item_key: string;
+        item_nome: string;
+        qtd: number | string;
+        ok: number | string;
+        nao_conforme: number | string;
+    }>;
+};
+
+type ConferenciaListResp = {
+    rows: ConferenciaRow[];
+};
+
+/* =======================
+   ✅ Ajustes
+   ======================= */
 // ✅ ajuste se o nome do arquivo PHP for outro
 const PHP_FILE = "materiais_admin.php";
 // ✅ via proxy: app/api/php/[...path]/route.ts
 const PROXY_BASE = "/api/php";
+
+type ViewMode = "materiais" | "conferencias";
 
 export default function MateriaisAdminPage() {
     const [showInativos, setShowInativos] = useState(false);
@@ -72,6 +107,17 @@ export default function MateriaisAdminPage() {
 
     // ✅ NOVO: acordeão por categoria (uma coluna). Só abre ao clicar no nome.
     const [openCatId, setOpenCatId] = useState<string | null>(null);
+
+    // ✅ NOVO: modo da tela
+    const [view, setView] = useState<ViewMode>("materiais");
+
+    // ✅ Conferências: lista + detalhes
+    const [confLoading, setConfLoading] = useState(false);
+    const [confMsg, setConfMsg] = useState<{ ok: boolean; text: string } | null>(null);
+    const [confQuery, setConfQuery] = useState("");
+    const [confList, setConfList] = useState<ConferenciaRow[]>([]);
+    const [confOpenId, setConfOpenId] = useState<string | null>(null);
+    const [confDetail, setConfDetail] = useState<ConferenciaDetalhe | null>(null);
 
     const endpoint = useMemo(() => `${PROXY_BASE}/${PHP_FILE}`, []);
 
@@ -105,6 +151,39 @@ export default function MateriaisAdminPage() {
         [endpoint]
     );
 
+    const apiGET = useCallback(
+        async (op: string, params?: Record<string, any>) => {
+            const url = new URL(endpoint, window.location.origin);
+            url.searchParams.set("op", op);
+            url.searchParams.set("_nocache", String(Date.now()));
+            Object.entries(params ?? {}).forEach(([k, v]) => {
+                if (v === undefined || v === null) return;
+                url.searchParams.set(k, String(v));
+            });
+
+            const r = await fetch(url.toString(), {
+                method: "GET",
+                credentials: "include",
+                cache: "no-store",
+            });
+
+            const json = (await r.json().catch(() => null)) as (ApiOk<any> | ApiErr | null);
+            if (!json) throw new Error("Resposta inválida do servidor.");
+            if ((json as any)?.need_login) {
+                window.location.href = "/login";
+                return null;
+            }
+            if (!r.ok || (json as any)?.erro) {
+                throw new Error((json as any)?.msg || "Erro no servidor.");
+            }
+            return json as ApiOk<any>;
+        },
+        [endpoint]
+    );
+
+    /* =======================
+       Materiais: loadTree
+       ======================= */
     const loadTree = useCallback(async () => {
         setMsg(null);
         setLoading(true);
@@ -155,6 +234,61 @@ export default function MateriaisAdminPage() {
         loadTree();
     }, [loadTree]);
 
+    /* =======================
+       Conferências: list/get
+       ======================= */
+    const loadConferencias = useCallback(async () => {
+        setConfMsg(null);
+        setConfLoading(true);
+        try {
+            const res = await apiGET("conferencia_list", {
+                q: confQuery.trim() || "",
+                limit: 80,
+            });
+            if (!res) return;
+
+            const data = (res as ApiOk<ConferenciaListResp>)?.data ?? { rows: [] };
+            const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : Array.isArray(data) ? (data as any) : [];
+            setConfList(rows as ConferenciaRow[]);
+        } catch (e: any) {
+            setConfList([]);
+            setConfMsg({ ok: false, text: e?.message || "Falha ao carregar conferências." });
+        } finally {
+            setConfLoading(false);
+        }
+    }, [apiGET, confQuery]);
+
+    const openConferencia = useCallback(
+        async (id: number | string) => {
+            const sid = String(id);
+            setConfOpenId(sid);
+            setConfDetail(null);
+            setConfMsg(null);
+
+            try {
+                const res = await apiGET("conferencia_get", { id: sid });
+                if (!res) return;
+
+                const det = (res as ApiOk<ConferenciaDetalhe>)?.data as any;
+                if (!det) throw new Error("Detalhe inválido.");
+                if (!Array.isArray(det.itens)) det.itens = [];
+                setConfDetail(det as ConferenciaDetalhe);
+            } catch (e: any) {
+                setConfDetail(null);
+                setConfMsg({ ok: false, text: e?.message || "Falha ao abrir conferência." });
+            }
+        },
+        [apiGET]
+    );
+
+    useEffect(() => {
+        if (view !== "conferencias") return;
+        loadConferencias();
+    }, [view, loadConferencias]);
+
+    /* =======================
+       CRUD Modals (Materiais)
+       ======================= */
     const openCreateCategoria = () =>
         setModal({ open: true, kind: "categoria", mode: "create", nome: "", ordem: 0, ativo: true });
 
@@ -250,7 +384,7 @@ export default function MateriaisAdminPage() {
                     const r = await apiJSON("categoria_create", { nome, ativo: modal.ativo, ordem: modal.ordem });
                     setMsg({ ok: true, text: "Categoria criada." });
                     const newId = (r as any)?.id;
-                    if (newId != null) setOpenCatId(String(newId)); // abre a recém-criada
+                    if (newId != null) setOpenCatId(String(newId));
                 } else {
                     await apiJSON("categoria_update", { id: modal.id, nome, ativo: modal.ativo, ordem: modal.ordem });
                     setMsg({ ok: true, text: "Categoria atualizada." });
@@ -266,7 +400,7 @@ export default function MateriaisAdminPage() {
                         ordem: modal.ordem,
                     });
                     setMsg({ ok: true, text: "Item criado." });
-                    setOpenCatId(String(modal.categoria_id)); // garante categoria aberta
+                    setOpenCatId(String(modal.categoria_id));
                 } else {
                     await apiJSON("item_update", {
                         id: modal.id,
@@ -323,43 +457,107 @@ export default function MateriaisAdminPage() {
         setOpenCatId((prev) => (prev === cid ? null : cid));
     };
 
+    /* =======================
+       Render
+       ======================= */
     return (
         <div className="p-6">
             <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-semibold">Administração de Materiais</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Categorias, itens e subitens ({stats.cats} / {stats.itens} / {stats.subs})
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Proxy: <span className="font-mono">{endpoint}</span>
-                    </p>
+
+                    {view === "materiais" ? (
+                        <>
+                            <p className="text-sm text-muted-foreground">
+                                Categorias, itens e subitens ({stats.cats} / {stats.itens} / {stats.subs})
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Proxy: <span className="font-mono">{endpoint}</span>
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="text-sm text-muted-foreground">Conferências registradas (observações e não conformidades).</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Proxy: <span className="font-mono">{endpoint}</span>
+                            </p>
+                        </>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                        <input type="checkbox" checked={showInativos} onChange={(e) => setShowInativos(e.target.checked)} />
-                        Mostrar inativos
-                    </label>
+                    {/* Toggle view */}
+                    <div className="flex items-center overflow-hidden rounded-md border">
+                        <button
+                            type="button"
+                            className={`px-3 py-2 text-sm ${view === "materiais" ? "bg-muted font-medium" : "hover:bg-muted"}`}
+                            onClick={() => setView("materiais")}
+                        >
+                            Materiais
+                        </button>
+                        <button
+                            type="button"
+                            className={`px-3 py-2 text-sm ${view === "conferencias" ? "bg-muted font-medium" : "hover:bg-muted"}`}
+                            onClick={() => setView("conferencias")}
+                        >
+                            Conferências
+                        </button>
+                    </div>
 
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                        onClick={loadTree}
-                        disabled={loading}
-                    >
-                        {loading ? "Carregando…" : "Recarregar"}
-                    </button>
+                    {view === "materiais" ? (
+                        <>
+                            <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                                <input type="checkbox" checked={showInativos} onChange={(e) => setShowInativos(e.target.checked)} />
+                                Mostrar inativos
+                            </label>
 
-                    <button
-                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                        onClick={openCreateCategoria}
-                    >
-                        + Categoria
-                    </button>
+                            <button
+                                className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                                onClick={loadTree}
+                                disabled={loading}
+                            >
+                                {loading ? "Carregando…" : "Recarregar"}
+                            </button>
+
+                            <button
+                                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
+                                onClick={openCreateCategoria}
+                            >
+                                + Categoria
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                                <input
+                                    className="w-[240px] bg-transparent text-sm outline-none"
+                                    placeholder="Buscar: registro_id, falecido, observação..."
+                                    value={confQuery}
+                                    onChange={(e) => setConfQuery(e.target.value)}
+                                />
+                                <button
+                                    className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                    onClick={loadConferencias}
+                                    disabled={confLoading}
+                                >
+                                    {confLoading ? "..." : "Buscar"}
+                                </button>
+                            </div>
+
+                            <button
+                                className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                                onClick={loadConferencias}
+                                disabled={confLoading}
+                            >
+                                {confLoading ? "Carregando…" : "Recarregar"}
+                            </button>
+                        </>
+                    )}
                 </div>
             </header>
 
-            {msg && (
+            {/* Msg materiais */}
+            {view === "materiais" && msg && (
                 <div
                     className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
                         }`}
@@ -368,123 +566,333 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
-            <div className="grid gap-3">
-                {tree.length === 0 && !loading ? (
-                    <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum registro encontrado.</div>
-                ) : null}
+            {/* Msg conferências */}
+            {view === "conferencias" && confMsg && (
+                <div
+                    className={`mb-4 rounded-md border px-3 py-2 text-sm ${confMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
+                        }`}
+                >
+                    {confMsg.text}
+                </div>
+            )}
 
-                {tree.map((c) => {
-                    const cid = String(c.id);
-                    const isOpen = openCatId === cid;
+            {/* =======================
+          VIEW: MATERIAIS
+         ======================= */}
+            {view === "materiais" ? (
+                <div className="grid gap-3">
+                    {tree.length === 0 && !loading ? (
+                        <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum registro encontrado.</div>
+                    ) : null}
 
-                    return (
-                        <div key={cid} className="rounded-xl border bg-background p-4 shadow-sm">
-                            {/* Linha principal da categoria (lista). Só abre ao clicar no nome. */}
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                                <button
-                                    type="button"
-                                    className="min-w-[240px] text-left focus:outline-none"
-                                    onClick={() => toggleOpenCategory(cid)}
-                                    aria-expanded={isOpen}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                        <h2 className="text-base font-semibold">
-                                            {c.nome} <span className="ml-2 text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
-                                        </h2>
-                                    </div>
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                        ID: <span className="font-mono">{cid}</span> • Ordem:{" "}
-                                        <span className="font-mono">{String(c.ordem ?? 0)}</span>
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-muted-foreground">
-                                        {(c.itens ?? []).length} item(ns)
-                                    </div>
-                                </button>
+                    {tree.map((c) => {
+                        const cid = String(c.id);
+                        const isOpen = openCatId === cid;
 
-                                <div className="flex flex-wrap gap-2">
-                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateItem(c.id)}>
-                                        + Item
+                        return (
+                            <div key={cid} className="rounded-xl border bg-background p-4 shadow-sm">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <button
+                                        type="button"
+                                        className="min-w-[240px] text-left focus:outline-none"
+                                        onClick={() => toggleOpenCategory(cid)}
+                                        aria-expanded={isOpen}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                            <h2 className="text-base font-semibold">
+                                                {c.nome}{" "}
+                                                <span className="ml-2 text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
+                                            </h2>
+                                        </div>
+                                        <div className="mt-1 text-xs text-muted-foreground">
+                                            ID: <span className="font-mono">{cid}</span> • Ordem:{" "}
+                                            <span className="font-mono">{String(c.ordem ?? 0)}</span>
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-muted-foreground">{(c.itens ?? []).length} item(ns)</div>
                                     </button>
-                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(c)}>
-                                        Editar
-                                    </button>
-                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(c.id)}>
-                                        Excluir
-                                    </button>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateItem(c.id)}>
+                                            + Item
+                                        </button>
+                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(c)}>
+                                            Editar
+                                        </button>
+                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(c.id)}>
+                                            Excluir
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* Conteúdo (itens/subitens) só aparece quando a categoria está aberta */}
-                            {isOpen ? (
-                                <div className="mt-4 grid gap-2">
-                                    {(c.itens ?? []).length === 0 ? (
-                                        <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Sem itens nesta categoria.</div>
-                                    ) : null}
-
-                                    {(c.itens ?? []).map((i) => (
-                                        <div key={String(i.id)} className="rounded-lg border p-3">
-                                            <div className="flex flex-wrap items-start justify-between gap-2">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(i.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                                        <div className="font-medium">{i.nome}</div>
-                                                    </div>
-                                                    <div className="mt-1 text-[11px] text-muted-foreground">
-                                                        Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem:{" "}
-                                                        <span className="font-mono">{String(i.ordem ?? 0)}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex flex-wrap gap-2">
-                                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)}>
-                                                        + Subitem
-                                                    </button>
-                                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)}>
-                                                        Editar
-                                                    </button>
-                                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)}>
-                                                        Excluir
-                                                    </button>
-                                                </div>
+                                {isOpen ? (
+                                    <div className="mt-4 grid gap-2">
+                                        {(c.itens ?? []).length === 0 ? (
+                                            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                                                Sem itens nesta categoria.
                                             </div>
+                                        ) : null}
 
-                                            <div className="mt-3 grid gap-2 pl-2">
-                                                {(i.subitens ?? []).length === 0 ? (
-                                                    <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">Sem subitens.</div>
-                                                ) : null}
+                                        {(c.itens ?? []).map((i) => (
+                                            <div key={String(i.id)} className="rounded-lg border p-3">
+                                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(i.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                                            <div className="font-medium">{i.nome}</div>
+                                                        </div>
+                                                        <div className="mt-1 text-[11px] text-muted-foreground">
+                                                            Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem:{" "}
+                                                            <span className="font-mono">{String(i.ordem ?? 0)}</span>
+                                                        </div>
+                                                    </div>
 
-                                                {(i.subitens ?? []).map((s) => (
-                                                    <div key={String(s.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
-                                                        <div className="flex min-w-[220px] items-center gap-2">
-                                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(s.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                                            <div className="text-sm">{s.nome}</div>
-                                                            <div className="text-[11px] text-muted-foreground">
-                                                                (ordem: <span className="font-mono">{String(s.ordem ?? 0)}</span>)
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)}>
+                                                            + Subitem
+                                                        </button>
+                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)}>
+                                                            Editar
+                                                        </button>
+                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)}>
+                                                            Excluir
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-3 grid gap-2 pl-2">
+                                                    {(i.subitens ?? []).length === 0 ? (
+                                                        <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">Sem subitens.</div>
+                                                    ) : null}
+
+                                                    {(i.subitens ?? []).map((s) => (
+                                                        <div
+                                                            key={String(s.id)}
+                                                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
+                                                        >
+                                                            <div className="flex min-w-[220px] items-center gap-2">
+                                                                <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(s.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                                                <div className="text-sm">{s.nome}</div>
+                                                                <div className="text-[11px] text-muted-foreground">
+                                                                    (ordem: <span className="font-mono">{String(s.ordem ?? 0)}</span>)
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex flex-wrap gap-2">
+                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)}>
+                                                                    Editar
+                                                                </button>
+                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)}>
+                                                                    Excluir
+                                                                </button>
                                                             </div>
                                                         </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                /* =======================
+                    VIEW: CONFERÊNCIAS
+                   ======================= */
+                <div className="grid gap-3">
+                    {confList.length === 0 && !confLoading ? (
+                        <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                            Nenhuma conferência encontrada.
+                        </div>
+                    ) : null}
 
-                                                        <div className="flex flex-wrap gap-2">
-                                                            <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)}>
-                                                                Editar
-                                                            </button>
-                                                            <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)}>
-                                                                Excluir
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
+                    {confList.map((c) => {
+                        const id = String(c.id);
+                        const registroId = String(c.registro_id ?? "");
+                        const falecido = String(c.falecido_nome ?? "").trim();
+                        const obs = String(c.observacao ?? "").trim();
+                        const nc = Number(c.nao_conformes ?? 0);
+                        const total = Number(c.total_itens ?? 0);
+
+                        return (
+                            <button
+                                key={id}
+                                type="button"
+                                className="rounded-xl border bg-background p-4 text-left shadow-sm hover:bg-muted/30"
+                                onClick={() => openConferencia(id)}
+                            >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="min-w-[240px]">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${nc > 0 ? "bg-amber-500" : "bg-emerald-500"}`} />
+                                            <div className="text-base font-semibold">
+                                                Registro: <span className="font-mono">{registroId}</span>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            ) : null}
-                        </div>
-                    );
-                })}
-            </div>
 
-            {/* Modal */}
+                                        <div className="mt-1 text-sm text-muted-foreground">
+                                            {falecido ? <>Falecido: <span className="text-foreground font-medium">{falecido}</span></> : "Falecido: —"}
+                                        </div>
+
+                                        {obs ? (
+                                            <div className="mt-2 text-sm">
+                                                <span className="text-muted-foreground">Obs:</span>{" "}
+                                                <span className="text-foreground">{obs.length > 140 ? obs.slice(0, 140) + "…" : obs}</span>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2 text-sm text-muted-foreground">Sem observação.</div>
+                                        )}
+
+                                        <div className="mt-2 text-[11px] text-muted-foreground">
+                                            ID: <span className="font-mono">{id}</span>
+                                            {c.criado_em ? <> • Em: <span className="font-mono">{String(c.criado_em)}</span></> : null}
+                                            {c.usuario_nome ? <> • Por: <span className="font-mono">{String(c.usuario_nome)}</span></> : null}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="rounded-md border bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
+                                            {total || total === 0 ? `${total} itens` : "itens: —"}
+                                        </div>
+                                        <div
+                                            className={`rounded-md border px-2 py-1 text-xs whitespace-nowrap ${nc > 0 ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                }`}
+                                        >
+                                            {nc > 0 ? `${nc} não conformes` : "sem não conformes"}
+                                        </div>
+                                    </div>
+                                </div>
+                            </button>
+                        );
+                    })}
+
+                    {/* Modal detalhe conferência */}
+                    {confOpenId && (
+                        <div
+                            className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+                            role="dialog"
+                            aria-modal="true"
+                            onMouseDown={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    setConfOpenId(null);
+                                    setConfDetail(null);
+                                }
+                            }}
+                        >
+                            <div className="w-full max-w-3xl rounded-xl bg-background p-4 shadow-xl">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-lg font-semibold">Detalhes da Conferência</h3>
+                                        <p className="text-xs text-muted-foreground">
+                                            ID: <span className="font-mono">{confOpenId}</span>
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        className="rounded-md border px-3 py-2 text-xs hover:bg-muted"
+                                        onClick={() => {
+                                            setConfOpenId(null);
+                                            setConfDetail(null);
+                                        }}
+                                    >
+                                        Fechar
+                                    </button>
+                                </div>
+
+                                {!confDetail ? (
+                                    <div className="mt-4 rounded-md border p-4 text-sm text-muted-foreground">Carregando detalhes…</div>
+                                ) : (
+                                    <div className="mt-4 grid gap-3">
+                                        <div className="rounded-lg border p-3">
+                                            <div className="text-sm">
+                                                Registro: <span className="font-mono font-semibold">{String(confDetail.registro_id ?? "")}</span>
+                                            </div>
+                                            <div className="mt-1 text-sm">
+                                                Falecido:{" "}
+                                                <span className="font-medium">
+                                                    {String(confDetail.falecido_nome ?? "").trim() || "—"}
+                                                </span>
+                                            </div>
+                                            <div className="mt-2 text-sm">
+                                                <div className="text-muted-foreground">Observação</div>
+                                                <div className="mt-1 whitespace-pre-wrap break-words">
+                                                    {String(confDetail.observacao ?? "").trim() || "—"}
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 text-[11px] text-muted-foreground">
+                                                {confDetail.criado_em ? <>Em: <span className="font-mono">{String(confDetail.criado_em)}</span></> : null}
+                                                {confDetail.usuario_nome ? <> • Por: <span className="font-mono">{String(confDetail.usuario_nome)}</span></> : null}
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-lg border">
+                                            <div className="border-b p-3 text-sm font-medium">Itens</div>
+                                            {confDetail.itens.length === 0 ? (
+                                                <div className="p-3 text-sm text-muted-foreground">Nenhum item salvo nesta conferência.</div>
+                                            ) : (
+                                                <div className="max-h-[45vh] overflow-auto">
+                                                    {confDetail.itens.map((it) => {
+                                                        const ok = Number(it.ok ?? 0) === 1;
+                                                        const nc = Number(it.nao_conforme ?? 0) === 1;
+                                                        return (
+                                                            <div key={String(it.id)} className="border-b p-3 last:border-b-0">
+                                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                    <div className="min-w-0">
+                                                                        <div className="text-sm font-semibold whitespace-normal break-words">
+                                                                            {String(it.item_nome ?? "")}
+                                                                        </div>
+                                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                                            key: <span className="font-mono">{String(it.item_key ?? "")}</span> • qtd:{" "}
+                                                                            <span className="font-mono">{String(it.qtd ?? 0)}</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-2">
+                                                                        {ok ? (
+                                                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                                                                OK
+                                                                            </span>
+                                                                        ) : null}
+                                                                        {nc ? (
+                                                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                                                                Não Conforme
+                                                                            </span>
+                                                                        ) : null}
+                                                                        {!ok && !nc ? (
+                                                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                                                                —
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {confMsg && (
+                                    <div
+                                        className={`mt-4 rounded-md border px-3 py-2 text-sm ${confMsg.ok
+                                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                : "border-red-200 bg-red-50 text-red-800"
+                                            }`}
+                                    >
+                                        {confMsg.text}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Modal CRUD Materiais */}
             {modal.open && (
                 <div
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
