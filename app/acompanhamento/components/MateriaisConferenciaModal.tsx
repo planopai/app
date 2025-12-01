@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 
 export type MatCheckItem = {
-    key: string; // usado internamente (não exibimos mais)
+    key: string; // usado internamente (não exibimos)
     nome: string;
     qtd: number;
 };
@@ -83,10 +83,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
         setStates((prev) => {
             const cur = prev[key] ?? { ok: false, naoConforme: false };
             const nextOk = !cur.ok;
-            return {
-                ...prev,
-                [key]: { ok: nextOk, naoConforme: nextOk ? false : cur.naoConforme },
-            };
+            return { ...prev, [key]: { ok: nextOk, naoConforme: nextOk ? false : cur.naoConforme } };
         });
     };
 
@@ -95,10 +92,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
         setStates((prev) => {
             const cur = prev[key] ?? { ok: false, naoConforme: false };
             const nextNc = !cur.naoConforme;
-            return {
-                ...prev,
-                [key]: { ok: nextNc ? false : cur.ok, naoConforme: nextNc },
-            };
+            return { ...prev, [key]: { ok: nextNc ? false : cur.ok, naoConforme: nextNc } };
         });
 
         setTimeout(() => obsRef.current?.focus(), 50);
@@ -112,7 +106,6 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
             setErro("Não há itens para conferir.");
             return;
         }
-
         if (!allResolved) {
             setErro("Marque OK ou Não Conforme para todos os itens.");
             return;
@@ -158,7 +151,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 </div>
             </div>
 
-            {/* LISTA (nome + qtd apenas) */}
+            {/* LISTA: no celular mantém botão lado a lado (não empilha). Só garante nome completo (quebra linha). */}
             <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border">
                 {(!itens || itens.length === 0) && (
                     <div className="p-4 text-sm text-muted-foreground">Nenhum material selecionado para conferência.</div>
@@ -184,29 +177,29 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
 
                     return (
                         <div key={k} className="border-b p-3 last:border-b-0">
-                            {/* No celular, botões ficam embaixo (não encolhe o nome). No desktop, ao lado. */}
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="flex flex-col gap-1">
+                            {/* Grid: Texto (coluna flexível) + Botões (coluna fixa) */}
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                                <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
-                                        {/* ✅ sem truncate: quebra linha e mostra inteiro */}
+                                        {/* ✅ nome sempre inteiro: sem truncate, quebra linha */}
                                         <div className="text-base font-semibold leading-snug whitespace-normal break-words">
                                             {it.nome}
                                         </div>
                                         {pill}
                                     </div>
 
-                                    <div className="text-sm text-muted-foreground">
+                                    <div className="mt-0.5 text-sm text-muted-foreground">
                                         Qtd: <span className="font-medium text-foreground">{Number(it.qtd ?? 0)}</span>
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
+                                {/* ✅ mantém lado a lado sempre */}
+                                <div className="flex items-center gap-2 justify-end whitespace-nowrap">
                                     <button
                                         type="button"
                                         onClick={() => toggleOk(k)}
                                         className={[
                                             "rounded-md border px-3 py-2 text-sm font-medium transition",
-                                            "w-full sm:w-auto", // ✅ no celular ocupa largura e não espreme o título
                                             st.ok ? "bg-emerald-600 text-white border-emerald-700" : "hover:bg-muted",
                                         ].join(" ")}
                                         aria-pressed={st.ok}
@@ -219,7 +212,6 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                                         onClick={() => toggleNaoConforme(k)}
                                         className={[
                                             "rounded-md border px-3 py-2 text-sm font-medium transition",
-                                            "w-full sm:w-auto",
                                             st.naoConforme ? "bg-amber-500 text-white border-amber-600" : "hover:bg-muted",
                                         ].join(" ")}
                                         aria-pressed={st.naoConforme}
