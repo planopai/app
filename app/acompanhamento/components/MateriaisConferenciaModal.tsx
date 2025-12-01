@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 
 export type MatCheckItem = {
-    key: string;
+    key: string; // usado internamente (não exibimos mais)
     nome: string;
     qtd: number;
 };
@@ -22,18 +22,13 @@ export type MateriaisConferenciaResult = {
         ok: boolean;
         naoConforme: boolean;
     }>;
-    observacao: string; // observação geral (opcional)
+    observacao: string;
 };
 
 type Props = {
     open: boolean;
     itens: MatCheckItem[];
     onClose: () => void;
-
-    /**
-     * Mantive compatível com seu fluxo atual:
-     * pode ignorar o parâmetro, ou receber o result para salvar/logar.
-     */
     onConfirm: (result?: MateriaisConferenciaResult) => void | Promise<void>;
 };
 
@@ -45,15 +40,12 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
 
     const obsRef = useRef<HTMLTextAreaElement>(null);
 
-    // inicializa estado quando abrir
     useEffect(() => {
         if (!open) return;
 
         const initial: Record<string, PerItemState> = {};
-        for (const it of itens || []) {
-            const k = String(it.key);
-            initial[k] = { ok: false, naoConforme: false };
-        }
+        for (const it of itens || []) initial[String(it.key)] = { ok: false, naoConforme: false };
+
         setStates(initial);
         setObservacao("");
         setErro(null);
@@ -93,10 +85,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
             const nextOk = !cur.ok;
             return {
                 ...prev,
-                [key]: {
-                    ok: nextOk,
-                    naoConforme: nextOk ? false : cur.naoConforme, // se marcou OK, desmarca NC
-                },
+                [key]: { ok: nextOk, naoConforme: nextOk ? false : cur.naoConforme },
             };
         });
     };
@@ -108,17 +97,11 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
             const nextNc = !cur.naoConforme;
             return {
                 ...prev,
-                [key]: {
-                    ok: nextNc ? false : cur.ok, // se marcou NC, desmarca OK
-                    naoConforme: nextNc,
-                },
+                [key]: { ok: nextNc ? false : cur.ok, naoConforme: nextNc },
             };
         });
 
-        // foca observação quando marcar algum NC
-        setTimeout(() => {
-            obsRef.current?.focus();
-        }, 50);
+        setTimeout(() => obsRef.current?.focus(), 50);
     };
 
     const handleConfirm = async () => {
@@ -134,14 +117,6 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
             setErro("Marque OK ou Não Conforme para todos os itens.");
             return;
         }
-
-        // Observação geral é opcional.
-        // Se quiser obrigatória quando tiver Não Conforme, descomente:
-        // if (anyNaoConforme && !observacao.trim()) {
-        //   setErro("Informe uma observação (há itens marcados como Não Conforme).");
-        //   obsRef.current?.focus();
-        //   return;
-        // }
 
         const result: MateriaisConferenciaResult = {
             itens: (itens || []).map((it) => {
@@ -172,17 +147,18 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 </div>
 
                 <div className="shrink-0 text-right">
-                    <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                    <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
                         {totals.ok}/{totals.total} OK
                     </div>
                     {totals.nc > 0 && (
-                        <div className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 border border-amber-200">
+                        <div className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 border border-amber-200 whitespace-nowrap">
                             {totals.nc} Não Conforme
                         </div>
                     )}
                 </div>
             </div>
 
+            {/* LISTA (nome + qtd apenas) */}
             <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border">
                 {(!itens || itens.length === 0) && (
                     <div className="p-4 text-sm text-muted-foreground">Nenhum material selecionado para conferência.</div>
@@ -192,40 +168,45 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                     const k = String(it.key);
                     const st = states[k] ?? { ok: false, naoConforme: false };
 
-                    const pill =
-                        st.ok ? (
-                            <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                                OK
-                            </span>
-                        ) : st.naoConforme ? (
-                            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                                Não Conforme
-                            </span>
-                        ) : (
-                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                                Pendente
-                            </span>
-                        );
+                    const pill = st.ok ? (
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                            OK
+                        </span>
+                    ) : st.naoConforme ? (
+                        <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                            Não Conforme
+                        </span>
+                    ) : (
+                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            Pendente
+                        </span>
+                    );
 
                     return (
                         <div key={k} className="border-b p-3 last:border-b-0">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <div className="truncate text-sm font-medium">{it.nome}</div>
+                            {/* No celular, botões ficam embaixo (não encolhe o nome). No desktop, ao lado. */}
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {/* ✅ sem truncate: quebra linha e mostra inteiro */}
+                                        <div className="text-base font-semibold leading-snug whitespace-normal break-words">
+                                            {it.nome}
+                                        </div>
                                         {pill}
                                     </div>
-                                    <div className="mt-0.5 text-xs text-muted-foreground">
-                                        Qtd: <span className="font-medium text-foreground">{Number(it.qtd ?? 0)}</span> • Chave: {k}
+
+                                    <div className="text-sm text-muted-foreground">
+                                        Qtd: <span className="font-medium text-foreground">{Number(it.qtd ?? 0)}</span>
                                     </div>
                                 </div>
 
-                                <div className="shrink-0 flex items-center gap-2">
+                                <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
                                     <button
                                         type="button"
                                         onClick={() => toggleOk(k)}
                                         className={[
-                                            "rounded-md border px-3 py-2 text-xs font-medium transition",
+                                            "rounded-md border px-3 py-2 text-sm font-medium transition",
+                                            "w-full sm:w-auto", // ✅ no celular ocupa largura e não espreme o título
                                             st.ok ? "bg-emerald-600 text-white border-emerald-700" : "hover:bg-muted",
                                         ].join(" ")}
                                         aria-pressed={st.ok}
@@ -237,7 +218,8 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                                         type="button"
                                         onClick={() => toggleNaoConforme(k)}
                                         className={[
-                                            "rounded-md border px-3 py-2 text-xs font-medium transition",
+                                            "rounded-md border px-3 py-2 text-sm font-medium transition",
+                                            "w-full sm:w-auto",
                                             st.naoConforme ? "bg-amber-500 text-white border-amber-600" : "hover:bg-muted",
                                         ].join(" ")}
                                         aria-pressed={st.naoConforme}
@@ -251,21 +233,23 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 })}
             </div>
 
-            {/* Observação geral (sempre embaixo) */}
+            {/* Observação geral */}
             <div className="mt-4 rounded-lg border p-3">
                 <label className="block text-sm font-medium" htmlFor="mat-conf-obs">
-                    Observação
-                    {anyNaoConforme ? <span className="ml-1 text-xs text-muted-foreground">(há itens não conformes)</span> : null}
+                    Observação{" "}
+                    {anyNaoConforme ? <span className="text-xs text-muted-foreground">(há itens não conformes)</span> : null}
                 </label>
+
                 <textarea
                     id="mat-conf-obs"
                     ref={obsRef}
                     className="mt-2 w-full min-h-[92px] resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Descreva observações gerais (ex.: item faltando, quantidade divergente, avaria, devolução parcial...)"
+                    placeholder="Descreva observações gerais (ex.: item faltando, quantidade divergente, avaria...)"
                     value={observacao}
                     onChange={(e) => setObservacao(e.target.value)}
                     maxLength={700}
                 />
+
                 <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
                     <span className={erro ? "text-destructive" : ""}>{erro ? erro : " "}</span>
                     <span>{observacao.trim().length}/700</span>
