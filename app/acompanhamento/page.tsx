@@ -31,7 +31,7 @@ import Modal from "./components/Modal";
 import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
 
 // ✅ NOVO: modal de conferência antes do fase11
-import MateriaisConferenciaModal, { MatCheckItem } from "./components/MateriaisConferenciaModal";
+import MateriaisConferenciaModal, { MatCheckItem, MateriaisConferenciaResult } from "./components/MateriaisConferenciaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -152,6 +152,18 @@ function enqueueOffline(payload: any, errMsg?: string) {
     return items.length;
 }
 
+// ✅ tenta resolver nome do falecido (ajuste os campos conforme seu Registro real)
+function resolveFalecidoNome(r: any): string {
+    return String(
+        r?.falecido ??
+        r?.nome_falecido ??
+        r?.falecido_nome ??
+        r?.nome_do_falecido ??
+        r?.nome ??
+        ""
+    ).trim();
+}
+
 export default function AcompanhamentoPage() {
     // Tabela
     const [registros, setRegistros] = useState<Registro[]>([]);
@@ -198,6 +210,13 @@ export default function AcompanhamentoPage() {
     const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
     const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
 
+    // ✅ contexto da conferência (para salvar no banco)
+    const [matCheckRegistroId, setMatCheckRegistroId] = useState<Registro["id"] | null>(null);
+    const [matCheckFalecidoNome, setMatCheckFalecidoNome] = useState<string>("");
+
+    // ✅ overlay enquanto salva conferência
+    const [matCheckSaving, setMatCheckSaving] = useState(false);
+
     // Info
     const [infoOpen, setInfoOpen] = useState(false);
     const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
@@ -217,7 +236,7 @@ export default function AcompanhamentoPage() {
     const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
     const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
 
-    // Controle de sessão ativa de telemetria (para sabermos em qual "par" parar)
+    // Controle de sessão ativa de telemetria
     const [teleActive, setTeleActive] = useState(false);
     const [teleStartFase, setTeleStartFase] = useState<string | null>(null);
 
@@ -265,7 +284,6 @@ export default function AcompanhamentoPage() {
         }
     }, []);
 
-    // helper para não depender da ordem do arquivo (flush usa isso)
     const fetchRegistrosSafe = useCallback(async () => {
         await fetchRegistros();
     }, [fetchRegistros]);
@@ -560,6 +578,47 @@ export default function AcompanhamentoPage() {
         return base;
     };
 
+    /* -------------------- salvar conferência no backend -------------------- */
+    const salvarConferenciaNoPHP = useCallback(
+        async (data: {
+            registro_id: string | number | null | undefined;
+            falecido_nome: string;
+            observacao: string;
+            itens: Array<{
+                key: string;
+                nome: string;
+                qtd: number;
+                ok: 0 | 1;
+                nao_conforme: 0 | 1;
+            }>;
+        }) => {
+            const registro_id = data.registro_id != null ? String(data.registro_id) : "";
+            if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+
+            const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    registro_id,
+                    falecido_nome: String(data.falecido_nome || "").trim(),
+                    observacao: String(data.observacao || "").trim(),
+                    itens: Array.isArray(data.itens) ? data.itens : [],
+                }),
+            });
+
+            if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+
+            const json = await r.json().catch(() => null);
+            if (!json) throw new Error("Resposta inválida do servidor.");
+            if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+            if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
+
+            return json;
+        },
+        []
+    );
+
     /* -------------------- Aberturas -------------------- */
     const abrirNovoRegistro = useCallback(() => {
         setChooseTipoOpen(true);
@@ -597,7 +656,7 @@ export default function AcompanhamentoPage() {
             setTanatoVal(String(empty.tanato || ""));
             setWizardOpen(true);
         },
-        [wizardStepIndexesForTipo, wizardStep, wizardData] // deps não críticos aqui, mas ok
+        [wizardStepIndexesForTipo, wizardStep, wizardData]
     );
 
     const abrirWizard = useCallback(
@@ -700,7 +759,6 @@ export default function AcompanhamentoPage() {
             }
         }
 
-        // ✅ OFFLINE: se não tiver internet, guarda o payload inteiro e sai
         if (!isOnlineNow()) {
             try {
                 setWizardSubmitting(true);
@@ -778,7 +836,7 @@ export default function AcompanhamentoPage() {
             if (acaoSubmitting) return;
             if (acaoId == null) return;
 
-            // ✅ NOVA REGRA: antes de "Material Recolhido" (fase11), exigir conferência dos materiais
+            // ✅ Antes de "Material Recolhido" (fase11), exigir conferência
             if (acao === "fase11" && !opts?.skipMaterialCheck) {
                 const reg = registros.find((x) => String(x.id) === String(acaoId));
                 const mats = reg ? parseMateriaisFromRegistro(reg) : {};
@@ -791,11 +849,16 @@ export default function AcompanhamentoPage() {
                         checked: !!it?.checked,
                     }))
                     .filter((x) => x.checked && x.qtd > 0)
-                    .map((x) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
+                    .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
 
                 setMatCheckItens(itens);
+
+                // ✅ contexto para salvar no banco
+                setMatCheckRegistroId(reg?.id != null ? String(reg.id) : String(acaoId));
+                setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
+
                 setMatCheckReturnToAcao(true);
-                setAcaoOpen(false); // evita modal em cima de modal
+                setAcaoOpen(false);
                 setMatCheckOpen(true);
                 return;
             }
@@ -805,7 +868,6 @@ export default function AcompanhamentoPage() {
                 if (!ok) return;
             }
 
-            // ✅ OFFLINE: guarda a ação e fecha
             if (!isOnlineNow()) {
                 try {
                     setAcaoSubmitting(true);
@@ -835,7 +897,6 @@ export default function AcompanhamentoPage() {
                         ok: true,
                     });
 
-                    // se a ação é uma "parada" da telemetria ativa, para e salva automaticamente
                     if (
                         teleActive &&
                         teleStartFase &&
@@ -876,7 +937,6 @@ export default function AcompanhamentoPage() {
             const id = teleRegistroId ?? acaoId;
             if (id == null) return;
 
-            // ✅ OFFLINE: guarda e retorna (sem UI)
             if (!isOnlineNow()) {
                 enqueueOffline({ acao: "atualizar_status", id, status: fase }, "offline");
                 return;
@@ -898,7 +958,7 @@ export default function AcompanhamentoPage() {
         [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue]
     );
 
-    /* -------------------- Info por ID (estável) -------------------- */
+    /* -------------------- Info por ID -------------------- */
     const registroInfo = useMemo(
         () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
         [registros, infoId]
@@ -938,7 +998,7 @@ export default function AcompanhamentoPage() {
         [infoIdxResolved]
     );
 
-    /* -------------------- Assinatura (fora do Info) -------------------- */
+    /* -------------------- Assinatura -------------------- */
     const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
         setSignIdx(idx);
         setSignTipo(tipo);
@@ -1117,14 +1177,50 @@ export default function AcompanhamentoPage() {
                 itens={matCheckItens}
                 onClose={() => {
                     setMatCheckOpen(false);
+                    setMatCheckSaving(false);
                     if (matCheckReturnToAcao) setAcaoOpen(true);
                     setMatCheckReturnToAcao(false);
                 }}
-                onConfirm={async () => {
-                    setMatCheckOpen(false);
-                    setMatCheckReturnToAcao(false);
-                    // confirma fase11 sem reabrir a checagem e sem window.confirm
-                    await registrarAcao("fase11", { skipMaterialCheck: true, skipConfirm: true });
+                onConfirm={async (result?: MateriaisConferenciaResult) => {
+                    if (!result) return;
+
+                    // ✅ 1) salva no banco (materiais_conferencia / itens / observação)
+                    try {
+                        setMatCheckSaving(true);
+
+                        const registro_id = matCheckRegistroId ?? acaoId; // <- aqui é o correto (sem usar result.registroId)
+                        if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+
+                        // tenta usar nome guardado; se vazio, tenta achar no registro atual
+                        let nomeFinal = (matCheckFalecidoNome || "").trim();
+                        if (!nomeFinal) {
+                            const reg = registros.find((x) => String(x.id) === String(registro_id));
+                            nomeFinal = reg ? resolveFalecidoNome(reg) : "";
+                        }
+
+                        await salvarConferenciaNoPHP({
+                            registro_id,
+                            falecido_nome: nomeFinal,
+                            observacao: result.observacao,
+                            itens: (result.itens || []).map((it) => ({
+                                key: String(it.key),
+                                nome: String(it.nome),
+                                qtd: Number(it.qtd ?? 0),
+                                ok: it.ok ? 1 : 0,
+                                nao_conforme: it.naoConforme ? 1 : 0,
+                            })),
+                        });
+
+                        // ✅ 2) fecha e aplica fase11 sem reabrir a checagem e sem confirmar
+                        setMatCheckOpen(false);
+                        setMatCheckReturnToAcao(false);
+                        setMatCheckSaving(false);
+
+                        await registrarAcao("fase11", { skipMaterialCheck: true, skipConfirm: true });
+                    } catch (e: any) {
+                        setMatCheckSaving(false);
+                        alert(e?.message || "Erro ao salvar conferência de materiais.");
+                    }
                 }}
             />
 
@@ -1169,6 +1265,16 @@ export default function AcompanhamentoPage() {
                     fetchRegistros();
                 }}
             />
+
+            {/* ✅ overlay simples opcional enquanto salva conferência */}
+            {matCheckSaving ? (
+                <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4">
+                    <div className="rounded-xl bg-background p-4 shadow-xl border">
+                        <div className="text-sm font-medium">Salvando conferência...</div>
+                        <div className="mt-1 text-xs text-muted-foreground">Aguarde um instante.</div>
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }
