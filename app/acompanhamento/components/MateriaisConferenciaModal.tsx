@@ -65,8 +65,11 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
         return { total: keys.length, ok, nc };
     }, [itens, states]);
 
+    // ✅ NOVA REGRA:
+    // - Se NÃO tiver itens, libera o confirmar (allResolved = true)
+    // - Se tiver itens, exige marcar OK ou Não Conforme em todos
     const allResolved = useMemo(() => {
-        if (!itens || itens.length === 0) return false;
+        if (!itens || itens.length === 0) return true;
         return itens.every((it) => {
             const st = states[String(it.key)];
             return !!st && (st.ok || st.naoConforme);
@@ -102,10 +105,19 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
         if (submitting) return;
         setErro(null);
 
+        // ✅ NOVA REGRA: Se não há itens, permite confirmar e retorna lista vazia + observação
         if (!itens || itens.length === 0) {
-            setErro("Não há itens para conferir.");
+            const result: MateriaisConferenciaResult = { itens: [], observacao: observacao.trim() };
+            try {
+                setSubmitting(true);
+                await onConfirm(result);
+            } finally {
+                setSubmitting(false);
+            }
             return;
         }
+
+        // Se tiver itens, mantém validação normal
         if (!allResolved) {
             setErro("Marque OK ou Não Conforme para todos os itens.");
             return;
@@ -136,6 +148,11 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                     <p className="mt-1 text-sm text-muted-foreground">
                         Para confirmar <span className="font-medium">Material Recolhido</span>, marque{" "}
                         <span className="font-medium">OK</span> ou <span className="font-medium">Não Conforme</span> em cada item.
+                        {(!itens || itens.length === 0) ? (
+                            <span className="block mt-1 text-xs">
+                                Nenhum material foi selecionado — você pode confirmar mesmo assim.
+                            </span>
+                        ) : null}
                     </p>
                 </div>
 
@@ -153,7 +170,9 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
 
             <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border">
                 {(!itens || itens.length === 0) && (
-                    <div className="p-4 text-sm text-muted-foreground">Nenhum material selecionado para conferência.</div>
+                    <div className="p-4 text-sm text-muted-foreground">
+                        Nenhum material selecionado para conferência.
+                    </div>
                 )}
 
                 {(itens || []).map((it) => {
