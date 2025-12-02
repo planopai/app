@@ -32,7 +32,6 @@ function safeJsonParse(v: any) {
 }
 
 function labelFromKey(key: string) {
-    // suporta chaves novas tipo "item:123" / "subitem:45"
     const m = String(key).match(/^(item|subitem)\s*:\s*(.+)$/i);
     if (m) {
         const tipo = m[1].toLowerCase() === "subitem" ? "Subitem" : "Item";
@@ -46,12 +45,14 @@ function normMatKey(k: string) {
     return String(k || "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
+type MatLinha = { categoria: string; nome: string; qtd: number };
+
 function extrairMateriaisDoMateriaisJson(
     materiaisJson: any,
     materiaisMap?: MateriaisMap
-): Array<{ categoria: string; nome: string; qtd: number }> {
+): MatLinha[] {
     const mj = safeJsonParse(materiaisJson);
-    const out: Array<{ categoria: string; nome: string; qtd: number }> = [];
+    const out: MatLinha[] = [];
     if (!mj || typeof mj !== "object") return out;
 
     for (const [k, vv] of Object.entries(mj)) {
@@ -82,12 +83,38 @@ function extrairMateriaisDoMateriaisJson(
     }
 
     out.sort((a, b) =>
-        (a.categoria + " " + a.nome).localeCompare(b.categoria + " " + b.nome, "pt-BR", { sensitivity: "base" })
+        (a.categoria + " " + a.nome).localeCompare(b.categoria + " " + b.nome, "pt-BR", {
+            sensitivity: "base",
+        })
     );
+
     return out;
 }
 
-export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true, materiaisMap }: Props) {
+function agruparMateriais(mats: MatLinha[]) {
+    const map = new Map<string, MatLinha[]>();
+    for (const it of mats) {
+        const cat = (it.categoria || "").trim() || "Material";
+        if (!map.has(cat)) map.set(cat, []);
+        map.get(cat)!.push(it);
+    }
+
+    const grupos = Array.from(map.entries()).sort(([a], [b]) =>
+        a.localeCompare(b, "pt-BR", { sensitivity: "base" })
+    );
+
+    for (const [, arr] of grupos) {
+        arr.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+    }
+
+    return grupos;
+}
+
+export default function LinhaDoTempoLogs({
+    logs,
+    usuarioVisivel = true,
+    materiaisMap,
+}: Props) {
     if (!logs || logs.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
     }
@@ -110,23 +137,35 @@ export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true, materiai
                             const chips: string[] = [];
                             const arrSet = new Set<string>();
 
-                            // ✅ Materiais dinâmicos (novo): materiais_json -> "Categoria — Nome: qtd"
+                            // ✅ Materiais (novo): exibe titulo por categoria + chips sem repetir categoria
                             const mats = extrairMateriaisDoMateriaisJson(obj.materiais_json, materiaisMap);
                             if (mats.length) {
+                                const grupos = agruparMateriais(mats);
+
                                 chips.push(
-                                    `<div class="mt-2"><b>Materiais:</b> ${mats
-                                        .map(
-                                            (it) =>
-                                                `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
-                                                  <b>${sanitize(it.categoria)} — ${sanitize(it.nome)}:</b> ${sanitize(String(it.qtd))}
-                                                </span>`
-                                        )
-                                        .join("")}</div>`
+                                    `<div class="mt-2"><b>Materiais:</b></div>` +
+                                    grupos
+                                        .map(([cat, items]) => {
+                                            const titulo = `<div class="mt-1 text-xs font-semibold text-muted-foreground">${sanitize(
+                                                cat
+                                            )}</div>`;
+
+                                            const chipsItens = items
+                                                .map(
+                                                    (it) =>
+                                                        `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
+                                 <b>${sanitize(it.nome)}:</b> ${sanitize(String(it.qtd))}
+                               </span>`
+                                                )
+                                                .join("");
+
+                                            return `<div>${titulo}${chipsItens}</div>`;
+                                        })
+                                        .join("")
                                 );
                             }
 
                             for (const key of Object.keys(obj)) {
-                                // não renderiza duplicado (já tratamos acima)
                                 if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
 
                                 // Arrumação
@@ -200,7 +239,8 @@ export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true, materiai
                     } catch {
                         let detalhesRaw = String(raw || "");
                         detalhesRaw = substituirRotuloVisual(detalhesRaw);
-                        if (detalhesRaw.trim()) detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
+                        if (detalhesRaw.trim())
+                            detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
                     }
 
                     const acao = ent.acao ? sanitize(capitalize(ent.acao)) : "";
@@ -222,7 +262,9 @@ export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true, materiai
                       <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
                       <div class="text-sm">${acao} ${statusBadg}</div>
                       ${usuarioVisivel
-                                        ? `<div class="text-xs text-muted-foreground">Usuário: ${sanitize(ent.usuario || "")}</div>`
+                                        ? `<div class="text-xs text-muted-foreground">Usuário: ${sanitize(
+                                            ent.usuario || ""
+                                        )}</div>`
                                         : ""
                                     }
                       ${detalhesHtml}
