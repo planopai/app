@@ -192,6 +192,14 @@ const shown = (v?: any, fallback = "a definir") => {
    Materiais (normalização para exibir no modal)
    ========================= */
 
+type MatLookupInfo = {
+    catNome: string;
+    catOrdem: number;
+    itemOrdem: number;
+};
+
+type MatLine = { text: string; itemKey?: string };
+
 function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -481,19 +489,164 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     return out;
 }
 
-function MateriaisValue({ registro, fallback = "a definir" }: { registro: Registro; fallback?: string }) {
-    const itens = normalizeMateriaisFromRegistro(registro);
+/* ✅ extrai materiais estruturados preservando a key "item3" para agrupar por paramentação */
+function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
+    const out: MatLine[] = [];
+    const seen = new Set<string>();
 
-    if (!itens || itens.length === 0) return <span>{fallback}</span>;
+    const pushItem = (raw: any, itemKey?: string) => {
+        const s0 = String(raw ?? "");
+        const s = decodeHtmlEntitiesDeep(s0).trim();
+        if (!s) return;
+
+        const low = s.toLowerCase().trim();
+        if (low.startsWith("json:")) return;
+        if (low.startsWith("{") || low.startsWith("[")) return;
+        if (looksLikeMateriaisJson(s)) return;
+        if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
+
+        const clean = s.replace(/\s+/g, " ").trim();
+        if (!clean) return;
+        if (seen.has(clean)) return;
+        seen.add(clean);
+        out.push({ text: clean, itemKey });
+    };
+
+    const pushNomeQtd = (nomeRaw: any, qtdRaw?: any, itemKey?: string) => {
+        const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
+        if (!nome) return;
+
+        const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
+        if (qtdStr) {
+            const n = Number(qtdStr.replace(",", "."));
+            if (!Number.isNaN(n) && n > 0 && qtdStr !== "1") {
+                pushItem(`${nome} (${qtdStr})`, itemKey);
+                return;
+            }
+        }
+        pushItem(nome, itemKey);
+    };
+
+    const walk = (node: any, parentKey?: string) => {
+        if (node == null) return;
+
+        if (Array.isArray(node)) {
+            node.forEach((x) => walk(x, parentKey));
+            return;
+        }
+
+        if (isPlainObject(node)) {
+            const maybeNome =
+                (node as any).nome ?? (node as any).name ?? (node as any).descricao ?? (node as any).descrição ?? (node as any).material;
+
+            const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
+            const checkedVal = (node as any).checked;
+            const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
+
+            const inferredKey =
+                (typeof (node as any).item_key === "string" && (node as any).item_key) ||
+                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey) ? parentKey : undefined);
+
+            if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
+                pushNomeQtd(maybeNome, qtdVal, inferredKey);
+            }
+
+            const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
+            for (const k of containerKeys) {
+                if ((node as any)[k] != null) walk((node as any)[k], k);
+            }
+
+            for (const [k, v] of Object.entries(node)) {
+                if (v == null) continue;
+                if (typeof v === "object") walk(v, k);
+            }
+        }
+    };
+
+    const add = (raw: unknown) => {
+        if (raw == null || raw === "") return;
+
+        if (typeof raw === "string") {
+            const s = decodeHtmlEntitiesDeep(raw).trim();
+            if (!s) return;
+            const parsed = tryParseJsonFromStringMaybeEmbedded(s);
+            if (parsed != null) walk(parsed, undefined);
+            return;
+        }
+
+        walk(raw, undefined);
+    };
+
+    add((registro as any).materiais_json);
+    add((registro as any).material_json);
+
+    return out;
+}
+
+function MateriaisValue({
+    registro,
+    lookup = {},
+    fallback = "a definir",
+}: {
+    registro: Registro;
+    lookup?: Record<string, MatLookupInfo>;
+    fallback?: string;
+}) {
+    const structured = extractMateriaisStructuredWithKey(registro);
+    const flat = normalizeMateriaisFromRegistro(registro);
+
+    const lines: MatLine[] = (() => {
+        if (structured.length === 0) return flat.map((t) => ({ text: t }));
+        const have = new Set(structured.map((x) => x.text));
+        const extras = flat.filter((t) => !have.has(t)).map((t) => ({ text: t }));
+        return [...structured, ...extras];
+    })();
+
+    if (!lines || lines.length === 0) return <span>{fallback}</span>;
+
+    const groups = new Map<
+        string,
+        { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }
+    >();
+
+    for (const it of lines) {
+        const info = it.itemKey ? lookup[it.itemKey] : undefined;
+
+        const catNome = (info?.catNome ?? "Outros").trim() || "Outros";
+        const catOrdem = info?.catOrdem ?? 9999;
+        const itemOrdem = info?.itemOrdem ?? 9999;
+
+        if (!groups.has(catNome)) groups.set(catNome, { catNome, catOrdem, items: [] });
+        groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
+    }
+
+    const sortedCats = [...groups.values()].sort(
+        (a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome)
+    );
 
     return (
-        <ul className="list-disc pl-4 space-y-0.5">
-            {itens.map((t, idx) => (
-                <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                    {t}
-                </li>
-            ))}
-        </ul>
+        <div className="space-y-3">
+            {sortedCats.map((g) => {
+                const itemsSorted = [...g.items].sort(
+                    (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
+                );
+
+                const showHeading = sortedCats.length > 1 || g.catNome !== "Outros";
+
+                return (
+                    <div key={g.catNome}>
+                        {showHeading && <div className="font-bold">{g.catNome}</div>}
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {itemsSorted.map((x, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {x.text}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                );
+            })}
+        </div>
     );
 }
 
@@ -907,6 +1060,8 @@ export default function QuadroAtendimentoPage() {
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
+    const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
+
     useEffect(() => {
         const update = () => {
             const now = new Date();
@@ -978,6 +1133,44 @@ export default function QuadroAtendimentoPage() {
         return () => {
             alive = false;
             clearInterval(id);
+        };
+    }, []);
+
+    useEffect(() => {
+        let alive = true;
+
+        async function loadMateriaisCatalog() {
+            try {
+                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
+
+                const tree = (res?.data ?? res) as any[];
+                const map: Record<string, MatLookupInfo> = {};
+
+                for (const cat of tree ?? []) {
+                    const catNome = String(cat?.nome ?? "").trim();
+                    const catOrdem = Number(cat?.ordem ?? 0);
+
+                    for (const it of cat?.itens ?? []) {
+                        const itemId = it?.id;
+                        const itemOrdem = Number(it?.ordem ?? 0);
+
+                        const itemKey = `item${itemId}`;
+                        map[itemKey] = { catNome, catOrdem, itemOrdem };
+                    }
+                }
+
+                if (!alive) return;
+                setMatLookup(map);
+            } catch {
+                if (!alive) return;
+                setMatLookup({});
+            }
+        }
+
+        loadMateriaisCatalog();
+        return () => {
+            alive = false;
         };
     }, []);
 
@@ -1263,8 +1456,8 @@ export default function QuadroAtendimentoPage() {
 
                                     <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
-                                    {/* ✅ Materiais agora exibe SOMENTE nome+qtd (sem Json:...) */}
-                                    <Field label="Materiais" value={<MateriaisValue registro={detail} />} className="sm:col-span-2" />
+                                    {/* ✅ Materiais agora agrupa por paramentação (categoria em negrito) */}
+                                    <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
 
                                     <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
                                 </div>
