@@ -200,6 +200,53 @@ type MatLookupInfo = {
 
 type MatLine = { text: string; itemKey?: string };
 
+/** ✅ NOVO: formata quantidade sempre ANTES do nome (ex: "2x Luvas", "1x Extensão") */
+function qtyPrefixFromAny(qtdRaw: any): string {
+    const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
+    if (!qtdStr) return "1x";
+
+    const normalized = qtdStr.replace(",", ".").trim();
+    const n = Number(normalized);
+
+    if (Number.isFinite(n) && n > 0) {
+        const isInt = Math.abs(n - Math.round(n)) < 1e-9;
+        const val = isInt ? String(Math.round(n)) : normalized;
+        return `${val}x`;
+    }
+
+    // tenta pegar número no começo (ex: "2 un", "3,5kg")
+    const m = normalized.match(/^(\d+(?:\.\d+)?)/);
+    if (m?.[1]) return `${m[1]}x`;
+
+    // fallback: ainda assim coloca algo como "Xx"
+    return `${normalized}x`;
+}
+
+/** ✅ NOVO: garante "QTDx Nome" mesmo quando veio "Nome (QTD)" ou só "Nome" */
+function normalizeMatTextToQtyPrefix(text: string): string {
+    const s = decodeHtmlEntitiesDeep(String(text ?? "")).replace(/\s+/g, " ").trim();
+    if (!s) return s;
+
+    // já está com "2x Nome"
+    let m = s.match(/^(\d+(?:[.,]\d+)?)\s*[xX]\s*(.+)$/);
+    if (m) {
+        const qtd = m[1].replace(",", ".");
+        const nome = m[2].trim();
+        return `${qtd}x ${nome}`;
+    }
+
+    // está como "Nome (2)" -> vira "2x Nome"
+    m = s.match(/^(.+?)\s*\(\s*(\d+(?:[.,]\d+)?)\s*\)\s*$/);
+    if (m) {
+        const nome = m[1].trim();
+        const qtd = m[2].replace(",", ".");
+        return `${qtd}x ${nome}`;
+    }
+
+    // caso padrão: sem qtd -> 1x
+    return `1x ${s}`;
+}
+
 function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -218,33 +265,28 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        const clean = s.replace(/\s+/g, " ").trim();
-        if (!clean) return;
-        if (seen.has(clean)) return;
-        seen.add(clean);
-        out.push(clean);
+        // ✅ aqui garante "QTDx Nome" SEMPRE
+        const withQtd = normalizeMatTextToQtyPrefix(s);
+        if (!withQtd) return;
+
+        if (seen.has(withQtd)) return;
+        seen.add(withQtd);
+        out.push(withQtd);
     };
 
     const pushNomeQtd = (nomeRaw: any, qtdRaw?: any) => {
         const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
         if (!nome) return;
 
-        const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
-        if (qtdStr) {
-            const n = Number(qtdStr.replace(",", "."));
-            if (!Number.isNaN(n) && n > 0 && qtdStr !== "1") {
-                pushItem(`${nome} (${qtdStr})`);
-                return;
-            }
-        }
-        pushItem(nome);
+        // ✅ sempre prefixa quantidade (mesmo 1)
+        const prefix = qtyPrefixFromAny(qtdRaw);
+        pushItem(`${prefix} ${nome}`);
     };
 
     /**
-     * Extrai materiais de JSON padrão do seu print:
+     * Extrai materiais de JSON padrão:
      * {
      *   "item3": { "checked": true, "qtd": 1, "nome": "Extensão", ... },
-     *   "itemX": { ... }
      * }
      * ou array de objetos com {nome, checked, qtd}
      */
@@ -301,7 +343,7 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         for (const [k, v] of Object.entries(obj)) {
             if (asBool(v)) {
                 const nome = overrideCampoNome(k, titleCaseFromSnake(k));
-                pushItem(nome);
+                pushItem(`1x ${nome}`);
             }
         }
     };
@@ -319,7 +361,7 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
             const base = m[1];
             const nome = overrideCampoNome(base, titleCaseFromSnake(base));
-            pushItem(`${nome} (${valStr})`);
+            pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
         }
 
         // 2) booleans/números em materiais_<nome>
@@ -333,7 +375,7 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             const nome = overrideCampoNome(base, titleCaseFromSnake(base));
 
             if (asBool(value)) {
-                pushItem(nome);
+                pushItem(`1x ${nome}`);
                 continue;
             }
 
@@ -342,11 +384,12 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
             const n = Number(valStr.replace(",", "."));
             if (!Number.isNaN(n)) {
-                if (n > 0) pushItem(`${nome} (${valStr})`);
+                if (n > 0) pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
                 continue;
             }
 
-            pushItem(`${nome}: ${valStr}`);
+            // se não for número, mantém como texto (mas ainda prefixa 1x no nome “principal”)
+            pushItem(`1x ${nome}: ${valStr}`);
         }
 
         // 3) se o objeto for um "mapa" comum de { item: qtd }
@@ -362,11 +405,12 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             const nome = overrideCampoNome(k, titleCaseFromSnake(k));
             const maybeNum = Number(valStr.replace(",", "."));
             if (!Number.isNaN(maybeNum)) {
-                if (maybeNum > 0) pushItem(`${nome} (${valStr})`);
+                if (maybeNum > 0) pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
             } else if (asBool(valStr)) {
-                pushItem(nome);
+                pushItem(`1x ${nome}`);
             } else {
-                pushItem(`${nome}: ${valStr}`);
+                // sem número: vira 1x "Nome: valor"
+                pushItem(`1x ${nome}: ${valStr}`);
             }
         }
     };
@@ -401,30 +445,26 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             // remove prefixos comuns tipo "Json:"
             s = s.replace(/^\s*json\s*:\s*/i, "").trim();
 
-            // 1) Primeiro: tenta parsear JSON (quando vier válido)
+            // 1) tenta parsear JSON
             const parsed = tryParseJsonFromStringMaybeEmbedded(s);
             if (parsed != null) {
-                // se conseguiu extrair, ótimo
                 if (extractFromStructured(parsed)) return;
-
-                // se parseou mas não extraiu, NÃO deixa cair para split/push do JSON cru
                 return;
             }
 
-            // 2) Segundo: mesmo "quebrado", tenta extrair por regex (nome/qtd)
+            // 2) tenta extrair por regex (nome/qtd)
             const extracted = extractMateriaisByRegex(s);
             if (extracted.length) {
                 extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
-                return; // ✅ para aqui — não faz split nem push do JSON cru
+                return;
             }
 
-            // 3) Terceiro: se parece JSON de materiais, IGNORA (não renderiza cru)
+            // 3) se parece JSON de materiais, ignora
             if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
 
-            // 4) Caso não seja JSON, aí sim tenta listas normais
+            // 4) listas normais
             if (s.includes("\n")) {
-                s
-                    .split("\n")
+                s.split("\n")
                     .map((x) => x.trim())
                     .filter(Boolean)
                     .filter((line) => {
@@ -452,11 +492,11 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         // número/boolean
         if (typeof raw === "number") {
-            if (raw > 0) pushItem(String(raw));
+            if (raw > 0) pushItem(`${qtyPrefixFromAny(raw)} Item`);
             return;
         }
         if (typeof raw === "boolean") {
-            if (raw) pushItem("Sim");
+            if (raw) pushItem("1x Sim");
             return;
         }
 
@@ -489,7 +529,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     return out;
 }
 
-/* ✅ extrai materiais estruturados preservando a key "item3" para agrupar por paramentação */
 /* ✅ extrai materiais estruturados preservando a key "itemXX" para agrupar por categoria */
 function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
     const out: MatLine[] = [];
@@ -506,26 +545,21 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
         if (looksLikeMateriaisJson(s)) return;
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        const clean = s.replace(/\s+/g, " ").trim();
-        if (!clean) return;
-        if (seen.has(clean)) return;
-        seen.add(clean);
-        out.push({ text: clean, itemKey });
+        // ✅ garante "QTDx Nome" sempre
+        const withQtd = normalizeMatTextToQtyPrefix(s);
+        if (!withQtd) return;
+
+        if (seen.has(withQtd)) return;
+        seen.add(withQtd);
+        out.push({ text: withQtd, itemKey });
     };
 
     const pushNomeQtd = (nomeRaw: any, qtdRaw?: any, itemKey?: string) => {
         const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
         if (!nome) return;
 
-        const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
-        if (qtdStr) {
-            const n = Number(qtdStr.replace(",", "."));
-            if (!Number.isNaN(n) && n > 0 && qtdStr !== "1") {
-                pushItem(`${nome} (${qtdStr})`, itemKey);
-                return;
-            }
-        }
-        pushItem(nome, itemKey);
+        const prefix = qtyPrefixFromAny(qtdRaw);
+        pushItem(`${prefix} ${nome}`, itemKey);
     };
 
     const normalizeItemKeyFromAny = (v: any): string | undefined => {
@@ -557,8 +591,6 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
             const checkedVal = (node as any).checked;
             const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
 
-            // ✅ AQUI: inferir itemKey que bata com o "map[item<ID>]"
-            // prioridade: item_id -> itemId -> item_key -> id -> parentKey (itemXX)
             const inferredKey =
                 normalizeItemKeyFromAny((node as any).item_id) ??
                 normalizeItemKeyFromAny((node as any).itemId) ??
@@ -602,7 +634,6 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
     return out;
 }
 
-
 function MateriaisValue({
     registro,
     lookup = {},
@@ -624,15 +655,11 @@ function MateriaisValue({
 
     if (!lines || lines.length === 0) return <span>{fallback}</span>;
 
-    const groups = new Map<
-        string,
-        { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }
-    >();
+    const groups = new Map<string, { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }>();
 
     for (const it of lines) {
         const info = it.itemKey ? lookup[it.itemKey] : undefined;
 
-        // ✅ agora o título vem de materiais_categoria.nome (cat.nome do catálogo)
         const catNome = (info?.catNome ?? "(Sem categoria)").trim() || "(Sem categoria)";
         const catOrdem = info?.catOrdem ?? 9999;
         const itemOrdem = info?.itemOrdem ?? 9999;
@@ -641,16 +668,12 @@ function MateriaisValue({
         groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
     }
 
-    const sortedCats = [...groups.values()].sort(
-        (a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome)
-    );
+    const sortedCats = [...groups.values()].sort((a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome));
 
     return (
         <div className="space-y-3">
             {sortedCats.map((g) => {
-                const itemsSorted = [...g.items].sort(
-                    (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
-                );
+                const itemsSorted = [...g.items].sort((a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text));
 
                 return (
                     <div key={g.catNome}>
@@ -668,7 +691,6 @@ function MateriaisValue({
         </div>
     );
 }
-
 
 /* =========================
    Local do Velório: rota (Google Maps)
@@ -935,7 +957,6 @@ function buildClipboardText(r: Registro) {
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
-        // ✅ se não tiver materiais, NÃO inclui a linha de materiais (e nunca vai "Json: ...")
         ...(mats.length ? [`*Materiais:* ${mats.join(", ")}`] : []),
         `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
@@ -1180,7 +1201,6 @@ export default function QuadroAtendimentoPage() {
 
                         map[itemKey] = { catNome, catOrdem, itemOrdem };
                     }
-
                 }
 
                 if (!alive) return;
@@ -1479,7 +1499,7 @@ export default function QuadroAtendimentoPage() {
 
                                     <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
-                                    {/* ✅ Materiais agora agrupa por paramentação (categoria em negrito) */}
+                                    {/* ✅ Materiais agora sempre mostra "QTDx Nome" */}
                                     <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
 
                                     <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
@@ -1731,17 +1751,13 @@ function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: stri
 
     const out: Array<{ nome: string; qtd?: string }> = [];
 
-    // pega nome com chave "nome" OU nome (sem aspas), e valor com "..." ou '...'
     const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
     let m: RegExpExecArray | null;
 
     while ((m = reNome.exec(s))) {
         const nome = (m[1] || "").trim();
         const near = s.slice(m.index, m.index + 260);
-
-        // pega qtd com chave "qtd" OU qtd, com ou sem aspas no valor
         const qtd = near.match(/"?qtd"?\s*:\s*["']?([0-9]+(?:[.,][0-9]+)?)["']?/i)?.[1];
-
         if (nome) out.push({ nome, qtd });
     }
 
