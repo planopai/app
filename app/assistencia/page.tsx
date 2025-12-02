@@ -44,6 +44,24 @@ function toIntOr0(v: any) {
     return Number.isFinite(n) ? n : 0;
 }
 
+/** ✅ NOVO: converte valores “truthy” que vêm do PHP (1, "1", "true", "sim", "on", etc.) */
+function boolish(v: any): boolean {
+    if (v === true) return true;
+    if (v === 1 || v === "1") return true;
+    const s = String(v ?? "").trim().toLowerCase();
+    return ["true", "1", "sim", "s", "yes", "y", "on"].includes(s);
+}
+
+/** ✅ NOVO: pega possíveis nomes do campo "não conforme" */
+function pickNc(obj: any): any {
+    return obj?.nao_conforme ?? obj?.nao_conformes ?? obj?.naoConforme ?? obj?.naoConformes ?? obj?.nc ?? obj?.nao_conf;
+}
+
+/** ✅ NOVO: pega possíveis nomes do campo "ok" */
+function pickOk(obj: any): any {
+    return obj?.ok ?? obj?.is_ok ?? obj?.isOk ?? obj?.conforme ?? obj?.is_conforme;
+}
+
 type ModalModel =
     | { open: false }
     | {
@@ -91,9 +109,7 @@ type ConferenciaListResp = {
 /* =======================
    ✅ Ajustes
    ======================= */
-// ✅ ajuste se o nome do arquivo PHP for outro
 const PHP_FILE = "materiais_admin.php";
-// ✅ via proxy: app/api/php/[...path]/route.ts
 const PROXY_BASE = "/api/php";
 
 type ViewMode = "materiais" | "conferencias";
@@ -105,13 +121,9 @@ export default function MateriaisAdminPage() {
     const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [modal, setModal] = useState<ModalModel>({ open: false });
 
-    // ✅ NOVO: acordeão por categoria (uma coluna). Só abre ao clicar no nome.
     const [openCatId, setOpenCatId] = useState<string | null>(null);
-
-    // ✅ NOVO: modo da tela
     const [view, setView] = useState<ViewMode>("materiais");
 
-    // ✅ Conferências: lista + detalhes
     const [confLoading, setConfLoading] = useState(false);
     const [confMsg, setConfMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [confQuery, setConfQuery] = useState("");
@@ -119,7 +131,6 @@ export default function MateriaisAdminPage() {
     const [confOpenId, setConfOpenId] = useState<string | null>(null);
     const [confDetail, setConfDetail] = useState<ConferenciaDetalhe | null>(null);
 
-    // ✅ NOVO: estado para duplicação
     const [dupLoadingId, setDupLoadingId] = useState<string | null>(null);
 
     const endpoint = useMemo(() => `${PROXY_BASE}/${PHP_FILE}`, []);
@@ -218,7 +229,6 @@ export default function MateriaisAdminPage() {
 
             setTree(sane);
 
-            // ✅ se a categoria aberta não existe mais, fecha
             setOpenCatId((prev) => {
                 if (!prev) return null;
                 const ok = sane.some((c) => String(c.id) === String(prev));
@@ -305,8 +315,7 @@ export default function MateriaisAdminPage() {
             ativo: asBool(c.ativo),
         });
 
-    const openCreateItem = (categoria_id: Categoria["id"]) =>
-        setModal({ open: true, kind: "item", mode: "create", categoria_id, nome: "", ordem: 0, ativo: true });
+    const openCreateItem = (categoria_id: Categoria["id"]) => setModal({ open: true, kind: "item", mode: "create", categoria_id, nome: "", ordem: 0, ativo: true });
 
     const openEditItem = (i: Item) =>
         setModal({
@@ -487,7 +496,6 @@ export default function MateriaisAdminPage() {
                     throw new Error('API não retornou "id" ao criar a categoria duplicada.');
                 }
 
-                // cria itens + subitens (em sequência, preservando ordem)
                 for (const it of cat.itens ?? []) {
                     const rItem = await apiJSON("item_create", {
                         categoria_id: newCatId,
@@ -555,7 +563,6 @@ export default function MateriaisAdminPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    {/* Toggle view */}
                     <div className="flex items-center overflow-hidden rounded-md border">
                         <button
                             type="button"
@@ -610,7 +617,6 @@ export default function MateriaisAdminPage() {
                 </div>
             </header>
 
-            {/* Msg materiais */}
             {view === "materiais" && msg && (
                 <div
                     className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
@@ -620,7 +626,6 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
-            {/* Msg conferências */}
             {view === "conferencias" && confMsg && (
                 <div
                     className={`mb-4 rounded-md border px-3 py-2 text-sm ${confMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
@@ -630,9 +635,6 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
-            {/* =======================
-          VIEW: MATERIAIS
-         ======================= */}
             {view === "materiais" ? (
                 <div className="grid gap-3">
                     {tree.length === 0 && !loading ? (
@@ -647,12 +649,7 @@ export default function MateriaisAdminPage() {
                         return (
                             <div key={cid} className="rounded-xl border bg-background p-4 shadow-sm">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <button
-                                        type="button"
-                                        className="min-w-[240px] text-left focus:outline-none"
-                                        onClick={() => toggleOpenCategory(cid)}
-                                        aria-expanded={isOpen}
-                                    >
+                                    <button type="button" className="min-w-[240px] text-left focus:outline-none" onClick={() => toggleOpenCategory(cid)} aria-expanded={isOpen}>
                                         <div className="flex items-center gap-2">
                                             <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
                                             <h2 className="text-base font-semibold">
@@ -670,7 +667,6 @@ export default function MateriaisAdminPage() {
                                             + Item
                                         </button>
 
-                                        {/* ✅ NOVO: Duplicar categoria completa */}
                                         <button
                                             className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
                                             onClick={() => duplicateCategoria(c)}
@@ -757,9 +753,6 @@ export default function MateriaisAdminPage() {
                     })}
                 </div>
             ) : (
-                /* =======================
-                    VIEW: CONFERÊNCIAS
-                   ======================= */
                 <div className="grid gap-3">
                     {confList.length === 0 && !confLoading ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhuma conferência encontrada.</div>
@@ -770,8 +763,10 @@ export default function MateriaisAdminPage() {
                         const registroId = String(c.registro_id ?? "");
                         const falecido = String(c.falecido_nome ?? "").trim();
                         const obs = String(c.observacao ?? "").trim();
-                        const nc = Number(c.nao_conformes ?? 0);
-                        const total = Number(c.total_itens ?? 0);
+
+                        // ✅ melhora também a contagem (caso venha string com espaços)
+                        const nc = toIntOr0(String(c.nao_conformes ?? 0).trim());
+                        const total = toIntOr0(String(c.total_itens ?? 0).trim());
 
                         return (
                             <button
@@ -827,7 +822,7 @@ export default function MateriaisAdminPage() {
 
                                     <div className="flex flex-wrap items-center gap-2">
                                         <div className="rounded-md border bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
-                                            {total || total === 0 ? `${total} itens` : "itens: —"}
+                                            {`${total} itens`}
                                         </div>
                                         <div
                                             className={`rounded-md border px-2 py-1 text-xs whitespace-nowrap ${nc > 0 ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
@@ -841,7 +836,6 @@ export default function MateriaisAdminPage() {
                         );
                     })}
 
-                    {/* Modal detalhe conferência */}
                     {confOpenId && (
                         <div
                             className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
@@ -911,8 +905,12 @@ export default function MateriaisAdminPage() {
                                             ) : (
                                                 <div className="max-h-[45vh] overflow-auto">
                                                     {confDetail.itens.map((it) => {
-                                                        const ok = Number(it.ok ?? 0) === 1;
-                                                        const nc = Number(it.nao_conforme ?? 0) === 1;
+                                                        // ✅ CORREÇÃO AQUI:
+                                                        // - entende valores tipo "sim"/"true"/"on" e variações
+                                                        // - "Não Conforme" tem prioridade sobre OK
+                                                        const nc = boolish(pickNc(it));
+                                                        const ok = boolish(pickOk(it)) && !nc;
+
                                                         return (
                                                             <div key={String(it.id)} className="border-b p-3 last:border-b-0">
                                                                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -925,11 +923,15 @@ export default function MateriaisAdminPage() {
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
-                                                                        {ok ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span> : null}
+                                                                        {ok ? (
+                                                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span>
+                                                                        ) : null}
                                                                         {nc ? (
                                                                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Não Conforme</span>
                                                                         ) : null}
-                                                                        {!ok && !nc ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">—</span> : null}
+                                                                        {!ok && !nc ? (
+                                                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">—</span>
+                                                                        ) : null}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -955,7 +957,6 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
-            {/* Modal CRUD Materiais */}
             {modal.open && (
                 <div
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
@@ -969,7 +970,8 @@ export default function MateriaisAdminPage() {
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <h3 className="text-lg font-semibold">
-                                    {modal.mode === "create" ? "Criar" : "Editar"} {modal.kind === "categoria" ? "Categoria" : modal.kind === "item" ? "Item" : "Subitem"}
+                                    {modal.mode === "create" ? "Criar" : "Editar"}{" "}
+                                    {modal.kind === "categoria" ? "Categoria" : modal.kind === "item" ? "Item" : "Subitem"}
                                 </h3>
                                 <p className="text-xs text-muted-foreground">Preencha e clique em salvar.</p>
                             </div>
