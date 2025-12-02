@@ -119,6 +119,9 @@ export default function MateriaisAdminPage() {
     const [confOpenId, setConfOpenId] = useState<string | null>(null);
     const [confDetail, setConfDetail] = useState<ConferenciaDetalhe | null>(null);
 
+    // ✅ NOVO: estado para duplicação
+    const [dupLoadingId, setDupLoadingId] = useState<string | null>(null);
+
     const endpoint = useMemo(() => `${PROXY_BASE}/${PHP_FILE}`, []);
 
     const apiJSON = useCallback(
@@ -289,8 +292,7 @@ export default function MateriaisAdminPage() {
     /* =======================
        CRUD Modals (Materiais)
        ======================= */
-    const openCreateCategoria = () =>
-        setModal({ open: true, kind: "categoria", mode: "create", nome: "", ordem: 0, ativo: true });
+    const openCreateCategoria = () => setModal({ open: true, kind: "categoria", mode: "create", nome: "", ordem: 0, ativo: true });
 
     const openEditCategoria = (c: Categoria) =>
         setModal({
@@ -318,8 +320,7 @@ export default function MateriaisAdminPage() {
             ativo: asBool(i.ativo),
         });
 
-    const openCreateSub = (item_id: Item["id"]) =>
-        setModal({ open: true, kind: "subitem", mode: "create", item_id, nome: "", ordem: 0, ativo: true });
+    const openCreateSub = (item_id: Item["id"]) => setModal({ open: true, kind: "subitem", mode: "create", item_id, nome: "", ordem: 0, ativo: true });
 
     const openEditSub = (s: SubItem) =>
         setModal({
@@ -458,6 +459,74 @@ export default function MateriaisAdminPage() {
     };
 
     /* =======================
+       ✅ DUPLICAR CATEGORIA (com itens + subitens)
+       ======================= */
+    const duplicateCategoria = useCallback(
+        async (cat: Categoria) => {
+            const cid = String(cat.id);
+            if (dupLoadingId) return;
+
+            const catName = String(cat.nome ?? "").trim() || "(sem nome)";
+            const ok = window.confirm(`Duplicar a categoria "${catName}" com TODOS os itens e subitens?`);
+            if (!ok) return;
+
+            setMsg(null);
+            setDupLoadingId(cid);
+
+            try {
+                const newCatName = `${catName} (cópia)`;
+
+                const rCat = await apiJSON("categoria_create", {
+                    nome: newCatName,
+                    ativo: asBool(cat.ativo),
+                    ordem: toIntOr0(cat.ordem),
+                });
+
+                const newCatId = (rCat as any)?.id;
+                if (newCatId == null) {
+                    throw new Error('API não retornou "id" ao criar a categoria duplicada.');
+                }
+
+                // cria itens + subitens (em sequência, preservando ordem)
+                for (const it of cat.itens ?? []) {
+                    const rItem = await apiJSON("item_create", {
+                        categoria_id: newCatId,
+                        nome: String(it.nome ?? "").trim(),
+                        ativo: asBool(it.ativo),
+                        ordem: toIntOr0(it.ordem),
+                    });
+
+                    const newItemId = (rItem as any)?.id;
+                    if (newItemId == null) {
+                        throw new Error(
+                            `API não retornou "id" ao criar o item "${String(it.nome ?? "")}". ` +
+                            `Para duplicar subitens, o endpoint item_create precisa retornar { id }.`
+                        );
+                    }
+
+                    for (const sub of it.subitens ?? []) {
+                        await apiJSON("subitem_create", {
+                            item_id: newItemId,
+                            nome: String(sub.nome ?? "").trim(),
+                            ativo: asBool(sub.ativo),
+                            ordem: toIntOr0(sub.ordem),
+                        });
+                    }
+                }
+
+                setMsg({ ok: true, text: `Categoria duplicada: "${newCatName}".` });
+                setOpenCatId(String(newCatId));
+                await loadTree();
+            } catch (e: any) {
+                setMsg({ ok: false, text: e?.message || "Erro ao duplicar categoria." });
+            } finally {
+                setDupLoadingId(null);
+            }
+        },
+        [apiJSON, dupLoadingId, loadTree]
+    );
+
+    /* =======================
        Render
        ======================= */
     return (
@@ -511,18 +580,11 @@ export default function MateriaisAdminPage() {
                                 Mostrar inativos
                             </label>
 
-                            <button
-                                className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                                onClick={loadTree}
-                                disabled={loading}
-                            >
+                            <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={loadTree} disabled={loading}>
                                 {loading ? "Carregando…" : "Recarregar"}
                             </button>
 
-                            <button
-                                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                                onClick={openCreateCategoria}
-                            >
+                            <button className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={openCreateCategoria}>
                                 + Categoria
                             </button>
                         </>
@@ -535,20 +597,12 @@ export default function MateriaisAdminPage() {
                                     value={confQuery}
                                     onChange={(e) => setConfQuery(e.target.value)}
                                 />
-                                <button
-                                    className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
-                                    onClick={loadConferencias}
-                                    disabled={confLoading}
-                                >
+                                <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60" onClick={loadConferencias} disabled={confLoading}>
                                     {confLoading ? "..." : "Buscar"}
                                 </button>
                             </div>
 
-                            <button
-                                className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                                onClick={loadConferencias}
-                                disabled={confLoading}
-                            >
+                            <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={loadConferencias} disabled={confLoading}>
                                 {confLoading ? "Carregando…" : "Recarregar"}
                             </button>
                         </>
@@ -588,6 +642,7 @@ export default function MateriaisAdminPage() {
                     {tree.map((c) => {
                         const cid = String(c.id);
                         const isOpen = openCatId === cid;
+                        const duplicando = dupLoadingId === cid;
 
                         return (
                             <div key={cid} className="rounded-xl border bg-background p-4 shadow-sm">
@@ -601,25 +656,34 @@ export default function MateriaisAdminPage() {
                                         <div className="flex items-center gap-2">
                                             <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
                                             <h2 className="text-base font-semibold">
-                                                {c.nome}{" "}
-                                                <span className="ml-2 text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
+                                                {c.nome} <span className="ml-2 text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
                                             </h2>
                                         </div>
                                         <div className="mt-1 text-xs text-muted-foreground">
-                                            ID: <span className="font-mono">{cid}</span> • Ordem:{" "}
-                                            <span className="font-mono">{String(c.ordem ?? 0)}</span>
+                                            ID: <span className="font-mono">{cid}</span> • Ordem: <span className="font-mono">{String(c.ordem ?? 0)}</span>
                                         </div>
                                         <div className="mt-1 text-[11px] text-muted-foreground">{(c.itens ?? []).length} item(ns)</div>
                                     </button>
 
                                     <div className="flex flex-wrap gap-2">
-                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateItem(c.id)}>
+                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateItem(c.id)} disabled={duplicando}>
                                             + Item
                                         </button>
-                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(c)}>
+
+                                        {/* ✅ NOVO: Duplicar categoria completa */}
+                                        <button
+                                            className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                                            onClick={() => duplicateCategoria(c)}
+                                            disabled={duplicando}
+                                            title="Cria uma nova categoria com cópia de itens e subitens"
+                                        >
+                                            {duplicando ? "Duplicando…" : "Duplicar"}
+                                        </button>
+
+                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(c)} disabled={duplicando}>
                                             Editar
                                         </button>
-                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(c.id)}>
+                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(c.id)} disabled={duplicando}>
                                             Excluir
                                         </button>
                                     </div>
@@ -628,9 +692,7 @@ export default function MateriaisAdminPage() {
                                 {isOpen ? (
                                     <div className="mt-4 grid gap-2">
                                         {(c.itens ?? []).length === 0 ? (
-                                            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                                                Sem itens nesta categoria.
-                                            </div>
+                                            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Sem itens nesta categoria.</div>
                                         ) : null}
 
                                         {(c.itens ?? []).map((i) => (
@@ -648,13 +710,13 @@ export default function MateriaisAdminPage() {
                                                     </div>
 
                                                     <div className="flex flex-wrap gap-2">
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)}>
+                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)} disabled={duplicando}>
                                                             + Subitem
                                                         </button>
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)}>
+                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)} disabled={duplicando}>
                                                             Editar
                                                         </button>
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)}>
+                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)} disabled={duplicando}>
                                                             Excluir
                                                         </button>
                                                     </div>
@@ -666,10 +728,7 @@ export default function MateriaisAdminPage() {
                                                     ) : null}
 
                                                     {(i.subitens ?? []).map((s) => (
-                                                        <div
-                                                            key={String(s.id)}
-                                                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2"
-                                                        >
+                                                        <div key={String(s.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
                                                             <div className="flex min-w-[220px] items-center gap-2">
                                                                 <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(s.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
                                                                 <div className="text-sm">{s.nome}</div>
@@ -679,10 +738,10 @@ export default function MateriaisAdminPage() {
                                                             </div>
 
                                                             <div className="flex flex-wrap gap-2">
-                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)}>
+                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)} disabled={duplicando}>
                                                                     Editar
                                                                 </button>
-                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)}>
+                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)} disabled={duplicando}>
                                                                     Excluir
                                                                 </button>
                                                             </div>
@@ -703,9 +762,7 @@ export default function MateriaisAdminPage() {
                    ======================= */
                 <div className="grid gap-3">
                     {confList.length === 0 && !confLoading ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                            Nenhuma conferência encontrada.
-                        </div>
+                        <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhuma conferência encontrada.</div>
                     ) : null}
 
                     {confList.map((c) => {
@@ -733,7 +790,13 @@ export default function MateriaisAdminPage() {
                                         </div>
 
                                         <div className="mt-1 text-sm text-muted-foreground">
-                                            {falecido ? <>Falecido: <span className="text-foreground font-medium">{falecido}</span></> : "Falecido: —"}
+                                            {falecido ? (
+                                                <>
+                                                    Falecido: <span className="text-foreground font-medium">{falecido}</span>
+                                                </>
+                                            ) : (
+                                                "Falecido: —"
+                                            )}
                                         </div>
 
                                         {obs ? (
@@ -747,8 +810,18 @@ export default function MateriaisAdminPage() {
 
                                         <div className="mt-2 text-[11px] text-muted-foreground">
                                             ID: <span className="font-mono">{id}</span>
-                                            {c.criado_em ? <> • Em: <span className="font-mono">{String(c.criado_em)}</span></> : null}
-                                            {c.usuario_nome ? <> • Por: <span className="font-mono">{String(c.usuario_nome)}</span></> : null}
+                                            {c.criado_em ? (
+                                                <>
+                                                    {" "}
+                                                    • Em: <span className="font-mono">{String(c.criado_em)}</span>
+                                                </>
+                                            ) : null}
+                                            {c.usuario_nome ? (
+                                                <>
+                                                    {" "}
+                                                    • Por: <span className="font-mono">{String(c.usuario_nome)}</span>
+                                                </>
+                                            ) : null}
                                         </div>
                                     </div>
 
@@ -810,20 +883,24 @@ export default function MateriaisAdminPage() {
                                                 Registro: <span className="font-mono font-semibold">{String(confDetail.registro_id ?? "")}</span>
                                             </div>
                                             <div className="mt-1 text-sm">
-                                                Falecido:{" "}
-                                                <span className="font-medium">
-                                                    {String(confDetail.falecido_nome ?? "").trim() || "—"}
-                                                </span>
+                                                Falecido: <span className="font-medium">{String(confDetail.falecido_nome ?? "").trim() || "—"}</span>
                                             </div>
                                             <div className="mt-2 text-sm">
                                                 <div className="text-muted-foreground">Observação</div>
-                                                <div className="mt-1 whitespace-pre-wrap break-words">
-                                                    {String(confDetail.observacao ?? "").trim() || "—"}
-                                                </div>
+                                                <div className="mt-1 whitespace-pre-wrap break-words">{String(confDetail.observacao ?? "").trim() || "—"}</div>
                                             </div>
                                             <div className="mt-2 text-[11px] text-muted-foreground">
-                                                {confDetail.criado_em ? <>Em: <span className="font-mono">{String(confDetail.criado_em)}</span></> : null}
-                                                {confDetail.usuario_nome ? <> • Por: <span className="font-mono">{String(confDetail.usuario_nome)}</span></> : null}
+                                                {confDetail.criado_em ? (
+                                                    <>
+                                                        Em: <span className="font-mono">{String(confDetail.criado_em)}</span>
+                                                    </>
+                                                ) : null}
+                                                {confDetail.usuario_nome ? (
+                                                    <>
+                                                        {" "}
+                                                        • Por: <span className="font-mono">{String(confDetail.usuario_nome)}</span>
+                                                    </>
+                                                ) : null}
                                             </div>
                                         </div>
 
@@ -840,9 +917,7 @@ export default function MateriaisAdminPage() {
                                                             <div key={String(it.id)} className="border-b p-3 last:border-b-0">
                                                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                                                     <div className="min-w-0">
-                                                                        <div className="text-sm font-semibold whitespace-normal break-words">
-                                                                            {String(it.item_nome ?? "")}
-                                                                        </div>
+                                                                        <div className="text-sm font-semibold whitespace-normal break-words">{String(it.item_nome ?? "")}</div>
                                                                         <div className="mt-1 text-xs text-muted-foreground">
                                                                             key: <span className="font-mono">{String(it.item_key ?? "")}</span> • qtd:{" "}
                                                                             <span className="font-mono">{String(it.qtd ?? 0)}</span>
@@ -850,21 +925,11 @@ export default function MateriaisAdminPage() {
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
-                                                                        {ok ? (
-                                                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                                                                                OK
-                                                                            </span>
-                                                                        ) : null}
+                                                                        {ok ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span> : null}
                                                                         {nc ? (
-                                                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                                                                                Não Conforme
-                                                                            </span>
+                                                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Não Conforme</span>
                                                                         ) : null}
-                                                                        {!ok && !nc ? (
-                                                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                                                                                —
-                                                                            </span>
-                                                                        ) : null}
+                                                                        {!ok && !nc ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">—</span> : null}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -878,9 +943,7 @@ export default function MateriaisAdminPage() {
 
                                 {confMsg && (
                                     <div
-                                        className={`mt-4 rounded-md border px-3 py-2 text-sm ${confMsg.ok
-                                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                                : "border-red-200 bg-red-50 text-red-800"
+                                        className={`mt-4 rounded-md border px-3 py-2 text-sm ${confMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
                                             }`}
                                     >
                                         {confMsg.text}
@@ -906,8 +969,7 @@ export default function MateriaisAdminPage() {
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <h3 className="text-lg font-semibold">
-                                    {modal.mode === "create" ? "Criar" : "Editar"}{" "}
-                                    {modal.kind === "categoria" ? "Categoria" : modal.kind === "item" ? "Item" : "Subitem"}
+                                    {modal.mode === "create" ? "Criar" : "Editar"} {modal.kind === "categoria" ? "Categoria" : modal.kind === "item" ? "Item" : "Subitem"}
                                 </h3>
                                 <p className="text-xs text-muted-foreground">Preencha e clique em salvar.</p>
                             </div>
@@ -967,10 +1029,7 @@ export default function MateriaisAdminPage() {
                             <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => setModal({ open: false })}>
                                 Cancelar
                             </button>
-                            <button
-                                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                                onClick={saveModal}
-                            >
+                            <button className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={saveModal}>
                                 Salvar
                             </button>
                         </div>
