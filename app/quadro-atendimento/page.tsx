@@ -490,6 +490,7 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 }
 
 /* ✅ extrai materiais estruturados preservando a key "item3" para agrupar por paramentação */
+/* ✅ extrai materiais estruturados preservando a key "itemXX" para agrupar por categoria */
 function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
     const out: MatLine[] = [];
     const seen = new Set<string>();
@@ -527,6 +528,15 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
         pushItem(nome, itemKey);
     };
 
+    const normalizeItemKeyFromAny = (v: any): string | undefined => {
+        if (v == null) return undefined;
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) return `item${n}`;
+        const s = String(v).trim();
+        if (/^item\d+$/i.test(s)) return s;
+        return undefined;
+    };
+
     const walk = (node: any, parentKey?: string) => {
         if (node == null) return;
 
@@ -537,14 +547,23 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
 
         if (isPlainObject(node)) {
             const maybeNome =
-                (node as any).nome ?? (node as any).name ?? (node as any).descricao ?? (node as any).descrição ?? (node as any).material;
+                (node as any).nome ??
+                (node as any).name ??
+                (node as any).descricao ??
+                (node as any).descrição ??
+                (node as any).material;
 
             const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
             const checkedVal = (node as any).checked;
             const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
 
+            // ✅ AQUI: inferir itemKey que bata com o "map[item<ID>]"
+            // prioridade: item_id -> itemId -> item_key -> id -> parentKey (itemXX)
             const inferredKey =
-                (typeof (node as any).item_key === "string" && (node as any).item_key) ||
+                normalizeItemKeyFromAny((node as any).item_id) ??
+                normalizeItemKeyFromAny((node as any).itemId) ??
+                normalizeItemKeyFromAny((node as any).item_key) ??
+                normalizeItemKeyFromAny((node as any).id) ??
                 (typeof parentKey === "string" && /^item\d+$/i.test(parentKey) ? parentKey : undefined);
 
             if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
@@ -583,6 +602,7 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
     return out;
 }
 
+
 function MateriaisValue({
     registro,
     lookup = {},
@@ -612,7 +632,8 @@ function MateriaisValue({
     for (const it of lines) {
         const info = it.itemKey ? lookup[it.itemKey] : undefined;
 
-        const catNome = (info?.catNome ?? "Paramentação").trim() || "Paramentação";
+        // ✅ agora o título vem de materiais_categoria.nome (cat.nome do catálogo)
+        const catNome = (info?.catNome ?? "(Sem categoria)").trim() || "(Sem categoria)";
         const catOrdem = info?.catOrdem ?? 9999;
         const itemOrdem = info?.itemOrdem ?? 9999;
 
@@ -631,11 +652,9 @@ function MateriaisValue({
                     (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
                 );
 
-                const showHeading = true;
-
                 return (
                     <div key={g.catNome}>
-                        {showHeading && <div className="font-bold">{g.catNome}</div>}
+                        <div className="font-bold">{g.catNome}</div>
                         <ul className="list-disc pl-4 space-y-0.5">
                             {itemsSorted.map((x, idx) => (
                                 <li key={idx} className="break-words [overflow-wrap:anywhere]">
@@ -649,6 +668,7 @@ function MateriaisValue({
         </div>
     );
 }
+
 
 /* =========================
    Local do Velório: rota (Google Maps)
@@ -1152,12 +1172,15 @@ export default function QuadroAtendimentoPage() {
                     const catOrdem = Number(cat?.ordem ?? 0);
 
                     for (const it of cat?.itens ?? []) {
-                        const itemId = it?.id;
-                        const itemOrdem = Number(it?.ordem ?? 0);
+                        const itemId = Number(it?.id);
+                        if (!Number.isFinite(itemId) || itemId <= 0) continue;
 
+                        const itemOrdem = Number(it?.ordem ?? 0);
                         const itemKey = `item${itemId}`;
+
                         map[itemKey] = { catNome, catOrdem, itemOrdem };
                     }
+
                 }
 
                 if (!alive) return;
