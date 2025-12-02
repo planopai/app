@@ -285,7 +285,11 @@ export default function MateriaisAdminPage() {
             const data = (res as ApiOk<ConferenciaListResp | ConferenciaRow[]>)?.data ?? { rows: [] };
 
             // aceita tanto {rows:[...]} quanto [...]
-            const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : Array.isArray(data) ? (data as any) : [];
+            const rows = Array.isArray((data as any)?.rows)
+                ? (data as any).rows
+                : Array.isArray(data)
+                    ? (data as any)
+                    : [];
 
             setConfList(rows as ConferenciaRow[]);
         } catch (e: any) {
@@ -381,7 +385,8 @@ export default function MateriaisAdminPage() {
             ativo: asBool(c.ativo),
         });
 
-    const openCreateItem = (categoria_id: Categoria["id"]) => setModal({ open: true, kind: "item", mode: "create", categoria_id, nome: "", ordem: 0, ativo: true });
+    const openCreateItem = (categoria_id: Categoria["id"]) =>
+        setModal({ open: true, kind: "item", mode: "create", categoria_id, nome: "", ordem: 0, ativo: true });
 
     const openEditItem = (i: Item) =>
         setModal({
@@ -976,20 +981,33 @@ export default function MateriaisAdminPage() {
                                                 <div className="p-3 text-sm text-muted-foreground">Nenhum item salvo nesta conferência.</div>
                                             ) : (
                                                 <div className="max-h-[45vh] overflow-auto">
-                                                    {/* ✅ AQUI é o que você pediu: só nome do item e quantidade */}
-                                                    {confDetail.itens.map((it) => (
-                                                        <div key={String(it.id)} className="border-b p-3 last:border-b-0">
-                                                            <div className="flex items-center justify-between gap-3">
-                                                                <div className="min-w-0">
-                                                                    <div className="text-sm font-semibold whitespace-normal break-words">{String(it.item_nome ?? "")}</div>
-                                                                </div>
+                                                    {confDetail.itens.map((it) => {
+                                                        // ✅ robusto: "Não Conforme" tem prioridade
+                                                        const nc = boolish(pickNc(it));
+                                                        const ok = boolish(pickOk(it)) && !nc;
 
-                                                                <div className="rounded-md border bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
-                                                                    qtd: <span className="font-mono">{String(it.qtd ?? 0)}</span>
+                                                        return (
+                                                            <div key={String(it.id)} className="border-b p-3 last:border-b-0">
+                                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                    <div className="min-w-0">
+                                                                        <div className="text-sm font-semibold whitespace-normal break-words">{String(it.item_nome ?? "")}</div>
+                                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                                            key: <span className="font-mono">{String(it.item_key ?? "")}</span> • qtd:{" "}
+                                                                            <span className="font-mono">{String(it.qtd ?? 0)}</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-2">
+                                                                        {ok ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span> : null}
+                                                                        {nc ? (
+                                                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Não Conforme</span>
+                                                                        ) : null}
+                                                                        {!ok && !nc ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">—</span> : null}
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
