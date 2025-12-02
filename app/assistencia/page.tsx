@@ -904,7 +904,7 @@ export default function MateriaisAdminPage() {
                                             className={`rounded-md border px-2 py-1 text-xs whitespace-nowrap ${nc > 0 ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
                                                 }`}
                                         >
-                                            {nc > 0 ? `${nc} não conformes` : "sem não conformes"}
+                                            {nc > 0 ? `${nc} Não Conforme` : "Conforme"}
                                         </div>
                                     </div>
                                 </div>
