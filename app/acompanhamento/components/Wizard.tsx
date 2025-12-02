@@ -79,6 +79,55 @@ export default function Wizard({
         setOrnamentacaoVal(String(wizardData.ornamentacao ?? ""));
     }, [open, wizardData.ornamentacao]);
 
+    // ==================== Assistência obrigatória ====================
+    const isSimNao = (v: string) => v === "Sim" || v === "Não";
+
+    const [assistenciaErro, setAssistenciaErro] = useState<string>("");
+
+    useEffect(() => {
+        // quando abrir modal, limpa erro
+        if (open) setAssistenciaErro("");
+    }, [open]);
+
+    // Descobre em qual grupo está o campo "assistencia"
+    const assistenciaGroupIndex = useMemo(() => {
+        return wizardStepIndexes.findIndex((arr) =>
+            arr.some((idx) => steps[idx]?.id === "assistencia")
+        );
+    }, [wizardStepIndexes, steps]);
+
+    const isRestrito = typeof wizardRestrictGroup === "number";
+
+    // Só obriga quando:
+    // - wizard completo (não restrito), ou
+    // - modo restrito no grupo da assistência
+    const requireAssistencia = useMemo(() => {
+        if (assistenciaGroupIndex < 0) return false;
+        if (!isRestrito) return true;
+        return wizardRestrictGroup === assistenciaGroupIndex;
+    }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup]);
+
+    // Se a assistência está no grupo atual
+    const grupoIndices = wizardStepIndexes[wizardStep] || [];
+    const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
+    const assistenciaNoGrupoAtual = useMemo(
+        () => grupoSteps.some((s) => s.id === "assistencia"),
+        [grupoSteps]
+    );
+
+    const validarAssistencia = () => {
+        if (!requireAssistencia) return true;
+        if (isSimNao(assistenciaVal)) {
+            setAssistenciaErro("");
+            return true;
+        }
+        setAssistenciaErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const bloqueiaPorAssistencia =
+        requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
+
     // ✅ GPS p/ Local do Velório (link de rota + manual)
     const [gpsLoading, setGpsLoading] = useState(false);
     const [gpsMsg, setGpsMsg] = useState<string | null>(null);
@@ -121,11 +170,7 @@ export default function Wizard({
         );
     }
 
-    const grupoIndices = wizardStepIndexes[wizardStep] || [];
-    const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
-
     const isLastStep = wizardStep === wizardStepIndexes.length - 1;
-    const isRestrito = typeof wizardRestrictGroup === "number";
 
     const goPrev = () => {
         if (wizardSubmitting) return;
@@ -134,9 +179,22 @@ export default function Wizard({
 
     const goNext = () => {
         if (wizardSubmitting) return;
+
+        // ✅ trava "Próximo" se assistência for obrigatória e estiver vazia
+        if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+
         const ok = salvarGrupoWizard();
         if (!ok) return;
         if (!isLastStep) setWizardStep(wizardStep + 1);
+    };
+
+    const tentarConcluir = () => {
+        if (wizardSubmitting) return;
+
+        // ✅ trava "Salvar/Concluir" se assistência for obrigatória e estiver vazia
+        if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+
+        concluirWizard();
     };
 
     const isRequired = (id: string) => obrigatorios.includes(id);
@@ -196,7 +254,8 @@ export default function Wizard({
                         return (
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">
-                                    {step.label} <span className="text-xs text-muted-foreground">(endereço ou link)</span>
+                                    {step.label}{" "}
+                                    <span className="text-xs text-muted-foreground">(endereço ou link)</span>
                                 </label>
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -277,27 +336,49 @@ export default function Wizard({
                         );
                     }
 
-                    // Assistência (com Materiais)
+                    // Assistência (OBRIGATÓRIA: Sim/Não)
                     if (step.id === "assistencia" && step.type === "select") {
+                        const showRequiredStar = isRequired(step.id) || requireAssistencia;
+
                         return (
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">
                                     {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                    {showRequiredStar && <span className="text-red-600"> *</span>}
                                 </label>
+
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
+                                        }`}
                                     value={assistenciaVal}
-                                    onChange={(e) => setAssistenciaVal(e.target.value)}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setAssistenciaVal(v);
+
+                                        if (isSimNao(v)) setAssistenciaErro("");
+
+                                        // opcional: se escolher "Não", fecha materiais
+                                        if (v === "Não") setMateriaisOpen(false);
+                                    }}
+                                    onBlur={() => {
+                                        if (assistenciaNoGrupoAtual) validarAssistencia();
+                                    }}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {(step.options || ["Sim", "Não"]).filter(Boolean).map((op) => (
                                         <option key={op} value={op}>
                                             {op}
                                         </option>
                                     ))}
                                 </select>
+
+                                {assistenciaErro && (
+                                    <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>
+                                )}
 
                                 {assistenciaVal === "Sim" && (
                                     <div className="mt-2 flex items-center gap-2">
@@ -533,9 +614,10 @@ export default function Wizard({
                     {isRestrito ? (
                         <button
                             className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                            onClick={concluirWizard}
-                            disabled={wizardSubmitting}
+                            onClick={tentarConcluir}
+                            disabled={wizardSubmitting || bloqueiaPorAssistencia}
                             aria-busy={wizardSubmitting}
+                            title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
                         >
                             {wizardSubmitting ? "Salvando…" : "Salvar"}
                         </button>
@@ -553,9 +635,10 @@ export default function Wizard({
                             {isLastStep ? (
                                 <button
                                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                                    onClick={concluirWizard}
-                                    disabled={wizardSubmitting}
+                                    onClick={tentarConcluir}
+                                    disabled={wizardSubmitting || bloqueiaPorAssistencia}
                                     aria-busy={wizardSubmitting}
+                                    title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
                                 >
                                     {wizardSubmitting ? "Salvando…" : "Concluir"}
                                 </button>
@@ -563,7 +646,8 @@ export default function Wizard({
                                 <button
                                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
                                     onClick={goNext}
-                                    disabled={wizardSubmitting}
+                                    disabled={wizardSubmitting || bloqueiaPorAssistencia}
+                                    title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
                                 >
                                     Próximo
                                 </button>
