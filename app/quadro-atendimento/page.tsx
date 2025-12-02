@@ -612,7 +612,7 @@ function MateriaisValue({
     for (const it of lines) {
         const info = it.itemKey ? lookup[it.itemKey] : undefined;
 
-        const catNome = (info?.catNome ?? "Outros").trim() || "Outros";
+        const catNome = (info?.catNome ?? "Paramentação").trim() || "Paramentação";
         const catOrdem = info?.catOrdem ?? 9999;
         const itemOrdem = info?.itemOrdem ?? 9999;
 
@@ -631,7 +631,7 @@ function MateriaisValue({
                     (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
                 );
 
-                const showHeading = sortedCats.length > 1 || g.catNome !== "Outros";
+                const showHeading = true;
 
                 return (
                     <div key={g.catNome}>
