@@ -40,11 +40,11 @@ function asBool(v: any) {
     return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
 }
 function toIntOr0(v: any) {
-    const n = Number(v);
+    const n = Number(String(v ?? "").trim());
     return Number.isFinite(n) ? n : 0;
 }
 
-/** ✅ NOVO: converte valores “truthy” que vêm do PHP (1, "1", "true", "sim", "on", etc.) */
+/** converte valores “truthy” que vêm do PHP (1, "1", "true", "sim", "on", etc.) */
 function boolish(v: any): boolean {
     if (v === true) return true;
     if (v === 1 || v === "1") return true;
@@ -52,14 +52,24 @@ function boolish(v: any): boolean {
     return ["true", "1", "sim", "s", "yes", "y", "on"].includes(s);
 }
 
-/** ✅ NOVO: pega possíveis nomes do campo "não conforme" */
+/** pega possíveis nomes do campo "não conforme" */
 function pickNc(obj: any): any {
-    return obj?.nao_conforme ?? obj?.nao_conformes ?? obj?.naoConforme ?? obj?.naoConformes ?? obj?.nc ?? obj?.nao_conf;
+    return obj?.nao_conforme ?? obj?.nao_conformes ?? obj?.naoConforme ?? obj?.naoConformes ?? obj?.nc ?? obj?.nao_conf ?? obj?.is_nao_conforme;
 }
 
-/** ✅ NOVO: pega possíveis nomes do campo "ok" */
+/** pega possíveis nomes do campo "ok" */
 function pickOk(obj: any): any {
     return obj?.ok ?? obj?.is_ok ?? obj?.isOk ?? obj?.conforme ?? obj?.is_conforme;
+}
+
+/** pega possíveis nomes do total de itens no resumo */
+function pickTotal(obj: any): any {
+    return obj?.total_itens ?? obj?.itens_count ?? obj?.itensCount ?? obj?.total ?? obj?.count_itens;
+}
+
+/** pega possíveis nomes do total de não conformes no resumo */
+function pickNcCount(obj: any): any {
+    return obj?.nao_conformes ?? obj?.nc_count ?? obj?.ncCount ?? obj?.naoConformes;
 }
 
 type ModalModel =
@@ -77,7 +87,7 @@ type ModalModel =
     };
 
 /* =======================
-   ✅ Conferências (Tipos)
+   Conferências (Tipos)
    ======================= */
 type ConferenciaRow = {
     id: number | string;
@@ -86,8 +96,15 @@ type ConferenciaRow = {
     observacao?: string | null;
     usuario_nome?: string | null;
     criado_em?: string | null;
+
+    // Front antigo
     nao_conformes?: number | string | null;
     total_itens?: number | string | null;
+
+    // PHP atual (conferencia_list retorna isso)
+    ok_count?: number | string | null;
+    nc_count?: number | string | null;
+    itens_count?: number | string | null;
 };
 
 type ConferenciaDetalhe = ConferenciaRow & {
@@ -107,7 +124,7 @@ type ConferenciaListResp = {
 };
 
 /* =======================
-   ✅ Ajustes
+   Ajustes
    ======================= */
 const PHP_FILE = "materiais_admin.php";
 const PROXY_BASE = "/api/php";
@@ -121,9 +138,13 @@ export default function MateriaisAdminPage() {
     const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [modal, setModal] = useState<ModalModel>({ open: false });
 
+    // acordeão por categoria
     const [openCatId, setOpenCatId] = useState<string | null>(null);
+
+    // modo da tela
     const [view, setView] = useState<ViewMode>("materiais");
 
+    // Conferências
     const [confLoading, setConfLoading] = useState(false);
     const [confMsg, setConfMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [confQuery, setConfQuery] = useState("");
@@ -131,6 +152,7 @@ export default function MateriaisAdminPage() {
     const [confOpenId, setConfOpenId] = useState<string | null>(null);
     const [confDetail, setConfDetail] = useState<ConferenciaDetalhe | null>(null);
 
+    // duplicação
     const [dupLoadingId, setDupLoadingId] = useState<string | null>(null);
 
     const endpoint = useMemo(() => `${PROXY_BASE}/${PHP_FILE}`, []);
@@ -260,8 +282,15 @@ export default function MateriaisAdminPage() {
             });
             if (!res) return;
 
-            const data = (res as ApiOk<ConferenciaListResp>)?.data ?? { rows: [] };
-            const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : Array.isArray(data) ? (data as any) : [];
+            const data = (res as ApiOk<ConferenciaListResp | ConferenciaRow[]>)?.data ?? { rows: [] };
+
+            // aceita tanto {rows:[...]} quanto [...]
+            const rows = Array.isArray((data as any)?.rows)
+                ? (data as any).rows
+                : Array.isArray(data)
+                    ? (data as any)
+                    : [];
+
             setConfList(rows as ConferenciaRow[]);
         } catch (e: any) {
             setConfList([]);
@@ -279,13 +308,54 @@ export default function MateriaisAdminPage() {
             setConfMsg(null);
 
             try {
-                const res = await apiGET("conferencia_get", { id: sid });
+                // ✅ CORREÇÃO: no PHP o op é "conferencia_detail" (não "conferencia_get")
+                const res = await apiGET("conferencia_detail", { id: sid });
                 if (!res) return;
 
-                const det = (res as ApiOk<ConferenciaDetalhe>)?.data as any;
-                if (!det) throw new Error("Detalhe inválido.");
-                if (!Array.isArray(det.itens)) det.itens = [];
-                setConfDetail(det as ConferenciaDetalhe);
+                const data = (res as ApiOk<any>)?.data;
+                if (!data) throw new Error("Detalhe inválido.");
+
+                // PHP retorna: { conferencia: {...}, itens: [...] }
+                // mas vamos aceitar também o formato antigo (detalhe direto com det.itens)
+                const head = (data?.conferencia ?? data) as any;
+                const rawItens = (data?.itens ?? head?.itens ?? []) as any[];
+
+                const detalhe: ConferenciaDetalhe = {
+                    id: head?.id ?? sid,
+                    registro_id: head?.registro_id ?? head?.registro ?? "",
+                    falecido_nome: head?.falecido_nome ?? null,
+                    observacao: head?.observacao ?? head?.obs ?? null,
+                    usuario_nome: head?.usuario_nome ?? null,
+                    criado_em: head?.criado_em ?? null,
+
+                    // mantém compatível com UI do resumo (se quiser usar depois)
+                    nao_conformes: pickNcCount(head) ?? null,
+                    total_itens: pickTotal(head) ?? null,
+
+                    itens: Array.isArray(rawItens)
+                        ? rawItens.map((it: any, idx: number) => {
+                            const item_key = String(it?.item_key ?? it?.key ?? it?.chave ?? "");
+                            const item_nome = String(it?.item_nome ?? it?.nome ?? it?.descricao ?? item_key ?? "");
+                            const qtd = it?.qtd ?? it?.quantidade ?? 0;
+
+                            // ok/nc podem vir com nomes diferentes
+                            const okVal = pickOk(it) ?? it?.ok ?? 0;
+                            const ncVal = pickNc(it) ?? it?.nao_conforme ?? 0;
+
+                            return {
+                                id: it?.id ?? `${sid}-${idx}`,
+                                conferencia_id: it?.conferencia_id ?? sid,
+                                item_key,
+                                item_nome,
+                                qtd,
+                                ok: okVal,
+                                nao_conforme: ncVal,
+                            };
+                        })
+                        : [],
+                };
+
+                setConfDetail(detalhe);
             } catch (e: any) {
                 setConfDetail(null);
                 setConfMsg({ ok: false, text: e?.message || "Falha ao abrir conferência." });
@@ -315,7 +385,8 @@ export default function MateriaisAdminPage() {
             ativo: asBool(c.ativo),
         });
 
-    const openCreateItem = (categoria_id: Categoria["id"]) => setModal({ open: true, kind: "item", mode: "create", categoria_id, nome: "", ordem: 0, ativo: true });
+    const openCreateItem = (categoria_id: Categoria["id"]) =>
+        setModal({ open: true, kind: "item", mode: "create", categoria_id, nome: "", ordem: 0, ativo: true });
 
     const openEditItem = (i: Item) =>
         setModal({
@@ -468,7 +539,7 @@ export default function MateriaisAdminPage() {
     };
 
     /* =======================
-       ✅ DUPLICAR CATEGORIA (com itens + subitens)
+       DUPLICAR CATEGORIA
        ======================= */
     const duplicateCategoria = useCallback(
         async (cat: Categoria) => {
@@ -617,6 +688,7 @@ export default function MateriaisAdminPage() {
                 </div>
             </header>
 
+            {/* Msg materiais */}
             {view === "materiais" && msg && (
                 <div
                     className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
@@ -626,6 +698,7 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
+            {/* Msg conferências */}
             {view === "conferencias" && confMsg && (
                 <div
                     className={`mb-4 rounded-md border px-3 py-2 text-sm ${confMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
@@ -635,6 +708,9 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
+            {/* =======================
+          VIEW: MATERIAIS
+         ======================= */}
             {view === "materiais" ? (
                 <div className="grid gap-3">
                     {tree.length === 0 && !loading ? (
@@ -700,8 +776,7 @@ export default function MateriaisAdminPage() {
                                                             <div className="font-medium">{i.nome}</div>
                                                         </div>
                                                         <div className="mt-1 text-[11px] text-muted-foreground">
-                                                            Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem:{" "}
-                                                            <span className="font-mono">{String(i.ordem ?? 0)}</span>
+                                                            Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem: <span className="font-mono">{String(i.ordem ?? 0)}</span>
                                                         </div>
                                                     </div>
 
@@ -753,6 +828,9 @@ export default function MateriaisAdminPage() {
                     })}
                 </div>
             ) : (
+                /* =======================
+                    VIEW: CONFERÊNCIAS
+                   ======================= */
                 <div className="grid gap-3">
                     {confList.length === 0 && !confLoading ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhuma conferência encontrada.</div>
@@ -764,9 +842,9 @@ export default function MateriaisAdminPage() {
                         const falecido = String(c.falecido_nome ?? "").trim();
                         const obs = String(c.observacao ?? "").trim();
 
-                        // ✅ melhora também a contagem (caso venha string com espaços)
-                        const nc = toIntOr0(String(c.nao_conformes ?? 0).trim());
-                        const total = toIntOr0(String(c.total_itens ?? 0).trim());
+                        // ✅ CORREÇÃO: lê contagens tanto do formato antigo quanto do PHP atual
+                        const nc = toIntOr0(pickNcCount(c));
+                        const total = toIntOr0(pickTotal(c));
 
                         return (
                             <button
@@ -821,9 +899,7 @@ export default function MateriaisAdminPage() {
                                     </div>
 
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <div className="rounded-md border bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
-                                            {`${total} itens`}
-                                        </div>
+                                        <div className="rounded-md border bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">{`${total} itens`}</div>
                                         <div
                                             className={`rounded-md border px-2 py-1 text-xs whitespace-nowrap ${nc > 0 ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
                                                 }`}
@@ -836,6 +912,7 @@ export default function MateriaisAdminPage() {
                         );
                     })}
 
+                    {/* Modal detalhe conferência */}
                     {confOpenId && (
                         <div
                             className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
@@ -905,9 +982,7 @@ export default function MateriaisAdminPage() {
                                             ) : (
                                                 <div className="max-h-[45vh] overflow-auto">
                                                     {confDetail.itens.map((it) => {
-                                                        // ✅ CORREÇÃO AQUI:
-                                                        // - entende valores tipo "sim"/"true"/"on" e variações
-                                                        // - "Não Conforme" tem prioridade sobre OK
+                                                        // ✅ robusto: "Não Conforme" tem prioridade
                                                         const nc = boolish(pickNc(it));
                                                         const ok = boolish(pickOk(it)) && !nc;
 
@@ -923,15 +998,11 @@ export default function MateriaisAdminPage() {
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
-                                                                        {ok ? (
-                                                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span>
-                                                                        ) : null}
+                                                                        {ok ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">OK</span> : null}
                                                                         {nc ? (
                                                                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Não Conforme</span>
                                                                         ) : null}
-                                                                        {!ok && !nc ? (
-                                                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">—</span>
-                                                                        ) : null}
+                                                                        {!ok && !nc ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">—</span> : null}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -957,6 +1028,7 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
+            {/* Modal CRUD Materiais */}
             {modal.open && (
                 <div
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
@@ -970,8 +1042,7 @@ export default function MateriaisAdminPage() {
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <h3 className="text-lg font-semibold">
-                                    {modal.mode === "create" ? "Criar" : "Editar"}{" "}
-                                    {modal.kind === "categoria" ? "Categoria" : modal.kind === "item" ? "Item" : "Subitem"}
+                                    {modal.mode === "create" ? "Criar" : "Editar"} {modal.kind === "categoria" ? "Categoria" : modal.kind === "item" ? "Item" : "Subitem"}
                                 </h3>
                                 <p className="text-xs text-muted-foreground">Preencha e clique em salvar.</p>
                             </div>
@@ -1003,11 +1074,7 @@ export default function MateriaisAdminPage() {
                                 </div>
 
                                 <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                                    <input
-                                        type="checkbox"
-                                        checked={modal.ativo}
-                                        onChange={(e) => setModal((m) => (m.open ? { ...m, ativo: e.target.checked } : m))}
-                                    />
+                                    <input type="checkbox" checked={modal.ativo} onChange={(e) => setModal((m) => (m.open ? { ...m, ativo: e.target.checked } : m))} />
                                     Ativo
                                 </label>
                             </div>
