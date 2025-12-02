@@ -5,6 +5,7 @@ import { LogItem } from "./TiposHistorico";
 import { FASES_NOMES } from "./ConstantesFases";
 import { formataSeDataIso } from "./UtilDatas";
 import { substituirRotuloVisual, overrideCampoNome, titleCaseFromSnake } from "./UtilTexto";
+import type { MateriaisMap } from "./Api";
 
 /* ======================== Helpers de Normalização (completos) ======================== */
 
@@ -129,9 +130,37 @@ function labelFromKey(key: string) {
     return overrideCampoNome(key, titleCaseFromSnake(key.replace(/:/g, "_")));
 }
 
+function normMatKey(k: string) {
+    return String(k || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function resolveMaterialLabel(
+    key: string,
+    v: any,
+    materiaisMap?: MateriaisMap
+): { categoria: string; nome: string } {
+    const overrideNome =
+        (typeof v?.nome === "string" && v.nome.trim()) ||
+        (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
+        (typeof v?.label === "string" && v.label.trim()) ||
+        "";
+
+    const fromMap = materiaisMap?.[normMatKey(key)];
+
+    const categoria =
+        (typeof v?.categoria_nome === "string" && v.categoria_nome.trim()) ||
+        (typeof v?.categoria === "string" && v.categoria.trim()) ||
+        fromMap?.categoria ||
+        "Material";
+
+    const nome = overrideNome || fromMap?.nome || labelFromKey(String(key));
+
+    return { categoria, nome };
+}
+
 /* ======================== Materiais ======================== */
 
-function extrairMateriaisResumo(materiaisJson: any): string | undefined {
+function extrairMateriaisResumo(materiaisJson: any, materiaisMap?: MateriaisMap): string | undefined {
     const mj = safeJsonParse(materiaisJson);
     if (!mj || typeof mj !== "object") return undefined;
 
@@ -145,13 +174,8 @@ function extrairMateriaisResumo(materiaisJson: any): string | undefined {
 
         if (!checked || qtd <= 0) continue;
 
-        const nome =
-            (typeof v?.nome === "string" && v.nome.trim()) ||
-            (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
-            (typeof v?.label === "string" && v.label.trim()) ||
-            labelFromKey(String(k));
-
-        parts.push(`${nome}: ${qtd}`);
+        const { categoria, nome } = resolveMaterialLabel(String(k), v, materiaisMap);
+        parts.push(`${categoria} — ${nome}: ${qtd}`);
     }
 
     if (!parts.length) return undefined;
@@ -161,7 +185,7 @@ function extrairMateriaisResumo(materiaisJson: any): string | undefined {
 }
 
 /** Extrai pares chave→valor dos detalhes (JSON ou texto) — com correções visuais */
-export function extrairParesDoDetalhe(raw: any): Record<string, string> {
+export function extrairParesDoDetalhe(raw: any, materiaisMap?: MateriaisMap): Record<string, string> {
     const out: Record<string, string> = {};
     if (!raw) return out;
 
@@ -170,7 +194,7 @@ export function extrairParesDoDetalhe(raw: any): Record<string, string> {
         if (obj && typeof obj === "object") {
             // ✅ novo: materiais_json entra como campo "materiais" (legível)
             if (Object.prototype.hasOwnProperty.call(obj, "materiais_json")) {
-                const resumoMats = extrairMateriaisResumo((obj as any).materiais_json);
+                const resumoMats = extrairMateriaisResumo((obj as any).materiais_json, materiaisMap);
                 if (resumoMats) out["materiais"] = substituirRotuloVisual(resumoMats);
             }
 
@@ -225,11 +249,11 @@ export function extrairParesDoDetalhe(raw: any): Record<string, string> {
 }
 
 /** Varre o log cronológico e retorna o último valor visto de cada campo */
-export function montarResumoFinalDoLog(log: LogItem[]) {
+export function montarResumoFinalDoLog(log: LogItem[], materiaisMap?: MateriaisMap) {
     const resumo: Record<string, string> = {};
     const ord = [...log].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     for (const ent of ord) {
-        const pares = extrairParesDoDetalhe(ent.detalhes);
+        const pares = extrairParesDoDetalhe(ent.detalhes, materiaisMap);
         for (const [k, v] of Object.entries(pares)) resumo[k] = v;
     }
     return resumo;

@@ -12,10 +12,12 @@ import {
     sanitize,
     capitalize,
 } from "./UtilTexto";
+import type { MateriaisMap } from "./Api";
 
 interface Props {
     logs: LogItem[];
     usuarioVisivel?: boolean;
+    materiaisMap?: MateriaisMap;
 }
 
 function safeJsonParse(v: any) {
@@ -40,9 +42,16 @@ function labelFromKey(key: string) {
     return overrideCampoNome(key, base);
 }
 
-function extrairMateriaisDoMateriaisJson(materiaisJson: any): Array<{ nome: string; qtd: number }> {
+function normMatKey(k: string) {
+    return String(k || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function extrairMateriaisDoMateriaisJson(
+    materiaisJson: any,
+    materiaisMap?: MateriaisMap
+): Array<{ categoria: string; nome: string; qtd: number }> {
     const mj = safeJsonParse(materiaisJson);
-    const out: Array<{ nome: string; qtd: number }> = [];
+    const out: Array<{ categoria: string; nome: string; qtd: number }> = [];
     if (!mj || typeof mj !== "object") return out;
 
     for (const [k, vv] of Object.entries(mj)) {
@@ -53,20 +62,32 @@ function extrairMateriaisDoMateriaisJson(materiaisJson: any): Array<{ nome: stri
         const checked = asBool(v?.checked) || qtd > 0;
         if (!checked || qtd <= 0) continue;
 
-        const nome =
+        const overrideNome =
             (typeof v?.nome === "string" && v.nome.trim()) ||
             (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
             (typeof v?.label === "string" && v.label.trim()) ||
-            labelFromKey(String(k));
+            "";
 
-        out.push({ nome, qtd });
+        const fromMap = materiaisMap?.[normMatKey(String(k))];
+
+        const categoria =
+            (typeof v?.categoria_nome === "string" && v.categoria_nome.trim()) ||
+            (typeof v?.categoria === "string" && v.categoria.trim()) ||
+            fromMap?.categoria ||
+            "Material";
+
+        const nome = overrideNome || fromMap?.nome || labelFromKey(String(k));
+
+        out.push({ categoria, nome, qtd });
     }
 
-    out.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+    out.sort((a, b) =>
+        (a.categoria + " " + a.nome).localeCompare(b.categoria + " " + b.nome, "pt-BR", { sensitivity: "base" })
+    );
     return out;
 }
 
-export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: Props) {
+export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true, materiaisMap }: Props) {
     if (!logs || logs.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
     }
@@ -89,16 +110,16 @@ export default function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: Props)
                             const chips: string[] = [];
                             const arrSet = new Set<string>();
 
-                            // ✅ Materiais dinâmicos (novo): materiais_json -> usa "nome" e "qtd"
-                            const mats = extrairMateriaisDoMateriaisJson(obj.materiais_json);
+                            // ✅ Materiais dinâmicos (novo): materiais_json -> "Categoria — Nome: qtd"
+                            const mats = extrairMateriaisDoMateriaisJson(obj.materiais_json, materiaisMap);
                             if (mats.length) {
                                 chips.push(
                                     `<div class="mt-2"><b>Materiais:</b> ${mats
                                         .map(
                                             (it) =>
-                                                `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
-                                                    it.nome
-                                                )}:</b> ${sanitize(String(it.qtd))}</span>`
+                                                `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
+                                                  <b>${sanitize(it.categoria)} — ${sanitize(it.nome)}:</b> ${sanitize(String(it.qtd))}
+                                                </span>`
                                         )
                                         .join("")}</div>`
                                 );

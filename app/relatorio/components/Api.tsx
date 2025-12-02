@@ -11,6 +11,10 @@ export const LISTAR_ANALITICO = "/api/php/informativo.php?listar=1";
 export const LOG_POR_ID = (id: string) =>
     `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
+/** ✅ Materiais (árvore) — usado para mapear item/subitem -> categoria */
+export const LISTAR_MATERIAIS_ALL =
+    "/api/php/materiais_admin.php?op=list&all=1";
+
 /* ======================== Cache simples (client) ======================== */
 /**
  * Cache em memória com TTL para deixar a tela “snappy”
@@ -126,6 +130,70 @@ export async function pegarAssinaturasInfoPorId(
             String(id)
         )}`;
         return (await fetchJson<AssinaturaInfo>(url, { ttlMs: 30_000 })) || {};
+    } catch {
+        return {};
+    }
+}
+
+/* ======================== Materiais Map ======================== */
+
+export type MateriaisMap = Record<string, { categoria: string; nome: string }>;
+
+function normMatKey(k: string) {
+    return String(k || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+/**
+ * ✅ Monta um mapa: "item:10" -> {categoria:"Urnas", nome:"Urna Luxo"}
+ * e "subitem:55" -> {categoria:"Urnas", nome:"Alça Dourada"}
+ *
+ * Isso permite mostrar o NOME DA CATEGORIA no relatório (tela + PDF),
+ * mesmo em logs antigos (que não tinham categoria dentro do materiais_json).
+ */
+export async function obterMateriaisMap(force = false): Promise<MateriaisMap> {
+    const cacheKey = "materiais_map_v1";
+    if (!force) {
+        const hit = getCache<MateriaisMap>(cacheKey);
+        if (hit) return hit;
+    }
+
+    try {
+        const json = await fetchJson<any>(LISTAR_MATERIAIS_ALL, {
+            ttlMs: 5 * 60_000, // 5 min
+            timeoutMs: 12_000,
+            useCache: false, // vamos usar cacheKey fixo acima
+        });
+
+        if (json?.need_login) {
+            window.location.href = "/login";
+            return {};
+        }
+
+        const data = Array.isArray(json?.data) ? json.data : [];
+        const map: MateriaisMap = {};
+
+        for (const c of data) {
+            const catNome = String(c?.nome ?? "").trim();
+            const itens = Array.isArray(c?.itens) ? c.itens : [];
+            for (const it of itens) {
+                map[normMatKey(`item:${it?.id}`)] = {
+                    categoria: catNome || "Material",
+                    nome: String(it?.nome ?? "").trim() || `Item ${String(it?.id ?? "")}`,
+                };
+                const subs = Array.isArray(it?.subitens) ? it.subitens : [];
+                for (const sub of subs) {
+                    map[normMatKey(`subitem:${sub?.id}`)] = {
+                        categoria: catNome || "Material",
+                        nome:
+                            String(sub?.nome ?? "").trim() ||
+                            `Subitem ${String(sub?.id ?? "")}`,
+                    };
+                }
+            }
+        }
+
+        setCache(cacheKey, map, 5 * 60_000);
+        return map;
     } catch {
         return {};
     }

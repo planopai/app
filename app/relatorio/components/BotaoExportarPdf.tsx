@@ -17,6 +17,7 @@ import { asBool } from "./Normalizadores";
 import {
     pegarAssinaturasInfoPorId,
     normalizarUrlAssinatura as normAssUrl,
+    type MateriaisMap,
 } from "./Api";
 
 /* =============== Props =============== */
@@ -35,6 +36,9 @@ interface Props {
 
     /** Opcional: id do sepultamento, se já estiver disponível na tela */
     sepultamentoId?: string | number;
+
+    /** ✅ novo: mapa item/subitem -> categoria/nome */
+    materiaisMap?: MateriaisMap;
 }
 
 /* =============== jsPDF via CDN =============== */
@@ -399,6 +403,34 @@ function labelFromMateriaisKey(rawKey: string) {
     return overrideCampoNome(k, titleCaseFromSnake(k.replace(/:/g, "_")));
 }
 
+function normMatKey(k: string) {
+    return String(k || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function resolveMaterialLabel(
+    key: string,
+    v: any,
+    materiaisMap?: MateriaisMap
+): { categoria: string; nome: string } {
+    const overrideNome =
+        (typeof v?.nome === "string" && v.nome.trim()) ||
+        (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
+        (typeof v?.label === "string" && v.label.trim()) ||
+        "";
+
+    const fromMap = materiaisMap?.[normMatKey(key)];
+
+    const categoria =
+        (typeof v?.categoria_nome === "string" && v.categoria_nome.trim()) ||
+        (typeof v?.categoria === "string" && v.categoria.trim()) ||
+        fromMap?.categoria ||
+        "Material";
+
+    const nome = overrideNome || fromMap?.nome || labelFromMateriaisKey(String(key));
+
+    return { categoria, nome };
+}
+
 function safeJsonParse(v: any) {
     if (v == null) return null;
     if (typeof v === "object") return v;
@@ -627,7 +659,10 @@ function desenharRequisicaoVeiculo(doc: any, params: {
 }
 
 /* =============== Materiais (materiais_json) – pega últimos selecionados =============== */
-function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; qtd: number }> {
+function extrairMateriaisAssistencia(
+    logs: LogItem[],
+    materiaisMap?: MateriaisMap
+): Array<{ rotulo: string; qtd: number }> {
     const byDate = [...logs].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
     let ultimoMj: any = null;
 
@@ -651,13 +686,8 @@ function extrairMateriaisAssistencia(logs: LogItem[]): Array<{ rotulo: string; q
             const checked = asBool(v?.checked) || qtd > 0;
 
             if (qtd > 0 && checked) {
-                const rot =
-                    (typeof v?.nome === "string" && v.nome.trim()) ||
-                    (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
-                    (typeof v?.label === "string" && v.label.trim()) ||
-                    labelFromMateriaisKey(k);
-
-                out.push({ rotulo: rot, qtd });
+                const { categoria, nome } = resolveMaterialLabel(String(k), v, materiaisMap);
+                out.push({ rotulo: `${categoria} — ${nome}`, qtd });
             }
         });
     }
@@ -750,6 +780,7 @@ export default function BotaoExportarPdf({
     assinaturaResponsavelUrl,
     assinaturaRequerenteUrl,
     sepultamentoId,
+    materiaisMap,
 }: Props) {
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
@@ -959,7 +990,7 @@ export default function BotaoExportarPdf({
                             : (raw as Record<string, any>);
 
                     if (obj && typeof obj === "object") {
-                        // ✅ novo: materiais_json como linhas "Nome: qtd"
+                        // ✅ materiais_json com "Categoria — Nome: qtd"
                         if (!t.assinatura && obj.materiais_json) {
                             const mj = safeJsonParse(obj.materiais_json) || obj.materiais_json;
                             if (mj && typeof mj === "object") {
@@ -968,12 +999,8 @@ export default function BotaoExportarPdf({
                                     const qtd = Number(v?.qtd ?? 0);
                                     const checked = asBool(v?.checked) || qtd > 0;
                                     if (qtd > 0 && checked) {
-                                        const nome =
-                                            (typeof v?.nome === "string" && v.nome.trim()) ||
-                                            (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
-                                            (typeof v?.label === "string" && v.label.trim()) ||
-                                            labelFromMateriaisKey(String(k));
-                                        materiaisLines.push(`${nome}: ${qtd}`);
+                                        const { categoria, nome } = resolveMaterialLabel(String(k), v, materiaisMap);
+                                        materiaisLines.push(`${categoria} — ${nome}: ${qtd}`);
                                     }
                                 }
                             }
@@ -1095,7 +1122,7 @@ export default function BotaoExportarPdf({
             }
 
             // ====== PÁGINAS EXTRAS ======
-            const materiais = extrairMateriaisAssistencia(logsParaImprimir);
+            const materiais = extrairMateriaisAssistencia(logsParaImprimir, materiaisMap);
             const agente = pegarAgenteEntrega(logsParaImprimir);
 
             const dataInicioVelorioRaw =

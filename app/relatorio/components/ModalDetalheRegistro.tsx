@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
 import { FalecidoItem, LogItem } from "./TiposHistorico";
-import { listarLogPorId } from "./Api";
+import { listarLogPorId, obterMateriaisMap, type MateriaisMap } from "./Api";
 import LinhaDoTempoLogs from "./LinhaDoTempoLogs";
 import ResumoFinal from "./ResumoFinal";
 import BotaoExportarPdf from "./BotaoExportarPdf";
@@ -17,6 +17,9 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     const [logs, setLogs] = useState<LogItem[]>([]);
     const [loading, setLoading] = useState(false);
 
+    // ✅ mapa item/subitem -> categoria/nome (para relatório)
+    const [materiaisMap, setMateriaisMap] = useState<MateriaisMap>({});
+
     // carrega logs quando abrir ou trocar o registro
     useEffect(() => {
         if (!aberto || !registro) return;
@@ -24,7 +27,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
         (async () => {
             setLoading(true);
             try {
-                const l = await listarLogPorId(registro.sepultamento_id);
+                const l = await listarLogPorId(String(registro.sepultamento_id));
                 if (!cancel) setLogs(l);
             } finally {
                 if (!cancel) setLoading(false);
@@ -35,8 +38,26 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
         };
     }, [aberto, registro]);
 
+    // carrega materiaisMap ao abrir (cacheado no Api.tsx)
+    useEffect(() => {
+        if (!aberto) return;
+        let cancel = false;
+        (async () => {
+            const map = await obterMateriaisMap();
+            if (!cancel) setMateriaisMap(map || {});
+        })();
+        return () => {
+            cancel = true;
+        };
+    }, [aberto]);
+
     const finalizado = useMemo(() => estaFinalizado(logs), [logs]);
-    const resumoFinal = useMemo(() => (finalizado ? montarResumoFinalDoLog(logs) : undefined), [finalizado, logs]);
+
+    // ✅ resumo final agora inclui "Categoria — Nome: qtd" quando for materiais_json
+    const resumoFinal = useMemo(
+        () => (finalizado ? montarResumoFinalDoLog(logs, materiaisMap) : undefined),
+        [finalizado, logs, materiaisMap]
+    );
 
     if (!aberto || !registro) return null;
 
@@ -62,9 +83,9 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                         <BotaoExportarPdf
                             desabilitado={loading || logs.length === 0}
                             selecionadoNome={registro.falecido}
-                            // criacaoSelecionado: opcional (não usamos aqui)
                             logVisiveis={logs}
                             resumoFinal={resumoFinal}
+                            materiaisMap={materiaisMap}
                         />
                         <button className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" onClick={onFechar}>
                             Fechar
@@ -82,7 +103,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                         </div>
                     ) : (
                         <>
-                            <LinhaDoTempoLogs logs={logs} />
+                            <LinhaDoTempoLogs logs={logs} materiaisMap={materiaisMap} />
                             <ResumoFinal visivel={!!resumoFinal} resumo={resumoFinal || {}} />
                         </>
                     )}
