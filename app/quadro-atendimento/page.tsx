@@ -247,6 +247,24 @@ function normalizeMatTextToQtyPrefix(text: string): string {
     return `1x ${s}`;
 }
 
+/* ✅ NOVO (copy-safe): decide se um item é “material real” (evita "1x Sim"/"1x Item" e afins) */
+function isRealMaterialForClipboard(item: string): boolean {
+    const s = decodeHtmlEntitiesDeep(String(item ?? "")).trim();
+    if (!s) return false;
+
+    const low = s.toLowerCase().replace(/\s+/g, " ").trim();
+
+    // placeholders/ruídos comuns quando backend manda boolean/num ou valores estranhos
+    if (low === "sim" || low === "não" || low === "nao") return false;
+    if (low === "1x sim" || low === "1x não" || low === "1x nao") return false;
+    if (low === "item" || low === "1x item") return false;
+
+    // se num futuro aparecer "a definir" na lista (não deveria), evita copiar
+    if (low.includes("a definir")) return false;
+
+    return true;
+}
+
 function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -490,15 +508,9 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             return;
         }
 
-        // número/boolean
-        if (typeof raw === "number") {
-            if (raw > 0) pushItem(`${qtyPrefixFromAny(raw)} Item`);
-            return;
-        }
-        if (typeof raw === "boolean") {
-            if (raw) pushItem("1x Sim");
-            return;
-        }
+        // ✅ ALTERAÇÃO: se vier number/boolean (ruído), NÃO gera material nenhum
+        if (typeof raw === "number") return;
+        if (typeof raw === "boolean") return;
 
         pushItem(String(raw));
     }) as (raw: unknown) => void;
@@ -655,7 +667,10 @@ function MateriaisValue({
 
     if (!lines || lines.length === 0) return <span>{fallback}</span>;
 
-    const groups = new Map<string, { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }>();
+    const groups = new Map<
+        string,
+        { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }
+    >();
 
     for (const it of lines) {
         const info = it.itemKey ? lookup[it.itemKey] : undefined;
@@ -668,12 +683,16 @@ function MateriaisValue({
         groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
     }
 
-    const sortedCats = [...groups.values()].sort((a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome));
+    const sortedCats = [...groups.values()].sort(
+        (a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome)
+    );
 
     return (
         <div className="space-y-3">
             {sortedCats.map((g) => {
-                const itemsSorted = [...g.items].sort((a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text));
+                const itemsSorted = [...g.items].sort(
+                    (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
+                );
 
                 return (
                     <div key={g.catNome}>
@@ -922,7 +941,9 @@ function etapasPreenchidas(registro: Registro) {
         isFilled(registro, "local_velorio") &&
         isFilled(registro, "data_inicio_velorio") &&
         (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
-    d[3] = isFilled(registro, "hora_inicio_velorio") || (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
+    d[3] =
+        isFilled(registro, "hora_inicio_velorio") ||
+        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
 
     return d;
 }
@@ -935,7 +956,9 @@ function buildClipboardText(r: Registro) {
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
 
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
-    const ornTipo = ornTipoRaw ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ") : "A DEFINIR";
+    const ornTipo = ornTipoRaw
+        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
+        : "A DEFINIR";
 
     const involRaw = r?.invol;
     const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
@@ -944,7 +967,8 @@ function buildClipboardText(r: Registro) {
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
-    const mats = normalizeMateriaisFromRegistro(r);
+    // ✅ ALTERAÇÃO: só considera “materiais reais” para decidir incluir a linha no texto copiado
+    const mats = normalizeMateriaisFromRegistro(r).filter(isRealMaterialForClipboard);
 
     const lines = [
         `*ATENDIMENTO ${atend}*`,
@@ -1296,7 +1320,11 @@ export default function QuadroAtendimentoPage() {
 
         try {
             const sepId =
-                (r as any).sepultamento_id ?? (r as any).sepultamentoId ?? (r as any).id ?? (r as any).id_atendimento ?? (r as any).codigo;
+                (r as any).sepultamento_id ??
+                (r as any).sepultamentoId ??
+                (r as any).id ??
+                (r as any).id_atendimento ??
+                (r as any).codigo;
 
             if (!sepId) {
                 console.warn("Registro sem sepultamento_id para histórico:", r);
@@ -1337,7 +1365,8 @@ export default function QuadroAtendimentoPage() {
     }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const obsList = useCallback(
-        (missing: string[]) => (missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo."),
+        (missing: string[]) =>
+            missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.",
         []
     );
 
@@ -1408,7 +1437,12 @@ export default function QuadroAtendimentoPage() {
                                     Linha do tempo
                                 </button>
 
-                                <button onClick={handleCopy} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Copiar" title="Copiar informações">
+                                <button
+                                    onClick={handleCopy}
+                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                    aria-label="Copiar"
+                                    title="Copiar informações"
+                                >
                                     {copied ? "Copiado!" : "Copiar"}
                                 </button>
 
@@ -1419,7 +1453,9 @@ export default function QuadroAtendimentoPage() {
 
                             <div className="mt-3">
                                 <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">{shown(detail.falecido)}</h3>
+                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
+                                    {shown(detail.falecido)}
+                                </h3>
 
                                 <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
                                     <span className="text-muted-foreground">
