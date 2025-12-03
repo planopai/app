@@ -254,15 +254,23 @@ function isRealMaterialForClipboard(item: string): boolean {
 
     const low = s.toLowerCase().replace(/\s+/g, " ").trim();
 
-    // placeholders/ruídos comuns quando backend manda boolean/num ou valores estranhos
     if (low === "sim" || low === "não" || low === "nao") return false;
     if (low === "1x sim" || low === "1x não" || low === "1x nao") return false;
     if (low === "item" || low === "1x item") return false;
-
-    // se num futuro aparecer "a definir" na lista (não deveria), evita copiar
     if (low.includes("a definir")) return false;
 
     return true;
+}
+
+/** ✅ detecta lixo do tipo "Json: {...}" mesmo com prefixo "1x " */
+function isJsonNoiseLine(raw: any): boolean {
+    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
+    if (!s) return false;
+
+    const low = s.toLowerCase().replace(/\s+/g, " ").trim();
+
+    // "json: {...}" OU "1x json: {...}" OU "2x Json: {}"
+    return /^(\d+(?:[.,]\d+)?\s*[xX]\s*)?json\s*:/.test(low);
 }
 
 function normalizeMateriaisFromRegistro(registro: Registro): string[] {
@@ -276,8 +284,10 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         const low = s.toLowerCase().trim();
 
-        // 🔥 evita a linha "Json: {...}" virar item na lista
-        if (low.startsWith("json:")) return;
+        // ✅ NOVO: mata também "1x Json: {}" (e variações)
+        if (isJsonNoiseLine(s)) return;
+
+        // continua protegendo JSON puro
         if (low.startsWith("{") || low.startsWith("[")) return;
         if (looksLikeMateriaisJson(s)) return;
 
@@ -286,6 +296,9 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         // ✅ aqui garante "QTDx Nome" SEMPRE
         const withQtd = normalizeMatTextToQtyPrefix(s);
         if (!withQtd) return;
+
+        // ✅ NOVO: se após normalizar virar algo como "1x Json: {}", corta também
+        if (isJsonNoiseLine(withQtd)) return;
 
         if (seen.has(withQtd)) return;
         seen.add(withQtd);
@@ -552,14 +565,19 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
         if (!s) return;
 
         const low = s.toLowerCase().trim();
-        if (low.startsWith("json:")) return;
+
+        // ✅ NOVO: mata também "1x Json: {}"
+        if (isJsonNoiseLine(s)) return;
+
         if (low.startsWith("{") || low.startsWith("[")) return;
         if (looksLikeMateriaisJson(s)) return;
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        // ✅ garante "QTDx Nome" sempre
         const withQtd = normalizeMatTextToQtyPrefix(s);
         if (!withQtd) return;
+
+        // ✅ NOVO: se normalizado virar "1x Json: {}", corta também
+        if (isJsonNoiseLine(withQtd)) return;
 
         if (seen.has(withQtd)) return;
         seen.add(withQtd);
@@ -665,14 +683,16 @@ function MateriaisValue({
         return [...structured, ...extras];
     })();
 
-    if (!lines || lines.length === 0) return <span>{fallback}</span>;
+    const filteredLines = (lines ?? []).filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
+
+    if (!filteredLines || filteredLines.length === 0) return <span>{fallback}</span>;
 
     const groups = new Map<
         string,
         { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }
     >();
 
-    for (const it of lines) {
+    for (const it of filteredLines) {
         const info = it.itemKey ? lookup[it.itemKey] : undefined;
 
         const catNome = (info?.catNome ?? "(Sem categoria)").trim() || "(Sem categoria)";
@@ -968,7 +988,8 @@ function buildClipboardText(r: Registro) {
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
     // ✅ ALTERAÇÃO: só considera “materiais reais” para decidir incluir a linha no texto copiado
-    const mats = normalizeMateriaisFromRegistro(r).filter(isRealMaterialForClipboard);
+    const mats = normalizeMateriaisFromRegistro(r).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x));
+
 
     const lines = [
         `*ATENDIMENTO ${atend}*`,
@@ -987,6 +1008,8 @@ function buildClipboardText(r: Registro) {
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
     ];
     return lines.join("\n\n");
+
+    
 }
 
 /* =========================
@@ -1536,7 +1559,14 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
                                     {/* ✅ Materiais agora sempre mostra "QTDx Nome" */}
-                                    <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                    {normalizeMateriaisFromRegistro(detail)
+                                        .filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
+                                            <Field
+                                                label="Materiais"
+                                                value={<MateriaisValue registro={detail} lookup={matLookup} />}
+                                                className="sm:col-span-2"
+                                            />
+                                        )}
 
                                     <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
                                 </div>
