@@ -40,6 +40,22 @@ function isNao(v?: string) {
 /** Fases que exigem seleção de veículo/telemetria */
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
 
+/** 🔒 Fases restritas (Conservação) */
+const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
+
+/** Lê o cargo do usuário (vindo do login) */
+function cargoLogado(): string {
+    try {
+        return (sessionStorage.getItem("cargo") || "").trim().toLowerCase();
+    } catch {
+        return "";
+    }
+}
+
+function isTanatopraxista(): boolean {
+    return cargoLogado() === "tanatopraxista";
+}
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -58,18 +74,20 @@ export default function AcaoModal({
     registrarAcao: (acao: string) => Promise<void>;
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
-    /** ✅ flexibilizamos a tipagem para casar com o page.tsx */
-    onVeiculoRequired?: (
-        id: string | number | null | undefined,
-        fase: string
-    ) => void;
+    onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
+    // ✅ feedback local (para erros do bloqueio no front)
+    const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+    // zera msg local ao abrir/fechar modal ou trocar registro
+    useEffect(() => {
+        setFrontMsg(null);
+    }, [open, acaoId]);
+
     // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
         const r =
-            acaoId != null
-                ? registros.find((x) => String(x.id) === String(acaoId))
-                : undefined;
+            acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
         if (!r) return undefined;
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
@@ -104,8 +122,7 @@ export default function AcaoModal({
                     tanato: s.tanato || "",
                 });
             } catch (e: any) {
-                if (!cancel)
-                    setOnlineError(e?.message || "Falha ao consultar status.");
+                if (!cancel) setOnlineError(e?.message || "Falha ao consultar status.");
             } finally {
                 if (!cancel) setLoadingOnline(false);
             }
@@ -149,11 +166,8 @@ export default function AcaoModal({
             (registroLocal.ornamentacao || "").toLowerCase() === "não");
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
-    const skipTransportando =
-        !!efetivo &&
-        salasMemorial.includes((efetivo.local_velorio || "").trim());
-    const skipMaterialRecolhido =
-        !!efetivo && isNao(efetivo.assistencia);
+    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
     // Fases visíveis
     const fasesVisiveis = useMemo<Fase[]>(() => {
@@ -173,9 +187,7 @@ export default function AcaoModal({
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        const isFinal = isTerceiro
-            ? efetivo.status === "fase10"
-            : efetivo.status === FASE_FINAL;
+        const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
         if (isFinal) return null;
 
         let p = proximaFaseDoRegistro(
@@ -199,9 +211,42 @@ export default function AcaoModal({
         return null;
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
-    const concluido =
-        !!efetivo &&
-        (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+    const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+
+    /** ✅ handler único com regra de conservação + confirmação */
+    async function handleClickFase(f: Fase) {
+        setFrontMsg(null);
+
+        const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+        if (!habilitar) return;
+
+        const requiresVehicle = FASES_COM_VEICULO.includes(f);
+
+        // 🔒 BLOQUEIO + CONFIRMAÇÃO para conservação
+        const isConservacao = FASES_CONSERVACAO.includes(f);
+
+        if (isConservacao) {
+            if (!isTanatopraxista()) {
+                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
+                return;
+            }
+            const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
+            if (!ok) return;
+
+            // IMPORTANTE:
+            // seu registrarAcao hoje só recebe (acao: string)
+            // então ele NÃO envia {confirmar:true}. Para isso funcionar 100% com seu PHP,
+            // o registrarAcao precisa aceitar payload extra.
+            // Se você não quiser mexer nele agora, ao menos o CONFIRM já evita disparos acidentais.
+        }
+
+        if (requiresVehicle && onVeiculoRequired) {
+            onVeiculoRequired(acaoId ?? null, f);
+            return;
+        }
+
+        await registrarAcao(f);
+    }
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
@@ -211,9 +256,7 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">
-                        {onlineError} — exibindo dados locais como fallback.
-                    </span>
+                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
                 )}
             </div>
 
@@ -234,26 +277,16 @@ export default function AcaoModal({
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-                            const requiresVehicle = FASES_COM_VEICULO.includes(f);
 
                             return (
                                 <button
                                     key={f}
                                     type="button"
                                     disabled={!habilitar}
-                                    onClick={() => {
-                                        if (!habilitar) return;
-                                        if (requiresVehicle && onVeiculoRequired) {
-                                            onVeiculoRequired(acaoId ?? null, f);
-                                        } else {
-                                            registrarAcao(f);
-                                        }
-                                    }}
+                                    onClick={() => handleClickFase(f)}
                                     className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
-                                    title={
-                                        habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"
-                                    }
+                                    title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
                                 >
                                     {acaoToStatus(f)}
                                 </button>
@@ -262,12 +295,13 @@ export default function AcaoModal({
                     </div>
 
                     {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            Fluxo concluído para este registro.
-                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
                     )}
                 </>
             )}
+
+            {/* ✅ mostra primeiro a msg local do front (bloqueio), depois a msg do back */}
+            {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
 
             {acaoMsg && (
                 <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>
