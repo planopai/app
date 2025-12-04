@@ -13,13 +13,9 @@ import {
     consultarStatusAtual,
 } from "./helpers";
 
-// Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
-
-// Fase final
 const FASE_FINAL = "fase11" as Fase;
 
-/** Lê da sessionStorage a lista de IDs marcados como "Serviço de Outra Empresa" */
 function isTerceiroBySession(id?: string | number | null | undefined) {
     try {
         if (id == null) return false;
@@ -37,13 +33,9 @@ function isNao(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
-/** Fases que exigem seleção de veículo/telemetria */
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
-
-/** 🔒 Fases restritas (Conservação) */
 const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
 
-/** Lê o cargo do usuário (vindo do login) */
 function cargoLogado(): string {
     try {
         return (sessionStorage.getItem("cargo") || "").trim().toLowerCase();
@@ -51,7 +43,6 @@ function cargoLogado(): string {
         return "";
     }
 }
-
 function isTanatopraxista(): boolean {
     return cargoLogado() === "tanatopraxista";
 }
@@ -64,27 +55,26 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
-    /** callback disparado quando a fase exige veículo */
     onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
-    registrarAcao: (acao: string) => Promise<void>;
+
+    // ✅ agora aceita "extra" (ex: {confirmar:true})
+    registrarAcao: (acao: string, extra?: Record<string, any>) => Promise<void>;
+
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
-    // ✅ feedback local (para erros do bloqueio no front)
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-    // zera msg local ao abrir/fechar modal ou trocar registro
     useEffect(() => {
         setFrontMsg(null);
     }, [open, acaoId]);
 
-    // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
         const r =
             acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
@@ -93,7 +83,6 @@ export default function AcaoModal({
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
-    // ---------- 2) Estado "online" vindo do backend ----------
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -105,15 +94,18 @@ export default function AcaoModal({
 
     useEffect(() => {
         let cancel = false;
+
         async function run() {
             setOnline(null);
             setOnlineError(null);
 
             if (!open || !acaoId) return;
             setLoadingOnline(true);
+
             try {
                 const s = await consultarStatusAtual(acaoId);
                 if (cancel) return;
+
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
                     id: String(s.id ?? acaoId),
@@ -127,13 +119,13 @@ export default function AcaoModal({
                 if (!cancel) setLoadingOnline(false);
             }
         }
+
         run();
         return () => {
             cancel = true;
         };
     }, [open, acaoId]);
 
-    // Dados efetivos usados na UI (prefere online; cai para local) + assistencia
     const efetivo = useMemo(() => {
         if (online) {
             return {
@@ -154,7 +146,6 @@ export default function AcaoModal({
         return null;
     }, [online, registroLocal]);
 
-    // Detecta se é "Serviço de Outra Empresa"
     const isTerceiro =
         isTerceiroBySession(acaoId) ||
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
@@ -166,10 +157,10 @@ export default function AcaoModal({
             (registroLocal.ornamentacao || "").toLowerCase() === "não");
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
-    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipTransportando =
+        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
-    // Fases visíveis
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
         return (fases as readonly Fase[]).filter((f) => {
@@ -181,9 +172,9 @@ export default function AcaoModal({
         }) as Fase[];
     }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipMaterialRecolhido]);
 
-    // Próxima fase calculada
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
+
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
@@ -199,6 +190,7 @@ export default function AcaoModal({
             },
             visiveis as readonly string[]
         ) as Fase | null;
+
         if (p) return p;
 
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
@@ -211,9 +203,10 @@ export default function AcaoModal({
         return null;
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
-    const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+    const concluido =
+        !!efetivo &&
+        (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
-    /** ✅ handler único com regra de conservação + confirmação */
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
 
@@ -221,23 +214,20 @@ export default function AcaoModal({
         if (!habilitar) return;
 
         const requiresVehicle = FASES_COM_VEICULO.includes(f);
-
-        // 🔒 BLOQUEIO + CONFIRMAÇÃO para conservação
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
+        // 🔒 regra + confirmação (front) para evitar disparo acidental
         if (isConservacao) {
             if (!isTanatopraxista()) {
-                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
+                setFrontMsg({
+                    ok: false,
+                    text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista.",
+                });
                 return;
             }
+
             const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
             if (!ok) return;
-
-            // IMPORTANTE:
-            // seu registrarAcao hoje só recebe (acao: string)
-            // então ele NÃO envia {confirmar:true}. Para isso funcionar 100% com seu PHP,
-            // o registrarAcao precisa aceitar payload extra.
-            // Se você não quiser mexer nele agora, ao menos o CONFIRM já evita disparos acidentais.
         }
 
         if (requiresVehicle && onVeiculoRequired) {
@@ -245,7 +235,8 @@ export default function AcaoModal({
             return;
         }
 
-        await registrarAcao(f);
+        // ✅ aqui está o que faltava: enviar confirmar:true
+        await registrarAcao(f, isConservacao ? { confirmar: true } : undefined);
     }
 
     return (
@@ -256,7 +247,9 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
+                    <span className="text-red-600">
+                        {onlineError} — exibindo dados locais como fallback.
+                    </span>
                 )}
             </div>
 
@@ -295,18 +288,19 @@ export default function AcaoModal({
                     </div>
 
                     {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Fluxo concluído para este registro.
+                        </p>
                     )}
                 </>
             )}
 
-            {/* ✅ mostra primeiro a msg local do front (bloqueio), depois a msg do back */}
-            {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
+            {frontMsg && (
+                <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>
+            )}
 
             {acaoMsg && (
-                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>
-                    {acaoMsg.text}
-                </TextFeedback>
+                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>
             )}
         </Modal>
     );
