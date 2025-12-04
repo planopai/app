@@ -28,6 +28,8 @@
     "@tabler/icons-react": "^3.34.1",
     "@tanstack/react-table": "^8.21.3",
     "@woocommerce/woocommerce-rest-api": "^1.0.2",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.12",

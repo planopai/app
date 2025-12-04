@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BrowserMultiFormatReader } from "@zxing/browser";
 
 type ID = number;
 
@@ -270,76 +271,46 @@ function BarcodeScannerModal({
     onDetected: (code: string) => void;
 }) {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-    const rafRef = useRef<number | null>(null);
-    const [err, setErr] = useState<string>('');
+    const controlsRef = useRef<{ stop: () => void } | null>(null);
+    const [err, setErr] = useState<string>("");
 
     useEffect(() => {
         if (!open) return;
 
         let cancelled = false;
+        setErr("");
 
         const start = async () => {
-            setErr('');
-
-            // @ts-ignore
-            const hasDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
-            if (!hasDetector) {
-                setErr('Seu navegador não suporta leitura por câmera (BarcodeDetector). Use digitação.');
-                return;
-            }
-
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: 'environment' } },
-                    audio: false,
-                });
-                if (cancelled) return;
+                const codeReader = new BrowserMultiFormatReader();
 
-                streamRef.current = stream;
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    await videoRef.current.play();
-                }
+                // tenta pegar câmera traseira quando possível
+                const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+                const backCam =
+                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId ||
+                    devices[0]?.deviceId;
 
-                // @ts-ignore
-                const detector = new window.BarcodeDetector({
-                    formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code'],
-                });
+                if (!videoRef.current) throw new Error("Vídeo não disponível.");
 
-                let lastHit = '';
-                let lastAt = 0;
-
-                const tick = async () => {
-                    if (cancelled) return;
-                    try {
-                        const v = videoRef.current;
-                        if (!v) return;
-
-                        const now = Date.now();
-                        // throttle
-                        if (now - lastAt > 140) {
-                            lastAt = now;
-                            const codes = await detector.detect(v);
-                            if (codes && codes.length) {
-                                const raw = (codes[0].rawValue || '').trim();
-                                if (raw && raw !== lastHit) {
-                                    lastHit = raw;
-                                    onDetected(raw);
-                                    onClose();
-                                    return;
-                                }
+                const controls = await codeReader.decodeFromVideoDevice(
+                    backCam ?? undefined,
+                    videoRef.current!,
+                    (result, _error, _controls) => {
+                        if (cancelled) return;
+                        if (result) {
+                            const text = result.getText().trim();
+                            if (text) {
+                                onDetected(text);
+                                onClose();
                             }
                         }
-                    } catch (e: any) {
-                        // ignora erros pontuais
                     }
-                    rafRef.current = requestAnimationFrame(tick);
-                };
+                );
 
-                rafRef.current = requestAnimationFrame(tick);
+
+                controlsRef.current = { stop: () => controls.stop() };
             } catch (e: any) {
-                setErr(e?.message || 'Não foi possível abrir a câmera.');
+                setErr(e?.message || "Não foi possível abrir a câmera.");
             }
         };
 
@@ -347,16 +318,11 @@ function BarcodeScannerModal({
 
         return () => {
             cancelled = true;
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            rafRef.current = null;
-
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach((t) => t.stop());
-                streamRef.current = null;
-            }
-            if (videoRef.current) {
-                videoRef.current.srcObject = null;
-            }
+            try {
+                controlsRef.current?.stop();
+            } catch { }
+            controlsRef.current = null;
+            if (videoRef.current) (videoRef.current.srcObject as any) = null;
         };
     }, [open, onClose, onDetected]);
 
