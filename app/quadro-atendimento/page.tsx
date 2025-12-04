@@ -971,7 +971,7 @@ function etapasPreenchidas(registro: Registro) {
 /* =========================
    Texto para copiar
    ========================= */
-function buildClipboardText(r: Registro) {
+function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> = {}) {
     const v = (k: string) => decodeHtmlEntitiesDeep(String(r?.[k] ?? "")).trim();
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
 
@@ -987,9 +987,52 @@ function buildClipboardText(r: Registro) {
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
-    // ✅ ALTERAÇÃO: só considera “materiais reais” para decidir incluir a linha no texto copiado
-    const mats = normalizeMateriaisFromRegistro(r).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x));
+    // ====== ✅ NOVO: Materiais agrupados por categoria (ex: "Básico 01") ======
+    const structured = extractMateriaisStructuredWithKey(r);
+    const flat = normalizeMateriaisFromRegistro(r);
 
+    // Une structured + extras do flat (sem duplicar)
+    const linesAll: MatLine[] = (() => {
+        if (structured.length === 0) return flat.map((t) => ({ text: t }));
+        const have = new Set(structured.map((x) => x.text));
+        const extras = flat.filter((t) => !have.has(t)).map((t) => ({ text: t }));
+        return [...structured, ...extras];
+    })();
+
+    const filtered = linesAll.filter(
+        (l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text)
+    );
+
+    // Agrupa por categoria (catNome)
+    const groups = new Map<string, { ordem: number; items: { text: string; itemOrdem: number }[] }>();
+
+    for (const it of filtered) {
+        const info = it.itemKey ? lookup[it.itemKey] : undefined;
+        const catNome = (info?.catNome ?? "Materiais").trim() || "Materiais";
+        const catOrdem = info?.catOrdem ?? 9999;
+        const itemOrdem = info?.itemOrdem ?? 9999;
+
+        if (!groups.has(catNome)) groups.set(catNome, { ordem: catOrdem, items: [] });
+        groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
+    }
+
+    const sortedCats = [...groups.entries()].sort(
+        (a, b) => a[1].ordem - b[1].ordem || a[0].localeCompare(b[0])
+    );
+
+    const materiaisClipboardLines =
+        sortedCats.length === 0
+            ? []
+            : [
+                `*Materiais:*`,
+                ...sortedCats.map(([cat, g]) => {
+                    const items = [...g.items]
+                        .sort((a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text))
+                        .map((x) => x.text);
+                    // Ex: "*Básico 01:* 1x Bebedouro, 2x Cavalete"
+                    return `*${cat}:* ${items.join(", ")}`;
+                }),
+            ];
 
     const lines = [
         `*ATENDIMENTO ${atend}*`,
@@ -1002,14 +1045,13 @@ function buildClipboardText(r: Registro) {
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
-        ...(mats.length ? [`*Materiais:* ${mats.join(", ")}`] : []),
+        ...materiaisClipboardLines,
         `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         `*Observação:* ${v("observacao") || "A DEFINIR"}`,
     ];
-    return lines.join("\n\n");
 
-    
+    return lines.join("\n\n");
 }
 
 /* =========================
@@ -1313,7 +1355,7 @@ export default function QuadroAtendimentoPage() {
 
     const handleCopy = useCallback(async () => {
         if (!detail) return;
-        const text = buildClipboardText(detail);
+        const text = buildClipboardText(detail, matLookup); // 👈 passa o lookup aqui
         try {
             await navigator.clipboard.writeText(text);
             setCopied(true);
@@ -1334,7 +1376,7 @@ export default function QuadroAtendimentoPage() {
                 document.body.removeChild(ta);
             }
         }
-    }, [detail]);
+    }, [detail, matLookup]);
 
     const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
         setDetailLogs([]);
