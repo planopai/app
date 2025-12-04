@@ -6,49 +6,70 @@ type ID = number;
 
 type Usuario = { id: ID; nome: string; usuario: string };
 type Deposito = { id: ID; nome: string };
+
 type Produto = {
     id: ID;
     nome: string;
     codigo_barras: string;
-    valor: number;
+    valor: string | number;
     minimo: number;
     foto_url?: string | null;
-    ativo: number;
+    ativo: 0 | 1 | number;
+    atualizado_em: string;
 };
 
-type SaldoRow = {
-    saldo_id: ID;
+type Saldo = {
+    id: ID;
     produto_id: ID;
     deposito_id: ID;
-    deposito_nome: string;
     quantidade: number;
     atualizado_em: string;
-
-    nome: string;
-    codigo_barras: string;
-    valor: number;
-    minimo: number;
-    foto_url?: string | null;
 };
 
-type Bootstrap = {
+type Me = { id: ID; nome: string; usuario: string };
+
+type InitResp = {
+    ok: boolean;
+    me: Me;
     usuarios: Usuario[];
     depositos: Deposito[];
     produtos: Produto[];
-    saldos: SaldoRow[];
+    saldos: Saldo[];
+    msg?: string;
 };
 
-type UiTab = 'HOME' | 'ESTOQUE';
+type HistoricoRow = {
+    id: number;
+    tipo: 'ENTRADA' | 'SAIDA' | 'TRANSFERENCIA' | 'AJUSTE' | 'CADASTRO_PRODUTO';
+    produto_id: ID;
+    codigo_barras_snapshot: string;
+    quantidade: number | null;
+    deposito_origem_id: ID | null;
+    deposito_destino_id: ID | null;
+    destino_texto: string | null;
+    solicitante_usuario_id: ID | null;
+    operador_usuario_id: ID;
+    observacao: string | null;
+    criado_em: string;
 
+    produto_nome?: string;
+    operador_nome?: string;
+    solicitante_nome?: string | null;
+    deposito_origem_nome?: string | null;
+    deposito_destino_nome?: string | null;
+};
+
+type UiTab = 'HOME' | 'ENTRADA' | 'SAIDA' | 'TRANSFERENCIA' | 'ESTOQUE' | 'ALERTAS' | 'AVANCADO';
+
+const API_BASE = '/api/php/estoque_admin.php';
+
+function nowISO() {
+    return new Date().toISOString();
+}
 function clampInt(v: unknown) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.floor(n));
-}
-function clampMoney(v: unknown) {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.round(n * 100) / 100);
 }
 function fmtDateTime(iso: string) {
     try {
@@ -61,43 +82,37 @@ function moneyBRL(n: number) {
     try {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
     } catch {
-        return `R$ ${Number(n || 0).toFixed(2)}`;
+        return `R$ ${n.toFixed(2)}`;
     }
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
-    return await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.readAsDataURL(file);
+async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
+    const u = new URL(API_BASE, window.location.origin);
+    Object.entries(qs).forEach(([k, v]) => {
+        if (v === undefined) return;
+        u.searchParams.set(k, String(v));
     });
+
+    const r = await fetch(u.toString(), { method: 'GET', cache: 'no-store', credentials: 'include' });
+    // export CSV vem como text/csv; aqui só usamos JSON nos GETs
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+        throw new Error(`Resposta inesperada (${ct}).`);
+    }
+    const j = (await r.json()) as T;
+    return j;
 }
 
-async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-    const r = await fetch(url, {
-        ...init,
-        credentials: 'include',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(init?.headers || {}),
-        },
+async function apiPost<T>(body: any) {
+    const r = await fetch(API_BASE, {
+        method: 'POST',
         cache: 'no-store',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
     });
-    const txt = await r.text();
-    let data: any;
-    try {
-        data = txt ? JSON.parse(txt) : {};
-    } catch {
-        throw new Error(`Resposta inválida do servidor: ${txt.slice(0, 200)}`);
-    }
-    if (!r.ok) {
-        throw new Error(data?.msg || data?.error || `Erro HTTP ${r.status}`);
-    }
-    if (data?.erro) {
-        throw new Error(data?.msg || 'Erro');
-    }
-    return data as T;
+    const j = (await r.json()) as T & { ok?: boolean; msg?: string };
+    return j;
 }
 
 function Modal({
@@ -139,7 +154,11 @@ function Modal({
                         <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
                         {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
                     </div>
-                    <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose}>
+                    <button
+                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                        onClick={onClose}
+                        aria-label="Fechar"
+                    >
                         ✕
                     </button>
                 </div>
@@ -171,6 +190,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
         />
     );
 }
+
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     return (
         <textarea
@@ -201,11 +221,14 @@ function Button({
     children,
     variant = 'solid',
     ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'solid' | 'ghost' }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: 'solid' | 'ghost';
+}) {
     const cls =
         variant === 'solid'
             ? 'bg-slate-900 text-white hover:bg-slate-800'
             : 'bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200';
+
     return (
         <button
             {...props}
@@ -234,444 +257,762 @@ function PhotoThumb({ url }: { url?: string | null }) {
     );
 }
 
+// ===== Scanner (Camera + BarcodeDetector) =====
+function BarcodeScannerModal({
+    open,
+    title,
+    onClose,
+    onDetected,
+}: {
+    open: boolean;
+    title: string;
+    onClose: () => void;
+    onDetected: (code: string) => void;
+}) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const rafRef = useRef<number | null>(null);
+    const [err, setErr] = useState<string>('');
+
+    useEffect(() => {
+        if (!open) return;
+
+        let cancelled = false;
+
+        const start = async () => {
+            setErr('');
+
+            // @ts-ignore
+            const hasDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
+            if (!hasDetector) {
+                setErr('Seu navegador não suporta leitura por câmera (BarcodeDetector). Use digitação.');
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: false,
+                });
+                if (cancelled) return;
+
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
+                }
+
+                // @ts-ignore
+                const detector = new window.BarcodeDetector({
+                    formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code'],
+                });
+
+                let lastHit = '';
+                let lastAt = 0;
+
+                const tick = async () => {
+                    if (cancelled) return;
+                    try {
+                        const v = videoRef.current;
+                        if (!v) return;
+
+                        const now = Date.now();
+                        // throttle
+                        if (now - lastAt > 140) {
+                            lastAt = now;
+                            const codes = await detector.detect(v);
+                            if (codes && codes.length) {
+                                const raw = (codes[0].rawValue || '').trim();
+                                if (raw && raw !== lastHit) {
+                                    lastHit = raw;
+                                    onDetected(raw);
+                                    onClose();
+                                    return;
+                                }
+                            }
+                        }
+                    } catch (e: any) {
+                        // ignora erros pontuais
+                    }
+                    rafRef.current = requestAnimationFrame(tick);
+                };
+
+                rafRef.current = requestAnimationFrame(tick);
+            } catch (e: any) {
+                setErr(e?.message || 'Não foi possível abrir a câmera.');
+            }
+        };
+
+        start();
+
+        return () => {
+            cancelled = true;
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach((t) => t.stop());
+                streamRef.current = null;
+            }
+            if (videoRef.current) {
+                videoRef.current.srcObject = null;
+            }
+        };
+    }, [open, onClose, onDetected]);
+
+    return (
+        <Modal open={open} title={title} subtitle="Aponte para o código. Ao detectar, preenche automaticamente." onClose={onClose}>
+            {err ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
+            ) : (
+                <div className="space-y-3">
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-black">
+                        <video ref={videoRef} className="h-[360px] w-full object-cover" playsInline muted />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="ghost" onClick={onClose}>Fechar</Button>
+                    </div>
+                </div>
+            )}
+        </Modal>
+    );
+}
+
 export default function Page() {
     const [tab, setTab] = useState<UiTab>('HOME');
 
     const [loading, setLoading] = useState(true);
-    const [err, setErr] = useState<string>('');
+    const [initErr, setInitErr] = useState<string>('');
 
-    const [data, setData] = useState<Bootstrap>({
-        usuarios: [],
-        depositos: [],
-        produtos: [],
-        saldos: [],
-    });
+    const [me, setMe] = useState<Me | null>(null);
+    const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+    const [depositos, setDepositos] = useState<Deposito[]>([]);
+    const [produtos, setProdutos] = useState<Produto[]>([]);
+    const [saldos, setSaldos] = useState<Saldo[]>([]);
 
-    const [operadorId, setOperadorId] = useState<ID | ''>('');
+    const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
+    const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
+    const userById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
 
-    async function reload() {
-        setErr('');
+    const saldosMap = useMemo(() => {
+        const m = new Map<string, Saldo>();
+        for (const s of saldos) m.set(`${s.produto_id}::${s.deposito_id}`, s);
+        return m;
+    }, [saldos]);
+
+    async function refreshInit() {
         setLoading(true);
+        setInitErr('');
         try {
-            const boot = await fetchJSON<Bootstrap>('/api/php/estoque_admin.php?acao=bootstrap');
-            setData(boot);
-            if (!operadorId && boot.usuarios[0]?.id) setOperadorId(boot.usuarios[0].id);
+            const j = await apiGet<InitResp>({ init: 1 });
+            if (!j.ok) throw new Error(j.msg || 'Falha no init');
+            setMe(j.me);
+            setUsuarios(j.usuarios || []);
+            setDepositos(j.depositos || []);
+            setProdutos((j.produtos || []).filter((p) => Number(p.ativo) === 1));
+            setSaldos(j.saldos || []);
         } catch (e: any) {
-            setErr(e?.message || 'Erro ao carregar');
+            setInitErr(e?.message || 'Erro ao carregar.');
         } finally {
             setLoading(false);
         }
     }
 
     useEffect(() => {
-        reload();
+        refreshInit();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const userById = useMemo(() => new Map(data.usuarios.map((u) => [u.id, u])), [data.usuarios]);
-    const depById = useMemo(() => new Map(data.depositos.map((d) => [d.id, d])), [data.depositos]);
-    const prodById = useMemo(() => new Map(data.produtos.map((p) => [p.id, p])), [data.produtos]);
+    // ======= Derivações de UI =======
+    const alertRows = useMemo(() => {
+        const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo }> = [];
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
+            const min = clampInt(p.minimo);
+            const qtd = clampInt(s.quantidade);
+            if (qtd <= min) rows.push({ p, d, qtd, min, s });
+        }
+        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR'));
+        return rows;
+    }, [saldos, prodById, depById]);
 
-    const operador = operadorId ? userById.get(operadorId as ID) : undefined;
+    const alertCount = alertRows.length;
 
-    const alertCount = useMemo(() => data.saldos.filter((s) => s.quantidade <= s.minimo).length, [data.saldos]);
-
-    // ====== filtros estoque
-    const [q, setQ] = useState('');
-    const [depositoFiltroId, setDepositoFiltroId] = useState<ID | 'Todos'>('Todos');
+    // ======= ESTOQUE (lista) =======
+    const [qEstoque, setQEstoque] = useState('');
+    const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID | 'Todos'>('Todos');
     const [onlyLow, setOnlyLow] = useState(false);
 
-    const estoqueView = useMemo(() => {
-        const qq = q.trim().toLowerCase();
-        return data.saldos
-            .filter((r) => (depositoFiltroId === 'Todos' ? true : r.deposito_id === depositoFiltroId))
-            .filter((r) => (onlyLow ? r.quantidade <= r.minimo : true))
-            .filter((r) => {
-                if (!qq) return true;
-                const blob = `${r.nome} ${r.codigo_barras} ${r.deposito_nome}`.toLowerCase();
-                return blob.includes(qq);
-            })
-            .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
-    }, [data.saldos, depositoFiltroId, onlyLow, q]);
+    const estoqueRows = useMemo(() => {
+        const qq = qEstoque.trim().toLowerCase();
+        const rows: Array<{ p: Produto; d: Deposito; qtd: number; s?: Saldo }> = [];
 
-    // ====== modal: saída
-    const [saidaOpen, setSaidaOpen] = useState(false);
-    const [saidaProdutoId, setSaidaProdutoId] = useState<ID | ''>('');
-    const [saidaDepositoId, setSaidaDepositoId] = useState<ID | ''>('');
-    const [saidaSolicitanteId, setSaidaSolicitanteId] = useState<ID | ''>('');
-    const [saidaQtd, setSaidaQtd] = useState<number>(1);
-    const [saidaDestinoTexto, setSaidaDestinoTexto] = useState('');
-    const [saidaObs, setSaidaObs] = useState('');
+        // mostra só onde existe saldo (linha por produto+depósito)
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
 
-    function openSaidaDefault() {
-        const first = data.saldos[0];
-        setSaidaProdutoId(first?.produto_id ?? '');
-        setSaidaDepositoId(first?.deposito_id ?? '');
-        setSaidaSolicitanteId(data.usuarios[0]?.id ?? '');
-        setSaidaQtd(1);
-        setSaidaDestinoTexto('');
-        setSaidaObs('');
-        setSaidaOpen(true);
-    }
+            if (depFiltroEstoque !== 'Todos' && d.id !== depFiltroEstoque) continue;
 
-    async function applySaida() {
-        if (!operadorId) return alert('Selecione o Operador.');
-        if (!saidaProdutoId || !saidaDepositoId) return alert('Selecione produto e depósito.');
-        const qtd = clampInt(saidaQtd);
-        if (qtd <= 0) return alert('Quantidade inválida.');
-        if (!saidaSolicitanteId) return alert('Selecione solicitante.');
-        if (!saidaDestinoTexto.trim()) return alert('Informe destino.');
+            const qtd = clampInt(s.quantidade);
+            const min = clampInt(p.minimo);
+            if (onlyLow && !(qtd <= min)) continue;
 
-        try {
-            await fetchJSON('/api/php/estoque_admin.php', {
-                method: 'POST',
-                body: JSON.stringify({
-                    acao: 'saida',
-                    operador_usuario_id: operadorId,
-                    solicitante_usuario_id: saidaSolicitanteId,
-                    produto_id: saidaProdutoId,
-                    deposito_id: saidaDepositoId,
-                    quantidade: qtd,
-                    destino_texto: saidaDestinoTexto.trim(),
-                    observacao: saidaObs.trim() || null,
-                }),
-            });
-            setSaidaOpen(false);
-            await reload();
-            setTab('ESTOQUE');
-        } catch (e: any) {
-            alert(e?.message || 'Falha na saída');
+            if (qq) {
+                const blob = `${p.nome} ${p.codigo_barras} ${d.nome}`.toLowerCase();
+                if (!blob.includes(qq)) continue;
+            }
+
+            rows.push({ p, d, qtd, s });
         }
-    }
 
-    // ====== modal: transferência
-    const [transferOpen, setTransferOpen] = useState(false);
-    const [trProdutoId, setTrProdutoId] = useState<ID | ''>('');
-    const [trOrigemId, setTrOrigemId] = useState<ID | ''>('');
-    const [trDestinoId, setTrDestinoId] = useState<ID | ''>('');
-    const [trSolicitanteId, setTrSolicitanteId] = useState<ID | ''>('');
-    const [trQtd, setTrQtd] = useState<number>(1);
-    const [trObs, setTrObs] = useState('');
+        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR'));
+        return rows;
+    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, onlyLow]);
 
-    function openTransferDefault() {
-        const first = data.saldos[0];
-        setTrProdutoId(first?.produto_id ?? '');
-        setTrOrigemId(first?.deposito_id ?? '');
-        const otherDep = data.depositos.find((d) => d.id !== first?.deposito_id)?.id ?? first?.deposito_id ?? '';
-        setTrDestinoId(otherDep ?? '');
-        setTrSolicitanteId(data.usuarios[0]?.id ?? '');
-        setTrQtd(1);
-        setTrObs('');
-        setTransferOpen(true);
-    }
-
-    async function applyTransfer() {
-        if (!operadorId) return alert('Selecione o Operador.');
-        if (!trProdutoId || !trOrigemId || !trDestinoId) return alert('Selecione produto e depósitos.');
-        if (trOrigemId === trDestinoId) return alert('Origem e destino não podem ser iguais.');
-        const qtd = clampInt(trQtd);
-        if (qtd <= 0) return alert('Quantidade inválida.');
-        if (!trSolicitanteId) return alert('Selecione solicitante.');
-
-        try {
-            await fetchJSON('/api/php/estoque_admin.php', {
-                method: 'POST',
-                body: JSON.stringify({
-                    acao: 'transferencia',
-                    operador_usuario_id: operadorId,
-                    solicitante_usuario_id: trSolicitanteId,
-                    produto_id: trProdutoId,
-                    deposito_origem_id: trOrigemId,
-                    deposito_destino_id: trDestinoId,
-                    quantidade: qtd,
-                    observacao: trObs.trim() || null,
-                }),
-            });
-            setTransferOpen(false);
-            await reload();
-            setTab('ESTOQUE');
-        } catch (e: any) {
-            alert(e?.message || 'Falha na transferência');
-        }
-    }
-
-    // ====== modal: entrada (produto existente ou cadastro)
+    // ======= ENTRADA =======
     const [entradaOpen, setEntradaOpen] = useState(false);
-    const [enDepositoId, setEnDepositoId] = useState<ID | ''>('');
-    const [enQtd, setEnQtd] = useState<number>(1);
-    const [enObs, setEnObs] = useState('');
+    const [entradaScanOpen, setEntradaScanOpen] = useState(false);
 
-    const [enProdutoExistenteId, setEnProdutoExistenteId] = useState<ID | ''>('');
-    const [enModo, setEnModo] = useState<'EXISTENTE' | 'NOVO'>('EXISTENTE');
+    const [entradaBarcode, setEntradaBarcode] = useState('');
+    const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(() => depositos[0]?.id ?? 0);
+    const [entradaQtd, setEntradaQtd] = useState<number>(1);
+    const [entradaObs, setEntradaObs] = useState('');
 
-    // novo produto
-    const [npNome, setNpNome] = useState('');
-    const [npBarcode, setNpBarcode] = useState('');
-    const [npValor, setNpValor] = useState<number>(0);
-    const [npMin, setNpMin] = useState<number>(0);
-    const [npFoto, setNpFoto] = useState<string>('');
+    // cadastro se não existir
+    const [novoNome, setNovoNome] = useState('');
+    const [novoValor, setNovoValor] = useState<number>(0);
+    const [novoMin, setNovoMin] = useState<number>(0);
+    const [novoFoto, setNovoFoto] = useState<string>('');
 
-    function openEntradaDefault() {
-        setEnDepositoId(data.depositos[0]?.id ?? '');
-        setEnQtd(1);
-        setEnObs('');
-        setEnProdutoExistenteId(data.produtos[0]?.id ?? '');
-        setEnModo('EXISTENTE');
-        setNpNome('');
-        setNpBarcode('');
-        setNpValor(0);
-        setNpMin(0);
-        setNpFoto('');
-        setEntradaOpen(true);
+    const entradaProdutoExistente = useMemo(() => {
+        const cb = entradaBarcode.trim();
+        if (!cb) return null;
+        return produtos.find((p) => p.codigo_barras === cb) ?? null;
+    }, [entradaBarcode, produtos]);
+
+    async function fileToDataUrl(file: File): Promise<string> {
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.readAsDataURL(file);
+        });
     }
-
     async function onEntradaFoto(file?: File | null) {
         if (!file) return;
         const url = await fileToDataUrl(file);
-        setNpFoto(url);
+        setNovoFoto(url);
     }
+
+    useEffect(() => {
+        if (depositos.length && !entradaDepositoId) setEntradaDepositoId(depositos[0].id);
+    }, [depositos, entradaDepositoId]);
 
     async function applyEntrada() {
-        if (!operadorId) return alert('Selecione o Operador.');
-        if (!enDepositoId) return alert('Selecione depósito.');
-        const qtd = clampInt(enQtd);
-        if (qtd <= 0) return alert('Quantidade inválida.');
+        if (!me) return alert('Sessão inválida. Recarregue a página.');
+        const deposito_id = Number(entradaDepositoId);
+        const quantidade = clampInt(entradaQtd);
+        const codigo_barras = entradaBarcode.trim();
 
+        if (!deposito_id) return alert('Selecione o depósito.');
+        if (!codigo_barras) return alert('Informe/Leia o código de barras.');
+        if (quantidade <= 0) return alert('Quantidade inválida.');
+
+        const payload: any = {
+            action: 'entrada',
+            deposito_id,
+            quantidade,
+            codigo_barras,
+            observacao: entradaObs.trim() || undefined,
+        };
+
+        // se não existir, exige dados
+        if (!entradaProdutoExistente) {
+            const nome = novoNome.trim();
+            if (!nome) return alert('Produto novo: informe o nome.');
+            payload.nome = nome;
+            payload.valor = Number.isFinite(Number(novoValor)) ? Number(novoValor) : 0;
+            payload.minimo = clampInt(novoMin);
+            payload.foto_url = novoFoto || '';
+        }
+
+        const r = await apiPost<{ ok: boolean; msg?: string; produto_id?: number }>(payload);
+        if (!r.ok) return alert(r.msg || 'Falha na entrada.');
+
+        setEntradaBarcode('');
+        setEntradaQtd(1);
+        setEntradaObs('');
+        setNovoNome('');
+        setNovoValor(0);
+        setNovoMin(0);
+        setNovoFoto('');
+        setEntradaOpen(false);
+        await refreshInit();
+        setTab('ESTOQUE');
+    }
+
+    // ======= SAÍDA =======
+    const [saidaOpen, setSaidaOpen] = useState(false);
+    const [saidaScanOpen, setSaidaScanOpen] = useState(false);
+
+    const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(() => depositos[0]?.id ?? 0);
+    const [saidaBusca, setSaidaBusca] = useState('');
+    const [saidaProdutoId, setSaidaProdutoId] = useState<ID>(0);
+    const [saidaBarcode, setSaidaBarcode] = useState('');
+    const [saidaQtd, setSaidaQtd] = useState<number>(1);
+    const [saidaSolicitanteId, setSaidaSolicitanteId] = useState<ID>(0);
+    const [saidaDestino, setSaidaDestino] = useState('');
+    const [saidaObs, setSaidaObs] = useState('');
+
+    useEffect(() => {
+        if (!saidaSolicitanteId && usuarios[0]?.id) setSaidaSolicitanteId(usuarios[0].id);
+    }, [usuarios, saidaSolicitanteId]);
+
+    useEffect(() => {
+        if (depositos.length && !saidaDepositoId) setSaidaDepositoId(depositos[0].id);
+    }, [depositos, saidaDepositoId]);
+
+    // produtos disponíveis no depósito selecionado (com saldo >= 0)
+    const saidaProdutosNoDeposito = useMemo(() => {
+        const depId = Number(saidaDepositoId);
+        const ids = new Set<ID>();
+        for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
+
+        const qq = saidaBusca.trim().toLowerCase();
+        const list = produtos
+            .filter((p) => ids.has(p.id))
+            .filter((p) => {
+                if (!qq) return true;
+                return `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq);
+            })
+            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+        return list;
+    }, [saldos, produtos, saidaDepositoId, saidaBusca]);
+
+    useEffect(() => {
+        // mantém produto selecionado válido
+        if (!saidaProdutoId && saidaProdutosNoDeposito[0]?.id) setSaidaProdutoId(saidaProdutosNoDeposito[0].id);
+        if (saidaProdutoId && !saidaProdutosNoDeposito.find((p) => p.id === saidaProdutoId)) {
+            setSaidaProdutoId(saidaProdutosNoDeposito[0]?.id ?? 0);
+        }
+    }, [saidaProdutosNoDeposito, saidaProdutoId]);
+
+    function onSaidaBarcodePick(code: string) {
+        setSaidaBarcode(code);
+        const p = produtos.find((x) => x.codigo_barras === code);
+        if (p) setSaidaProdutoId(p.id);
+    }
+
+    async function applySaida() {
+        if (!me) return alert('Sessão inválida. Recarregue a página.');
+
+        const produto_id = Number(saidaProdutoId);
+        const deposito_id = Number(saidaDepositoId);
+        const quantidade = clampInt(saidaQtd);
+        const solicitante_usuario_id = Number(saidaSolicitanteId);
+        const destino_texto = saidaDestino.trim();
+
+        if (!produto_id) return alert('Selecione um produto.');
+        if (!deposito_id) return alert('Selecione o depósito.');
+        if (quantidade <= 0) return alert('Quantidade inválida.');
+        if (!solicitante_usuario_id) return alert('Selecione o solicitante.');
+        if (!destino_texto) return alert('Informe o destino.');
+
+        // valida disponível
+        const s = saldosMap.get(`${produto_id}::${deposito_id}`);
+        const atual = s ? clampInt(s.quantidade) : 0;
+        if (quantidade > atual) return alert(`Quantidade maior que disponível (${atual}).`);
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>({
+            action: 'saida',
+            produto_id,
+            deposito_id,
+            quantidade,
+            solicitante_usuario_id,
+            destino_texto,
+            observacao: saidaObs.trim() || undefined,
+        });
+
+        if (!r.ok) return alert(r.msg || 'Falha na saída.');
+
+        setSaidaBarcode('');
+        setSaidaQtd(1);
+        setSaidaDestino('');
+        setSaidaObs('');
+        setSaidaOpen(false);
+        await refreshInit();
+        setTab('ESTOQUE');
+    }
+
+    // ======= TRANSFERÊNCIA =======
+    const [trfBusca, setTrfBusca] = useState('');
+    const [trfProdutoId, setTrfProdutoId] = useState<ID>(0);
+    const [trfOrigemId, setTrfOrigemId] = useState<ID>(0);
+    const [trfDestinoId, setTrfDestinoId] = useState<ID>(0);
+    const [trfQtd, setTrfQtd] = useState<number>(1);
+    const [trfSolicitanteId, setTrfSolicitanteId] = useState<ID>(0);
+    const [trfObs, setTrfObs] = useState('');
+
+    useEffect(() => {
+        if (depositos.length) {
+            if (!trfOrigemId) setTrfOrigemId(depositos[0].id);
+            if (!trfDestinoId) setTrfDestinoId(depositos[1]?.id ?? depositos[0].id);
+        }
+    }, [depositos, trfOrigemId, trfDestinoId]);
+
+    useEffect(() => {
+        if (!trfSolicitanteId && usuarios[0]?.id) setTrfSolicitanteId(usuarios[0].id);
+    }, [usuarios, trfSolicitanteId]);
+
+    const trfProdutosNaOrigem = useMemo(() => {
+        const depId = Number(trfOrigemId);
+        const ids = new Set<ID>();
+        for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
+
+        const qq = trfBusca.trim().toLowerCase();
+        const list = produtos
+            .filter((p) => ids.has(p.id))
+            .filter((p) => {
+                if (!qq) return true;
+                return `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq);
+            })
+            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+        return list;
+    }, [saldos, produtos, trfOrigemId, trfBusca]);
+
+    useEffect(() => {
+        if (!trfProdutoId && trfProdutosNaOrigem[0]?.id) setTrfProdutoId(trfProdutosNaOrigem[0].id);
+        if (trfProdutoId && !trfProdutosNaOrigem.find((p) => p.id === trfProdutoId)) {
+            setTrfProdutoId(trfProdutosNaOrigem[0]?.id ?? 0);
+        }
+    }, [trfProdutosNaOrigem, trfProdutoId]);
+
+    async function applyTransferencia() {
+        if (!me) return alert('Sessão inválida. Recarregue a página.');
+
+        const produto_id = Number(trfProdutoId);
+        const deposito_origem_id = Number(trfOrigemId);
+        const deposito_destino_id = Number(trfDestinoId);
+        const quantidade = clampInt(trfQtd);
+        const solicitante_usuario_id = Number(trfSolicitanteId);
+
+        if (!produto_id) return alert('Selecione um produto.');
+        if (!deposito_origem_id || !deposito_destino_id) return alert('Selecione depósitos.');
+        if (deposito_origem_id === deposito_destino_id) return alert('Origem e destino não podem ser iguais.');
+        if (quantidade <= 0) return alert('Quantidade inválida.');
+        if (!solicitante_usuario_id) return alert('Selecione o solicitante.');
+
+        const s = saldosMap.get(`${produto_id}::${deposito_origem_id}`);
+        const atual = s ? clampInt(s.quantidade) : 0;
+        if (quantidade > atual) return alert(`Quantidade maior que disponível na origem (${atual}).`);
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>({
+            action: 'transferencia',
+            produto_id,
+            deposito_origem_id,
+            deposito_destino_id,
+            quantidade,
+            solicitante_usuario_id,
+            observacao: trfObs.trim() || undefined,
+        });
+
+        if (!r.ok) return alert(r.msg || 'Falha na transferência.');
+
+        setTrfQtd(1);
+        setTrfObs('');
+        await refreshInit();
+        setTab('ESTOQUE');
+    }
+
+    // ======= AVANÇADO (depósitos) =======
+    const [novoDepNome, setNovoDepNome] = useState('');
+    const [renomearDepId, setRenomearDepId] = useState<ID>(0);
+    const [renomearDepNome, setRenomearDepNome] = useState('');
+    const [busyDep, setBusyDep] = useState(false);
+
+    useEffect(() => {
+        if (!renomearDepId && depositos[0]?.id) {
+            setRenomearDepId(depositos[0].id);
+            setRenomearDepNome(depositos[0].nome);
+        }
+    }, [depositos, renomearDepId]);
+
+    useEffect(() => {
+        const d = depositos.find((x) => x.id === renomearDepId);
+        if (d) setRenomearDepNome(d.nome);
+    }, [renomearDepId, depositos]);
+
+    async function criarDeposito() {
+        const nome = novoDepNome.trim();
+        if (!nome) return alert('Informe o nome do depósito.');
+        setBusyDep(true);
         try {
-            if (enModo === 'EXISTENTE') {
-                if (!enProdutoExistenteId) return alert('Selecione um produto existente.');
-
-                await fetchJSON('/api/php/estoque_admin.php', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        acao: 'entrada',
-                        operador_usuario_id: operadorId,
-                        produto_id: enProdutoExistenteId,
-                        deposito_id: enDepositoId,
-                        quantidade: qtd,
-                        observacao: enObs.trim() || null,
-                    }),
-                });
-            } else {
-                const nome = npNome.trim();
-                const cb = npBarcode.trim();
-                const valor = clampMoney(npValor);
-                const min = clampInt(npMin);
-                if (!nome) return alert('Informe nome do produto.');
-                if (!cb) return alert('Informe código de barras.');
-                await fetchJSON('/api/php/estoque_admin.php', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        acao: 'entrada_novo_produto',
-                        operador_usuario_id: operadorId,
-                        deposito_id: enDepositoId,
-                        quantidade: qtd,
-                        observacao: enObs.trim() || null,
-                        produto: {
-                            nome,
-                            codigo_barras: cb,
-                            valor,
-                            minimo: min,
-                            foto_url: npFoto || null,
-                        },
-                    }),
-                });
-            }
-
-            setEntradaOpen(false);
-            await reload();
-            setTab('ESTOQUE');
-        } catch (e: any) {
-            alert(e?.message || 'Falha na entrada');
+            const r = await apiPost<{ ok: boolean; msg?: string; id?: number }>({ action: 'deposito_criar', nome });
+            if (!r.ok) return alert(r.msg || 'Falha ao criar depósito.');
+            setNovoDepNome('');
+            await refreshInit();
+        } finally {
+            setBusyDep(false);
         }
     }
 
-    // ====== modal: editar (produto + saldo)
-    const [editOpen, setEditOpen] = useState(false);
-    const [editSaldoId, setEditSaldoId] = useState<ID | ''>('');
-
-    const editingRow = useMemo(() => data.saldos.find((s) => s.saldo_id === editSaldoId), [data.saldos, editSaldoId]);
-
-    const [edNome, setEdNome] = useState('');
-    const [edBarcode, setEdBarcode] = useState('');
-    const [edValor, setEdValor] = useState<number>(0);
-    const [edMin, setEdMin] = useState<number>(0);
-    const [edFoto, setEdFoto] = useState<string>('');
-    const [edQtd, setEdQtd] = useState<number>(0);
-
-    async function onEditFoto(file?: File | null) {
-        if (!file) return;
-        const url = await fileToDataUrl(file);
-        setEdFoto(url);
-    }
-
-    function openEdit(row: SaldoRow) {
-        setEditSaldoId(row.saldo_id);
-        setEdNome(row.nome);
-        setEdBarcode(row.codigo_barras);
-        setEdValor(Number(row.valor || 0));
-        setEdMin(Number(row.minimo || 0));
-        setEdFoto(row.foto_url || '');
-        setEdQtd(Number(row.quantidade || 0));
-        setEditOpen(true);
-    }
-
-    async function applyEdit() {
-        if (!operadorId) return alert('Selecione o Operador.');
-        if (!editingRow) return;
-
-        const nome = edNome.trim();
-        const cb = edBarcode.trim();
-        const valor = clampMoney(edValor);
-        const minimo = clampInt(edMin);
-        const qtd = clampInt(edQtd);
-
-        if (!nome) return alert('Nome inválido.');
-        if (!cb) return alert('Código de barras inválido.');
-
+    async function renomearDeposito() {
+        const deposito_id = Number(renomearDepId);
+        const nome = renomearDepNome.trim();
+        if (!deposito_id) return alert('Selecione o depósito.');
+        if (!nome) return alert('Informe o novo nome.');
+        setBusyDep(true);
         try {
-            await fetchJSON('/api/php/estoque_admin.php', {
-                method: 'POST',
-                body: JSON.stringify({
-                    acao: 'editar_item',
-                    operador_usuario_id: operadorId,
-                    saldo_id: editingRow.saldo_id,
-                    produto_id: editingRow.produto_id,
-                    deposito_id: editingRow.deposito_id,
-                    produto: {
-                        nome,
-                        codigo_barras: cb,
-                        valor,
-                        minimo,
-                        foto_url: edFoto || null,
-                    },
-                    quantidade: qtd,
-                }),
-            });
-
-            setEditOpen(false);
-            await reload();
-        } catch (e: any) {
-            alert(e?.message || 'Falha ao salvar');
+            const r = await apiPost<{ ok: boolean; msg?: string }>({ action: 'deposito_renomear', deposito_id, nome });
+            if (!r.ok) return alert(r.msg || 'Falha ao renomear.');
+            await refreshInit();
+        } finally {
+            setBusyDep(false);
         }
     }
 
+    function exportarDeposito(deposito_id: ID) {
+        // abre download CSV via proxy
+        const url = `${API_BASE}?export_deposito_id=${deposito_id}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    // ======= HOME =======
     const headerRight = (
-        <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm">
-                    Alertas: {alertCount}
-                </span>
-                <Button variant="ghost" onClick={reload} title="Recarregar">
-                    Recarregar
-                </Button>
-            </div>
-
-            <div className="flex w-full items-center gap-2 sm:w-auto">
-                <span className="text-xs font-medium text-slate-700">Operador:</span>
-                <Select value={operadorId as any} onChange={(e) => setOperadorId(Number(e.target.value) as any)}>
-                    {data.usuarios.map((u) => (
-                        <option key={u.id} value={u.id}>
-                            {u.nome} ({u.usuario})
-                        </option>
-                    ))}
-                </Select>
-            </div>
+        <div className="flex items-center gap-2">
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm">
+                Alertas: {alertCount}
+            </span>
+            <Button variant="ghost" onClick={refreshInit} disabled={loading}>
+                Atualizar
+            </Button>
         </div>
     );
 
     return (
         <main className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-6xl px-4 py-6">
+                {/* Header */}
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div className="min-w-0">
                         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
                         <p className="mt-1 text-sm text-slate-600">
-                            Conectado ao PHP (via /api/php). Produtos, depósitos, saldos e movimentações.
+                            Entrada, Saída, Transferência, Estoque por depósito, Alertas e Avançado (depósitos + export).
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                            Operador atual: <b>{operador?.nome ?? '—'}</b>
+                            Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
                         </p>
                     </div>
                     {headerRight}
                 </div>
 
+                {/* Estado inicial */}
+                {initErr ? (
+                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        {initErr}{' '}
+                        <button className="underline" onClick={refreshInit}>
+                            Tentar novamente
+                        </button>
+                    </div>
+                ) : null}
+
+                {/* Tabs */}
                 <div className="mt-5 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-                    <button
-                        onClick={() => setTab('HOME')}
-                        className={[
-                            'rounded-xl px-3 py-2 text-sm font-medium',
-                            tab === 'HOME' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
-                        ].join(' ')}
-                    >
-                        Principal
-                    </button>
-                    <button
-                        onClick={() => setTab('ESTOQUE')}
-                        className={[
-                            'rounded-xl px-3 py-2 text-sm font-medium',
-                            tab === 'ESTOQUE' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
-                        ].join(' ')}
-                    >
-                        Estoque
-                    </button>
+                    {[
+                        ['HOME', 'Principal'],
+                        ['ENTRADA', 'Entrada'],
+                        ['SAIDA', 'Saída'],
+                        ['TRANSFERENCIA', 'Transferência'],
+                        ['ESTOQUE', 'Estoque'],
+                        ['ALERTAS', 'Alertas'],
+                        ['AVANCADO', 'Avançado'],
+                    ].map(([k, label]) => (
+                        <button
+                            key={k}
+                            onClick={() => setTab(k as UiTab)}
+                            className={[
+                                'rounded-xl px-3 py-2 text-sm font-medium',
+                                tab === (k as UiTab) ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
+                            ].join(' ')}
+                        >
+                            {label}
+                        </button>
+                    ))}
                 </div>
 
+                {/* Conteúdo */}
                 <div className="mt-4 grid grid-cols-1 gap-4">
-                    {loading ? (
+                    {/* HOME */}
+                    {tab === 'HOME' ? (
                         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                            <p className="text-sm text-slate-700">Carregando…</p>
-                        </section>
-                    ) : err ? (
-                        <section className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm">
-                            <p className="text-sm text-red-700">Erro: {err}</p>
-                            <div className="mt-3">
-                                <Button onClick={reload}>Tentar de novo</Button>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Entrada</p>
+                                    <p className="mt-1 text-xs text-slate-600">Cadastrar (se não existir) e somar saldo no depósito.</p>
+                                    <div className="mt-3">
+                                        <Button onClick={() => setEntradaOpen(true)}>Abrir Entrada</Button>
+                                    </div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Saída</p>
+                                    <p className="mt-1 text-xs text-slate-600">Escolha depósito, solicitante, destino e quantidade.</p>
+                                    <div className="mt-3">
+                                        <Button onClick={() => setSaidaOpen(true)}>Abrir Saída</Button>
+                                    </div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Alertas</p>
+                                    <p className="mt-1 text-xs text-slate-600">Itens com saldo ≤ mínimo (precisa reposição).</p>
+                                    <div className="mt-3">
+                                        <Button variant="ghost" onClick={() => setTab('ALERTAS')}>
+                                            Ver Alertas ({alertCount})
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                                Dica: na Entrada/Saída você pode usar <b>câmera</b> para ler o código de barras (se o navegador suportar).
                             </div>
                         </section>
                     ) : null}
 
-                    {tab === 'HOME' && !loading && !err ? (
+                    {/* ENTRADA */}
+                    {tab === 'ENTRADA' ? (
                         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Leia/digite o código de barras. Se não existir, cadastre o produto.</p>
+                                </div>
+                                <Button onClick={() => setEntradaOpen(true)} variant="ghost">
+                                    Abrir Entrada
+                                </Button>
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {/* SAÍDA */}
+                    {tab === 'SAIDA' ? (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <h2 className="text-base font-semibold text-slate-900">Saída</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito).</p>
+                                </div>
+                                <Button onClick={() => setSaidaOpen(true)} variant="ghost">
+                                    Abrir Saída
+                                </Button>
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {/* TRANSFERÊNCIA */}
+                    {tab === 'TRANSFERENCIA' ? (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex flex-col gap-3">
                                 <div>
-                                    <h2 className="text-base font-semibold text-slate-900">Tela Principal</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Ações rápidas: saída, transferência e entrada.</p>
+                                    <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Pesquisa e filtro por depósito de origem. Move quantidade de origem para destino.</p>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <Button onClick={openSaidaDefault}>Saída</Button>
-                                    <Button variant="ghost" onClick={openTransferDefault}>
-                                        Transferência
-                                    </Button>
-                                    <Button variant="ghost" onClick={openEntradaDefault}>
-                                        Entrada
-                                    </Button>
-                                </div>
-                            </div>
 
-                            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                                Dica: tudo que você fizer grava em <b>estoque_movimentacoes</b>.
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <Field label="Origem (Depósito)">
+                                        <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
+                                            {depositos.map((d) => (
+                                                <option key={d.id} value={d.id}>
+                                                    {d.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
+                                    <Field label="Destino (Depósito)">
+                                        <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
+                                            {depositos.map((d) => (
+                                                <option key={d.id} value={d.id}>
+                                                    {d.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
+                                    <Field label="Solicitante">
+                                        <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
+                                            {usuarios.map((u) => (
+                                                <option key={u.id} value={u.id}>
+                                                    {u.nome} ({u.usuario})
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
+                                    <div className="sm:col-span-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        <Field label="Buscar produto (nome/código)">
+                                            <TextInput value={trfBusca} onChange={(e) => setTrfBusca(e.target.value)} placeholder="Ex: URNA ou 174501..." />
+                                        </Field>
+
+                                        <Field label="Produto (na origem)">
+                                            <Select value={trfProdutoId} onChange={(e) => setTrfProdutoId(Number(e.target.value))}>
+                                                {trfProdutosNaOrigem.length ? (
+                                                    trfProdutosNaOrigem.map((p) => {
+                                                        const s = saldosMap.get(`${p.id}::${trfOrigemId}`);
+                                                        const qtd = s ? clampInt(s.quantidade) : 0;
+                                                        return (
+                                                            <option key={p.id} value={p.id}>
+                                                                {p.nome} — CB:{p.codigo_barras} — disp:{qtd}
+                                                            </option>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <option value={0}>Sem itens no depósito</option>
+                                                )}
+                                            </Select>
+                                        </Field>
+
+                                        <Field label="Quantidade">
+                                            <TextInput type="number" min={1} step={1} value={trfQtd} onChange={(e) => setTrfQtd(Number(e.target.value))} />
+                                        </Field>
+
+                                        <div className="sm:col-span-3">
+                                            <Field label="Observação (opcional)">
+                                                <TextArea value={trfObs} onChange={(e) => setTrfObs(e.target.value)} placeholder="Detalhes da transferência..." />
+                                            </Field>
+                                        </div>
+
+                                        <div className="sm:col-span-3 flex flex-wrap gap-2">
+                                            <Button onClick={applyTransferencia} disabled={!trfProdutosNaOrigem.length}>
+                                                Confirmar transferência
+                                            </Button>
+                                            <Button variant="ghost" onClick={() => setTab('ESTOQUE')}>
+                                                Ir para Estoque
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </section>
                     ) : null}
 
-                    {tab === 'ESTOQUE' && !loading && !err ? (
+                    {/* ESTOQUE */}
+                    {tab === 'ESTOQUE' ? (
                         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Clique numa linha para editar (produto + quantidade do depósito).
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código e filtro por depósito. (Mostrando linhas que têm saldo.)</p>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <Button variant="ghost" onClick={openEntradaDefault}>
+                                <div className="flex gap-2">
+                                    <Button variant="ghost" onClick={() => setEntradaOpen(true)}>
                                         Entrada
                                     </Button>
-                                    <Button variant="ghost" onClick={openTransferDefault}>
-                                        Transferência
-                                    </Button>
-                                    <Button variant="ghost" onClick={openSaidaDefault}>
+                                    <Button variant="ghost" onClick={() => setSaidaOpen(true)}>
                                         Saída
                                     </Button>
                                 </div>
@@ -679,13 +1020,13 @@ export default function Page() {
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
                                 <Field label="Pesquisar">
-                                    <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome, depósito ou código..." />
+                                    <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito..." />
                                 </Field>
 
                                 <Field label="Depósito">
-                                    <Select value={depositoFiltroId as any} onChange={(e) => setDepositoFiltroId(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value) as any)}>
+                                    <Select value={depFiltroEstoque} onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}>
                                         <option value="Todos">Todos</option>
-                                        {data.depositos.map((d) => (
+                                        {depositos.map((d) => (
                                             <option key={d.id} value={d.id}>
                                                 {d.nome}
                                             </option>
@@ -693,7 +1034,7 @@ export default function Page() {
                                     </Select>
                                 </Field>
 
-                                <Field label="Somente em alerta (≤ mínimo)">
+                                <Field label="Somente alerta (≤ mínimo)">
                                     <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
                                         <input
                                             id="onlyLow"
@@ -708,219 +1049,253 @@ export default function Page() {
                                     </div>
                                 </Field>
 
-                                <Field label="Total linhas">
-                                    <div className="flex h-[42px] items-center rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm">
-                                        {estoqueView.length}
+                                <Field label="Ações">
+                                    <div className="flex gap-2">
+                                        <Button variant="ghost" onClick={() => setTab('ALERTAS')}>
+                                            Alertas ({alertCount})
+                                        </Button>
+                                        <Button variant="ghost" onClick={() => setTab('AVANCADO')}>
+                                            Avançado
+                                        </Button>
                                     </div>
                                 </Field>
                             </div>
 
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-                                {estoqueView.length === 0 ? (
+                                {loading ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
+                                ) : estoqueRows.length === 0 ? (
                                     <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
                                 ) : (
                                     <ul className="divide-y divide-slate-200">
-                                        {estoqueView.map((r) => {
-                                            const low = r.quantidade <= r.minimo;
-                                            return (
-                                                <li key={r.saldo_id}>
-                                                    <button onClick={() => openEdit(r)} className="w-full px-4 py-3 text-left hover:bg-slate-50">
-                                                        <div className="flex items-center justify-between gap-3">
-                                                            <div className="flex min-w-0 items-center gap-3">
-                                                                <PhotoThumb url={r.foto_url} />
-                                                                <div className="min-w-0">
-                                                                    <p className="truncate text-sm font-semibold text-slate-900">
-                                                                        {r.nome} {low ? <span className="text-xs text-red-600">• alerta</span> : null}
-                                                                    </p>
-                                                                    <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                        CB: <b>{r.codigo_barras}</b> • Depósito: <b>{r.deposito_nome}</b> • Valor: {moneyBRL(r.valor)}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
+                                        {estoqueRows.map(({ p, d, qtd, s }) => {
+                                            const min = clampInt(p.minimo);
+                                            const low = qtd <= min;
+                                            const valorNum = Number(p.valor) || 0;
 
-                                                            <div className="shrink-0 text-right">
-                                                                <p className="text-sm font-semibold text-slate-900">{r.quantidade}</p>
-                                                                <p className="text-xs text-slate-500">mín {r.minimo}</p>
+                                            return (
+                                                <li key={`${p.id}_${d.id}`}>
+                                                    <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
+                                                        <div className="flex min-w-0 items-center gap-3">
+                                                            <PhotoThumb url={p.foto_url} />
+                                                            <div className="min-w-0">
+                                                                <p className="truncate text-sm font-semibold text-slate-900">
+                                                                    {p.nome} {low ? <span className="text-xs text-red-600">• alerta</span> : null}
+                                                                </p>
+                                                                <p className="mt-0.5 truncate text-xs text-slate-600">
+                                                                    CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor: {moneyBRL(valorNum)}
+                                                                </p>
+                                                                <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                    Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : '—'}
+                                                                </p>
                                                             </div>
                                                         </div>
-                                                    </button>
+
+                                                        <div className="shrink-0 text-right">
+                                                            <p className="text-sm font-semibold text-slate-900">{qtd}</p>
+                                                            <p className="text-xs text-slate-500">mín {min}</p>
+                                                        </div>
+                                                    </div>
                                                 </li>
                                             );
                                         })}
                                     </ul>
                                 )}
                             </div>
-                            <p className="mt-3 text-xs text-slate-500">Atualização: a data aparece ao abrir o item.</p>
+                        </section>
+                    ) : null}
+
+                    {/* ALERTAS */}
+                    {tab === 'ALERTAS' ? (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Alertas (Reposição)</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Lista dos itens com quantidade ≤ mínimo.</p>
+                                </div>
+                                <Button variant="ghost" onClick={() => setTab('ESTOQUE')}>
+                                    Voltar ao Estoque
+                                </Button>
+                            </div>
+
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                                {alertRows.length === 0 ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum item em alerta 🎉</div>
+                                ) : (
+                                    <ul className="divide-y divide-slate-200">
+                                        {alertRows.map(({ p, d, qtd, min }) => (
+                                            <li key={`${p.id}_${d.id}`} className="px-4 py-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
+                                                        <p className="mt-0.5 truncate text-xs text-slate-600">
+                                                            CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-sm font-semibold text-red-700">{qtd}</p>
+                                                        <p className="text-xs text-slate-500">mín {min}</p>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <Button onClick={() => setEntradaOpen(true)}>Fazer Entrada</Button>
+                                <Button variant="ghost" onClick={() => setTab('AVANCADO')}>
+                                    Exportar por Depósito
+                                </Button>
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {/* AVANÇADO */}
+                    {tab === 'AVANCADO' ? (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Depósitos: criar, renomear e exportar CSV para conferência. (Exclusão desabilitada.)
+                                    </p>
+                                </div>
+                                <Button variant="ghost" onClick={() => setTab('ESTOQUE')}>
+                                    Voltar
+                                </Button>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar Depósito</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Nome do novo depósito">
+                                            <TextInput value={novoDepNome} onChange={(e) => setNovoDepNome(e.target.value)} placeholder="Ex: Almox C" />
+                                        </Field>
+                                        <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()}>
+                                            Criar depósito
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear Depósito</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Depósito">
+                                            <Select value={renomearDepId} onChange={(e) => setRenomearDepId(Number(e.target.value))}>
+                                                {depositos.map((d) => (
+                                                    <option key={d.id} value={d.id}>
+                                                        {d.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                        <Field label="Novo nome">
+                                            <TextInput value={renomearDepNome} onChange={(e) => setRenomearDepNome(e.target.value)} />
+                                        </Field>
+                                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()}>
+                                            Renomear
+                                        </Button>
+
+                                        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                                            Observação: não há opção de excluir depósito (por segurança).
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
+                                    <p className="mt-1 text-xs text-slate-600">Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).</p>
+
+                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        {depositos.map((d) => (
+                                            <div key={d.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                                    <p className="text-[11px] text-slate-500">CSV para conferência</p>
+                                                </div>
+                                                <Button variant="ghost" onClick={() => exportarDeposito(d.id)}>
+                                                    Exportar
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
                         </section>
                     ) : null}
                 </div>
             </div>
 
-            {/* MODAL: Saída */}
-            <Modal open={saidaOpen} title="Saída" subtitle="Baixa do estoque + movimentação" onClose={() => setSaidaOpen(false)}>
+            {/* ===== MODAL: ENTRADA ===== */}
+            <Modal
+                open={entradaOpen}
+                title="Entrada"
+                subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto."
+                onClose={() => setEntradaOpen(false)}
+            >
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Produto (por depósito)">
-                        <Select
-                            value={`${saidaProdutoId || ''}:${saidaDepositoId || ''}`}
-                            onChange={(e) => {
-                                const [p, d] = e.target.value.split(':').map((x) => Number(x));
-                                setSaidaProdutoId(p as any);
-                                setSaidaDepositoId(d as any);
-                            }}
-                        >
-                            {data.saldos.map((r) => (
-                                <option key={r.saldo_id} value={`${r.produto_id}:${r.deposito_id}`}>
-                                    {r.nome} — {r.deposito_nome} — disponível: {r.quantidade}
+                    <Field label="Código de barras">
+                        <div className="flex gap-2">
+                            <TextInput
+                                value={entradaBarcode}
+                                onChange={(e) => setEntradaBarcode(e.target.value)}
+                                placeholder="Leia com leitor ou digite"
+                                inputMode="numeric"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        // só dispara UI — se não existir, aparece bloco de cadastro
+                                        if (!entradaBarcode.trim()) return;
+                                        // nada a fazer aqui, pois o bloco já reage ao estado
+                                    }
+                                }}
+                            />
+                            <Button variant="ghost" type="button" onClick={() => setEntradaScanOpen(true)} title="Abrir câmera">
+                                📷 Escanear
+                            </Button>
+                        </div>
+                    </Field>
+
+                    <Field label="Depósito (entrada)">
+                        <Select value={entradaDepositoId} onChange={(e) => setEntradaDepositoId(Number(e.target.value))}>
+                            {depositos.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.nome}
                                 </option>
                             ))}
                         </Select>
                     </Field>
 
-                    <Field label="Quantidade">
-                        <TextInput type="number" min={1} step={1} value={saidaQtd} onChange={(e) => setSaidaQtd(Number(e.target.value))} />
-                    </Field>
-
-                    <Field label="Solicitante">
-                        <Select value={saidaSolicitanteId as any} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value) as any)}>
-                            {data.usuarios.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.nome} ({u.usuario})
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Destino (obra/setor/local)">
-                        <TextInput value={saidaDestinoTexto} onChange={(e) => setSaidaDestinoTexto(e.target.value)} placeholder="Ex: Obra X / Setor Y" />
+                    <Field label="Quantidade (entrada)">
+                        <TextInput type="number" min={1} step={1} value={entradaQtd} onChange={(e) => setEntradaQtd(Number(e.target.value))} />
                     </Field>
 
                     <div className="sm:col-span-2">
                         <Field label="Observação (opcional)">
-                            <TextArea value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} />
+                            <TextArea value={entradaObs} onChange={(e) => setEntradaObs(e.target.value)} placeholder="Detalhes da entrada..." />
                         </Field>
                     </div>
 
-                    <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applySaida}>Confirmar saída</Button>
-                        <Button variant="ghost" onClick={() => setSaidaOpen(false)}>
-                            Cancelar
-                        </Button>
-                    </div>
-                </div>
-            </Modal>
-
-            {/* MODAL: Transferência */}
-            <Modal open={transferOpen} title="Transferência" subtitle="Move qty entre depósitos" onClose={() => setTransferOpen(false)}>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Produto">
-                        <Select value={trProdutoId as any} onChange={(e) => setTrProdutoId(Number(e.target.value) as any)}>
-                            {data.produtos.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {p.nome} — CB:{p.codigo_barras}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Quantidade">
-                        <TextInput type="number" min={1} step={1} value={trQtd} onChange={(e) => setTrQtd(Number(e.target.value))} />
-                    </Field>
-
-                    <Field label="Origem">
-                        <Select value={trOrigemId as any} onChange={(e) => setTrOrigemId(Number(e.target.value) as any)}>
-                            {data.depositos.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                    {d.nome}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Destino">
-                        <Select value={trDestinoId as any} onChange={(e) => setTrDestinoId(Number(e.target.value) as any)}>
-                            {data.depositos.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                    {d.nome}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Solicitante">
-                        <Select value={trSolicitanteId as any} onChange={(e) => setTrSolicitanteId(Number(e.target.value) as any)}>
-                            {data.usuarios.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.nome} ({u.usuario})
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <div className="sm:col-span-2">
-                        <Field label="Observação (opcional)">
-                            <TextArea value={trObs} onChange={(e) => setTrObs(e.target.value)} />
-                        </Field>
-                    </div>
-
-                    <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applyTransfer}>Confirmar transferência</Button>
-                        <Button variant="ghost" onClick={() => setTransferOpen(false)}>
-                            Cancelar
-                        </Button>
-                    </div>
-                </div>
-            </Modal>
-
-            {/* MODAL: Entrada */}
-            <Modal open={entradaOpen} title="Entrada" subtitle="Soma no saldo (existente) ou cadastra produto e dá entrada" onClose={() => setEntradaOpen(false)}>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Depósito">
-                        <Select value={enDepositoId as any} onChange={(e) => setEnDepositoId(Number(e.target.value) as any)}>
-                            {data.depositos.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                    {d.nome}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Quantidade">
-                        <TextInput type="number" min={1} step={1} value={enQtd} onChange={(e) => setEnQtd(Number(e.target.value))} />
-                    </Field>
-
-                    <Field label="Modo">
-                        <Select value={enModo} onChange={(e) => setEnModo(e.target.value as any)}>
-                            <option value="EXISTENTE">Produto existente</option>
-                            <option value="NOVO">Cadastrar novo produto</option>
-                        </Select>
-                    </Field>
-
-                    {enModo === 'EXISTENTE' ? (
-                        <Field label="Produto">
-                            <Select value={enProdutoExistenteId as any} onChange={(e) => setEnProdutoExistenteId(Number(e.target.value) as any)}>
-                                {data.produtos.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.nome} — CB:{p.codigo_barras}
-                                    </option>
-                                ))}
-                            </Select>
-                        </Field>
-                    ) : (
+                    {!entradaProdutoExistente && entradaBarcode.trim() ? (
                         <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-sm font-semibold text-slate-900">Novo produto</p>
+                            <p className="text-sm font-semibold text-slate-900">Produto novo (código não encontrado)</p>
+                            <p className="mt-1 text-xs text-slate-600">Preencha para cadastrar junto com a entrada.</p>
+
                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <Field label="Nome">
-                                    <TextInput value={npNome} onChange={(e) => setNpNome(e.target.value)} />
+                                <Field label="Nome do produto">
+                                    <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: URNA 008 ..." />
                                 </Field>
-                                <Field label="Código de barras">
-                                    <TextInput value={npBarcode} onChange={(e) => setNpBarcode(e.target.value)} inputMode="numeric" />
-                                </Field>
+
                                 <Field label="Valor">
-                                    <TextInput type="number" step="0.01" value={npValor} onChange={(e) => setNpValor(Number(e.target.value))} />
+                                    <TextInput type="number" step="0.01" value={novoValor} onChange={(e) => setNovoValor(Number(e.target.value))} />
                                 </Field>
+
                                 <Field label="Mínimo (alerta)">
-                                    <TextInput type="number" min={0} step={1} value={npMin} onChange={(e) => setNpMin(Number(e.target.value))} />
+                                    <TextInput type="number" min={0} step={1} value={novoMin} onChange={(e) => setNovoMin(Number(e.target.value))} />
                                 </Field>
+
                                 <Field label="Foto (arquivo)">
                                     <TextInput
                                         type="file"
@@ -931,24 +1306,21 @@ export default function Page() {
                                         }}
                                     />
                                 </Field>
-                                {npFoto ? (
+
+                                {novoFoto ? (
                                     <div className="sm:col-span-2">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={npFoto} alt="Prévia" className="h-40 w-full rounded-2xl border border-slate-200 object-cover" />
+                                        <img src={novoFoto} alt="Prévia" className="h-40 w-full rounded-2xl border border-slate-200 object-cover" />
                                     </div>
                                 ) : null}
                             </div>
                         </div>
-                    )}
-
-                    <div className="sm:col-span-2">
-                        <Field label="Observação (opcional)">
-                            <TextArea value={enObs} onChange={(e) => setEnObs(e.target.value)} />
-                        </Field>
-                    </div>
+                    ) : null}
 
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applyEntrada}>Confirmar entrada</Button>
+                        <Button onClick={applyEntrada} disabled={loading}>
+                            Confirmar entrada
+                        </Button>
                         <Button variant="ghost" onClick={() => setEntradaOpen(false)}>
                             Cancelar
                         </Button>
@@ -956,77 +1328,120 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: Editar */}
+            {/* Scanner Entrada */}
+            <BarcodeScannerModal
+                open={entradaScanOpen}
+                title="Escanear código de barras (Entrada)"
+                onClose={() => setEntradaScanOpen(false)}
+                onDetected={(code) => setEntradaBarcode(code)}
+            />
+
+            {/* ===== MODAL: SAÍDA ===== */}
             <Modal
-                open={editOpen}
-                title="Editar Produto / Saldo"
-                subtitle={editingRow ? `Depósito: ${editingRow.deposito_nome} • Atualizado: ${fmtDateTime(editingRow.atualizado_em)}` : undefined}
-                onClose={() => setEditOpen(false)}
+                open={saidaOpen}
+                title="Saída"
+                subtitle="Filtre pelo depósito, procure o produto, ou escaneie por câmera. Operador é fixo."
+                onClose={() => setSaidaOpen(false)}
             >
-                {!editingRow ? (
-                    <p className="text-sm text-slate-600">Registro não encontrado.</p>
-                ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                        <div className="flex items-start gap-3">
-                            <div className="shrink-0">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                {edFoto ? (
-                                    <img src={edFoto} alt="Foto" className="h-24 w-24 rounded-2xl border border-slate-200 object-cover" />
-                                ) : (
-                                    <div className="flex h-24 w-24 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-3xl text-slate-600">
-                                        🖼️
-                                    </div>
-                                )}
-                            </div>
-                            <div className="min-w-0">
-                                <p className="truncate text-base font-semibold text-slate-900">{editingRow.nome}</p>
-                                <p className="mt-1 text-sm text-slate-600">CB: <b>{editingRow.codigo_barras}</b></p>
-                                <p className="mt-1 text-xs text-slate-500">Valor: {moneyBRL(editingRow.valor)} • Mínimo: {editingRow.minimo}</p>
-                            </div>
-                        </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Depósito (origem)">
+                        <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
+                            {depositos.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
 
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <Field label="Nome">
-                                <TextInput value={edNome} onChange={(e) => setEdNome(e.target.value)} />
-                            </Field>
-
-                            <Field label="Código de barras">
-                                <TextInput value={edBarcode} onChange={(e) => setEdBarcode(e.target.value)} inputMode="numeric" />
-                            </Field>
-
-                            <Field label="Valor">
-                                <TextInput type="number" step="0.01" value={edValor} onChange={(e) => setEdValor(Number(e.target.value))} />
-                            </Field>
-
-                            <Field label="Mínimo (alerta)">
-                                <TextInput type="number" min={0} step={1} value={edMin} onChange={(e) => setEdMin(Number(e.target.value))} />
-                            </Field>
-
-                            <Field label="Quantidade (neste depósito)">
-                                <TextInput type="number" min={0} step={1} value={edQtd} onChange={(e) => setEdQtd(Number(e.target.value))} />
-                            </Field>
-
-                            <Field label="Foto (arquivo)">
-                                <TextInput
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={async (e) => {
-                                        const file = e.target.files?.[0];
-                                        await onEditFoto(file);
-                                    }}
-                                />
-                            </Field>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                            <Button onClick={applyEdit}>Salvar</Button>
-                            <Button variant="ghost" onClick={() => setEditOpen(false)}>
-                                Fechar
+                    <Field label="Código de barras (opcional)">
+                        <div className="flex gap-2">
+                            <TextInput
+                                value={saidaBarcode}
+                                onChange={(e) => setSaidaBarcode(e.target.value)}
+                                placeholder="Escaneie ou digite"
+                                inputMode="numeric"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const code = saidaBarcode.trim();
+                                        if (code) onSaidaBarcodePick(code);
+                                    }
+                                }}
+                            />
+                            <Button variant="ghost" type="button" onClick={() => setSaidaScanOpen(true)} title="Abrir câmera">
+                                📷 Escanear
                             </Button>
                         </div>
+                    </Field>
+
+                    <div className="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <Field label="Buscar produto (nome/código)">
+                            <TextInput value={saidaBusca} onChange={(e) => setSaidaBusca(e.target.value)} placeholder="Ex: URNA ou 174501..." />
+                        </Field>
+
+                        <Field label="Produto (no depósito)">
+                            <Select value={saidaProdutoId} onChange={(e) => setSaidaProdutoId(Number(e.target.value))}>
+                                {saidaProdutosNoDeposito.length ? (
+                                    saidaProdutosNoDeposito.map((p) => {
+                                        const s = saldosMap.get(`${p.id}::${saidaDepositoId}`);
+                                        const qtd = s ? clampInt(s.quantidade) : 0;
+                                        return (
+                                            <option key={p.id} value={p.id}>
+                                                {p.nome} — CB:{p.codigo_barras} — disp:{qtd}
+                                            </option>
+                                        );
+                                    })
+                                ) : (
+                                    <option value={0}>Sem itens no depósito</option>
+                                )}
+                            </Select>
+                        </Field>
                     </div>
-                )}
+
+                    <Field label="Quantidade">
+                        <TextInput type="number" min={1} step={1} value={saidaQtd} onChange={(e) => setSaidaQtd(Number(e.target.value))} />
+                    </Field>
+
+                    <Field label="Solicitante">
+                        <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
+                            {usuarios.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                    {u.nome} ({u.usuario})
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <div className="sm:col-span-2">
+                        <Field label="Destino (obra/setor/local)">
+                            <TextInput value={saidaDestino} onChange={(e) => setSaidaDestino(e.target.value)} placeholder="Ex: Obra X / Setor Y" />
+                        </Field>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                        <Field label="Observação (opcional)">
+                            <TextArea value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} placeholder="Detalhes da saída..." />
+                        </Field>
+                    </div>
+
+                    <div className="sm:col-span-2 flex flex-wrap gap-2">
+                        <Button onClick={applySaida} disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId}>
+                            Confirmar saída
+                        </Button>
+                        <Button variant="ghost" onClick={() => setSaidaOpen(false)}>
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
             </Modal>
+
+            {/* Scanner Saída */}
+            <BarcodeScannerModal
+                open={saidaScanOpen}
+                title="Escanear código de barras (Saída)"
+                onClose={() => setSaidaScanOpen(false)}
+                onDetected={(code) => onSaidaBarcodePick(code)}
+            />
         </main>
     );
 }
