@@ -36,15 +36,22 @@ function isNao(v?: string) {
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
 const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
 
-function cargoLogado(): string {
-    try {
-        return (sessionStorage.getItem("cargo") || "").trim().toLowerCase();
-    } catch {
-        return "";
+async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
+    const res = await fetch("/informativo.php?me=1", {
+        method: "GET",
+        credentials: "include",
+        headers: { "Accept": "application/json" },
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+        throw new Error(data?.msg || `Erro ao consultar usuário (${res.status})`);
     }
-}
-function isTanatopraxista(): boolean {
-    return cargoLogado() === "tanatopraxista";
+    return {
+        usuario: (data?.usuario || "").toString(),
+        cargo: (data?.cargo || "").toString().trim().toLowerCase(),
+    };
 }
 
 export default function AcaoModal({
@@ -70,6 +77,34 @@ export default function AcaoModal({
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+    const [meCargo, setMeCargo] = useState<string>("");
+    const [meLoading, setMeLoading] = useState(false);
+    const [meError, setMeError] = useState<string | null>(null);
+
+    // carrega cargo ao abrir modal
+    useEffect(() => {
+        let cancel = false;
+        async function run() {
+            setMeError(null);
+            setMeCargo("");
+            if (!open) return;
+
+            setMeLoading(true);
+            try {
+                const me = await consultarMe();
+                if (!cancel) setMeCargo(me.cargo);
+            } catch (e: any) {
+                if (!cancel) setMeError(e?.message || "Falha ao consultar permissões.");
+            } finally {
+                if (!cancel) setMeLoading(false);
+            }
+        }
+        run();
+        return () => {
+            cancel = true;
+        };
+    }, [open]);
 
     useEffect(() => {
         setFrontMsg(null);
@@ -181,7 +216,7 @@ export default function AcaoModal({
         const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
         if (isFinal) return null;
 
-        let p = proximaFaseDoRegistro(
+        const p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
@@ -204,8 +239,11 @@ export default function AcaoModal({
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
     const concluido =
-        !!efetivo &&
-        (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+        !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+
+    function podeConservacao(): boolean {
+        return meCargo === "tanatopraxista";
+    }
 
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
@@ -216,9 +254,17 @@ export default function AcaoModal({
         const requiresVehicle = FASES_COM_VEICULO.includes(f);
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
-        // 🔒 regra + confirmação (front) para evitar disparo acidental
         if (isConservacao) {
-            if (!isTanatopraxista()) {
+            if (meLoading) {
+                setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
+                return;
+            }
+            if (meError) {
+                // se não conseguiu ler cargo, melhor não “chutar”
+                setFrontMsg({ ok: false, text: meError });
+                return;
+            }
+            if (!podeConservacao()) {
                 setFrontMsg({
                     ok: false,
                     text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista.",
@@ -235,7 +281,7 @@ export default function AcaoModal({
             return;
         }
 
-        // ✅ aqui está o que faltava: enviar confirmar:true
+        // ✅ envia confirmar:true para o PHP aceitar fase03/fase04
         await registrarAcao(f, isConservacao ? { confirmar: true } : undefined);
     }
 
@@ -247,9 +293,7 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">
-                        {onlineError} — exibindo dados locais como fallback.
-                    </span>
+                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
                 )}
             </div>
 
@@ -271,15 +315,28 @@ export default function AcaoModal({
                         {fasesVisiveis.map((f) => {
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
 
+                            // opcional: já “desabilita visualmente” conservação se não tanato
+                            const isConservacao = FASES_CONSERVACAO.includes(f);
+                            const bloqueadoPorCargo =
+                                isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
+
+                            const disabled = !habilitar || bloqueadoPorCargo;
+
                             return (
                                 <button
                                     key={f}
                                     type="button"
-                                    disabled={!habilitar}
+                                    disabled={disabled}
                                     onClick={() => handleClickFase(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${!disabled ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
-                                    title={habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"}
+                                    title={
+                                        bloqueadoPorCargo
+                                            ? "Apenas Tanatopraxista"
+                                            : habilitar
+                                                ? "Confirmar próxima etapa"
+                                                : "Aguardando etapas anteriores"
+                                    }
                                 >
                                     {acaoToStatus(f)}
                                 </button>
@@ -288,20 +345,16 @@ export default function AcaoModal({
                     </div>
 
                     {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            Fluxo concluído para este registro.
-                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
                     )}
                 </>
             )}
 
-            {frontMsg && (
-                <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>
-            )}
+            {/* ✅ mostra primeiro msg local do front */}
+            {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
 
-            {acaoMsg && (
-                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>
-            )}
+            {/* ✅ depois msg do backend */}
+            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
         </Modal>
     );
 }
