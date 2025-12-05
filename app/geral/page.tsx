@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 type ID = number;
 
@@ -37,6 +37,7 @@ type InitResp = {
     produtos: Produto[];
     saldos: Saldo[];
     msg?: string;
+    need_login?: 1;
 };
 
 type HistoricoRow = {
@@ -53,6 +54,7 @@ type HistoricoRow = {
     observacao: string | null;
     criado_em: string;
 
+    // joins opcionalmente vindos do back
     produto_nome?: string;
     operador_nome?: string;
     solicitante_nome?: string | null;
@@ -60,18 +62,32 @@ type HistoricoRow = {
     deposito_destino_nome?: string | null;
 };
 
-type UiTab = 'HOME' | 'ENTRADA' | 'SAIDA' | 'TRANSFERENCIA' | 'ESTOQUE' | 'ALERTAS' | 'AVANCADO';
+type HistoricoResp = {
+    ok: boolean;
+    rows: HistoricoRow[];
+    total?: number;
+    msg?: string;
+    need_login?: 1;
+};
+
+type UiTab =
+    | 'HOME'
+    | 'ENTRADA'
+    | 'SAIDA'
+    | 'TRANSFERENCIA'
+    | 'ESTOQUE'
+    | 'ALERTAS'
+    | 'HISTORICO'
+    | 'AVANCADO';
 
 const API_BASE = '/api/php/estoque_admin.php';
 
-function nowISO() {
-    return new Date().toISOString();
-}
 function clampInt(v: unknown) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.floor(n));
 }
+
 function fmtDateTime(iso: string) {
     try {
         return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
@@ -79,6 +95,7 @@ function fmtDateTime(iso: string) {
         return iso;
     }
 }
+
 function moneyBRL(n: number) {
     try {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -95,13 +112,9 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
     });
 
     const r = await fetch(u.toString(), { method: 'GET', cache: 'no-store', credentials: 'include' });
-    // export CSV vem como text/csv; aqui só usamos JSON nos GETs
     const ct = r.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) {
-        throw new Error(`Resposta inesperada (${ct}).`);
-    }
-    const j = (await r.json()) as T;
-    return j;
+    if (!ct.includes('application/json')) throw new Error(`Resposta inesperada (${ct}).`);
+    return (await r.json()) as T;
 }
 
 async function apiPost<T>(body: any) {
@@ -112,8 +125,7 @@ async function apiPost<T>(body: any) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-    const j = (await r.json()) as T & { ok?: boolean; msg?: string };
-    return j;
+    return (await r.json()) as T & { ok?: boolean; msg?: string; need_login?: 1 };
 }
 
 function Modal({
@@ -131,9 +143,7 @@ function Modal({
 }) {
     useEffect(() => {
         if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
+        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [open, onClose]);
@@ -144,12 +154,12 @@ function Modal({
         <div
             role="dialog"
             aria-modal="true"
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-3 sm:items-center"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
             onMouseDown={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
         >
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
                     <div className="min-w-0">
                         <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
@@ -159,11 +169,14 @@ function Modal({
                         className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
                         onClick={onClose}
                         aria-label="Fechar"
+                        type="button"
                     >
                         ✕
                     </button>
                 </div>
-                <div className="p-4">{children}</div>
+
+                {/* corpo com scroll interno (bom no mobile) */}
+                <div className="max-h-[78vh] overflow-y-auto p-4">{children}</div>
             </div>
         </div>
     );
@@ -258,7 +271,6 @@ function PhotoThumb({ url }: { url?: string | null }) {
     );
 }
 
-// ===== Scanner (Camera + BarcodeDetector) =====
 function BarcodeScannerModal({
     open,
     title,
@@ -272,45 +284,37 @@ function BarcodeScannerModal({
 }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const controlsRef = useRef<{ stop: () => void } | null>(null);
-    const [err, setErr] = useState<string>("");
+    const [err, setErr] = useState<string>('');
 
     useEffect(() => {
         if (!open) return;
 
         let cancelled = false;
-        setErr("");
+        setErr('');
 
         const start = async () => {
             try {
                 const codeReader = new BrowserMultiFormatReader();
-
-                // tenta pegar câmera traseira quando possível
                 const devices = await BrowserMultiFormatReader.listVideoInputDevices();
                 const backCam =
-                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId ||
-                    devices[0]?.deviceId;
+                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
 
-                if (!videoRef.current) throw new Error("Vídeo não disponível.");
+                if (!videoRef.current) throw new Error('Vídeo não disponível.');
 
-                const controls = await codeReader.decodeFromVideoDevice(
-                    backCam ?? undefined,
-                    videoRef.current!,
-                    (result, _error, _controls) => {
-                        if (cancelled) return;
-                        if (result) {
-                            const text = result.getText().trim();
-                            if (text) {
-                                onDetected(text);
-                                onClose();
-                            }
+                const controls = await codeReader.decodeFromVideoDevice(backCam ?? undefined, videoRef.current!, (result) => {
+                    if (cancelled) return;
+                    if (result) {
+                        const text = result.getText().trim();
+                        if (text) {
+                            onDetected(text);
+                            onClose();
                         }
                     }
-                );
-
+                });
 
                 controlsRef.current = { stop: () => controls.stop() };
             } catch (e: any) {
-                setErr(e?.message || "Não foi possível abrir a câmera.");
+                setErr(e?.message || 'Não foi possível abrir a câmera.');
             }
         };
 
@@ -336,7 +340,9 @@ function BarcodeScannerModal({
                         <video ref={videoRef} className="h-[360px] w-full object-cover" playsInline muted />
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Button variant="ghost" onClick={onClose}>Fechar</Button>
+                        <Button variant="ghost" onClick={onClose} type="button">
+                            Fechar
+                        </Button>
                     </div>
                 </div>
             )}
@@ -389,7 +395,7 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ======= Derivações de UI =======
+    // ======= ALERTAS =======
     const alertRows = useMemo(() => {
         const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo }> = [];
         for (const s of saldos) {
@@ -406,7 +412,7 @@ export default function Page() {
 
     const alertCount = alertRows.length;
 
-    // ======= ESTOQUE (lista) =======
+    // ======= ESTOQUE =======
     const [qEstoque, setQEstoque] = useState('');
     const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID | 'Todos'>('Todos');
     const [onlyLow, setOnlyLow] = useState(false);
@@ -415,7 +421,6 @@ export default function Page() {
         const qq = qEstoque.trim().toLowerCase();
         const rows: Array<{ p: Produto; d: Deposito; qtd: number; s?: Saldo }> = [];
 
-        // mostra só onde existe saldo (linha por produto+depósito)
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
@@ -435,7 +440,9 @@ export default function Page() {
             rows.push({ p, d, qtd, s });
         }
 
-        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR'));
+        rows.sort(
+            (a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR')
+        );
         return rows;
     }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, onlyLow]);
 
@@ -444,15 +451,18 @@ export default function Page() {
     const [entradaScanOpen, setEntradaScanOpen] = useState(false);
 
     const [entradaBarcode, setEntradaBarcode] = useState('');
-    const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(() => depositos[0]?.id ?? 0);
+    const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
     const [entradaQtd, setEntradaQtd] = useState<number>(1);
     const [entradaObs, setEntradaObs] = useState('');
 
-    // cadastro se não existir
     const [novoNome, setNovoNome] = useState('');
     const [novoValor, setNovoValor] = useState<number>(0);
     const [novoMin, setNovoMin] = useState<number>(0);
     const [novoFoto, setNovoFoto] = useState<string>('');
+
+    useEffect(() => {
+        if (depositos.length && !entradaDepositoId) setEntradaDepositoId(depositos[0].id);
+    }, [depositos, entradaDepositoId]);
 
     const entradaProdutoExistente = useMemo(() => {
         const cb = entradaBarcode.trim();
@@ -468,15 +478,12 @@ export default function Page() {
             reader.readAsDataURL(file);
         });
     }
+
     async function onEntradaFoto(file?: File | null) {
         if (!file) return;
         const url = await fileToDataUrl(file);
         setNovoFoto(url);
     }
-
-    useEffect(() => {
-        if (depositos.length && !entradaDepositoId) setEntradaDepositoId(depositos[0].id);
-    }, [depositos, entradaDepositoId]);
 
     async function applyEntrada() {
         if (!me) return alert('Sessão inválida. Recarregue a página.');
@@ -496,7 +503,6 @@ export default function Page() {
             observacao: entradaObs.trim() || undefined,
         };
 
-        // se não existir, exige dados
         if (!entradaProdutoExistente) {
             const nome = novoNome.trim();
             if (!nome) return alert('Produto novo: informe o nome.');
@@ -506,7 +512,7 @@ export default function Page() {
             payload.foto_url = novoFoto || '';
         }
 
-        const r = await apiPost<{ ok: boolean; msg?: string; produto_id?: number }>(payload);
+        const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
         if (!r.ok) return alert(r.msg || 'Falha na entrada.');
 
         setEntradaBarcode('');
@@ -525,7 +531,7 @@ export default function Page() {
     const [saidaOpen, setSaidaOpen] = useState(false);
     const [saidaScanOpen, setSaidaScanOpen] = useState(false);
 
-    const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(() => depositos[0]?.id ?? 0);
+    const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(0);
     const [saidaBusca, setSaidaBusca] = useState('');
     const [saidaProdutoId, setSaidaProdutoId] = useState<ID>(0);
     const [saidaBarcode, setSaidaBarcode] = useState('');
@@ -535,33 +541,26 @@ export default function Page() {
     const [saidaObs, setSaidaObs] = useState('');
 
     useEffect(() => {
-        if (!saidaSolicitanteId && usuarios[0]?.id) setSaidaSolicitanteId(usuarios[0].id);
-    }, [usuarios, saidaSolicitanteId]);
-
-    useEffect(() => {
         if (depositos.length && !saidaDepositoId) setSaidaDepositoId(depositos[0].id);
     }, [depositos, saidaDepositoId]);
 
-    // produtos disponíveis no depósito selecionado (com saldo >= 0)
+    useEffect(() => {
+        if (!saidaSolicitanteId && usuarios[0]?.id) setSaidaSolicitanteId(usuarios[0].id);
+    }, [usuarios, saidaSolicitanteId]);
+
     const saidaProdutosNoDeposito = useMemo(() => {
         const depId = Number(saidaDepositoId);
         const ids = new Set<ID>();
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
         const qq = saidaBusca.trim().toLowerCase();
-        const list = produtos
+        return produtos
             .filter((p) => ids.has(p.id))
-            .filter((p) => {
-                if (!qq) return true;
-                return `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq);
-            })
+            .filter((p) => (!qq ? true : `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq)))
             .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-
-        return list;
     }, [saldos, produtos, saidaDepositoId, saidaBusca]);
 
     useEffect(() => {
-        // mantém produto selecionado válido
         if (!saidaProdutoId && saidaProdutosNoDeposito[0]?.id) setSaidaProdutoId(saidaProdutosNoDeposito[0].id);
         if (saidaProdutoId && !saidaProdutosNoDeposito.find((p) => p.id === saidaProdutoId)) {
             setSaidaProdutoId(saidaProdutosNoDeposito[0]?.id ?? 0);
@@ -589,7 +588,6 @@ export default function Page() {
         if (!solicitante_usuario_id) return alert('Selecione o solicitante.');
         if (!destino_texto) return alert('Informe o destino.');
 
-        // valida disponível
         const s = saldosMap.get(`${produto_id}::${deposito_id}`);
         const atual = s ? clampInt(s.quantidade) : 0;
         if (quantidade > atual) return alert(`Quantidade maior que disponível (${atual}).`);
@@ -641,15 +639,10 @@ export default function Page() {
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
         const qq = trfBusca.trim().toLowerCase();
-        const list = produtos
+        return produtos
             .filter((p) => ids.has(p.id))
-            .filter((p) => {
-                if (!qq) return true;
-                return `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq);
-            })
+            .filter((p) => (!qq ? true : `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq)))
             .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-
-        return list;
     }, [saldos, produtos, trfOrigemId, trfBusca]);
 
     useEffect(() => {
@@ -696,7 +689,7 @@ export default function Page() {
         setTab('ESTOQUE');
     }
 
-    // ======= AVANÇADO (depósitos) =======
+    // ======= AVANÇADO =======
     const [novoDepNome, setNovoDepNome] = useState('');
     const [renomearDepId, setRenomearDepId] = useState<ID>(0);
     const [renomearDepNome, setRenomearDepNome] = useState('');
@@ -744,21 +737,67 @@ export default function Page() {
     }
 
     function exportarDeposito(deposito_id: ID) {
-        // abre download CSV via proxy
         const url = `${API_BASE}?export_deposito_id=${deposito_id}`;
         window.open(url, '_blank', 'noopener,noreferrer');
     }
 
-    // ======= HOME =======
-    const headerRight = (
-        <div className="flex items-center gap-2">
-            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm">
-                Alertas: {alertCount}
-            </span>
-            <Button variant="ghost" onClick={refreshInit} disabled={loading}>
-                Atualizar
-            </Button>
-        </div>
+    // ======= HISTÓRICO =======
+    const [histLoading, setHistLoading] = useState(false);
+    const [histErr, setHistErr] = useState('');
+    const [histRows, setHistRows] = useState<HistoricoRow[]>([]);
+    const [histQ, setHistQ] = useState('');
+    const [histTipo, setHistTipo] = useState<'Todos' | HistoricoRow['tipo']>('Todos');
+    const [histDep, setHistDep] = useState<ID | 'Todos'>('Todos');
+    const [histFrom, setHistFrom] = useState('');
+    const [histTo, setHistTo] = useState('');
+    const [histLimit, setHistLimit] = useState(80);
+    const [histOffset, setHistOffset] = useState(0);
+    const [histTotal, setHistTotal] = useState<number | undefined>(undefined);
+
+    async function loadHistorico(nextOffset?: number) {
+        setHistLoading(true);
+        setHistErr('');
+        try {
+            const o = nextOffset ?? histOffset;
+            const resp = await apiGet<HistoricoResp>({
+                historico: 1,
+                limit: histLimit,
+                offset: o,
+                q: histQ.trim() || undefined,
+                tipo: histTipo !== 'Todos' ? histTipo : undefined,
+                deposito_id: histDep !== 'Todos' ? histDep : undefined,
+                from: histFrom || undefined,
+                to: histTo || undefined,
+            });
+            if (!resp.ok) throw new Error(resp.msg || 'Falha ao carregar histórico.');
+            setHistRows(resp.rows || []);
+            setHistTotal(resp.total);
+            setHistOffset(o);
+        } catch (e: any) {
+            setHistErr(e?.message || 'Erro ao carregar histórico.');
+        } finally {
+            setHistLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        if (tab === 'HISTORICO') loadHistorico(0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab]);
+
+    const tabs = useMemo(
+        () =>
+            [
+                ['HOME', 'Principal'],
+                ['ENTRADA', 'Entrada'],
+                ['SAIDA', 'Saída'],
+                ['TRANSFERENCIA', 'Transferência'],
+                ['ESTOQUE', 'Estoque'],
+                ['ALERTAS', `Alertas (${alertCount})`],
+                ['HISTORICO', 'Histórico'],
+                ['AVANCADO', 'Avançado'],
+            ] as const,
+        [alertCount]
     );
 
     return (
@@ -769,47 +808,49 @@ export default function Page() {
                     <div className="min-w-0">
                         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
                         <p className="mt-1 text-sm text-slate-600">
-                            Entrada, Saída, Transferência, Estoque por depósito, Alertas e Avançado (depósitos + export).
+                            Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
                             Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
                         </p>
                     </div>
-                    {headerRight}
+
+                    <div className="flex items-center gap-2">
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm">
+                            Alertas: {alertCount}
+                        </span>
+                        <Button variant="ghost" onClick={refreshInit} disabled={loading} type="button">
+                            Atualizar
+                        </Button>
+                    </div>
                 </div>
 
-                {/* Estado inicial */}
                 {initErr ? (
                     <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                         {initErr}{' '}
-                        <button className="underline" onClick={refreshInit}>
+                        <button className="underline" onClick={refreshInit} type="button">
                             Tentar novamente
                         </button>
                     </div>
                 ) : null}
 
-                {/* Tabs */}
-                <div className="mt-5 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-                    {[
-                        ['HOME', 'Principal'],
-                        ['ENTRADA', 'Entrada'],
-                        ['SAIDA', 'Saída'],
-                        ['TRANSFERENCIA', 'Transferência'],
-                        ['ESTOQUE', 'Estoque'],
-                        ['ALERTAS', 'Alertas'],
-                        ['AVANCADO', 'Avançado'],
-                    ].map(([k, label]) => (
-                        <button
-                            key={k}
-                            onClick={() => setTab(k as UiTab)}
-                            className={[
-                                'rounded-xl px-3 py-2 text-sm font-medium',
-                                tab === (k as UiTab) ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
-                            ].join(' ')}
-                        >
-                            {label}
-                        </button>
-                    ))}
+                {/* Tabs (mobile scroll) */}
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        {tabs.map(([k, label]) => (
+                            <button
+                                key={k}
+                                onClick={() => setTab(k as UiTab)}
+                                className={[
+                                    'shrink-0 rounded-xl px-3 py-2 text-sm font-medium transition',
+                                    tab === (k as UiTab) ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
+                                ].join(' ')}
+                                type="button"
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Conteúdo */}
@@ -822,29 +863,35 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Entrada</p>
                                     <p className="mt-1 text-xs text-slate-600">Cadastrar (se não existir) e somar saldo no depósito.</p>
                                     <div className="mt-3">
-                                        <Button onClick={() => setEntradaOpen(true)}>Abrir Entrada</Button>
+                                        <Button onClick={() => setEntradaOpen(true)} type="button">
+                                            Abrir Entrada
+                                        </Button>
                                     </div>
                                 </div>
+
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Saída</p>
                                     <p className="mt-1 text-xs text-slate-600">Escolha depósito, solicitante, destino e quantidade.</p>
                                     <div className="mt-3">
-                                        <Button onClick={() => setSaidaOpen(true)}>Abrir Saída</Button>
+                                        <Button onClick={() => setSaidaOpen(true)} type="button">
+                                            Abrir Saída
+                                        </Button>
                                     </div>
                                 </div>
+
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Alertas</p>
-                                    <p className="mt-1 text-xs text-slate-600">Itens com saldo ≤ mínimo (precisa reposição).</p>
+                                    <p className="text-sm font-semibold text-slate-900">Histórico</p>
+                                    <p className="mt-1 text-xs text-slate-600">Auditoria: entradas/saídas/transferências e cadastros.</p>
                                     <div className="mt-3">
-                                        <Button variant="ghost" onClick={() => setTab('ALERTAS')}>
-                                            Ver Alertas ({alertCount})
+                                        <Button variant="ghost" onClick={() => setTab('HISTORICO')} type="button">
+                                            Ver Histórico
                                         </Button>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-                                Dica: na Entrada/Saída você pode usar <b>câmera</b> para ler o código de barras (se o navegador suportar).
+                                Dica: na Entrada/Saída você pode usar <b>câmera</b> para ler o código de barras.
                             </div>
                         </section>
                     ) : null}
@@ -855,9 +902,11 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Leia/digite o código de barras. Se não existir, cadastre o produto.</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Leia/digite o código de barras. Se não existir, cadastre o produto.
+                                    </p>
                                 </div>
-                                <Button onClick={() => setEntradaOpen(true)} variant="ghost">
+                                <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
                                     Abrir Entrada
                                 </Button>
                             </div>
@@ -870,9 +919,11 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Saída</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito).</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito).
+                                    </p>
                                 </div>
-                                <Button onClick={() => setSaidaOpen(true)} variant="ghost">
+                                <Button onClick={() => setSaidaOpen(true)} variant="ghost" type="button">
                                     Abrir Saída
                                 </Button>
                             </div>
@@ -885,7 +936,7 @@ export default function Page() {
                             <div className="flex flex-col gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Pesquisa e filtro por depósito de origem. Move quantidade de origem para destino.</p>
+                                    <p className="mt-1 text-sm text-slate-600">Move quantidade de origem para destino (com validação de saldo).</p>
                                 </div>
 
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -953,10 +1004,10 @@ export default function Page() {
                                         </div>
 
                                         <div className="sm:col-span-3 flex flex-wrap gap-2">
-                                            <Button onClick={applyTransferencia} disabled={!trfProdutosNaOrigem.length}>
+                                            <Button onClick={applyTransferencia} disabled={!trfProdutosNaOrigem.length} type="button">
                                                 Confirmar transferência
                                             </Button>
-                                            <Button variant="ghost" onClick={() => setTab('ESTOQUE')}>
+                                            <Button variant="ghost" onClick={() => setTab('ESTOQUE')} type="button">
                                                 Ir para Estoque
                                             </Button>
                                         </div>
@@ -975,10 +1026,10 @@ export default function Page() {
                                     <p className="mt-1 text-sm text-slate-600">Busca por nome/código e filtro por depósito. (Mostrando linhas que têm saldo.)</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button variant="ghost" onClick={() => setEntradaOpen(true)}>
+                                    <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
                                         Entrada
                                     </Button>
-                                    <Button variant="ghost" onClick={() => setSaidaOpen(true)}>
+                                    <Button variant="ghost" onClick={() => setSaidaOpen(true)} type="button">
                                         Saída
                                     </Button>
                                 </div>
@@ -990,7 +1041,10 @@ export default function Page() {
                                 </Field>
 
                                 <Field label="Depósito">
-                                    <Select value={depFiltroEstoque} onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}>
+                                    <Select
+                                        value={depFiltroEstoque}
+                                        onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}
+                                    >
                                         <option value="Todos">Todos</option>
                                         {depositos.map((d) => (
                                             <option key={d.id} value={d.id}>
@@ -1017,11 +1071,11 @@ export default function Page() {
 
                                 <Field label="Ações">
                                     <div className="flex gap-2">
-                                        <Button variant="ghost" onClick={() => setTab('ALERTAS')}>
+                                        <Button variant="ghost" onClick={() => setTab('ALERTAS')} type="button">
                                             Alertas ({alertCount})
                                         </Button>
-                                        <Button variant="ghost" onClick={() => setTab('AVANCADO')}>
-                                            Avançado
+                                        <Button variant="ghost" onClick={() => setTab('HISTORICO')} type="button">
+                                            Histórico
                                         </Button>
                                     </div>
                                 </Field>
@@ -1079,7 +1133,7 @@ export default function Page() {
                                     <h2 className="text-base font-semibold text-slate-900">Alertas (Reposição)</h2>
                                     <p className="mt-1 text-sm text-slate-600">Lista dos itens com quantidade ≤ mínimo.</p>
                                 </div>
-                                <Button variant="ghost" onClick={() => setTab('ESTOQUE')}>
+                                <Button variant="ghost" onClick={() => setTab('ESTOQUE')} type="button">
                                     Voltar ao Estoque
                                 </Button>
                             </div>
@@ -1110,9 +1164,204 @@ export default function Page() {
                             </div>
 
                             <div className="mt-3 flex flex-wrap gap-2">
-                                <Button onClick={() => setEntradaOpen(true)}>Fazer Entrada</Button>
-                                <Button variant="ghost" onClick={() => setTab('AVANCADO')}>
-                                    Exportar por Depósito
+                                <Button onClick={() => setEntradaOpen(true)} type="button">
+                                    Fazer Entrada
+                                </Button>
+                                <Button variant="ghost" onClick={() => setTab('HISTORICO')} type="button">
+                                    Ver Histórico
+                                </Button>
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {/* HISTÓRICO */}
+                    {tab === 'HISTORICO' ? (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="ghost" onClick={() => loadHistorico(0)} disabled={histLoading} type="button">
+                                        Atualizar
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {histErr ? (
+                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div>
+                            ) : null}
+
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                                <div className="sm:col-span-2">
+                                    <Field label="Buscar (produto, CB, destino, obs)">
+                                        <TextInput value={histQ} onChange={(e) => setHistQ(e.target.value)} placeholder="Ex: URNA, 1745..., Obra X" />
+                                    </Field>
+                                </div>
+
+                                <Field label="Tipo">
+                                    <Select value={histTipo} onChange={(e) => setHistTipo(e.target.value as any)}>
+                                        <option value="Todos">Todos</option>
+                                        <option value="ENTRADA">Entrada</option>
+                                        <option value="SAIDA">Saída</option>
+                                        <option value="TRANSFERENCIA">Transferência</option>
+                                        <option value="CADASTRO_PRODUTO">Cadastro produto</option>
+                                    </Select>
+                                </Field>
+
+                                <Field label="Depósito (origem/destino)">
+                                    <Select value={histDep} onChange={(e) => setHistDep(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}>
+                                        <option value="Todos">Todos</option>
+                                        {depositos.map((d) => (
+                                            <option key={d.id} value={d.id}>
+                                                {d.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="De (data)">
+                                    <TextInput type="date" value={histFrom} onChange={(e) => setHistFrom(e.target.value)} />
+                                </Field>
+
+                                <Field label="Até (data)">
+                                    <TextInput type="date" value={histTo} onChange={(e) => setHistTo(e.target.value)} />
+                                </Field>
+
+                                <div className="sm:col-span-6 flex flex-wrap gap-2">
+                                    <Button onClick={() => loadHistorico(0)} disabled={histLoading} type="button">
+                                        Filtrar
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        onClick={() => {
+                                            setHistQ('');
+                                            setHistTipo('Todos');
+                                            setHistDep('Todos');
+                                            setHistFrom('');
+                                            setHistTo('');
+                                            setHistOffset(0);
+                                            setTimeout(() => loadHistorico(0), 0);
+                                        }}
+                                        disabled={histLoading}
+                                        type="button"
+                                    >
+                                        Limpar
+                                    </Button>
+
+                                    <div className="ml-auto flex items-center gap-2">
+                                        <span className="text-xs text-slate-500">
+                                            {histTotal !== undefined ? `Total: ${histTotal}` : `Mostrando: ${histRows.length}`}
+                                        </span>
+                                        <Select value={histLimit} onChange={(e) => setHistLimit(Number(e.target.value))} className="w-[120px]">
+                                            <option value={40}>40</option>
+                                            <option value={80}>80</option>
+                                            <option value={120}>120</option>
+                                            <option value={200}>200</option>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                                {histLoading ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
+                                ) : histRows.length === 0 ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
+                                ) : (
+                                    <ul className="divide-y divide-slate-200">
+                                        {histRows.map((h) => {
+                                            const tipoBadge =
+                                                h.tipo === 'ENTRADA'
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                    : h.tipo === 'SAIDA'
+                                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                                        : h.tipo === 'TRANSFERENCIA'
+                                                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                            : 'bg-slate-50 text-slate-700 border-slate-200';
+
+                                            const origem =
+                                                h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
+                                            const destino =
+                                                h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+
+                                            return (
+                                                <li key={h.id} className="px-4 py-3">
+                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>
+                                                                    {h.tipo}
+                                                                </span>
+                                                                <span className="text-xs text-slate-500">{fmtDateTime(h.criado_em)}</span>
+                                                            </div>
+
+                                                            <p className="mt-2 truncate text-sm font-semibold text-slate-900">
+                                                                {h.produto_nome || `Produto ${h.produto_id}`}{' '}
+                                                                <span className="text-xs font-normal text-slate-500">• CB {h.codigo_barras_snapshot}</span>
+                                                            </p>
+
+                                                            <p className="mt-0.5 text-xs text-slate-600">
+                                                                {h.tipo === 'ENTRADA' ? (
+                                                                    <>
+                                                                        Depósito: <b>{destino || '—'}</b>
+                                                                    </>
+                                                                ) : h.tipo === 'SAIDA' ? (
+                                                                    <>
+                                                                        Depósito: <b>{origem || '—'}</b> • Destino: <b>{h.destino_texto || '—'}</b>
+                                                                    </>
+                                                                ) : h.tipo === 'TRANSFERENCIA' ? (
+                                                                    <>
+                                                                        Origem: <b>{origem || '—'}</b> → Destino: <b>{destino || '—'}</b>
+                                                                    </>
+                                                                ) : (
+                                                                    <>—</>
+                                                                )}
+                                                            </p>
+
+                                                            <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                Operador:{' '}
+                                                                <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
+                                                                {h.solicitante_usuario_id ? (
+                                                                    <>
+                                                                        {' '}
+                                                                        • Solicitante:{' '}
+                                                                        <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
+                                                                    </>
+                                                                ) : null}
+                                                                {h.observacao ? <> • Obs: {h.observacao}</> : null}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="shrink-0 text-right">
+                                                            <p className="text-sm font-semibold text-slate-900">{h.quantidade === null ? '—' : h.quantidade}</p>
+                                                            <p className="text-xs text-slate-500">qtd</p>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => loadHistorico(Math.max(0, histOffset - histLimit))}
+                                    disabled={histLoading || histOffset <= 0}
+                                    type="button"
+                                >
+                                    ← Anterior
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => loadHistorico(histOffset + histLimit)}
+                                    disabled={histLoading || (histTotal !== undefined ? histOffset + histLimit >= histTotal : histRows.length < histLimit)}
+                                    type="button"
+                                >
+                                    Próximo →
                                 </Button>
                             </div>
                         </section>
@@ -1124,11 +1373,9 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Depósitos: criar, renomear e exportar CSV para conferência. (Exclusão desabilitada.)
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Depósitos: criar, renomear e exportar CSV para conferência.</p>
                                 </div>
-                                <Button variant="ghost" onClick={() => setTab('ESTOQUE')}>
+                                <Button variant="ghost" onClick={() => setTab('ESTOQUE')} type="button">
                                     Voltar
                                 </Button>
                             </div>
@@ -1140,7 +1387,7 @@ export default function Page() {
                                         <Field label="Nome do novo depósito">
                                             <TextInput value={novoDepNome} onChange={(e) => setNovoDepNome(e.target.value)} placeholder="Ex: Almox C" />
                                         </Field>
-                                        <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()}>
+                                        <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()} type="button">
                                             Criar depósito
                                         </Button>
                                     </div>
@@ -1161,7 +1408,7 @@ export default function Page() {
                                         <Field label="Novo nome">
                                             <TextInput value={renomearDepNome} onChange={(e) => setRenomearDepNome(e.target.value)} />
                                         </Field>
-                                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()}>
+                                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()} type="button">
                                             Renomear
                                         </Button>
 
@@ -1182,7 +1429,7 @@ export default function Page() {
                                                     <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
                                                     <p className="text-[11px] text-slate-500">CSV para conferência</p>
                                                 </div>
-                                                <Button variant="ghost" onClick={() => exportarDeposito(d.id)}>
+                                                <Button variant="ghost" onClick={() => exportarDeposito(d.id)} type="button">
                                                     Exportar
                                                 </Button>
                                             </div>
@@ -1210,13 +1457,6 @@ export default function Page() {
                                 onChange={(e) => setEntradaBarcode(e.target.value)}
                                 placeholder="Leia com leitor ou digite"
                                 inputMode="numeric"
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        // só dispara UI — se não existir, aparece bloco de cadastro
-                                        if (!entradaBarcode.trim()) return;
-                                        // nada a fazer aqui, pois o bloco já reage ao estado
-                                    }
-                                }}
                             />
                             <Button variant="ghost" type="button" onClick={() => setEntradaScanOpen(true)} title="Abrir câmera">
                                 📷 Escanear
@@ -1284,17 +1524,16 @@ export default function Page() {
                     ) : null}
 
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applyEntrada} disabled={loading}>
+                        <Button onClick={applyEntrada} disabled={loading} type="button">
                             Confirmar entrada
                         </Button>
-                        <Button variant="ghost" onClick={() => setEntradaOpen(false)}>
+                        <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
                             Cancelar
                         </Button>
                     </div>
                 </div>
             </Modal>
 
-            {/* Scanner Entrada */}
             <BarcodeScannerModal
                 open={entradaScanOpen}
                 title="Escanear código de barras (Entrada)"
@@ -1391,17 +1630,16 @@ export default function Page() {
                     </div>
 
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applySaida} disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId}>
+                        <Button onClick={applySaida} disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId} type="button">
                             Confirmar saída
                         </Button>
-                        <Button variant="ghost" onClick={() => setSaidaOpen(false)}>
+                        <Button variant="ghost" onClick={() => setSaidaOpen(false)} type="button">
                             Cancelar
                         </Button>
                     </div>
                 </div>
             </Modal>
 
-            {/* Scanner Saída */}
             <BarcodeScannerModal
                 open={saidaScanOpen}
                 title="Escanear código de barras (Saída)"
