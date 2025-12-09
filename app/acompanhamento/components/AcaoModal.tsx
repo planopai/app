@@ -37,11 +37,10 @@ const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
 const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
 
 async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
-    const res = await fetch("/informativo.php?me=1", {
+    const res = await fetch("/api/php/informativo.php?me=1", {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
-        cache: "no-store",
     });
 
     const data = await res.json().catch(() => null);
@@ -71,19 +70,14 @@ export default function AcaoModal({
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
 
-    // ✅ agora aceita "extra" (ex: { confirmar: true })
+    // ✅ agora aceita "extra" (ex: {confirmar:true})
     registrarAcao: (acao: string, extra?: Record<string, any>) => Promise<void>;
 
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
-    onVeiculoRequired?: (
-        id: string | number | null | undefined,
-        fase: string
-    ) => void;
+    onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
-    const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(
-        null
-    );
+    const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
     const [meCargo, setMeCargo] = useState<string>("");
     const [meLoading, setMeLoading] = useState(false);
@@ -101,7 +95,7 @@ export default function AcaoModal({
             setMeLoading(true);
             try {
                 const me = await consultarMe();
-                if (!cancel) setMeCargo(me.cargo);
+                if (!cancel) setMeCargo((me.cargo || "").toLowerCase().trim());
             } catch (e: any) {
                 if (!cancel) setMeError(e?.message || "Falha ao consultar permissões.");
             } finally {
@@ -120,12 +114,8 @@ export default function AcaoModal({
     }, [open, acaoId]);
 
     const registroLocal = useMemo(() => {
-        const r =
-            acaoId != null
-                ? registros.find((x) => String(x.id) === String(acaoId))
-                : undefined;
+        const r = acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
         if (!r) return undefined;
-
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
@@ -198,19 +188,17 @@ export default function AcaoModal({
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
         (typeof registroLocal?.assistencia === "string" &&
             typeof registroLocal?.tanato === "string" &&
-            typeof registroLocal?.ornamentacao === "string" &&
+            typeof (registroLocal as any)?.ornamentacao === "string" &&
             (registroLocal.assistencia || "").toLowerCase() === "não" &&
             (registroLocal.tanato || "").toLowerCase() === "não" &&
-            (registroLocal.ornamentacao || "").toLowerCase() === "não");
+            ((registroLocal as any).ornamentacao || "").toLowerCase() === "não");
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
-    const skipTransportando =
-        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
-
         return (fases as readonly Fase[]).filter((f) => {
             if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
@@ -251,43 +239,35 @@ export default function AcaoModal({
         return null;
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
-    const concluido =
-        !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+    const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
-    // ✅ regra única de permissão para conservação
-    const podeConservacao = useMemo(() => meCargo === "tanatopraxista", [meCargo]);
-
-    // ✅ fail-safe: se não conseguiu carregar cargo, não libera conservação
-    const conservacaoBloqueadaPorPermissao = useMemo(() => {
-        if (!open) return true;
-        if (meLoading) return true;
-        if (meError) return true;
-        if (!meCargo) return true;
-        return !podeConservacao;
-    }, [open, meLoading, meError, meCargo, podeConservacao]);
+    function podeConservacao(): boolean {
+        return meCargo === "tanatopraxista";
+    }
 
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
 
-        const habilitarBase = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-        if (!habilitarBase) return;
+        const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+        if (!habilitar) return;
 
         const requiresVehicle = FASES_COM_VEICULO.includes(f);
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
-        // ✅ bloqueia já no click também (além do disabled do botão)
-        if (isConservacao && conservacaoBloqueadaPorPermissao) {
+        if (isConservacao) {
             if (meLoading) {
                 setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
-            } else if (meError) {
-                setFrontMsg({ ok: false, text: meError });
-            } else {
-                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
+                return;
             }
-            return;
-        }
+            if (meError) {
+                setFrontMsg({ ok: false, text: meError });
+                return;
+            }
+            if (!podeConservacao()) {
+                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
+                return;
+            }
 
-        if (isConservacao) {
             const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
             if (!ok) return;
         }
@@ -309,9 +289,7 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">
-                        {onlineError} — exibindo dados locais como fallback.
-                    </span>
+                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
                 )}
             </div>
 
@@ -331,20 +309,15 @@ export default function AcaoModal({
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
-                            const habilitarBase = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
 
                             const isConservacao = FASES_CONSERVACAO.includes(f);
-                            const bloqueadoPorCargo = isConservacao ? conservacaoBloqueadaPorPermissao : false;
 
-                            const disabled = !habilitarBase || bloqueadoPorCargo;
+                            // só bloqueia por cargo quando já carregou (não bloquear enquanto carrega)
+                            const bloqueadoPorCargo =
+                                isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
 
-                            let title = "Aguardando etapas anteriores";
-                            if (habilitarBase) title = "Confirmar próxima etapa";
-                            if (bloqueadoPorCargo) {
-                                if (meLoading) title = "Carregando permissões…";
-                                else if (meError) title = "Falha ao consultar permissões";
-                                else title = "Apenas Tanatopraxista";
-                            }
+                            const disabled = !habilitar || bloqueadoPorCargo;
 
                             return (
                                 <button
@@ -354,7 +327,13 @@ export default function AcaoModal({
                                     onClick={() => handleClickFase(f)}
                                     className={`rounded-md border px-3 py-2 text-sm text-left ${!disabled ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
-                                    title={title}
+                                    title={
+                                        bloqueadoPorCargo
+                                            ? "Apenas Tanatopraxista"
+                                            : habilitar
+                                                ? "Confirmar próxima etapa"
+                                                : "Aguardando etapas anteriores"
+                                    }
                                 >
                                     {acaoToStatus(f)}
                                 </button>
@@ -363,24 +342,13 @@ export default function AcaoModal({
                     </div>
 
                     {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            Fluxo concluído para este registro.
-                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
                     )}
                 </>
             )}
 
-            {frontMsg && (
-                <TextFeedback kind={frontMsg.ok ? "success" : "error"}>
-                    {frontMsg.text}
-                </TextFeedback>
-            )}
-
-            {acaoMsg && (
-                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>
-                    {acaoMsg.text}
-                </TextFeedback>
-            )}
+            {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
+            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
         </Modal>
     );
 }
