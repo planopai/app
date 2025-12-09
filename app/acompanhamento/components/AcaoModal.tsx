@@ -313,7 +313,7 @@ export default function AcaoModal({
 
                             const isConservacao = FASES_CONSERVACAO.includes(f);
 
-                            // só bloqueia por cargo quando já carregou (não bloquear enquanto carrega)
+                            // só bloqueia por 
                             const bloqueadoPorCargo =
                                 isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
 
