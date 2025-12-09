@@ -16,6 +16,9 @@ import {
 type Fase = (typeof fases)[number];
 const FASE_FINAL = "fase11" as Fase;
 
+const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
+const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
+
 function isTerceiroBySession(id?: string | number | null | undefined) {
     try {
         if (id == null) return false;
@@ -32,9 +35,6 @@ function isNao(v?: string) {
     const s = (v || "").toString().trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
-
-const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
-const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
 
 async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
     const res = await fetch("/api/php/informativo.php?me=1", {
@@ -55,29 +55,49 @@ async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
     };
 }
 
+type Props = {
+    open: boolean;
+    setOpen: (b: boolean) => void;
+    registros: Registro[];
+    acaoId: Registro["id"] | null | undefined;
+
+    // ✅ NOVO: vindo do page.tsx (offline + conferência fase11 + telemetria stop)
+    registrarAcao?: (
+        acao: string,
+        opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }
+    ) => Promise<void>;
+
+    // ✅ NOVO: mensagens/loading controlados pelo pai (opcional)
+    acaoSubmitting?: boolean;
+    acaoMsg?: { text: string; ok: boolean } | null;
+
+    onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
+};
+
 export default function AcaoModal({
     open,
     setOpen,
     registros,
     acaoId,
     onVeiculoRequired,
-}: {
-    open: boolean;
-    setOpen: (b: boolean) => void;
-    registros: Registro[];
-    acaoId: Registro["id"] | null | undefined;
-    onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
-}) {
+
+    registrarAcao,
+    acaoSubmitting: acaoSubmittingExt,
+    acaoMsg: acaoMsgExt,
+}: Props) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
     const [meCargo, setMeCargo] = useState<string>("");
     const [meLoading, setMeLoading] = useState(false);
     const [meError, setMeError] = useState<string | null>(null);
 
-    const [acaoSubmitting, setAcaoSubmitting] = useState(false);
-    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    // fallback local (caso não venha do page)
+    const [acaoSubmittingLocal, setAcaoSubmittingLocal] = useState(false);
+    const [acaoMsgLocal, setAcaoMsgLocal] = useState<{ text: string; ok: boolean } | null>(null);
 
-    // carrega cargo ao abrir modal
+    const acaoSubmitting = acaoSubmittingExt ?? acaoSubmittingLocal;
+    const acaoMsg = acaoMsgExt ?? acaoMsgLocal;
+
     useEffect(() => {
         let cancel = false;
 
@@ -105,7 +125,7 @@ export default function AcaoModal({
 
     useEffect(() => {
         setFrontMsg(null);
-        setAcaoMsg(null);
+        setAcaoMsgLocal(null);
     }, [open, acaoId]);
 
     const registroLocal = useMemo(() => {
@@ -243,33 +263,22 @@ export default function AcaoModal({
     async function registrarAcaoHTTP(status: string, extra?: Record<string, any>) {
         if (!acaoId) throw new Error("ID inválido.");
 
-        const payload = {
-            acao: "atualizar_status",
-            id: acaoId,
-            status,
-            ...(extra ?? {}),
-        };
+        const payload = { acao: "atualizar_status", id: acaoId, status, ...(extra ?? {}) };
 
         const res = await fetch("/api/php/informativo.php", {
             method: "POST",
             credentials: "include",
-            headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-            },
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
             body: JSON.stringify(payload),
         });
 
         const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-            throw new Error(data?.msg || `Erro (${res.status})`);
-        }
+        if (!res.ok) throw new Error(data?.msg || `Erro (${res.status})`);
     }
 
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
-        setAcaoMsg(null);
+        setAcaoMsgLocal(null);
 
         const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
         if (!habilitar) return;
@@ -278,18 +287,10 @@ export default function AcaoModal({
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
         if (isConservacao) {
-            if (meLoading) {
-                setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
-                return;
-            }
-            if (meError) {
-                setFrontMsg({ ok: false, text: meError });
-                return;
-            }
-            if (!podeConservacao()) {
-                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
-                return;
-            }
+            if (meLoading) return setFrontMsg({ ok: false, text: "Carregando permissões… tente novamente." });
+            if (meError) return setFrontMsg({ ok: false, text: meError });
+            if (!podeConservacao())
+                return setFrontMsg({ ok: false, text: "Apenas Tanatopraxista pode realizar essa ação." });
 
             const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
             if (!ok) return;
@@ -301,13 +302,20 @@ export default function AcaoModal({
         }
 
         try {
-            setAcaoSubmitting(true);
+            // ✅ se veio do page.tsx, usa ele (offline + conferência fase11)
+            if (registrarAcao) {
+                await registrarAcao(f, { skipConfirm: true }); // confirmação fica aqui no modal
+                return;
+            }
+
+            // fallback (modo antigo do modal)
+            setAcaoSubmittingLocal(true);
             await registrarAcaoHTTP(f, isConservacao ? { confirmar: true } : undefined);
-            setAcaoMsg({ ok: true, text: "Ação registrada com sucesso." });
+            setAcaoMsgLocal({ ok: true, text: "Ação registrada com sucesso." });
         } catch (e: any) {
-            setAcaoMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
+            setAcaoMsgLocal({ ok: false, text: e?.message || "Falha ao registrar ação." });
         } finally {
-            setAcaoSubmitting(false);
+            setAcaoSubmittingLocal(false);
         }
     }
 
@@ -318,63 +326,37 @@ export default function AcaoModal({
             <div className="mt-2 text-xs text-muted-foreground">
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
-                {!loadingOnline && onlineError && (
-                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
-                )}
+                {!loadingOnline && onlineError && <span className="text-red-600">{onlineError} — usando fallback local.</span>}
             </div>
-
-            {!efetivo && (
-                <p className="mt-4 text-sm text-muted-foreground">
-                    Nenhum registro selecionado. Selecione um registro para continuar.
-                </p>
-            )}
-
-            {efetivo && fasesVisiveis.length === 0 && (
-                <p className="mt-4 text-sm text-muted-foreground">
-                    Nenhuma etapa disponível para este registro com as condições atuais.
-                </p>
-            )}
-
-            {efetivo && fasesVisiveis.length > 0 && (
-                <>
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-
-                            const isConservacao = FASES_CONSERVACAO.includes(f);
-                            const bloqueadoPorCargo =
-                                isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
-
-                            const disabled = !habilitar || bloqueadoPorCargo;
-
-                            return (
-                                <button
-                                    key={f}
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => handleClickFase(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${!disabled ? "hover:bg-muted" : "pointer-events-none opacity-50"
-                                        }`}
-                                    title={
-                                        bloqueadoPorCargo
-                                            ? "Apenas Tanatopraxista"
-                                            : habilitar
-                                                ? "Confirmar próxima etapa"
-                                                : "Aguardando etapas anteriores"
-                                    }
-                                >
-                                    {acaoToStatus(f)}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {concluido && <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>}
-                </>
-            )}
 
             {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
             {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
+
+            {efetivo && fasesVisiveis.length > 0 && (
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {fasesVisiveis.map((f) => {
+                        const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+
+                        const isConservacao = FASES_CONSERVACAO.includes(f);
+                        const bloqueadoPorCargo = isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
+
+                        const disabled = !habilitar || bloqueadoPorCargo;
+
+                        return (
+                            <button
+                                key={f}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => handleClickFase(f)}
+                                className={`rounded-md border px-3 py-2 text-sm text-left ${!disabled ? "hover:bg-muted" : "pointer-events-none opacity-50"
+                                    }`}
+                            >
+                                {acaoToStatus(f)}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
         </Modal>
     );
 }

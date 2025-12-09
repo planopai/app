@@ -148,6 +148,11 @@ function enqueueOffline(payload: any, errMsg?: string) {
     return items.length;
 }
 
+function isPageVisible() {
+    if (typeof document === "undefined") return true;
+    return !document.hidden;
+}
+
 // ✅ tenta resolver nome do falecido (ajuste os campos conforme seu Registro real)
 function resolveFalecidoNome(r: any): string {
     return String(
@@ -158,6 +163,19 @@ function resolveFalecidoNome(r: any): string {
         r?.nome ??
         ""
     ).trim();
+}
+
+/* -------------------- assinaturas leves p/ evitar re-render à toa -------------------- */
+function registroSig(arr: Registro[]) {
+    // se seu backend tiver "updated_at" / "dt_update" etc, inclua aqui
+    return arr
+        .map((r: any) => `${String(r?.id ?? "")}:${String(r?.status ?? "")}:${String(r?.updated_at ?? r?.dt_update ?? "")}`)
+        .join("|");
+}
+function avisoSig(arr: Aviso[]) {
+    return (arr as any[])
+        .map((a: any) => `${String(a?.id ?? "")}:${String(a?.updated_at ?? a?.dt_update ?? "")}:${String(a?.mensagem ?? "")}`)
+        .join("|");
 }
 
 export default function AcompanhamentoPage() {
@@ -249,39 +267,68 @@ export default function AcompanhamentoPage() {
        =========================== */
     const flushingRef = useRef(false);
 
-    const fetchRegistros = useCallback(async () => {
-        try {
-            const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
-                cache: "no-store",
-                headers: {
-                    Pragma: "no-cache",
-                    Expires: "0",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                },
-                credentials: "include",
-            });
+    /* ===========================
+       ✅ Abort + dedupe (mais rápido / menos re-render)
+       =========================== */
+    const regAbortRef = useRef<AbortController | null>(null);
+    const avAbortRef = useRef<AbortController | null>(null);
 
-            if (r.status === 401) return;
+    const lastRegSigRef = useRef<string>("");
+    const lastAvSigRef = useRef<string>("");
 
-            const data = await r.json().catch(() => null);
-            if (data?.need_login) return;
+    const fetchRegistros = useCallback(
+        async (opts?: { force?: boolean }) => {
+            // não puxa se estiver em background (economiza CPU/DB) — a não ser que force
+            if (!opts?.force && !isPageVisible()) return;
 
-            const sane: Registro[] = Array.isArray(data)
-                ? data.map((it: any) => ({
-                    ...it,
-                    id: it?.id != null ? String(it.id) : it.id,
-                    status: normalizarStatus(it?.status) ?? it?.status,
-                }))
-                : [];
+            // evita fetch concorrente (cancela anterior)
+            try {
+                regAbortRef.current?.abort();
+            } catch { }
+            const controller = new AbortController();
+            regAbortRef.current = controller;
 
-            setRegistros(sane);
-        } catch {
-            setRegistros([]);
-        }
-    }, []);
+            try {
+                const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
+                    cache: "no-store",
+                    headers: {
+                        Pragma: "no-cache",
+                        Expires: "0",
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                    },
+                    credentials: "include",
+                    signal: controller.signal,
+                });
+
+                if (r.status === 401) return;
+                const data = await r.json().catch(() => null);
+                if (data?.need_login) return;
+
+                const sane: Registro[] = Array.isArray(data)
+                    ? data.map((it: any) => ({
+                        ...it,
+                        id: it?.id != null ? String(it.id) : it.id,
+                        status: normalizarStatus(it?.status) ?? it?.status,
+                    }))
+                    : [];
+
+                // dedupe: só atualiza state se realmente mudou
+                const sig = registroSig(sane);
+                if (sig === lastRegSigRef.current) return;
+                lastRegSigRef.current = sig;
+
+                setRegistros(sane);
+            } catch (e: any) {
+                // Abort é normal quando troca o polling
+                if (e?.name === "AbortError") return;
+                // NÃO limpa a tabela (evita flicker). mantém último estado.
+            }
+        },
+        []
+    );
 
     const fetchRegistrosSafe = useCallback(async () => {
-        await fetchRegistros();
+        await fetchRegistros({ force: true });
     }, [fetchRegistros]);
 
     const flushOfflineQueue = useCallback(async () => {
@@ -348,19 +395,39 @@ export default function AcompanhamentoPage() {
     }, [fetchRegistrosSafe]);
 
     /* -------------------- Fetch helpers (avisos) -------------------- */
-    const fetchAvisos = useCallback(async () => {
-        try {
-            const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
-                credentials: "include",
-            });
-            if (r.status === 401) return;
-            const data = await r.json().catch(() => null);
-            if (data?.need_login) return;
-            setAvisos(Array.isArray(data) ? data : []);
-        } catch {
-            setAvisos([]);
-        }
-    }, []);
+    const fetchAvisos = useCallback(
+        async (opts?: { force?: boolean }) => {
+            if (!opts?.force && !isPageVisible()) return;
+
+            try {
+                avAbortRef.current?.abort();
+            } catch { }
+            const controller = new AbortController();
+            avAbortRef.current = controller;
+
+            try {
+                const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
+                    credentials: "include",
+                    signal: controller.signal,
+                });
+
+                if (r.status === 401) return;
+                const data = await r.json().catch(() => null);
+                if (data?.need_login) return;
+
+                const next = Array.isArray(data) ? (data as Aviso[]) : [];
+                const sig = avisoSig(next);
+                if (sig === lastAvSigRef.current) return;
+                lastAvSigRef.current = sig;
+
+                setAvisos(next);
+            } catch (e: any) {
+                if (e?.name === "AbortError") return;
+                // mantém último estado (sem flicker)
+            }
+        },
+        []
+    );
 
     const enviarAviso = useCallback(async () => {
         const val = (avisoInputRef.current?.value ?? "").trim();
@@ -378,7 +445,7 @@ export default function AcompanhamentoPage() {
             if (res?.sucesso) {
                 setAvisoMsg({ text: "Aviso adicionado!", ok: true });
                 if (avisoInputRef.current) avisoInputRef.current.value = "";
-                fetchAvisos();
+                fetchAvisos({ force: true });
             } else {
                 setAvisoMsg({ text: res?.erro || "Erro ao adicionar!", ok: false });
             }
@@ -398,7 +465,7 @@ export default function AcompanhamentoPage() {
                 });
                 if (res?.sucesso) {
                     setAvisoMsg({ text: "Aviso atualizado!", ok: true });
-                    fetchAvisos();
+                    fetchAvisos({ force: true });
                 } else {
                     setAvisoMsg({ text: res?.erro || "Erro ao editar!", ok: false });
                 }
@@ -421,7 +488,7 @@ export default function AcompanhamentoPage() {
                 });
                 if (res?.sucesso) {
                     setAvisoMsg({ text: "Aviso excluído!", ok: true });
-                    fetchAvisos();
+                    fetchAvisos({ force: true });
                 } else {
                     setAvisoMsg({ text: res?.erro || "Erro ao excluir!", ok: false });
                 }
@@ -443,7 +510,7 @@ export default function AcompanhamentoPage() {
                 });
                 if (res?.sucesso) {
                     setAvisoMsg({ text: "Aviso finalizado!", ok: true });
-                    fetchAvisos();
+                    fetchAvisos({ force: true });
                 } else {
                     setAvisoMsg({ text: res?.erro || "Erro ao finalizar!", ok: false });
                 }
@@ -454,38 +521,85 @@ export default function AcompanhamentoPage() {
         [fetchAvisos]
     );
 
-    /* -------------------- Ciclos -------------------- */
+    /* -------------------- Ciclos (mais rápidos e sem overlap) -------------------- */
     useEffect(() => {
-        fetchRegistros();
-        fetchAvisos();
+        // primeira carga (força)
+        fetchRegistros({ force: true });
+        fetchAvisos({ force: true });
         flushOfflineQueue();
     }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
 
     useEffect(() => {
-        const intReg = setInterval(fetchRegistros, 10000);
-        const intAv = setInterval(fetchAvisos, 3000);
-        const intFlush = setInterval(() => {
-            flushOfflineQueue();
-        }, 20000);
+        let cancelled = false;
+        let tReg: any = null;
+        let tAv: any = null;
+        let tFlush: any = null;
+
+        const loopReg = async () => {
+            if (cancelled) return;
+            await fetchRegistros();
+            // se estiver oculto, fica bem mais lento (economiza servidor)
+            const delay = isPageVisible() ? 10_000 : 60_000;
+            tReg = window.setTimeout(loopReg, delay);
+        };
+
+        const loopAv = async () => {
+            if (cancelled) return;
+            await fetchAvisos();
+            // avisos: rápido visível, lento em background
+            const delay = isPageVisible() ? 3_000 : 60_000;
+            tAv = window.setTimeout(loopAv, delay);
+        };
+
+        const loopFlush = async () => {
+            if (cancelled) return;
+            await flushOfflineQueue();
+            const delay = isPageVisible() ? 20_000 : 60_000;
+            tFlush = window.setTimeout(loopFlush, delay);
+        };
+
+        loopReg();
+        loopAv();
+        loopFlush();
 
         const onVis = () => {
             if (!document.hidden) {
-                fetchRegistros();
+                fetchRegistros({ force: true });
+                fetchAvisos({ force: true });
                 flushOfflineQueue();
             }
         };
         document.addEventListener("visibilitychange", onVis);
 
+        const onFocus = () => {
+            fetchRegistros({ force: true });
+            fetchAvisos({ force: true });
+            flushOfflineQueue();
+        };
+        window.addEventListener("focus", onFocus);
+
         const onOnline = () => {
             flushOfflineQueue();
+            fetchRegistros({ force: true });
+            fetchAvisos({ force: true });
         };
         window.addEventListener("online", onOnline);
 
         return () => {
-            clearInterval(intReg);
-            clearInterval(intAv);
-            clearInterval(intFlush);
+            cancelled = true;
+            if (tReg) clearTimeout(tReg);
+            if (tAv) clearTimeout(tAv);
+            if (tFlush) clearTimeout(tFlush);
+
+            try {
+                regAbortRef.current?.abort();
+            } catch { }
+            try {
+                avAbortRef.current?.abort();
+            } catch { }
+
             document.removeEventListener("visibilitychange", onVis);
+            window.removeEventListener("focus", onFocus);
             window.removeEventListener("online", onOnline);
         };
     }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
@@ -605,40 +719,37 @@ export default function AcompanhamentoPage() {
         setChooseTipoOpen(true);
     }, []);
 
-    const iniciarNovoRegistro = useCallback(
-        (tipo: TipoAtendimento) => {
-            setChooseTipoOpen(false);
-            setTipoAtendimento(tipo);
+    const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
+        setChooseTipoOpen(false);
+        setTipoAtendimento(tipo);
 
-            setWizardSubmitting(false);
-            setWizardEditing(false);
-            setWizardIdx(null);
-            setWizardRestrictGroup(null);
-            setWizardStep(0);
-            setWizardMsg(null);
-            setWizardTitle("Novo Registro");
+        setWizardSubmitting(false);
+        setWizardEditing(false);
+        setWizardIdx(null);
+        setWizardRestrictGroup(null);
+        setWizardStep(0);
+        setWizardMsg(null);
+        setWizardTitle("Novo Registro");
 
-            const empty: Registro = {};
-            (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+        const empty: Registro = {};
+        (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
 
-            if (tipo === "terceiro") {
-                empty.assistencia = "Não";
-                empty.tanato = "Não";
-                empty.ornamentacao = "Não";
-                (empty as any).tipo_atendimento = "terceiro";
-            } else {
-                (empty as any).tipo_atendimento = "funerario";
-            }
+        if (tipo === "terceiro") {
+            empty.assistencia = "Não";
+            empty.tanato = "Não";
+            empty.ornamentacao = "Não";
+            (empty as any).tipo_atendimento = "terceiro";
+        } else {
+            (empty as any).tipo_atendimento = "funerario";
+        }
 
-            setWizardData(empty);
-            setMateriais(defaultMateriais());
-            setArrumacao(defaultArrumacao());
-            setAssistenciaVal(String(empty.assistencia || ""));
-            setTanatoVal(String(empty.tanato || ""));
-            setWizardOpen(true);
-        },
-        [wizardStepIndexesForTipo, wizardStep, wizardData]
-    );
+        setWizardData(empty);
+        setMateriais(defaultMateriais());
+        setArrumacao(defaultArrumacao());
+        setAssistenciaVal(String(empty.assistencia || ""));
+        setTanatoVal(String(empty.tanato || ""));
+        setWizardOpen(true);
+    }, []);
 
     const abrirWizard = useCallback(
         (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
@@ -768,7 +879,7 @@ export default function AcompanhamentoPage() {
                     const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
                     addTerceiroIdToSession(novoId);
                 }
-                fetchRegistros();
+                fetchRegistros({ force: true });
                 setTimeout(() => setWizardOpen(false), 950);
             } else {
                 setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
@@ -886,7 +997,7 @@ export default function AcompanhamentoPage() {
                         setTeleStartFase(null);
                     }
 
-                    await fetchRegistros();
+                    await fetchRegistros({ force: true });
                     setAcaoOpen(false);
                 } else {
                     setAcaoMsg({
@@ -926,7 +1037,7 @@ export default function AcompanhamentoPage() {
                     id,
                     status: fase,
                 });
-                await fetchRegistros();
+                await fetchRegistros({ force: true });
             } catch (e: any) {
                 enqueueOffline({ acao: "atualizar_status", id, status: fase }, e?.message);
             } finally {
@@ -1048,9 +1159,7 @@ export default function AcompanhamentoPage() {
             <header className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Cadastre, acompanhe e atualize o status dos atendimentos.
-                    </p>
+                    <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
                 </div>
                 <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -1060,11 +1169,7 @@ export default function AcompanhamentoPage() {
                 </button>
             </header>
 
-            <TabelaAtendimentos
-                registros={registros}
-                onAcao={(id) => abrirPopupAcaoPorId(id)}
-                onInfo={(id) => abrirInfoPorId(id)}
-            />
+            <TabelaAtendimentos registros={registros} onAcao={(id) => abrirPopupAcaoPorId(id)} onInfo={(id) => abrirInfoPorId(id)} />
 
             <AvisosBox
                 avisos={avisos}
@@ -1122,21 +1227,9 @@ export default function AcompanhamentoPage() {
                 wizardSubmitting={wizardSubmitting}
             />
 
-            <MateriaisModal
-                open={materiaisOpen}
-                setOpen={setMateriaisOpen}
-                materiais={materiais}
-                setMateriais={setMateriais}
-                setWizardData={setWizardData}
-            />
+            <MateriaisModal open={materiaisOpen} setOpen={setMateriaisOpen} materiais={materiais} setMateriais={setMateriais} setWizardData={setWizardData} />
 
-            <ArrumacaoModal
-                open={arrumacaoOpen}
-                setOpen={setArrumacaoOpen}
-                arrumacao={arrumacao}
-                setArrumacao={setArrumacao}
-                setWizardData={setWizardData}
-            />
+            <ArrumacaoModal open={arrumacaoOpen} setOpen={setArrumacaoOpen} arrumacao={arrumacao} setArrumacao={setArrumacao} setWizardData={setWizardData} />
 
             <AcaoModal
                 open={acaoOpen}
@@ -1214,7 +1307,7 @@ export default function AcompanhamentoPage() {
                 registro={signIdx != null ? registros[signIdx] : undefined}
                 tipo={signTipo}
                 onSaved={() => {
-                    fetchRegistros();
+                    fetchRegistros({ force: true });
                 }}
             />
 
@@ -1224,7 +1317,7 @@ export default function AcompanhamentoPage() {
                 open={teleOpen}
                 onClose={() => {
                     setTeleOpen(false);
-                    fetchRegistros();
+                    fetchRegistros({ force: true });
                 }}
                 registro={findRegistroById(teleRegistroId)}
                 fase={teleFase}
@@ -1237,7 +1330,7 @@ export default function AcompanhamentoPage() {
                 onSaved={() => {
                     setTeleActive(false);
                     setTeleStartFase(null);
-                    fetchRegistros();
+                    fetchRegistros({ force: true });
                 }}
             />
 
