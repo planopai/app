@@ -60,21 +60,12 @@ export default function AcaoModal({
     setOpen,
     registros,
     acaoId,
-    registrarAcao,
-    acaoMsg,
-    acaoSubmitting,
     onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
-
-    // ✅ agora aceita "extra" (ex: {confirmar:true})
-    registrarAcao: (acao: string, extra?: Record<string, any>) => Promise<void>;
-
-    acaoMsg: { text: string; ok: boolean } | null;
-    acaoSubmitting: boolean;
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -82,6 +73,9 @@ export default function AcaoModal({
     const [meCargo, setMeCargo] = useState<string>("");
     const [meLoading, setMeLoading] = useState(false);
     const [meError, setMeError] = useState<string | null>(null);
+
+    const [acaoSubmitting, setAcaoSubmitting] = useState(false);
+    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
     // carrega cargo ao abrir modal
     useEffect(() => {
@@ -111,6 +105,7 @@ export default function AcaoModal({
 
     useEffect(() => {
         setFrontMsg(null);
+        setAcaoMsg(null);
     }, [open, acaoId]);
 
     const registroLocal = useMemo(() => {
@@ -245,8 +240,36 @@ export default function AcaoModal({
         return meCargo === "tanatopraxista";
     }
 
+    async function registrarAcaoHTTP(status: string, extra?: Record<string, any>) {
+        if (!acaoId) throw new Error("ID inválido.");
+
+        const payload = {
+            acao: "atualizar_status",
+            id: acaoId,
+            status,
+            ...(extra ?? {}),
+        };
+
+        const res = await fetch("/api/php/informativo.php", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+            throw new Error(data?.msg || `Erro (${res.status})`);
+        }
+    }
+
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
+        setAcaoMsg(null);
 
         const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
         if (!habilitar) return;
@@ -277,8 +300,15 @@ export default function AcaoModal({
             return;
         }
 
-        // ✅ envia confirmar:true para o PHP aceitar fase03/fase04
-        await registrarAcao(f, isConservacao ? { confirmar: true } : undefined);
+        try {
+            setAcaoSubmitting(true);
+            await registrarAcaoHTTP(f, isConservacao ? { confirmar: true } : undefined);
+            setAcaoMsg({ ok: true, text: "Ação registrada com sucesso." });
+        } catch (e: any) {
+            setAcaoMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
+        } finally {
+            setAcaoSubmitting(false);
+        }
     }
 
     return (
@@ -312,8 +342,6 @@ export default function AcaoModal({
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
 
                             const isConservacao = FASES_CONSERVACAO.includes(f);
-
-                            // só bloqueia por 
                             const bloqueadoPorCargo =
                                 isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
 
@@ -341,9 +369,7 @@ export default function AcaoModal({
                         })}
                     </div>
 
-                    {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
-                    )}
+                    {concluido && <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>}
                 </>
             )}
 
