@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+
 import { ArrumacaoState, MateriaisState, Registro, Aviso } from "./components/types";
 import {
     API,
@@ -21,17 +23,20 @@ import {
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
 import AvisosBox from "./components/AvisosBox";
-import Wizard from "./components/Wizard";
-import MateriaisModal from "./components/MateriaisModal";
-import ArrumacaoModal from "./components/ArrumacaoModal";
-import AcaoModal from "./components/AcaoModal";
-import InfoModal from "./components/InfoModal";
-import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
 import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
 
-// ✅ NOVO: modal de conferência antes do fase11
-import MateriaisConferenciaModal, { MatCheckItem, MateriaisConferenciaResult } from "./components/MateriaisConferenciaModal";
+// ✅ types do modal de conferência (type-only)
+import type { MatCheckItem, MateriaisConferenciaResult } from "./components/MateriaisConferenciaModal";
+
+// ✅ code-splitting (carrega só quando precisar)
+const Wizard = dynamic(() => import("./components/Wizard"), { ssr: false });
+const MateriaisModal = dynamic(() => import("./components/MateriaisModal"), { ssr: false });
+const ArrumacaoModal = dynamic(() => import("./components/ArrumacaoModal"), { ssr: false });
+const AcaoModal = dynamic(() => import("./components/AcaoModal"), { ssr: false });
+const InfoModal = dynamic(() => import("./components/InfoModal"), { ssr: false });
+const SignatureModal = dynamic(() => import("./components/SignatureModal"), { ssr: false });
+const MateriaisConferenciaModal = dynamic(() => import("./components/MateriaisConferenciaModal"), { ssr: false });
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -107,6 +112,27 @@ type OfflineQueueItem = {
 
 const OFFLINE_QUEUE_KEY = "acomp_offline_queue_v1";
 
+/* ✅ Cache (abrir instantâneo) */
+const LS_REG_KEY = "acomp_registros_cache_v1";
+const LS_AV_KEY = "acomp_avisos_cache_v1";
+
+function readLS<T>(k: string): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = localStorage.getItem(k);
+        if (!raw) return null;
+        return JSON.parse(raw) as T;
+    } catch {
+        return null;
+    }
+}
+function writeLS(k: string, v: any) {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(k, JSON.stringify(v));
+    } catch { }
+}
+
 function safeReadQueue(): OfflineQueueItem[] {
     if (typeof window === "undefined") return [];
     try {
@@ -167,23 +193,37 @@ function resolveFalecidoNome(r: any): string {
 
 /* -------------------- assinaturas leves p/ evitar re-render à toa -------------------- */
 function registroSig(arr: Registro[]) {
-    // se seu backend tiver "updated_at" / "dt_update" etc, inclua aqui
     return arr
-        .map((r: any) => `${String(r?.id ?? "")}:${String(r?.status ?? "")}:${String(r?.updated_at ?? r?.dt_update ?? "")}`)
+        .map(
+            (r: any) =>
+                `${String(r?.id ?? "")}:${String(r?.status ?? "")}:${String(
+                    r?.updated_at ?? r?.dt_update ?? ""
+                )}`
+        )
         .join("|");
 }
 function avisoSig(arr: Aviso[]) {
     return (arr as any[])
-        .map((a: any) => `${String(a?.id ?? "")}:${String(a?.updated_at ?? a?.dt_update ?? "")}:${String(a?.mensagem ?? "")}`)
+        .map(
+            (a: any) =>
+                `${String(a?.id ?? "")}:${String(a?.updated_at ?? a?.dt_update ?? "")}:${String(
+                    a?.mensagem ?? ""
+                )}`
+        )
         .join("|");
 }
 
 export default function AcompanhamentoPage() {
-    // Tabela
-    const [registros, setRegistros] = useState<Registro[]>([]);
+    // ✅ Tabela (carrega do cache para abrir instantâneo)
+    const [registros, setRegistros] = useState<Registro[]>(
+        () => readLS<Registro[]>(LS_REG_KEY) ?? []
+    );
 
-    // Avisos
-    const [avisos, setAvisos] = useState<Aviso[]>([]);
+    // ✅ Avisos (cache)
+    const [avisos, setAvisos] = useState<Aviso[]>(
+        () => readLS<Aviso[]>(LS_AV_KEY) ?? []
+    );
+
     const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const avisoInputRef = useRef<HTMLInputElement>(null);
 
@@ -219,7 +259,7 @@ export default function AcompanhamentoPage() {
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-    // ✅ NOVO: conferência de materiais antes do "Material Recolhido"
+    // ✅ conferência de materiais antes do fase11
     const [matCheckOpen, setMatCheckOpen] = useState(false);
     const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
     const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
@@ -273,59 +313,52 @@ export default function AcompanhamentoPage() {
     const regAbortRef = useRef<AbortController | null>(null);
     const avAbortRef = useRef<AbortController | null>(null);
 
-    const lastRegSigRef = useRef<string>("");
-    const lastAvSigRef = useRef<string>("");
+    const lastRegSigRef = useRef<string>(registroSig(readLS<Registro[]>(LS_REG_KEY) ?? []));
+    const lastAvSigRef = useRef<string>(avisoSig(readLS<Aviso[]>(LS_AV_KEY) ?? []));
 
-    const fetchRegistros = useCallback(
-        async (opts?: { force?: boolean }) => {
-            // não puxa se estiver em background (economiza CPU/DB) — a não ser que force
-            if (!opts?.force && !isPageVisible()) return;
+    const fetchRegistros = useCallback(async (opts?: { force?: boolean }) => {
+        if (!opts?.force && !isPageVisible()) return;
 
-            // evita fetch concorrente (cancela anterior)
-            try {
-                regAbortRef.current?.abort();
-            } catch { }
-            const controller = new AbortController();
-            regAbortRef.current = controller;
+        try {
+            regAbortRef.current?.abort();
+        } catch { }
+        const controller = new AbortController();
+        regAbortRef.current = controller;
 
-            try {
-                const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
-                    cache: "no-store",
-                    headers: {
-                        Pragma: "no-cache",
-                        Expires: "0",
-                        "Cache-Control": "no-cache, no-store, must-revalidate",
-                    },
-                    credentials: "include",
-                    signal: controller.signal,
-                });
+        try {
+            const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
+                cache: "no-store",
+                headers: {
+                    Pragma: "no-cache",
+                    Expires: "0",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                },
+                credentials: "include",
+                signal: controller.signal,
+            });
 
-                if (r.status === 401) return;
-                const data = await r.json().catch(() => null);
-                if (data?.need_login) return;
+            if (r.status === 401) return;
+            const data = await r.json().catch(() => null);
+            if (data?.need_login) return;
 
-                const sane: Registro[] = Array.isArray(data)
-                    ? data.map((it: any) => ({
-                        ...it,
-                        id: it?.id != null ? String(it.id) : it.id,
-                        status: normalizarStatus(it?.status) ?? it?.status,
-                    }))
-                    : [];
+            const sane: Registro[] = Array.isArray(data)
+                ? data.map((it: any) => ({
+                    ...it,
+                    id: it?.id != null ? String(it.id) : it.id,
+                    status: normalizarStatus(it?.status) ?? it?.status,
+                }))
+                : [];
 
-                // dedupe: só atualiza state se realmente mudou
-                const sig = registroSig(sane);
-                if (sig === lastRegSigRef.current) return;
-                lastRegSigRef.current = sig;
+            const sig = registroSig(sane);
+            if (sig === lastRegSigRef.current) return;
+            lastRegSigRef.current = sig;
 
-                setRegistros(sane);
-            } catch (e: any) {
-                // Abort é normal quando troca o polling
-                if (e?.name === "AbortError") return;
-                // NÃO limpa a tabela (evita flicker). mantém último estado.
-            }
-        },
-        []
-    );
+            setRegistros(sane);
+            writeLS(LS_REG_KEY, sane);
+        } catch (e: any) {
+            if (e?.name === "AbortError") return;
+        }
+    }, []);
 
     const fetchRegistrosSafe = useCallback(async () => {
         await fetchRegistros({ force: true });
@@ -395,39 +428,36 @@ export default function AcompanhamentoPage() {
     }, [fetchRegistrosSafe]);
 
     /* -------------------- Fetch helpers (avisos) -------------------- */
-    const fetchAvisos = useCallback(
-        async (opts?: { force?: boolean }) => {
-            if (!opts?.force && !isPageVisible()) return;
+    const fetchAvisos = useCallback(async (opts?: { force?: boolean }) => {
+        if (!opts?.force && !isPageVisible()) return;
 
-            try {
-                avAbortRef.current?.abort();
-            } catch { }
-            const controller = new AbortController();
-            avAbortRef.current = controller;
+        try {
+            avAbortRef.current?.abort();
+        } catch { }
+        const controller = new AbortController();
+        avAbortRef.current = controller;
 
-            try {
-                const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
-                    credentials: "include",
-                    signal: controller.signal,
-                });
+        try {
+            const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
+                credentials: "include",
+                signal: controller.signal,
+            });
 
-                if (r.status === 401) return;
-                const data = await r.json().catch(() => null);
-                if (data?.need_login) return;
+            if (r.status === 401) return;
+            const data = await r.json().catch(() => null);
+            if (data?.need_login) return;
 
-                const next = Array.isArray(data) ? (data as Aviso[]) : [];
-                const sig = avisoSig(next);
-                if (sig === lastAvSigRef.current) return;
-                lastAvSigRef.current = sig;
+            const next = Array.isArray(data) ? (data as Aviso[]) : [];
+            const sig = avisoSig(next);
+            if (sig === lastAvSigRef.current) return;
+            lastAvSigRef.current = sig;
 
-                setAvisos(next);
-            } catch (e: any) {
-                if (e?.name === "AbortError") return;
-                // mantém último estado (sem flicker)
-            }
-        },
-        []
-    );
+            setAvisos(next);
+            writeLS(LS_AV_KEY, next);
+        } catch (e: any) {
+            if (e?.name === "AbortError") return;
+        }
+    }, []);
 
     const enviarAviso = useCallback(async () => {
         const val = (avisoInputRef.current?.value ?? "").trim();
@@ -523,7 +553,6 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Ciclos (mais rápidos e sem overlap) -------------------- */
     useEffect(() => {
-        // primeira carga (força)
         fetchRegistros({ force: true });
         fetchAvisos({ force: true });
         flushOfflineQueue();
@@ -538,7 +567,6 @@ export default function AcompanhamentoPage() {
         const loopReg = async () => {
             if (cancelled) return;
             await fetchRegistros();
-            // se estiver oculto, fica bem mais lento (economiza servidor)
             const delay = isPageVisible() ? 10_000 : 60_000;
             tReg = window.setTimeout(loopReg, delay);
         };
@@ -546,7 +574,6 @@ export default function AcompanhamentoPage() {
         const loopAv = async () => {
             if (cancelled) return;
             await fetchAvisos();
-            // avisos: rápido visível, lento em background
             const delay = isPageVisible() ? 3_000 : 60_000;
             tAv = window.setTimeout(loopAv, delay);
         };
@@ -678,41 +705,47 @@ export default function AcompanhamentoPage() {
     };
 
     /* -------------------- salvar conferência no backend -------------------- */
-    const salvarConferenciaNoPHP = useCallback(async (data: {
-        registro_id: string | number | null | undefined;
-        falecido_nome: string;
-        observacao: string;
-        itens: Array<{
-            key: string;
-            nome: string;
-            qtd: number;
-            ok: 0 | 1;
-            nao_conforme: 0 | 1;
-        }>;
-    }) => {
-        const registro_id = data.registro_id != null ? String(data.registro_id) : "";
-        if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+    const salvarConferenciaNoPHP = useCallback(
+        async (data: {
+            registro_id: string | number | null | undefined;
+            falecido_nome: string;
+            observacao: string;
+            itens: Array<{
+                key: string;
+                nome: string;
+                qtd: number;
+                ok: 0 | 1;
+                nao_conforme: 0 | 1;
+            }>;
+        }) => {
+            const registro_id = data.registro_id != null ? String(data.registro_id) : "";
+            if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-        const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-                registro_id,
-                falecido_nome: String(data.falecido_nome || "").trim(),
-                observacao: String(data.observacao || "").trim(),
-                itens: Array.isArray(data.itens) ? data.itens : [],
-            }),
-        });
+            const r = await fetch(
+                `${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        registro_id,
+                        falecido_nome: String(data.falecido_nome || "").trim(),
+                        observacao: String(data.observacao || "").trim(),
+                        itens: Array.isArray(data.itens) ? data.itens : [],
+                    }),
+                }
+            );
 
-        if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
-        const json = await r.json().catch(() => null);
-        if (!json) throw new Error("Resposta inválida do servidor.");
-        if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-        if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
+            if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+            const json = await r.json().catch(() => null);
+            if (!json) throw new Error("Resposta inválida do servidor.");
+            if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+            if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
 
-        return json;
-    }, []);
+            return json;
+        },
+        []
+    );
 
     /* -------------------- Aberturas -------------------- */
     const abrirNovoRegistro = useCallback(() => {
@@ -941,8 +974,6 @@ export default function AcompanhamentoPage() {
                     .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
 
                 setMatCheckItens(itens);
-
-                // ✅ contexto para salvar no banco
                 setMatCheckRegistroId(reg?.id != null ? String(reg.id) : String(acaoId));
                 setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
 
@@ -986,12 +1017,7 @@ export default function AcompanhamentoPage() {
                         ok: true,
                     });
 
-                    if (
-                        teleActive &&
-                        teleStartFase &&
-                        STOP_BY_START[teleStartFase] &&
-                        STOP_BY_START[teleStartFase] === acao
-                    ) {
+                    if (teleActive && teleStartFase && STOP_BY_START[teleStartFase] && STOP_BY_START[teleStartFase] === acao) {
                         await teleRef.current?.stopAndSave();
                         setTeleActive(false);
                         setTeleStartFase(null);
@@ -1115,8 +1141,7 @@ export default function AcompanhamentoPage() {
     /* -------------------- Resumos -------------------- */
     const materiaisSelecionadosResumo = useMemo(() => {
         const matsPrefer = (wizardData as any)?.materiais;
-        const mats: any =
-            matsPrefer && typeof matsPrefer === "object" && Object.keys(matsPrefer).length > 0 ? matsPrefer : materiais;
+        const mats: any = matsPrefer && typeof matsPrefer === "object" && Object.keys(matsPrefer).length > 0 ? matsPrefer : materiais;
 
         const list = Object.values(mats || {})
             .filter((it: any) => it?.checked && Number(it?.qtd ?? 0) > 0)
@@ -1148,8 +1173,7 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Helpers -------------------- */
     const findRegistroById = useCallback(
-        (id: Registro["id"] | null): Registro | undefined =>
-            id == null ? undefined : registros.find((x) => String(x.id) === String(id)),
+        (id: Registro["id"] | null): Registro | undefined => (id == null ? undefined : registros.find((x) => String(x.id) === String(id))),
         [registros]
     );
 
@@ -1186,16 +1210,10 @@ export default function AcompanhamentoPage() {
             <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
                 <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
                 <div className="mt-4 grid gap-2">
-                    <button
-                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-                        onClick={() => iniciarNovoRegistro("funerario")}
-                    >
+                    <button className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted" onClick={() => iniciarNovoRegistro("funerario")}>
                         Atendimento Funerário
                     </button>
-                    <button
-                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-                        onClick={() => iniciarNovoRegistro("terceiro")}
-                    >
+                    <button className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted" onClick={() => iniciarNovoRegistro("terceiro")}>
                         Serviço de Outra Empresa
                     </button>
                 </div>
@@ -1242,7 +1260,7 @@ export default function AcompanhamentoPage() {
                 onVeiculoRequired={handleVeiculoRequired}
             />
 
-            {/* ✅ NOVO: Conferência obrigatória antes de Material Recolhido */}
+            {/* ✅ Conferência obrigatória antes de Material Recolhido */}
             <MateriaisConferenciaModal
                 open={matCheckOpen}
                 itens={matCheckItens}
