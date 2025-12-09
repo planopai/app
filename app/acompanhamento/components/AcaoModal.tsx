@@ -13,13 +13,9 @@ import {
     consultarStatusAtual,
 } from "./helpers";
 
-// Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
-
-// Fase final
 const FASE_FINAL = "fase11" as Fase;
 
-/** Lê da sessionStorage a lista de IDs marcados como "Serviço de Outra Empresa" */
 function isTerceiroBySession(id?: string | number | null | undefined) {
     try {
         if (id == null) return false;
@@ -37,8 +33,28 @@ function isNao(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
-/** Fases que exigem seleção de veículo/telemetria */
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
+const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
+
+async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
+    const res = await fetch("/informativo.php?me=1", {
+        method: "GET",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+        throw new Error(data?.msg || `Erro ao consultar usuário (${res.status})`);
+    }
+
+    return {
+        usuario: (data?.usuario || "").toString(),
+        cargo: (data?.cargo || "").toString().trim().toLowerCase(),
+    };
+}
 
 export default function AcaoModal({
     open,
@@ -48,34 +64,72 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
-    /** callback disparado quando a fase exige veículo */
     onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
-    registrarAcao: (acao: string) => Promise<void>;
+
+    // ✅ agora aceita "extra" (ex: { confirmar: true })
+    registrarAcao: (acao: string, extra?: Record<string, any>) => Promise<void>;
+
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
-    /** ✅ flexibilizamos a tipagem para casar com o page.tsx */
     onVeiculoRequired?: (
         id: string | number | null | undefined,
         fase: string
     ) => void;
 }) {
-    // ---------- 1) Registro local (frontend) ----------
+    const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(
+        null
+    );
+
+    const [meCargo, setMeCargo] = useState<string>("");
+    const [meLoading, setMeLoading] = useState(false);
+    const [meError, setMeError] = useState<string | null>(null);
+
+    // carrega cargo ao abrir modal
+    useEffect(() => {
+        let cancel = false;
+
+        async function run() {
+            setMeError(null);
+            setMeCargo("");
+            if (!open) return;
+
+            setMeLoading(true);
+            try {
+                const me = await consultarMe();
+                if (!cancel) setMeCargo(me.cargo);
+            } catch (e: any) {
+                if (!cancel) setMeError(e?.message || "Falha ao consultar permissões.");
+            } finally {
+                if (!cancel) setMeLoading(false);
+            }
+        }
+
+        run();
+        return () => {
+            cancel = true;
+        };
+    }, [open]);
+
+    useEffect(() => {
+        setFrontMsg(null);
+    }, [open, acaoId]);
+
     const registroLocal = useMemo(() => {
         const r =
             acaoId != null
                 ? registros.find((x) => String(x.id) === String(acaoId))
                 : undefined;
         if (!r) return undefined;
+
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
-    // ---------- 2) Estado "online" vindo do backend ----------
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -87,15 +141,18 @@ export default function AcaoModal({
 
     useEffect(() => {
         let cancel = false;
+
         async function run() {
             setOnline(null);
             setOnlineError(null);
 
             if (!open || !acaoId) return;
             setLoadingOnline(true);
+
             try {
                 const s = await consultarStatusAtual(acaoId);
                 if (cancel) return;
+
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
                     id: String(s.id ?? acaoId),
@@ -104,19 +161,18 @@ export default function AcaoModal({
                     tanato: s.tanato || "",
                 });
             } catch (e: any) {
-                if (!cancel)
-                    setOnlineError(e?.message || "Falha ao consultar status.");
+                if (!cancel) setOnlineError(e?.message || "Falha ao consultar status.");
             } finally {
                 if (!cancel) setLoadingOnline(false);
             }
         }
+
         run();
         return () => {
             cancel = true;
         };
     }, [open, acaoId]);
 
-    // Dados efetivos usados na UI (prefere online; cai para local) + assistencia
     const efetivo = useMemo(() => {
         if (online) {
             return {
@@ -137,7 +193,6 @@ export default function AcaoModal({
         return null;
     }, [online, registroLocal]);
 
-    // Detecta se é "Serviço de Outra Empresa"
     const isTerceiro =
         isTerceiroBySession(acaoId) ||
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
@@ -150,14 +205,12 @@ export default function AcaoModal({
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando =
-        !!efetivo &&
-        salasMemorial.includes((efetivo.local_velorio || "").trim());
-    const skipMaterialRecolhido =
-        !!efetivo && isNao(efetivo.assistencia);
+        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
-    // Fases visíveis
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
+
         return (fases as readonly Fase[]).filter((f) => {
             if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
@@ -167,18 +220,16 @@ export default function AcaoModal({
         }) as Fase[];
     }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipMaterialRecolhido]);
 
-    // Próxima fase calculada
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
+
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        const isFinal = isTerceiro
-            ? efetivo.status === "fase10"
-            : efetivo.status === FASE_FINAL;
+        const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
         if (isFinal) return null;
 
-        let p = proximaFaseDoRegistro(
+        const p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
@@ -187,6 +238,7 @@ export default function AcaoModal({
             },
             visiveis as readonly string[]
         ) as Fase | null;
+
         if (p) return p;
 
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
@@ -200,8 +252,54 @@ export default function AcaoModal({
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
     const concluido =
-        !!efetivo &&
-        (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+        !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+
+    // ✅ regra única de permissão para conservação
+    const podeConservacao = useMemo(() => meCargo === "tanatopraxista", [meCargo]);
+
+    // ✅ fail-safe: se não conseguiu carregar cargo, não libera conservação
+    const conservacaoBloqueadaPorPermissao = useMemo(() => {
+        if (!open) return true;
+        if (meLoading) return true;
+        if (meError) return true;
+        if (!meCargo) return true;
+        return !podeConservacao;
+    }, [open, meLoading, meError, meCargo, podeConservacao]);
+
+    async function handleClickFase(f: Fase) {
+        setFrontMsg(null);
+
+        const habilitarBase = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+        if (!habilitarBase) return;
+
+        const requiresVehicle = FASES_COM_VEICULO.includes(f);
+        const isConservacao = FASES_CONSERVACAO.includes(f);
+
+        // ✅ bloqueia já no click também (além do disabled do botão)
+        if (isConservacao && conservacaoBloqueadaPorPermissao) {
+            if (meLoading) {
+                setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
+            } else if (meError) {
+                setFrontMsg({ ok: false, text: meError });
+            } else {
+                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
+            }
+            return;
+        }
+
+        if (isConservacao) {
+            const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
+            if (!ok) return;
+        }
+
+        if (requiresVehicle && onVeiculoRequired) {
+            onVeiculoRequired(acaoId ?? null, f);
+            return;
+        }
+
+        // ✅ envia confirmar:true para o PHP aceitar fase03/fase04
+        await registrarAcao(f, isConservacao ? { confirmar: true } : undefined);
+    }
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
@@ -233,27 +331,30 @@ export default function AcaoModal({
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-                            const requiresVehicle = FASES_COM_VEICULO.includes(f);
+                            const habilitarBase = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+
+                            const isConservacao = FASES_CONSERVACAO.includes(f);
+                            const bloqueadoPorCargo = isConservacao ? conservacaoBloqueadaPorPermissao : false;
+
+                            const disabled = !habilitarBase || bloqueadoPorCargo;
+
+                            let title = "Aguardando etapas anteriores";
+                            if (habilitarBase) title = "Confirmar próxima etapa";
+                            if (bloqueadoPorCargo) {
+                                if (meLoading) title = "Carregando permissões…";
+                                else if (meError) title = "Falha ao consultar permissões";
+                                else title = "Apenas Tanatopraxista";
+                            }
 
                             return (
                                 <button
                                     key={f}
                                     type="button"
-                                    disabled={!habilitar}
-                                    onClick={() => {
-                                        if (!habilitar) return;
-                                        if (requiresVehicle && onVeiculoRequired) {
-                                            onVeiculoRequired(acaoId ?? null, f);
-                                        } else {
-                                            registrarAcao(f);
-                                        }
-                                    }}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
+                                    disabled={disabled}
+                                    onClick={() => handleClickFase(f)}
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${!disabled ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
-                                    title={
-                                        habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"
-                                    }
+                                    title={title}
                                 >
                                     {acaoToStatus(f)}
                                 </button>
@@ -267,6 +368,12 @@ export default function AcaoModal({
                         </p>
                     )}
                 </>
+            )}
+
+            {frontMsg && (
+                <TextFeedback kind={frontMsg.ok ? "success" : "error"}>
+                    {frontMsg.text}
+                </TextFeedback>
             )}
 
             {acaoMsg && (
