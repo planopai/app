@@ -13,9 +13,13 @@ import {
     consultarStatusAtual,
 } from "./helpers";
 
+// Tipo da fase derivado do tuple "fases"
 type Fase = (typeof fases)[number];
+
+// Fase final
 const FASE_FINAL = "fase11" as Fase;
 
+/** Lê da sessionStorage a lista de IDs marcados como "Serviço de Outra Empresa" */
 function isTerceiroBySession(id?: string | number | null | undefined) {
     try {
         if (id == null) return false;
@@ -33,26 +37,8 @@ function isNao(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
+/** Fases que exigem seleção de veículo/telemetria */
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
-const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
-
-async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
-    const res = await fetch("/informativo.php?me=1", {
-        method: "GET",
-        credentials: "include",
-        headers: { "Accept": "application/json" },
-    });
-
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) {
-        throw new Error(data?.msg || `Erro ao consultar usuário (${res.status})`);
-    }
-    return {
-        usuario: (data?.usuario || "").toString(),
-        cargo: (data?.cargo || "").toString().trim().toLowerCase(),
-    };
-}
 
 export default function AcaoModal({
     open,
@@ -62,62 +48,34 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
+    /** callback disparado quando a fase exige veículo */
     onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
-
-    // ✅ agora aceita "extra" (ex: {confirmar:true})
-    registrarAcao: (acao: string, extra?: Record<string, any>) => Promise<void>;
-
+    registrarAcao: (acao: string) => Promise<void>;
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
-    onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
+    /** ✅ flexibilizamos a tipagem para casar com o page.tsx */
+    onVeiculoRequired?: (
+        id: string | number | null | undefined,
+        fase: string
+    ) => void;
 }) {
-    const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
-
-    const [meCargo, setMeCargo] = useState<string>("");
-    const [meLoading, setMeLoading] = useState(false);
-    const [meError, setMeError] = useState<string | null>(null);
-
-    // carrega cargo ao abrir modal
-    useEffect(() => {
-        let cancel = false;
-        async function run() {
-            setMeError(null);
-            setMeCargo("");
-            if (!open) return;
-
-            setMeLoading(true);
-            try {
-                const me = await consultarMe();
-                if (!cancel) setMeCargo(me.cargo);
-            } catch (e: any) {
-                if (!cancel) setMeError(e?.message || "Falha ao consultar permissões.");
-            } finally {
-                if (!cancel) setMeLoading(false);
-            }
-        }
-        run();
-        return () => {
-            cancel = true;
-        };
-    }, [open]);
-
-    useEffect(() => {
-        setFrontMsg(null);
-    }, [open, acaoId]);
-
+    // ---------- 1) Registro local (frontend) ----------
     const registroLocal = useMemo(() => {
         const r =
-            acaoId != null ? registros.find((x) => String(x.id) === String(acaoId)) : undefined;
+            acaoId != null
+                ? registros.find((x) => String(x.id) === String(acaoId))
+                : undefined;
         if (!r) return undefined;
         const statusFix = (normalizarStatus(r.status) ?? "fase00") as Fase;
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
+    // ---------- 2) Estado "online" vindo do backend ----------
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -129,18 +87,15 @@ export default function AcaoModal({
 
     useEffect(() => {
         let cancel = false;
-
         async function run() {
             setOnline(null);
             setOnlineError(null);
 
             if (!open || !acaoId) return;
             setLoadingOnline(true);
-
             try {
                 const s = await consultarStatusAtual(acaoId);
                 if (cancel) return;
-
                 const statusFix = (normalizarStatus(s.status) ?? "fase00") as Fase;
                 setOnline({
                     id: String(s.id ?? acaoId),
@@ -149,18 +104,19 @@ export default function AcaoModal({
                     tanato: s.tanato || "",
                 });
             } catch (e: any) {
-                if (!cancel) setOnlineError(e?.message || "Falha ao consultar status.");
+                if (!cancel)
+                    setOnlineError(e?.message || "Falha ao consultar status.");
             } finally {
                 if (!cancel) setLoadingOnline(false);
             }
         }
-
         run();
         return () => {
             cancel = true;
         };
     }, [open, acaoId]);
 
+    // Dados efetivos usados na UI (prefere online; cai para local) + assistencia
     const efetivo = useMemo(() => {
         if (online) {
             return {
@@ -181,6 +137,7 @@ export default function AcaoModal({
         return null;
     }, [online, registroLocal]);
 
+    // Detecta se é "Serviço de Outra Empresa"
     const isTerceiro =
         isTerceiroBySession(acaoId) ||
         (registroLocal as any)?.tipo_atendimento === "terceiro" ||
@@ -193,9 +150,12 @@ export default function AcaoModal({
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando =
-        !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
-    const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
+        !!efetivo &&
+        salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipMaterialRecolhido =
+        !!efetivo && isNao(efetivo.assistencia);
 
+    // Fases visíveis
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
         return (fases as readonly Fase[]).filter((f) => {
@@ -207,16 +167,18 @@ export default function AcaoModal({
         }) as Fase[];
     }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipMaterialRecolhido]);
 
+    // Próxima fase calculada
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
-
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
+        const isFinal = isTerceiro
+            ? efetivo.status === "fase10"
+            : efetivo.status === FASE_FINAL;
         if (isFinal) return null;
 
-        const p = proximaFaseDoRegistro(
+        let p = proximaFaseDoRegistro(
             {
                 status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
@@ -225,7 +187,6 @@ export default function AcaoModal({
             },
             visiveis as readonly string[]
         ) as Fase | null;
-
         if (p) return p;
 
         const idxAtual = fluxoCompleto.indexOf(efetivo.status as Fase);
@@ -239,51 +200,8 @@ export default function AcaoModal({
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
     const concluido =
-        !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
-
-    function podeConservacao(): boolean {
-        return meCargo === "tanatopraxista";
-    }
-
-    async function handleClickFase(f: Fase) {
-        setFrontMsg(null);
-
-        const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-        if (!habilitar) return;
-
-        const requiresVehicle = FASES_COM_VEICULO.includes(f);
-        const isConservacao = FASES_CONSERVACAO.includes(f);
-
-        if (isConservacao) {
-            if (meLoading) {
-                setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
-                return;
-            }
-            if (meError) {
-                // se não conseguiu ler cargo, melhor não “chutar”
-                setFrontMsg({ ok: false, text: meError });
-                return;
-            }
-            if (!podeConservacao()) {
-                setFrontMsg({
-                    ok: false,
-                    text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista.",
-                });
-                return;
-            }
-
-            const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
-            if (!ok) return;
-        }
-
-        if (requiresVehicle && onVeiculoRequired) {
-            onVeiculoRequired(acaoId ?? null, f);
-            return;
-        }
-
-        // ✅ envia confirmar:true para o PHP aceitar fase03/fase04
-        await registrarAcao(f, isConservacao ? { confirmar: true } : undefined);
-    }
+        !!efetivo &&
+        (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
@@ -293,7 +211,9 @@ export default function AcaoModal({
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                 {!loadingOnline && onlineError && (
-                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
+                    <span className="text-red-600">
+                        {onlineError} — exibindo dados locais como fallback.
+                    </span>
                 )}
             </div>
 
@@ -314,28 +234,25 @@ export default function AcaoModal({
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
                             const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-
-                            // opcional: já “desabilita visualmente” conservação se não tanato
-                            const isConservacao = FASES_CONSERVACAO.includes(f);
-                            const bloqueadoPorCargo =
-                                isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
-
-                            const disabled = !habilitar || bloqueadoPorCargo;
+                            const requiresVehicle = FASES_COM_VEICULO.includes(f);
 
                             return (
                                 <button
                                     key={f}
                                     type="button"
-                                    disabled={disabled}
-                                    onClick={() => handleClickFase(f)}
-                                    className={`rounded-md border px-3 py-2 text-sm text-left ${!disabled ? "hover:bg-muted" : "pointer-events-none opacity-50"
+                                    disabled={!habilitar}
+                                    onClick={() => {
+                                        if (!habilitar) return;
+                                        if (requiresVehicle && onVeiculoRequired) {
+                                            onVeiculoRequired(acaoId ?? null, f);
+                                        } else {
+                                            registrarAcao(f);
+                                        }
+                                    }}
+                                    className={`rounded-md border px-3 py-2 text-sm text-left ${habilitar ? "hover:bg-muted" : "pointer-events-none opacity-50"
                                         }`}
                                     title={
-                                        bloqueadoPorCargo
-                                            ? "Apenas Tanatopraxista"
-                                            : habilitar
-                                                ? "Confirmar próxima etapa"
-                                                : "Aguardando etapas anteriores"
+                                        habilitar ? "Confirmar próxima etapa" : "Aguardando etapas anteriores"
                                     }
                                 >
                                     {acaoToStatus(f)}
@@ -345,16 +262,18 @@ export default function AcaoModal({
                     </div>
 
                     {concluido && (
-                        <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Fluxo concluído para este registro.
+                        </p>
                     )}
                 </>
             )}
 
-            {/* ✅ mostra primeiro msg local do front */}
-            {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
-
-            {/* ✅ depois msg do backend */}
-            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
+            {acaoMsg && (
+                <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>
+                    {acaoMsg.text}
+                </TextFeedback>
+            )}
         </Modal>
     );
 }
