@@ -588,7 +588,10 @@ export default function Page() {
     // ======= ESTOQUE =======
     const [qEstoque, setQEstoque] = useState('');
     const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID | 'Todos'>('Todos');
+    const [catFiltroEstoque, setCatFiltroEstoque] = useState<ID | 'Todos'>('Todos');
+    const [fabFiltroEstoque, setFabFiltroEstoque] = useState<ID | 'Todos'>('Todos');
     const [onlyLow, setOnlyLow] = useState(false);
+
 
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
@@ -599,12 +602,26 @@ export default function Page() {
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
 
+            // filtro depósito
             if (depFiltroEstoque !== 'Todos' && d.id !== depFiltroEstoque) continue;
+
+            // filtro categoria
+            if (catFiltroEstoque !== 'Todos') {
+                const pid = Number(p.categoria_id || 0);
+                if (pid !== Number(catFiltroEstoque)) continue;
+            }
+
+            // filtro fabricante
+            if (fabFiltroEstoque !== 'Todos') {
+                const fid = Number(p.fabricante_id || 0);
+                if (fid !== Number(fabFiltroEstoque)) continue;
+            }
 
             const qtd = clampInt(s.quantidade);
             const min = clampInt(p.minimo);
             if (onlyLow && !(qtd <= min)) continue;
 
+            // busca textual (inclui depósito + categoria + fabricante)
             if (qq) {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : '') || '';
                 const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : '') || '';
@@ -615,9 +632,24 @@ export default function Page() {
             rows.push({ p, d, qtd, s });
         }
 
-        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR'));
+        rows.sort(
+            (a, b) =>
+                a.p.nome.localeCompare(b.p.nome, 'pt-BR') ||
+                a.d.nome.localeCompare(b.d.nome, 'pt-BR')
+        );
         return rows;
-    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, onlyLow, catById, fabById]);
+    }, [
+        saldos,
+        prodById,
+        depById,
+        qEstoque,
+        depFiltroEstoque,
+        catFiltroEstoque,
+        fabFiltroEstoque,
+        onlyLow,
+        catById,
+        fabById,
+    ]);
 
     // ======= ENTRADA =======
     const [entradaOpen, setEntradaOpen] = useState(false);
@@ -1332,7 +1364,8 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+
                                 <Field label="Pesquisar">
                                     <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito, categoria..." />
                                 </Field>
@@ -1343,6 +1376,34 @@ export default function Page() {
                                         {depositos.map((d) => (
                                             <option key={d.id} value={d.id}>
                                                 {d.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Categoria">
+                                    <Select
+                                        value={catFiltroEstoque}
+                                        onChange={(e) => setCatFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}
+                                    >
+                                        <option value="Todos">Todas</option>
+                                        {categorias.map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Fabricante">
+                                    <Select
+                                        value={fabFiltroEstoque}
+                                        onChange={(e) => setFabFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}
+                                    >
+                                        <option value="Todos">Todos</option>
+                                        {fabricantes.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.nome}
                                             </option>
                                         ))}
                                     </Select>
