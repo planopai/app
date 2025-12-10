@@ -54,7 +54,6 @@ type HistoricoRow = {
     observacao: string | null;
     criado_em: string;
 
-    // joins opcionalmente vindos do back
     produto_nome?: string;
     operador_nome?: string;
     solicitante_nome?: string | null;
@@ -128,57 +127,21 @@ async function apiPost<T>(body: any) {
     return (await r.json()) as T & { ok?: boolean; msg?: string; need_login?: 1 };
 }
 
-function Modal({
-    open,
-    title,
-    subtitle,
-    onClose,
+/* =========================
+   UI KIT (padronizado)
+========================= */
+
+function Card({
     children,
+    className = '',
 }: {
-    open: boolean;
-    title: string;
-    subtitle?: string;
-    onClose: () => void;
     children: React.ReactNode;
+    className?: string;
 }) {
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [open, onClose]);
-
-    if (!open) return null;
-
     return (
-        <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onMouseDown={(e) => {
-                if (e.target === e.currentTarget) onClose();
-            }}
-        >
-            <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
-                    <div className="min-w-0">
-                        <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
-                        {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
-                    </div>
-                    <button
-                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
-                        onClick={onClose}
-                        aria-label="Fechar"
-                        type="button"
-                    >
-                        ✕
-                    </button>
-                </div>
-
-                {/* corpo com scroll interno (bom no mobile) */}
-                <div className="max-h-[78vh] overflow-y-auto p-4">{children}</div>
-            </div>
-        </div>
+        <section className={['rounded-2xl border border-slate-200 bg-white shadow-sm', className].join(' ')}>
+            {children}
+        </section>
     );
 }
 
@@ -236,12 +199,14 @@ function Button({
     variant = 'solid',
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: 'solid' | 'ghost';
+    variant?: 'solid' | 'ghost' | 'soft';
 }) {
     const cls =
         variant === 'solid'
             ? 'bg-slate-900 text-white hover:bg-slate-800'
-            : 'bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200';
+            : variant === 'soft'
+                ? 'bg-slate-100 text-slate-900 hover:bg-slate-200'
+                : 'bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200';
 
     return (
         <button
@@ -258,6 +223,14 @@ function Button({
     );
 }
 
+function Badge({ children }: { children: React.ReactNode }) {
+    return (
+        <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm">
+            {children}
+        </span>
+    );
+}
+
 function PhotoThumb({ url }: { url?: string | null }) {
     return (
         <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600">
@@ -270,6 +243,84 @@ function PhotoThumb({ url }: { url?: string | null }) {
         </div>
     );
 }
+
+/* =========================
+   MODAL (centralizado real)
+========================= */
+
+function Modal({
+    open,
+    title,
+    subtitle,
+    onClose,
+    children,
+}: {
+    open: boolean;
+    title: string;
+    subtitle?: string;
+    onClose: () => void;
+    children: React.ReactNode;
+}) {
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+
+    // trava scroll do body no mobile (evita modal “descer”/pular)
+    useEffect(() => {
+        if (!open) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = prev;
+        };
+    }, [open]);
+
+    if (!open) return null;
+
+    return (
+        <div
+            role="dialog"
+            aria-modal="true"
+            className={[
+                'fixed inset-0 z-50',
+                'flex items-center justify-center',
+                'bg-black/45',
+                // usa dvh pra iOS não “encolher” e jogar o modal pra baixo
+                'min-h-[100dvh] p-4',
+            ].join(' ')}
+            onMouseDown={(e) => {
+                if (e.target === e.currentTarget) onClose();
+            }}
+        >
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+                    <div className="min-w-0">
+                        <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
+                        {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
+                    </div>
+                    <button
+                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                        onClick={onClose}
+                        aria-label="Fechar"
+                        type="button"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                {/* scroll interno, sem deformar */}
+                <div className="max-h-[82dvh] overflow-y-auto p-4">{children}</div>
+            </div>
+        </div>
+    );
+}
+
+/* =========================
+   SCANNER (retângulo estreito)
+========================= */
 
 function BarcodeScannerModal({
     open,
@@ -301,7 +352,7 @@ function BarcodeScannerModal({
 
                 if (!videoRef.current) throw new Error('Vídeo não disponível.');
 
-                const controls = await codeReader.decodeFromVideoDevice(backCam ?? undefined, videoRef.current!, (result) => {
+                const controls = await codeReader.decodeFromVideoDevice(backCam ?? undefined, videoRef.current, (result) => {
                     if (cancelled) return;
                     if (result) {
                         const text = result.getText().trim();
@@ -326,7 +377,14 @@ function BarcodeScannerModal({
                 controlsRef.current?.stop();
             } catch { }
             controlsRef.current = null;
-            if (videoRef.current) (videoRef.current.srcObject as any) = null;
+
+            // para tracks da câmera (evita ficar “presa” no iOS)
+            const el = videoRef.current;
+            if (el?.srcObject) {
+                const tracks = (el.srcObject as MediaStream).getTracks();
+                tracks.forEach((t) => t.stop());
+                (el.srcObject as any) = null;
+            }
         };
     }, [open, onClose, onDetected]);
 
@@ -336,9 +394,25 @@ function BarcodeScannerModal({
                 <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
             ) : (
                 <div className="space-y-3">
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-black">
-                        <video ref={videoRef} className="h-[360px] w-full object-cover" playsInline muted />
+                    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-black">
+                        {/* vídeo com altura mais “controlada” no mobile */}
+                        <video ref={videoRef} className="h-[320px] w-full object-cover sm:h-[420px]" playsInline muted />
+
+                        {/* máscara e retângulo estreito (cara de leitor de código) */}
+                        <div className="pointer-events-none absolute inset-0">
+                            {/* camada escura */}
+                            <div className="absolute inset-0 bg-black/25" />
+
+                            {/* janela estreita */}
+                            <div className="absolute left-1/2 top-1/2 w-[92%] max-w-[560px] -translate-x-1/2 -translate-y-1/2">
+                                <div className="relative mx-auto h-[110px] w-full rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                                <p className="mt-2 text-center text-xs text-white/90">
+                                    Centralize o código dentro do retângulo
+                                </p>
+                            </div>
+                        </div>
                     </div>
+
                     <div className="flex flex-wrap gap-2">
                         <Button variant="ghost" onClick={onClose} type="button">
                             Fechar
@@ -349,6 +423,37 @@ function BarcodeScannerModal({
         </Modal>
     );
 }
+
+/* =========================
+   TABS (menu responsivo top)
+========================= */
+
+function TabButton({
+    active,
+    label,
+    onClick,
+}: {
+    active: boolean;
+    label: string;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            onClick={onClick}
+            type="button"
+            className={[
+                'w-full rounded-xl px-3 py-2 text-sm font-medium transition',
+                active ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200',
+            ].join(' ')}
+        >
+            {label}
+        </button>
+    );
+}
+
+/* =========================
+   PAGE
+========================= */
 
 export default function Page() {
     const [tab, setTab] = useState<UiTab>('HOME');
@@ -440,9 +545,7 @@ export default function Page() {
             rows.push({ p, d, qtd, s });
         }
 
-        rows.sort(
-            (a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR')
-        );
+        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR'));
         return rows;
     }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, onlyLow]);
 
@@ -802,62 +905,62 @@ export default function Page() {
 
     return (
         <main className="min-h-screen bg-slate-50">
-            <div className="mx-auto max-w-6xl px-4 py-6">
-                {/* Header */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div className="min-w-0">
-                        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
-                        <p className="mt-1 text-sm text-slate-600">
-                            Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                            Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
-                        </p>
+            <div className="mx-auto max-w-6xl px-4 py-5 sm:py-7">
+                {/* ======= TOP BAR (padronizado) ======= */}
+                <Card className="p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                            <Badge>Alertas: {alertCount}</Badge>
+                            <Button variant="ghost" onClick={refreshInit} disabled={loading} type="button">
+                                Atualizar
+                            </Button>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm">
-                            Alertas: {alertCount}
-                        </span>
-                        <Button variant="ghost" onClick={refreshInit} disabled={loading} type="button">
-                            Atualizar
-                        </Button>
-                    </div>
-                </div>
-
-                {initErr ? (
-                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                        {initErr}{' '}
-                        <button className="underline" onClick={refreshInit} type="button">
-                            Tentar novamente
-                        </button>
-                    </div>
-                ) : null}
-
-                {/* Tabs (mobile scroll) */}
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                        {tabs.map(([k, label]) => (
-                            <button
-                                key={k}
-                                onClick={() => setTab(k as UiTab)}
-                                className={[
-                                    'shrink-0 rounded-xl px-3 py-2 text-sm font-medium transition',
-                                    tab === (k as UiTab) ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100',
-                                ].join(' ')}
-                                type="button"
-                            >
-                                {label}
+                    {initErr ? (
+                        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {initErr}{' '}
+                            <button className="underline" onClick={refreshInit} type="button">
+                                Tentar novamente
                             </button>
+                        </div>
+                    ) : null}
+                </Card>
+
+                {/* ======= TABS: desktop = linha; mobile = grid bonitinho ======= */}
+                <div className="mt-4">
+                    {/* Mobile */}
+                    <div className="grid grid-cols-2 gap-2 sm:hidden">
+                        {tabs.map(([k, label]) => (
+                            <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
                         ))}
                     </div>
+
+                    {/* Desktop */}
+                    <Card className="hidden p-2 sm:block">
+                        <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
+                            {tabs.map(([k, label]) => (
+                                <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
+                            ))}
+                        </div>
+                    </Card>
                 </div>
 
-                {/* Conteúdo */}
+                {/* ======= CONTEÚDO ======= */}
                 <div className="mt-4 grid grid-cols-1 gap-4">
                     {/* HOME */}
                     {tab === 'HOME' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Entrada</p>
@@ -893,46 +996,42 @@ export default function Page() {
                             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
                                 Dica: na Entrada/Saída você pode usar <b>câmera</b> para ler o código de barras.
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* ENTRADA */}
                     {tab === 'ENTRADA' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Leia/digite o código de barras. Se não existir, cadastre o produto.
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Leia/digite o código de barras. Se não existir, cadastre o produto.</p>
                                 </div>
                                 <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
                                     Abrir Entrada
                                 </Button>
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* SAÍDA */}
                     {tab === 'SAIDA' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Saída</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito).
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito).</p>
                                 </div>
                                 <Button onClick={() => setSaidaOpen(true)} variant="ghost" type="button">
                                     Abrir Saída
                                 </Button>
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* TRANSFERÊNCIA */}
                     {tab === 'TRANSFERENCIA' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex flex-col gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
@@ -1014,12 +1113,12 @@ export default function Page() {
                                     </div>
                                 </div>
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* ESTOQUE */}
                     {tab === 'ESTOQUE' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
@@ -1122,12 +1221,12 @@ export default function Page() {
                                     </ul>
                                 )}
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* ALERTAS */}
                     {tab === 'ALERTAS' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Alertas (Reposição)</h2>
@@ -1171,12 +1270,12 @@ export default function Page() {
                                     Ver Histórico
                                 </Button>
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* HISTÓRICO */}
                     {tab === 'HISTORICO' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
@@ -1251,9 +1350,7 @@ export default function Page() {
                                     </Button>
 
                                     <div className="ml-auto flex items-center gap-2">
-                                        <span className="text-xs text-slate-500">
-                                            {histTotal !== undefined ? `Total: ${histTotal}` : `Mostrando: ${histRows.length}`}
-                                        </span>
+                                        <span className="text-xs text-slate-500">{histTotal !== undefined ? `Total: ${histTotal}` : `Mostrando: ${histRows.length}`}</span>
                                         <Select value={histLimit} onChange={(e) => setHistLimit(Number(e.target.value))} className="w-[120px]">
                                             <option value={40}>40</option>
                                             <option value={80}>80</option>
@@ -1281,10 +1378,8 @@ export default function Page() {
                                                             ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                                             : 'bg-slate-50 text-slate-700 border-slate-200';
 
-                                            const origem =
-                                                h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
-                                            const destino =
-                                                h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+                                            const origem = h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
+                                            const destino = h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
 
                                             return (
                                                 <li key={h.id} className="px-4 py-3">
@@ -1321,8 +1416,7 @@ export default function Page() {
                                                             </p>
 
                                                             <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                Operador:{' '}
-                                                                <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
+                                                                Operador: <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
                                                                 {h.solicitante_usuario_id ? (
                                                                     <>
                                                                         {' '}
@@ -1347,12 +1441,7 @@ export default function Page() {
                             </div>
 
                             <div className="mt-3 flex flex-wrap gap-2">
-                                <Button
-                                    variant="ghost"
-                                    onClick={() => loadHistorico(Math.max(0, histOffset - histLimit))}
-                                    disabled={histLoading || histOffset <= 0}
-                                    type="button"
-                                >
+                                <Button variant="ghost" onClick={() => loadHistorico(Math.max(0, histOffset - histLimit))} disabled={histLoading || histOffset <= 0} type="button">
                                     ← Anterior
                                 </Button>
                                 <Button
@@ -1364,12 +1453,12 @@ export default function Page() {
                                     Próximo →
                                 </Button>
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
 
                     {/* AVANÇADO */}
                     {tab === 'AVANCADO' ? (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <Card className="p-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
@@ -1437,7 +1526,7 @@ export default function Page() {
                                     </div>
                                 </div>
                             </div>
-                        </section>
+                        </Card>
                     ) : null}
                 </div>
             </div>
