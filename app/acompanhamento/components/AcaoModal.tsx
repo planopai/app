@@ -284,7 +284,7 @@ export default function AcaoModal({
             return;
         }
 
-        // ✅ fluxo normal delega pro page.tsx (com confirm padrão + offline etc.)
+        // ✅ fluxo normal delega pro(com confirm padrão + offline etc.)
         await registrarAcao(f);
     }
 
