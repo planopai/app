@@ -131,18 +131,8 @@ async function apiPost<T>(body: any) {
    UI KIT (padronizado)
 ========================= */
 
-function Card({
-    children,
-    className = '',
-}: {
-    children: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <section className={['rounded-2xl border border-slate-200 bg-white shadow-sm', className].join(' ')}>
-            {children}
-        </section>
-    );
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+    return <section className={['rounded-2xl border border-slate-200 bg-white shadow-sm', className].join(' ')}>{children}</section>;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -198,9 +188,7 @@ function Button({
     children,
     variant = 'solid',
     ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: 'solid' | 'ghost' | 'soft';
-}) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'solid' | 'ghost' | 'soft' }) {
     const cls =
         variant === 'solid'
             ? 'bg-slate-900 text-white hover:bg-slate-800'
@@ -231,19 +219,6 @@ function Badge({ children }: { children: React.ReactNode }) {
     );
 }
 
-function PhotoThumb({ url }: { url?: string | null }) {
-    return (
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600">
-            {url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={url} alt="Foto do produto" className="h-10 w-10 rounded-xl object-cover" />
-            ) : (
-                <span className="text-lg">🖼️</span>
-            )}
-        </div>
-    );
-}
-
 /* =========================
    MODAL (centralizado real)
 ========================= */
@@ -268,7 +243,6 @@ function Modal({
         return () => window.removeEventListener('keydown', onKey);
     }, [open, onClose]);
 
-    // trava scroll do body no mobile (evita modal “descer”/pular)
     useEffect(() => {
         if (!open) return;
         const prev = document.body.style.overflow;
@@ -284,13 +258,7 @@ function Modal({
         <div
             role="dialog"
             aria-modal="true"
-            className={[
-                'fixed inset-0 z-50',
-                'flex items-center justify-center',
-                'bg-black/45',
-                // usa dvh pra iOS não “encolher” e jogar o modal pra baixo
-                'min-h-[100dvh] p-4',
-            ].join(' ')}
+            className={['fixed inset-0 z-50', 'flex items-center justify-center', 'bg-black/45', 'min-h-[100dvh] p-4'].join(' ')}
             onMouseDown={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
@@ -311,10 +279,101 @@ function Modal({
                     </button>
                 </div>
 
-                {/* scroll interno, sem deformar */}
                 <div className="max-h-[82dvh] overflow-y-auto p-4">{children}</div>
             </div>
         </div>
+    );
+}
+
+/* =========================
+   POPUP IMAGEM (zoom)
+========================= */
+
+function ImagePreviewModal({
+    open,
+    onClose,
+    url,
+    title,
+}: {
+    open: boolean;
+    onClose: () => void;
+    url?: string | null;
+    title?: string;
+}) {
+    if (!open) return null;
+
+    return (
+        <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center bg-black/70 p-4"
+            onMouseDown={(e) => {
+                if (e.target === e.currentTarget) onClose();
+            }}
+        >
+            <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+                    <div className="min-w-0">
+                        <h2 className="truncate text-base font-semibold text-slate-900">{title || 'Imagem do produto'}</h2>
+                        <p className="mt-1 text-sm text-slate-600">Clique fora para fechar.</p>
+                    </div>
+                    <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose} type="button">
+                        ✕
+                    </button>
+                </div>
+
+                <div className="max-h-[82dvh] overflow-auto p-4">
+                    {url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={url} alt={title || 'Imagem do produto'} className="mx-auto max-h-[76dvh] w-auto max-w-full rounded-2xl border border-slate-200 object-contain" />
+                    ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
+                            Produto sem imagem.
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* =========================
+   FOTO MINIATURA CLICÁVEL
+========================= */
+
+function PhotoThumb({
+    url,
+    onClick,
+}: {
+    url?: string | null;
+    onClick?: () => void;
+}) {
+    const clickable = !!url && !!onClick;
+
+    return (
+        <button
+            type="button"
+            onClick={clickable ? onClick : undefined}
+            className={[
+                'relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600',
+                clickable ? 'cursor-zoom-in hover:ring-2 hover:ring-slate-200' : 'cursor-default',
+            ].join(' ')}
+            aria-label={clickable ? 'Abrir imagem do produto' : 'Sem imagem'}
+            title={clickable ? 'Clique para ampliar' : 'Sem imagem'}
+        >
+            {url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={url} alt="Foto do produto" className="h-10 w-10 rounded-xl object-cover" />
+            ) : (
+                <span className="text-lg">🖼️</span>
+            )}
+
+            {clickable ? (
+                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] shadow ring-1 ring-slate-200">
+                    🔍
+                </span>
+            ) : null}
+        </button>
     );
 }
 
@@ -347,8 +406,7 @@ function BarcodeScannerModal({
             try {
                 const codeReader = new BrowserMultiFormatReader();
                 const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-                const backCam =
-                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
+                const backCam = devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
 
                 if (!videoRef.current) throw new Error('Vídeo não disponível.');
 
@@ -378,7 +436,6 @@ function BarcodeScannerModal({
             } catch { }
             controlsRef.current = null;
 
-            // para tracks da câmera (evita ficar “presa” no iOS)
             const el = videoRef.current;
             if (el?.srcObject) {
                 const tracks = (el.srcObject as MediaStream).getTracks();
@@ -395,20 +452,14 @@ function BarcodeScannerModal({
             ) : (
                 <div className="space-y-3">
                     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-black">
-                        {/* vídeo com altura mais “controlada” no mobile */}
                         <video ref={videoRef} className="h-[320px] w-full object-cover sm:h-[420px]" playsInline muted />
 
-                        {/* máscara e retângulo estreito (cara de leitor de código) */}
                         <div className="pointer-events-none absolute inset-0">
-                            {/* camada escura */}
                             <div className="absolute inset-0 bg-black/25" />
 
-                            {/* janela estreita */}
                             <div className="absolute left-1/2 top-1/2 w-[92%] max-w-[560px] -translate-x-1/2 -translate-y-1/2">
                                 <div className="relative mx-auto h-[110px] w-full rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
-                                <p className="mt-2 text-center text-xs text-white/90">
-                                    Centralize o código dentro do retângulo
-                                </p>
+                                <p className="mt-2 text-center text-xs text-white/90">Centralize o código dentro do retângulo</p>
                             </div>
                         </div>
                     </div>
@@ -428,15 +479,7 @@ function BarcodeScannerModal({
    TABS (menu responsivo top)
 ========================= */
 
-function TabButton({
-    active,
-    label,
-    onClick,
-}: {
-    active: boolean;
-    label: string;
-    onClick: () => void;
-}) {
+function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
     return (
         <button
             onClick={onClick}
@@ -466,6 +509,11 @@ export default function Page() {
     const [depositos, setDepositos] = useState<Deposito[]>([]);
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [saldos, setSaldos] = useState<Saldo[]>([]);
+
+    // === imagem popup ===
+    const [imgOpen, setImgOpen] = useState(false);
+    const [imgUrl, setImgUrl] = useState<string | null>(null);
+    const [imgTitle, setImgTitle] = useState<string>('');
 
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
@@ -906,14 +954,11 @@ export default function Page() {
     return (
         <main className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-6xl px-4 py-5 sm:py-7">
-                {/* ======= TOP BAR (padronizado) ======= */}
                 <Card className="p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                             <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
-                            <p className="mt-1 text-sm text-slate-600">
-                                Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
-                            </p>
+                            <p className="mt-1 text-sm text-slate-600">Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.</p>
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
                             </p>
@@ -937,16 +982,13 @@ export default function Page() {
                     ) : null}
                 </Card>
 
-                {/* ======= TABS: desktop = linha; mobile = grid bonitinho ======= */}
                 <div className="mt-4">
-                    {/* Mobile */}
                     <div className="grid grid-cols-2 gap-2 sm:hidden">
                         {tabs.map(([k, label]) => (
                             <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
                         ))}
                     </div>
 
-                    {/* Desktop */}
                     <Card className="hidden p-2 sm:block">
                         <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
                             {tabs.map(([k, label]) => (
@@ -956,7 +998,6 @@ export default function Page() {
                     </Card>
                 </div>
 
-                {/* ======= CONTEÚDO ======= */}
                 <div className="mt-4 grid grid-cols-1 gap-4">
                     {/* HOME */}
                     {tab === 'HOME' ? (
@@ -1032,6 +1073,7 @@ export default function Page() {
                     {/* TRANSFERÊNCIA */}
                     {tab === 'TRANSFERENCIA' ? (
                         <Card className="p-4">
+                            {/* ... mantém igual ao seu (sem alteração) ... */}
                             <div className="flex flex-col gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
@@ -1140,10 +1182,7 @@ export default function Page() {
                                 </Field>
 
                                 <Field label="Depósito">
-                                    <Select
-                                        value={depFiltroEstoque}
-                                        onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}
-                                    >
+                                    <Select value={depFiltroEstoque} onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}>
                                         <option value="Todos">Todos</option>
                                         {depositos.map((d) => (
                                             <option key={d.id} value={d.id}>
@@ -1155,13 +1194,7 @@ export default function Page() {
 
                                 <Field label="Somente alerta (≤ mínimo)">
                                     <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-                                        <input
-                                            id="onlyLow"
-                                            type="checkbox"
-                                            checked={onlyLow}
-                                            onChange={(e) => setOnlyLow(e.target.checked)}
-                                            className="h-4 w-4"
-                                        />
+                                        <input id="onlyLow" type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} className="h-4 w-4" />
                                         <label htmlFor="onlyLow" className="text-sm text-slate-700">
                                             Mostrar
                                         </label>
@@ -1196,7 +1229,15 @@ export default function Page() {
                                                 <li key={`${p.id}_${d.id}`}>
                                                     <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
                                                         <div className="flex min-w-0 items-center gap-3">
-                                                            <PhotoThumb url={p.foto_url} />
+                                                            <PhotoThumb
+                                                                url={p.foto_url}
+                                                                onClick={() => {
+                                                                    if (!p.foto_url) return;
+                                                                    setImgUrl(p.foto_url);
+                                                                    setImgTitle(p.nome);
+                                                                    setImgOpen(true);
+                                                                }}
+                                                            />
                                                             <div className="min-w-0">
                                                                 <p className="truncate text-sm font-semibold text-slate-900">
                                                                     {p.nome} {low ? <span className="text-xs text-red-600">• alerta</span> : null}
@@ -1204,9 +1245,7 @@ export default function Page() {
                                                                 <p className="mt-0.5 truncate text-xs text-slate-600">
                                                                     CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor: {moneyBRL(valorNum)}
                                                                 </p>
-                                                                <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                    Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : '—'}
-                                                                </p>
+                                                                <p className="mt-0.5 text-[11px] text-slate-500">Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : '—'}</p>
                                                             </div>
                                                         </div>
 
@@ -1276,6 +1315,7 @@ export default function Page() {
                     {/* HISTÓRICO */}
                     {tab === 'HISTORICO' ? (
                         <Card className="p-4">
+                            {/* ... mantém igual ao seu (sem alteração relevante) ... */}
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
@@ -1288,10 +1328,9 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            {histErr ? (
-                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div>
-                            ) : null}
+                            {histErr ? <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div> : null}
 
+                            {/* filtros */}
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
                                 <div className="sm:col-span-2">
                                     <Field label="Buscar (produto, CB, destino, obs)">
@@ -1386,9 +1425,7 @@ export default function Page() {
                                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                                         <div className="min-w-0">
                                                             <div className="flex flex-wrap items-center gap-2">
-                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>
-                                                                    {h.tipo}
-                                                                </span>
+                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>{h.tipo}</span>
                                                                 <span className="text-xs text-slate-500">{fmtDateTime(h.criado_em)}</span>
                                                             </div>
 
@@ -1531,22 +1568,15 @@ export default function Page() {
                 </div>
             </div>
 
+            {/* ===== POPUP DA IMAGEM (Estoque) ===== */}
+            <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
+
             {/* ===== MODAL: ENTRADA ===== */}
-            <Modal
-                open={entradaOpen}
-                title="Entrada"
-                subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto."
-                onClose={() => setEntradaOpen(false)}
-            >
+            <Modal open={entradaOpen} title="Entrada" subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto." onClose={() => setEntradaOpen(false)}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Código de barras">
                         <div className="flex gap-2">
-                            <TextInput
-                                value={entradaBarcode}
-                                onChange={(e) => setEntradaBarcode(e.target.value)}
-                                placeholder="Leia com leitor ou digite"
-                                inputMode="numeric"
-                            />
+                            <TextInput value={entradaBarcode} onChange={(e) => setEntradaBarcode(e.target.value)} placeholder="Leia com leitor ou digite" inputMode="numeric" />
                             <Button variant="ghost" type="button" onClick={() => setEntradaScanOpen(true)} title="Abrir câmera">
                                 📷 Escanear
                             </Button>
@@ -1623,20 +1653,10 @@ export default function Page() {
                 </div>
             </Modal>
 
-            <BarcodeScannerModal
-                open={entradaScanOpen}
-                title="Escanear código de barras (Entrada)"
-                onClose={() => setEntradaScanOpen(false)}
-                onDetected={(code) => setEntradaBarcode(code)}
-            />
+            <BarcodeScannerModal open={entradaScanOpen} title="Escanear código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
 
             {/* ===== MODAL: SAÍDA ===== */}
-            <Modal
-                open={saidaOpen}
-                title="Saída"
-                subtitle="Filtre pelo depósito, procure o produto, ou escaneie por câmera. Operador é fixo."
-                onClose={() => setSaidaOpen(false)}
-            >
+            <Modal open={saidaOpen} title="Saída" subtitle="Filtre pelo depósito, procure o produto, ou escaneie por câmera. Operador é fixo." onClose={() => setSaidaOpen(false)}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Depósito (origem)">
                         <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
@@ -1729,12 +1749,7 @@ export default function Page() {
                 </div>
             </Modal>
 
-            <BarcodeScannerModal
-                open={saidaScanOpen}
-                title="Escanear código de barras (Saída)"
-                onClose={() => setSaidaScanOpen(false)}
-                onDetected={(code) => onSaidaBarcodePick(code)}
-            />
+            <BarcodeScannerModal open={saidaScanOpen} title="Escanear código de barras (Saída)" onClose={() => setSaidaScanOpen(false)} onDetected={(code) => onSaidaBarcodePick(code)} />
         </main>
     );
 }
