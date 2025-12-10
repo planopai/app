@@ -1126,7 +1126,7 @@ export default function Page() {
     const tabs = useMemo(
         () =>
             [
-                ['HOME', 'Principal'],
+                ['HOME', 'Movimentação'],
                 ['ENTRADA', 'Entrada'],
                 ['SAIDA', 'Saída'],
                 ['TRANSFERENCIA', 'Transferência'],
