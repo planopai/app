@@ -31,7 +31,10 @@ import Modal from "./components/Modal";
 import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
 
 // ✅ NOVO: modal de conferência antes do fase11
-import MateriaisConferenciaModal, { MatCheckItem, MateriaisConferenciaResult } from "./components/MateriaisConferenciaModal";
+import MateriaisConferenciaModal, {
+    MatCheckItem,
+    MateriaisConferenciaResult,
+} from "./components/MateriaisConferenciaModal";
 
 type TipoAtendimento = "funerario" | "terceiro";
 
@@ -579,17 +582,20 @@ export default function AcompanhamentoPage() {
         const registro_id = data.registro_id != null ? String(data.registro_id) : "";
         if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-        const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-                registro_id,
-                falecido_nome: String(data.falecido_nome || "").trim(),
-                observacao: String(data.observacao || "").trim(),
-                itens: Array.isArray(data.itens) ? data.itens : [],
-            }),
-        });
+        const r = await fetch(
+            `${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    registro_id,
+                    falecido_nome: String(data.falecido_nome || "").trim(),
+                    observacao: String(data.observacao || "").trim(),
+                    itens: Array.isArray(data.itens) ? data.itens : [],
+                }),
+            }
+        );
 
         if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
         const json = await r.json().catch(() => null);
@@ -637,6 +643,7 @@ export default function AcompanhamentoPage() {
             setTanatoVal(String(empty.tanato || ""));
             setWizardOpen(true);
         },
+        // mantido como você tinha pra não “mexer no resto”
         [wizardStepIndexesForTipo, wizardStep, wizardData]
     );
 
@@ -809,12 +816,19 @@ export default function AcompanhamentoPage() {
         setAcaoOpen(true);
     }, []);
 
+    /**
+     * ✅ IMPORTANTE:
+     * Agora retorna boolean:
+     * - true  => ação registrada/armazenada (online ou offline) e pode fechar modal
+     * - false => não registrou (cancelou confirm, abriu conferência fase11, etc.)
+     */
     const registrarAcao = useCallback(
-        async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }) => {
-            if (acaoSubmitting) return;
-            if (acaoId == null) return;
+        async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }): Promise<boolean> => {
+            if (acaoSubmitting) return false;
+            if (acaoId == null) return false;
 
             // ✅ Antes de "Material Recolhido" (fase11), exigir conferência
+            // -> aqui ainda NÃO registrou de verdade, então retorna false
             if (acao === "fase11" && !opts?.skipMaterialCheck) {
                 const reg = registros.find((x) => String(x.id) === String(acaoId));
                 const mats = reg ? parseMateriaisFromRegistro(reg) : {};
@@ -838,14 +852,15 @@ export default function AcompanhamentoPage() {
                 setMatCheckReturnToAcao(true);
                 setAcaoOpen(false);
                 setMatCheckOpen(true);
-                return;
+                return false; // ✅ importante (não fecha “por sucesso”)
             }
 
             if (!opts?.skipConfirm) {
                 const ok = window.confirm("Deseja confirmar essa ação?");
-                if (!ok) return;
+                if (!ok) return false; // ✅ cancelou => não registrou
             }
 
+            // ✅ Offline: guardou a ação na fila (considera sucesso)
             if (!isOnlineNow()) {
                 try {
                     setAcaoSubmitting(true);
@@ -855,10 +870,10 @@ export default function AcompanhamentoPage() {
                         ok: true,
                     });
                     setAcaoOpen(false);
+                    return true;
                 } finally {
                     setAcaoSubmitting(false);
                 }
-                return;
             }
 
             setAcaoSubmitting(true);
@@ -888,19 +903,23 @@ export default function AcompanhamentoPage() {
 
                     await fetchRegistros();
                     setAcaoOpen(false);
+                    return true; // ✅ sucesso real
                 } else {
                     setAcaoMsg({
                         text: json?.erro || "Erro ao atualizar status.",
                         ok: false,
                     });
+                    return false;
                 }
             } catch (e: any) {
+                // ✅ fallback: guarda offline e considera sucesso
                 enqueueOffline({ acao: "atualizar_status", id: acaoId, status: acao }, e?.message);
                 setAcaoMsg({
                     text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
                     ok: true,
                 });
                 setAcaoOpen(false);
+                return true;
             } finally {
                 setAcaoSubmitting(false);
                 flushOfflineQueue();
@@ -1078,7 +1097,12 @@ export default function AcompanhamentoPage() {
             />
 
             {/* Modal de escolha: tipo do novo registro */}
-            <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
+            <Modal
+                open={chooseTipoOpen}
+                onClose={() => setChooseTipoOpen(false)}
+                ariaLabel="Escolher tipo"
+                maxWidth={420}
+            >
                 <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
                 <div className="mt-4 grid gap-2">
                     <button
