@@ -5,7 +5,13 @@ import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases, salasMemorial } from "./constants";
-import { acaoToStatus, isTanatoNo, proximaFaseDoRegistro, normalizarStatus, consultarStatusAtual } from "./helpers";
+import {
+    acaoToStatus,
+    isTanatoNo,
+    proximaFaseDoRegistro,
+    normalizarStatus,
+    consultarStatusAtual,
+} from "./helpers";
 
 type Fase = (typeof fases)[number];
 const FASE_FINAL = "fase11" as Fase;
@@ -246,6 +252,17 @@ export default function AcaoModal({
         return meCargo === "tanatopraxista";
     }
 
+    // ✅ helper: fecha modal após sucesso
+    async function executarEFechar(fn: () => Promise<any>) {
+        try {
+            await fn();
+            setOpen(false); // ✅ FECHA AUTOMÁTICO
+        } catch (e: any) {
+            // se registrarAcao lançar erro, mostra no frontMsg
+            setFrontMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
+        }
+    }
+
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
 
@@ -274,18 +291,19 @@ export default function AcaoModal({
             if (!ok) return;
 
             // chama o registrarAcao do page.tsx sem novo confirm
-            await registrarAcao(f, { skipConfirm: true });
+            await executarEFechar(() => registrarAcao(f, { skipConfirm: true }));
             return;
         }
 
         // ✅ fases com veículo delegam pro page.tsx (telemetria)
+        // aqui NÃO fecha, porque normalmente abre outro modal/fluxo
         if (requiresVehicle && onVeiculoRequired) {
             onVeiculoRequired(acaoId ?? null, f);
             return;
         }
 
-        // ✅ fluxo normal delega pro(com confirm padrão + offline etc.)
-        await registrarAcao(f);
+        // ✅ fluxo normal (com confirm padrão + offline etc.) -> fecha no sucesso
+        await executarEFechar(() => registrarAcao(f));
     }
 
     return (
