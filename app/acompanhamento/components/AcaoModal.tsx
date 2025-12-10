@@ -5,13 +5,7 @@ import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases, salasMemorial } from "./constants";
-import {
-    acaoToStatus,
-    isTanatoNo,
-    proximaFaseDoRegistro,
-    normalizarStatus,
-    consultarStatusAtual,
-} from "./helpers";
+import { acaoToStatus, isTanatoNo, proximaFaseDoRegistro, normalizarStatus, consultarStatusAtual } from "./helpers";
 
 type Fase = (typeof fases)[number];
 const FASE_FINAL = "fase11" as Fase;
@@ -60,12 +54,26 @@ export default function AcaoModal({
     setOpen,
     registros,
     acaoId,
+    registrarAcao,
+    acaoMsg,
+    acaoSubmitting,
     onVeiculoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
+
+    // ✅ vem do page.tsx (offline queue, conferência fase11, etc.)
+    registrarAcao: (
+        acao: string,
+        opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }
+    ) => Promise<any>;
+
+    // ✅ vem do page.tsx (feedback e loading global)
+    acaoMsg: { text: string; ok: boolean } | null;
+    acaoSubmitting: boolean;
+
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -73,9 +81,6 @@ export default function AcaoModal({
     const [meCargo, setMeCargo] = useState<string>("");
     const [meLoading, setMeLoading] = useState(false);
     const [meError, setMeError] = useState<string | null>(null);
-
-    const [acaoSubmitting, setAcaoSubmitting] = useState(false);
-    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
     // carrega cargo ao abrir modal
     useEffect(() => {
@@ -105,7 +110,6 @@ export default function AcaoModal({
 
     useEffect(() => {
         setFrontMsg(null);
-        setAcaoMsg(null);
     }, [open, acaoId]);
 
     const registroLocal = useMemo(() => {
@@ -115,6 +119,7 @@ export default function AcaoModal({
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
+    // status online (fallback)
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -194,6 +199,7 @@ export default function AcaoModal({
 
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
+
         return (fases as readonly Fase[]).filter((f) => {
             if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
@@ -240,36 +246,8 @@ export default function AcaoModal({
         return meCargo === "tanatopraxista";
     }
 
-    async function registrarAcaoHTTP(status: string, extra?: Record<string, any>) {
-        if (!acaoId) throw new Error("ID inválido.");
-
-        const payload = {
-            acao: "atualizar_status",
-            id: acaoId,
-            status,
-            ...(extra ?? {}),
-        };
-
-        const res = await fetch("/api/php/informativo.php", {
-            method: "POST",
-            credentials: "include",
-            headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-            },
-            body: JSON.stringify(payload),
-        });
-
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-            throw new Error(data?.msg || `Erro (${res.status})`);
-        }
-    }
-
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
-        setAcaoMsg(null);
 
         const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
         if (!habilitar) return;
@@ -277,6 +255,7 @@ export default function AcaoModal({
         const requiresVehicle = FASES_COM_VEICULO.includes(f);
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
+        // ✅ Regra: só tanatopraxista pode conservar
         if (isConservacao) {
             if (meLoading) {
                 setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
@@ -293,22 +272,20 @@ export default function AcaoModal({
 
             const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
             if (!ok) return;
+
+            // chama o registrarAcao do page.tsx sem novo confirm
+            await registrarAcao(f, { skipConfirm: true });
+            return;
         }
 
+        // ✅ fases com veículo delegam pro page.tsx (telemetria)
         if (requiresVehicle && onVeiculoRequired) {
             onVeiculoRequired(acaoId ?? null, f);
             return;
         }
 
-        try {
-            setAcaoSubmitting(true);
-            await registrarAcaoHTTP(f, isConservacao ? { confirmar: true } : undefined);
-            setAcaoMsg({ ok: true, text: "Ação registrada com sucesso." });
-        } catch (e: any) {
-            setAcaoMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
-        } finally {
-            setAcaoSubmitting(false);
-        }
+        // ✅ fluxo normal delega pro page.tsx (com confirm padrão + offline etc.)
+        await registrarAcao(f);
     }
 
     return (
