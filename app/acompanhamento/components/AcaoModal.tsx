@@ -60,9 +60,9 @@ export default function AcaoModal({
     setOpen,
     registros,
     acaoId,
-    registrarAcao, // ✅ agora existe
-    acaoMsg, // ✅ agora existe
-    acaoSubmitting, // ✅ agora existe
+    registrarAcao,
+    acaoMsg,
+    acaoSubmitting,
     onVeiculoRequired,
 }: {
     open: boolean;
@@ -70,10 +70,19 @@ export default function AcaoModal({
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
 
-    // ✅ props novas (opcionais)
-    registrarAcao?: (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }) => Promise<any>;
-    acaoMsg?: { text: string; ok: boolean } | null;
-    acaoSubmitting?: boolean;
+    // ✅ vem do page.tsx (mantém offline/telemetria/conferência fase11)
+    registrarAcao: (
+        acao: string,
+        opts?: {
+            skipMaterialCheck?: boolean;
+            skipConfirm?: boolean;
+            extra?: Record<string, any>; // ✅ opcional (pra confirmar conservação no backend)
+        }
+    ) => Promise<any>;
+
+    // ✅ também vem do page.tsx
+    acaoMsg: { text: string; ok: boolean } | null;
+    acaoSubmitting: boolean;
 
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
 }) {
@@ -82,13 +91,6 @@ export default function AcaoModal({
     const [meCargo, setMeCargo] = useState<string>("");
     const [meLoading, setMeLoading] = useState(false);
     const [meError, setMeError] = useState<string | null>(null);
-
-    // ✅ fallback local (caso registrarAcao não venha)
-    const [localSubmitting, setLocalSubmitting] = useState(false);
-    const [localMsg, setLocalMsg] = useState<{ text: string; ok: boolean } | null>(null);
-
-    const submitting = typeof acaoSubmitting === "boolean" ? acaoSubmitting : localSubmitting;
-    const msg = acaoMsg ?? localMsg;
 
     // carrega cargo ao abrir modal
     useEffect(() => {
@@ -118,7 +120,6 @@ export default function AcaoModal({
 
     useEffect(() => {
         setFrontMsg(null);
-        setLocalMsg(null);
     }, [open, acaoId]);
 
     const registroLocal = useMemo(() => {
@@ -253,43 +254,16 @@ export default function AcaoModal({
         return meCargo === "tanatopraxista";
     }
 
-    async function registrarAcaoHTTP(status: string, extra?: Record<string, any>) {
-        if (!acaoId) throw new Error("ID inválido.");
-
-        const payload = {
-            acao: "atualizar_status",
-            id: acaoId,
-            status,
-            ...(extra ?? {}),
-        };
-
-        const res = await fetch("/api/php/informativo.php", {
-            method: "POST",
-            credentials: "include",
-            headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-            },
-            body: JSON.stringify(payload),
-        });
-
-        const data = await res.json().catch(() => null);
-
-        if (!res.ok) {
-            throw new Error(data?.msg || `Erro (${res.status})`);
-        }
-    }
-
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
-        setLocalMsg(null);
 
-        const habilitar = prox === f && !submitting && !loadingOnline && !concluido;
+        const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
         if (!habilitar) return;
 
         const requiresVehicle = FASES_COM_VEICULO.includes(f);
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
+        // ✅ REGRA: apenas Tanatopraxista pode fazer conservação (fase03/fase04)
         if (isConservacao) {
             if (meLoading) {
                 setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
@@ -306,6 +280,14 @@ export default function AcaoModal({
 
             const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
             if (!ok) return;
+
+            // chama o pai, sem confirmar de novo
+            try {
+                await registrarAcao(f, { skipConfirm: true, extra: { confirmar: true } });
+            } catch (e: any) {
+                setFrontMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
+            }
+            return;
         }
 
         if (requiresVehicle && onVeiculoRequired) {
@@ -314,20 +296,10 @@ export default function AcaoModal({
         }
 
         try {
-            // ✅ SE o pai passou registrarAcao, usa ele (offline + conferência + etc)
-            if (registrarAcao) {
-                await registrarAcao(String(f));
-                return;
-            }
-
-            // fallback antigo
-            setLocalSubmitting(true);
-            await registrarAcaoHTTP(f, isConservacao ? { confirmar: true } : undefined);
-            setLocalMsg({ ok: true, text: "Ação registrada com sucesso." });
+            // para fases normais, deixa o pai confirmar e aplicar offline/telemetria/conferência, etc.
+            await registrarAcao(f);
         } catch (e: any) {
-            setLocalMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
-        } finally {
-            setLocalSubmitting(false);
+            setFrontMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
         }
     }
 
@@ -338,25 +310,32 @@ export default function AcaoModal({
             <div className="mt-2 text-xs text-muted-foreground">
                 {loadingOnline && "Sincronizando status com o servidor…"}
                 {!loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
-                {!loadingOnline && onlineError && <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>}
+                {!loadingOnline && onlineError && (
+                    <span className="text-red-600">{onlineError} — exibindo dados locais como fallback.</span>
+                )}
             </div>
 
             {!efetivo && (
-                <p className="mt-4 text-sm text-muted-foreground">Nenhum registro selecionado. Selecione um registro para continuar.</p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                    Nenhum registro selecionado. Selecione um registro para continuar.
+                </p>
             )}
 
             {efetivo && fasesVisiveis.length === 0 && (
-                <p className="mt-4 text-sm text-muted-foreground">Nenhuma etapa disponível para este registro com as condições atuais.</p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                    Nenhuma etapa disponível para este registro com as condições atuais.
+                </p>
             )}
 
             {efetivo && fasesVisiveis.length > 0 && (
                 <>
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !submitting && !loadingOnline && !concluido;
+                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
 
                             const isConservacao = FASES_CONSERVACAO.includes(f);
-                            const bloqueadoPorCargo = isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
+                            const bloqueadoPorCargo =
+                                isConservacao && !meLoading && !meError && meCargo !== "" && !podeConservacao();
 
                             const disabled = !habilitar || bloqueadoPorCargo;
 
@@ -387,7 +366,7 @@ export default function AcaoModal({
             )}
 
             {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
-            {msg && <TextFeedback kind={msg.ok ? "success" : "error"}>{msg.text}</TextFeedback>}
+            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
         </Modal>
     );
 }
