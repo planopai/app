@@ -8,6 +8,9 @@ type ID = number;
 type Usuario = { id: ID; nome: string; usuario: string };
 type Deposito = { id: ID; nome: string };
 
+type Categoria = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: string };
+type Fabricante = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: string };
+
 type Produto = {
     id: ID;
     nome: string;
@@ -17,6 +20,12 @@ type Produto = {
     foto_url?: string | null;
     ativo: 0 | 1 | number;
     atualizado_em: string;
+
+    // ✅ novos
+    categoria_id?: ID | null;
+    fabricante_id?: ID | null;
+    categoria_nome?: string | null;
+    fabricante_nome?: string | null;
 };
 
 type Saldo = {
@@ -34,6 +43,8 @@ type InitResp = {
     me: Me;
     usuarios: Usuario[];
     depositos: Deposito[];
+    categorias: Categoria[];
+    fabricantes: Fabricante[];
     produtos: Produto[];
     saldos: Saldo[];
     msg?: string;
@@ -64,7 +75,6 @@ type HistoricoRow = {
 type HistoricoResp = {
     ok: boolean;
     rows: HistoricoRow[];
-    total?: number;
     msg?: string;
     need_login?: 1;
 };
@@ -269,12 +279,7 @@ function Modal({
                         <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
                         {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
                     </div>
-                    <button
-                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
-                        onClick={onClose}
-                        aria-label="Fechar"
-                        type="button"
-                    >
+                    <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose} aria-label="Fechar" type="button">
                         ✕
                     </button>
                 </div>
@@ -286,7 +291,7 @@ function Modal({
 }
 
 /* =========================
-   POPUP IMAGEM (zoom) ✅ atualizado
+   POPUP IMAGEM (zoom)
 ========================= */
 
 function ImagePreviewModal({
@@ -343,11 +348,7 @@ function ImagePreviewModal({
                 <div className="max-h-[82dvh] overflow-auto p-4">
                     {cleanUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                            src={cleanUrl}
-                            alt={title || 'Imagem do produto'}
-                            className="mx-auto h-auto w-full max-h-[76dvh] rounded-2xl border border-slate-200 object-contain"
-                        />
+                        <img src={cleanUrl} alt={title || 'Imagem do produto'} className="mx-auto h-auto w-full max-h-[76dvh] rounded-2xl border border-slate-200 object-contain" />
                     ) : (
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Produto sem imagem.</div>
                     )}
@@ -358,7 +359,7 @@ function ImagePreviewModal({
 }
 
 /* =========================
-   FOTO MINIATURA CLICÁVEL ✅ atualizado
+   FOTO MINIATURA CLICÁVEL
 ========================= */
 
 function PhotoThumb({ url, onClick }: { url?: string | null; onClick?: () => void }) {
@@ -384,9 +385,7 @@ function PhotoThumb({ url, onClick }: { url?: string | null; onClick?: () => voi
             )}
 
             {clickable ? (
-                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] shadow ring-1 ring-slate-200">
-                    🔍
-                </span>
+                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] shadow ring-1 ring-slate-200">🔍</span>
             ) : null}
         </button>
     );
@@ -491,7 +490,7 @@ function BarcodeScannerModal({
 }
 
 /* =========================
-   TABS (menu responsivo top)
+   TABS
 ========================= */
 
 function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
@@ -522,6 +521,8 @@ export default function Page() {
     const [me, setMe] = useState<Me | null>(null);
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
     const [depositos, setDepositos] = useState<Deposito[]>([]);
+    const [categorias, setCategorias] = useState<Categoria[]>([]);
+    const [fabricantes, setFabricantes] = useState<Fabricante[]>([]);
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [saldos, setSaldos] = useState<Saldo[]>([]);
 
@@ -533,6 +534,8 @@ export default function Page() {
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
     const userById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
+    const catById = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias]);
+    const fabById = useMemo(() => new Map(fabricantes.map((f) => [f.id, f])), [fabricantes]);
 
     const saldosMap = useMemo(() => {
         const m = new Map<string, Saldo>();
@@ -549,6 +552,8 @@ export default function Page() {
             setMe(j.me);
             setUsuarios(j.usuarios || []);
             setDepositos(j.depositos || []);
+            setCategorias((j.categorias || []).filter((c) => Number(c.ativo) === 1));
+            setFabricantes((j.fabricantes || []).filter((f) => Number(f.ativo) === 1));
             setProdutos((j.produtos || []).filter((p) => Number(p.ativo) === 1));
             setSaldos(j.saldos || []);
         } catch (e: any) {
@@ -601,7 +606,9 @@ export default function Page() {
             if (onlyLow && !(qtd <= min)) continue;
 
             if (qq) {
-                const blob = `${p.nome} ${p.codigo_barras} ${d.nome}`.toLowerCase();
+                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : '') || '';
+                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : '') || '';
+                const blob = `${p.nome} ${p.codigo_barras} ${d.nome} ${cat} ${fab}`.toLowerCase();
                 if (!blob.includes(qq)) continue;
             }
 
@@ -610,7 +617,7 @@ export default function Page() {
 
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR'));
         return rows;
-    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, onlyLow]);
+    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, onlyLow, catById, fabById]);
 
     // ======= ENTRADA =======
     const [entradaOpen, setEntradaOpen] = useState(false);
@@ -626,6 +633,16 @@ export default function Page() {
     const [novoMin, setNovoMin] = useState<number>(0);
     const [novoFoto, setNovoFoto] = useState<string>('');
 
+    // ✅ novos (categoria / fabricante) no cadastro
+    const [novoCategoriaId, setNovoCategoriaId] = useState<ID>(0);
+    const [novoFabricanteId, setNovoFabricanteId] = useState<ID>(0);
+
+    // modais rápidos p/ criar categoria/fabricante
+    const [catQuickOpen, setCatQuickOpen] = useState(false);
+    const [catQuickNome, setCatQuickNome] = useState('');
+    const [fabQuickOpen, setFabQuickOpen] = useState(false);
+    const [fabQuickNome, setFabQuickNome] = useState('');
+
     useEffect(() => {
         if (depositos.length && !entradaDepositoId) setEntradaDepositoId(depositos[0].id);
     }, [depositos, entradaDepositoId]);
@@ -635,6 +652,18 @@ export default function Page() {
         if (!cb) return null;
         return produtos.find((p) => p.codigo_barras === cb) ?? null;
     }, [entradaBarcode, produtos]);
+
+    useEffect(() => {
+        // ao trocar para um produto existente, limpa campos de "novo"
+        if (entradaProdutoExistente) {
+            setNovoNome('');
+            setNovoValor(0);
+            setNovoMin(0);
+            setNovoFoto('');
+            setNovoCategoriaId(0);
+            setNovoFabricanteId(0);
+        }
+    }, [entradaProdutoExistente]);
 
     async function fileToDataUrl(file: File): Promise<string> {
         return await new Promise((resolve, reject) => {
@@ -676,6 +705,10 @@ export default function Page() {
             payload.valor = Number.isFinite(Number(novoValor)) ? Number(novoValor) : 0;
             payload.minimo = clampInt(novoMin);
             payload.foto_url = novoFoto || '';
+
+            // ✅ envia categoria/fabricante (opcional)
+            payload.categoria_id = novoCategoriaId ? Number(novoCategoriaId) : 0;
+            payload.fabricante_id = novoFabricanteId ? Number(novoFabricanteId) : 0;
         }
 
         const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
@@ -688,9 +721,34 @@ export default function Page() {
         setNovoValor(0);
         setNovoMin(0);
         setNovoFoto('');
+        setNovoCategoriaId(0);
+        setNovoFabricanteId(0);
         setEntradaOpen(false);
         await refreshInit();
         setTab('ESTOQUE');
+    }
+
+    async function criarCategoriaQuick() {
+        const nome = catQuickNome.trim();
+        if (!nome) return alert('Informe o nome da categoria.');
+        const r = await apiPost<{ ok: boolean; id?: number; msg?: string }>({ action: 'categoria_criar', nome });
+        if (!r.ok) return alert(r.msg || 'Falha ao criar categoria.');
+        setCatQuickNome('');
+        setCatQuickOpen(false);
+        await refreshInit();
+        // tenta selecionar a última criada
+        if (r.id) setNovoCategoriaId(Number(r.id));
+    }
+
+    async function criarFabricanteQuick() {
+        const nome = fabQuickNome.trim();
+        if (!nome) return alert('Informe o nome do fabricante.');
+        const r = await apiPost<{ ok: boolean; id?: number; msg?: string }>({ action: 'fabricante_criar', nome });
+        if (!r.ok) return alert(r.msg || 'Falha ao criar fabricante.');
+        setFabQuickNome('');
+        setFabQuickOpen(false);
+        await refreshInit();
+        if (r.id) setNovoFabricanteId(Number(r.id));
     }
 
     // ======= SAÍDA =======
@@ -855,7 +913,7 @@ export default function Page() {
         setTab('ESTOQUE');
     }
 
-    // ======= AVANÇADO =======
+    // ======= AVANÇADO (depósitos) =======
     const [novoDepNome, setNovoDepNome] = useState('');
     const [renomearDepId, setRenomearDepId] = useState<ID>(0);
     const [renomearDepNome, setRenomearDepNome] = useState('');
@@ -907,38 +965,120 @@ export default function Page() {
         window.open(url, '_blank', 'noopener,noreferrer');
     }
 
-    // ======= HISTÓRICO =======
+    // ======= AVANÇADO (categorias) =======
+    const [novoCatNome, setNovoCatNome] = useState('');
+    const [renomearCatId, setRenomearCatId] = useState<ID>(0);
+    const [renomearCatNome, setRenomearCatNome] = useState('');
+    const [busyCat, setBusyCat] = useState(false);
+
+    useEffect(() => {
+        if (!renomearCatId && categorias[0]?.id) {
+            setRenomearCatId(categorias[0].id);
+            setRenomearCatNome(categorias[0].nome);
+        }
+    }, [categorias, renomearCatId]);
+
+    useEffect(() => {
+        const c = categorias.find((x) => x.id === renomearCatId);
+        if (c) setRenomearCatNome(c.nome);
+    }, [renomearCatId, categorias]);
+
+    async function criarCategoria() {
+        const nome = novoCatNome.trim();
+        if (!nome) return alert('Informe o nome da categoria.');
+        setBusyCat(true);
+        try {
+            const r = await apiPost<{ ok: boolean; msg?: string; id?: number }>({ action: 'categoria_criar', nome });
+            if (!r.ok) return alert(r.msg || 'Falha ao criar categoria.');
+            setNovoCatNome('');
+            await refreshInit();
+        } finally {
+            setBusyCat(false);
+        }
+    }
+
+    async function renomearCategoria() {
+        const categoria_id = Number(renomearCatId);
+        const nome = renomearCatNome.trim();
+        if (!categoria_id) return alert('Selecione a categoria.');
+        if (!nome) return alert('Informe o novo nome.');
+        setBusyCat(true);
+        try {
+            const r = await apiPost<{ ok: boolean; msg?: string }>({ action: 'categoria_renomear', categoria_id, nome });
+            if (!r.ok) return alert(r.msg || 'Falha ao renomear categoria.');
+            await refreshInit();
+        } finally {
+            setBusyCat(false);
+        }
+    }
+
+    // ======= AVANÇADO (fabricantes) =======
+    const [novoFabNome, setNovoFabNome] = useState('');
+    const [renomearFabId, setRenomearFabId] = useState<ID>(0);
+    const [renomearFabNome, setRenomearFabNome] = useState('');
+    const [busyFab, setBusyFab] = useState(false);
+
+    useEffect(() => {
+        if (!renomearFabId && fabricantes[0]?.id) {
+            setRenomearFabId(fabricantes[0].id);
+            setRenomearFabNome(fabricantes[0].nome);
+        }
+    }, [fabricantes, renomearFabId]);
+
+    useEffect(() => {
+        const f = fabricantes.find((x) => x.id === renomearFabId);
+        if (f) setRenomearFabNome(f.nome);
+    }, [renomearFabId, fabricantes]);
+
+    async function criarFabricante() {
+        const nome = novoFabNome.trim();
+        if (!nome) return alert('Informe o nome do fabricante.');
+        setBusyFab(true);
+        try {
+            const r = await apiPost<{ ok: boolean; msg?: string; id?: number }>({ action: 'fabricante_criar', nome });
+            if (!r.ok) return alert(r.msg || 'Falha ao criar fabricante.');
+            setNovoFabNome('');
+            await refreshInit();
+        } finally {
+            setBusyFab(false);
+        }
+    }
+
+    async function renomearFabricante() {
+        const fabricante_id = Number(renomearFabId);
+        const nome = renomearFabNome.trim();
+        if (!fabricante_id) return alert('Selecione o fabricante.');
+        if (!nome) return alert('Informe o novo nome.');
+        setBusyFab(true);
+        try {
+            const r = await apiPost<{ ok: boolean; msg?: string }>({ action: 'fabricante_renomear', fabricante_id, nome });
+            if (!r.ok) return alert(r.msg || 'Falha ao renomear fabricante.');
+            await refreshInit();
+        } finally {
+            setBusyFab(false);
+        }
+    }
+
+    // ======= HISTÓRICO (compatível com seu PHP atual: q, tipo, limit) =======
     const [histLoading, setHistLoading] = useState(false);
     const [histErr, setHistErr] = useState('');
     const [histRows, setHistRows] = useState<HistoricoRow[]>([]);
     const [histQ, setHistQ] = useState('');
     const [histTipo, setHistTipo] = useState<'Todos' | HistoricoRow['tipo']>('Todos');
-    const [histDep, setHistDep] = useState<ID | 'Todos'>('Todos');
-    const [histFrom, setHistFrom] = useState('');
-    const [histTo, setHistTo] = useState('');
-    const [histLimit, setHistLimit] = useState(80);
-    const [histOffset, setHistOffset] = useState(0);
-    const [histTotal, setHistTotal] = useState<number | undefined>(undefined);
+    const [histLimit, setHistLimit] = useState(300); // PHP suporta até 500
 
-    async function loadHistorico(nextOffset?: number) {
+    async function loadHistorico() {
         setHistLoading(true);
         setHistErr('');
         try {
-            const o = nextOffset ?? histOffset;
             const resp = await apiGet<HistoricoResp>({
                 historico: 1,
-                limit: histLimit,
-                offset: o,
+                limit: Math.max(1, Math.min(500, histLimit)),
                 q: histQ.trim() || undefined,
                 tipo: histTipo !== 'Todos' ? histTipo : undefined,
-                deposito_id: histDep !== 'Todos' ? histDep : undefined,
-                from: histFrom || undefined,
-                to: histTo || undefined,
             });
             if (!resp.ok) throw new Error(resp.msg || 'Falha ao carregar histórico.');
             setHistRows(resp.rows || []);
-            setHistTotal(resp.total);
-            setHistOffset(o);
         } catch (e: any) {
             setHistErr(e?.message || 'Erro ao carregar histórico.');
         } finally {
@@ -947,7 +1087,7 @@ export default function Page() {
     }
 
     useEffect(() => {
-        if (tab === 'HISTORICO') loadHistorico(0);
+        if (tab === 'HISTORICO') loadHistorico();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab]);
 
@@ -1180,7 +1320,7 @@ export default function Page() {
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código e filtro por depósito. (Mostrando linhas que têm saldo.)</p>
+                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro por depósito. (Mostrando linhas que têm saldo.)</p>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
@@ -1194,7 +1334,7 @@ export default function Page() {
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
                                 <Field label="Pesquisar">
-                                    <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito..." />
+                                    <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito, categoria..." />
                                 </Field>
 
                                 <Field label="Depósito">
@@ -1242,6 +1382,8 @@ export default function Page() {
                                             const valorNum = Number(p.valor) || 0;
 
                                             const foto = normalizeImgUrl(p.foto_url);
+                                            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
+                                            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
 
                                             return (
                                                 <li key={`${p.id}_${d.id}`}>
@@ -1262,6 +1404,11 @@ export default function Page() {
                                                                 </p>
                                                                 <p className="mt-0.5 truncate text-xs text-slate-600">
                                                                     CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor: {moneyBRL(valorNum)}
+                                                                </p>
+                                                                <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                                                                    {cat ? <>Categoria: <b>{cat}</b></> : null}
+                                                                    {cat && fab ? ' • ' : null}
+                                                                    {fab ? <>Fabricante: <b>{fab}</b></> : null}
                                                                 </p>
                                                                 <p className="mt-0.5 text-[11px] text-slate-500">Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : '—'}</p>
                                                             </div>
@@ -1339,7 +1486,7 @@ export default function Page() {
                                     <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button variant="ghost" onClick={() => loadHistorico(0)} disabled={histLoading} type="button">
+                                    <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
                                         Atualizar
                                     </Button>
                                 </div>
@@ -1347,9 +1494,8 @@ export default function Page() {
 
                             {histErr ? <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div> : null}
 
-                            {/* filtros */}
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
-                                <div className="sm:col-span-2">
+                                <div className="sm:col-span-3">
                                     <Field label="Buscar (produto, CB, destino, obs)">
                                         <TextInput value={histQ} onChange={(e) => setHistQ(e.target.value)} placeholder="Ex: URNA, 1745..., Obra X" />
                                     </Field>
@@ -1365,27 +1511,17 @@ export default function Page() {
                                     </Select>
                                 </Field>
 
-                                <Field label="Depósito (origem/destino)">
-                                    <Select value={histDep} onChange={(e) => setHistDep(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}>
-                                        <option value="Todos">Todos</option>
-                                        {depositos.map((d) => (
-                                            <option key={d.id} value={d.id}>
-                                                {d.nome}
-                                            </option>
-                                        ))}
+                                <Field label="Limite">
+                                    <Select value={histLimit} onChange={(e) => setHistLimit(Number(e.target.value))}>
+                                        <option value={80}>80</option>
+                                        <option value={120}>120</option>
+                                        <option value={300}>300</option>
+                                        <option value={500}>500</option>
                                     </Select>
                                 </Field>
 
-                                <Field label="De (data)">
-                                    <TextInput type="date" value={histFrom} onChange={(e) => setHistFrom(e.target.value)} />
-                                </Field>
-
-                                <Field label="Até (data)">
-                                    <TextInput type="date" value={histTo} onChange={(e) => setHistTo(e.target.value)} />
-                                </Field>
-
                                 <div className="sm:col-span-6 flex flex-wrap gap-2">
-                                    <Button onClick={() => loadHistorico(0)} disabled={histLoading} type="button">
+                                    <Button onClick={loadHistorico} disabled={histLoading} type="button">
                                         Filtrar
                                     </Button>
                                     <Button
@@ -1393,11 +1529,7 @@ export default function Page() {
                                         onClick={() => {
                                             setHistQ('');
                                             setHistTipo('Todos');
-                                            setHistDep('Todos');
-                                            setHistFrom('');
-                                            setHistTo('');
-                                            setHistOffset(0);
-                                            setTimeout(() => loadHistorico(0), 0);
+                                            setTimeout(() => loadHistorico(), 0);
                                         }}
                                         disabled={histLoading}
                                         type="button"
@@ -1406,13 +1538,7 @@ export default function Page() {
                                     </Button>
 
                                     <div className="ml-auto flex items-center gap-2">
-                                        <span className="text-xs text-slate-500">{histTotal !== undefined ? `Total: ${histTotal}` : `Mostrando: ${histRows.length}`}</span>
-                                        <Select value={histLimit} onChange={(e) => setHistLimit(Number(e.target.value))} className="w-[120px]">
-                                            <option value={40}>40</option>
-                                            <option value={80}>80</option>
-                                            <option value={120}>120</option>
-                                            <option value={200}>200</option>
-                                        </Select>
+                                        <span className="text-xs text-slate-500">Mostrando: {histRows.length}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1474,7 +1600,8 @@ export default function Page() {
                                                                 {h.solicitante_usuario_id ? (
                                                                     <>
                                                                         {' '}
-                                                                        • Solicitante: <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
+                                                                        • Solicitante:{' '}
+                                                                        <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
                                                                     </>
                                                                 ) : null}
                                                                 {h.observacao ? <> • Obs: {h.observacao}</> : null}
@@ -1492,20 +1619,6 @@ export default function Page() {
                                     </ul>
                                 )}
                             </div>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                <Button variant="ghost" onClick={() => loadHistorico(Math.max(0, histOffset - histLimit))} disabled={histLoading || histOffset <= 0} type="button">
-                                    ← Anterior
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    onClick={() => loadHistorico(histOffset + histLimit)}
-                                    disabled={histLoading || (histTotal !== undefined ? histOffset + histLimit >= histTotal : histRows.length < histLimit)}
-                                    type="button"
-                                >
-                                    Próximo →
-                                </Button>
-                            </div>
                         </Card>
                     ) : null}
 
@@ -1515,7 +1628,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Depósitos: criar, renomear e exportar CSV para conferência.</p>
+                                    <p className="mt-1 text-sm text-slate-600">Depósitos, Categorias e Fabricantes: criar, renomear + exportação CSV.</p>
                                 </div>
                                 <Button variant="ghost" onClick={() => setTab('ESTOQUE')} type="button">
                                     Voltar
@@ -1523,6 +1636,7 @@ export default function Page() {
                             </div>
 
                             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                {/* Depósitos */}
                                 <div className="rounded-2xl border border-slate-200 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Adicionar Depósito</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
@@ -1560,6 +1674,75 @@ export default function Page() {
                                     </div>
                                 </div>
 
+                                {/* Categorias */}
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar Categoria</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Nome da categoria">
+                                            <TextInput value={novoCatNome} onChange={(e) => setNovoCatNome(e.target.value)} placeholder="Ex: EPIs" />
+                                        </Field>
+                                        <Button onClick={criarCategoria} disabled={busyCat || !novoCatNome.trim()} type="button">
+                                            Criar categoria
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear Categoria</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Categoria">
+                                            <Select value={renomearCatId} onChange={(e) => setRenomearCatId(Number(e.target.value))}>
+                                                {categorias.map((c) => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                        <Field label="Novo nome">
+                                            <TextInput value={renomearCatNome} onChange={(e) => setRenomearCatNome(e.target.value)} />
+                                        </Field>
+                                        <Button onClick={renomearCategoria} disabled={busyCat || !renomearCatId || !renomearCatNome.trim()} type="button">
+                                            Renomear
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Fabricantes */}
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar Fabricante</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Nome do fabricante">
+                                            <TextInput value={novoFabNome} onChange={(e) => setNovoFabNome(e.target.value)} placeholder="Ex: 3M" />
+                                        </Field>
+                                        <Button onClick={criarFabricante} disabled={busyFab || !novoFabNome.trim()} type="button">
+                                            Criar fabricante
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear Fabricante</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Fabricante">
+                                            <Select value={renomearFabId} onChange={(e) => setRenomearFabId(Number(e.target.value))}>
+                                                {fabricantes.map((f) => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                        <Field label="Novo nome">
+                                            <TextInput value={renomearFabNome} onChange={(e) => setRenomearFabNome(e.target.value)} />
+                                        </Field>
+                                        <Button onClick={renomearFabricante} disabled={busyFab || !renomearFabId || !renomearFabNome.trim()} type="button">
+                                            Renomear
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Exportação */}
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
                                     <p className="mt-1 text-xs text-slate-600">Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).</p>
@@ -1653,6 +1836,39 @@ export default function Page() {
                                     />
                                 </Field>
 
+                                {/* ✅ categoria/fabricante */}
+                                <Field label="Categoria (opcional)">
+                                    <div className="flex gap-2">
+                                        <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {categorias.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                        <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)} title="Criar categoria">
+                                            ＋
+                                        </Button>
+                                    </div>
+                                </Field>
+
+                                <Field label="Fabricante (opcional)">
+                                    <div className="flex gap-2">
+                                        <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {fabricantes.map((f) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                        <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)} title="Criar fabricante">
+                                            ＋
+                                        </Button>
+                                    </div>
+                                </Field>
+
                                 {novoFoto ? (
                                     <div className="sm:col-span-2">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1675,6 +1891,40 @@ export default function Page() {
             </Modal>
 
             <BarcodeScannerModal open={entradaScanOpen} title="Escanear código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
+
+            {/* ===== MODAL QUICK: CATEGORIA ===== */}
+            <Modal open={catQuickOpen} title="Criar categoria" subtitle="Cria e já deixa disponível para seleção." onClose={() => setCatQuickOpen(false)}>
+                <div className="grid grid-cols-1 gap-3">
+                    <Field label="Nome">
+                        <TextInput value={catQuickNome} onChange={(e) => setCatQuickNome(e.target.value)} placeholder="Ex: EPIs" />
+                    </Field>
+                    <div className="flex gap-2">
+                        <Button onClick={criarCategoriaQuick} type="button" disabled={!catQuickNome.trim()}>
+                            Criar
+                        </Button>
+                        <Button variant="ghost" onClick={() => setCatQuickOpen(false)} type="button">
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* ===== MODAL QUICK: FABRICANTE ===== */}
+            <Modal open={fabQuickOpen} title="Criar fabricante" subtitle="Cria e já deixa disponível para seleção." onClose={() => setFabQuickOpen(false)}>
+                <div className="grid grid-cols-1 gap-3">
+                    <Field label="Nome">
+                        <TextInput value={fabQuickNome} onChange={(e) => setFabQuickNome(e.target.value)} placeholder="Ex: 3M" />
+                    </Field>
+                    <div className="flex gap-2">
+                        <Button onClick={criarFabricanteQuick} type="button" disabled={!fabQuickNome.trim()}>
+                            Criar
+                        </Button>
+                        <Button variant="ghost" onClick={() => setFabQuickOpen(false)} type="button">
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
 
             {/* ===== MODAL: SAÍDA ===== */}
             <Modal open={saidaOpen} title="Saída" subtitle="Filtre pelo depósito, procure o produto, ou escaneie por câmera. Operador é fixo." onClose={() => setSaidaOpen(false)}>
