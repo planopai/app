@@ -69,15 +69,7 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
-type UiTab =
-    | 'HOME'
-    | 'ENTRADA'
-    | 'SAIDA'
-    | 'TRANSFERENCIA'
-    | 'ESTOQUE'
-    | 'ALERTAS'
-    | 'HISTORICO'
-    | 'AVANCADO';
+type UiTab = 'HOME' | 'ENTRADA' | 'SAIDA' | 'TRANSFERENCIA' | 'ESTOQUE' | 'ALERTAS' | 'HISTORICO' | 'AVANCADO';
 
 const API_BASE = '/api/php/estoque_admin.php';
 
@@ -101,6 +93,14 @@ function moneyBRL(n: number) {
     } catch {
         return `R$ ${n.toFixed(2)}`;
     }
+}
+
+/** ✅ normaliza valores tipo "", "null", "undefined" e espaços */
+function normalizeImgUrl(u?: string | null) {
+    const t = (u ?? '').toString().trim();
+    if (!t) return null;
+    if (t === 'null' || t === 'undefined') return null;
+    return t;
 }
 
 async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
@@ -286,7 +286,7 @@ function Modal({
 }
 
 /* =========================
-   POPUP IMAGEM (zoom)
+   POPUP IMAGEM (zoom) ✅ atualizado
 ========================= */
 
 function ImagePreviewModal({
@@ -300,6 +300,24 @@ function ImagePreviewModal({
     url?: string | null;
     title?: string;
 }) {
+    const cleanUrl = normalizeImgUrl(url);
+
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+
+    useEffect(() => {
+        if (!open) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = prev;
+        };
+    }, [open]);
+
     if (!open) return null;
 
     return (
@@ -315,7 +333,7 @@ function ImagePreviewModal({
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
                     <div className="min-w-0">
                         <h2 className="truncate text-base font-semibold text-slate-900">{title || 'Imagem do produto'}</h2>
-                        <p className="mt-1 text-sm text-slate-600">Clique fora para fechar.</p>
+                        <p className="mt-1 text-sm text-slate-600">Clique fora ou pressione ESC para fechar.</p>
                     </div>
                     <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose} type="button">
                         ✕
@@ -323,13 +341,15 @@ function ImagePreviewModal({
                 </div>
 
                 <div className="max-h-[82dvh] overflow-auto p-4">
-                    {url ? (
+                    {cleanUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={url} alt={title || 'Imagem do produto'} className="mx-auto max-h-[76dvh] w-auto max-w-full rounded-2xl border border-slate-200 object-contain" />
+                        <img
+                            src={cleanUrl}
+                            alt={title || 'Imagem do produto'}
+                            className="mx-auto h-auto w-full max-h-[76dvh] rounded-2xl border border-slate-200 object-contain"
+                        />
                     ) : (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-                            Produto sem imagem.
-                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Produto sem imagem.</div>
                     )}
                 </div>
             </div>
@@ -338,17 +358,12 @@ function ImagePreviewModal({
 }
 
 /* =========================
-   FOTO MINIATURA CLICÁVEL
+   FOTO MINIATURA CLICÁVEL ✅ atualizado
 ========================= */
 
-function PhotoThumb({
-    url,
-    onClick,
-}: {
-    url?: string | null;
-    onClick?: () => void;
-}) {
-    const clickable = !!url && !!onClick;
+function PhotoThumb({ url, onClick }: { url?: string | null; onClick?: () => void }) {
+    const cleanUrl = normalizeImgUrl(url);
+    const clickable = !!cleanUrl && !!onClick;
 
     return (
         <button
@@ -361,9 +376,9 @@ function PhotoThumb({
             aria-label={clickable ? 'Abrir imagem do produto' : 'Sem imagem'}
             title={clickable ? 'Clique para ampliar' : 'Sem imagem'}
         >
-            {url ? (
+            {cleanUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={url} alt="Foto do produto" className="h-10 w-10 rounded-xl object-cover" />
+                <img src={cleanUrl} alt="Foto do produto" className="h-10 w-10 rounded-xl object-cover" />
             ) : (
                 <span className="text-lg">🖼️</span>
             )}
@@ -958,7 +973,9 @@ export default function Page() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                             <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
-                            <p className="mt-1 text-sm text-slate-600">Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.</p>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
+                            </p>
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
                             </p>
@@ -1073,7 +1090,6 @@ export default function Page() {
                     {/* TRANSFERÊNCIA */}
                     {tab === 'TRANSFERENCIA' ? (
                         <Card className="p-4">
-                            {/* ... mantém igual ao seu (sem alteração) ... */}
                             <div className="flex flex-col gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
@@ -1225,15 +1241,17 @@ export default function Page() {
                                             const low = qtd <= min;
                                             const valorNum = Number(p.valor) || 0;
 
+                                            const foto = normalizeImgUrl(p.foto_url);
+
                                             return (
                                                 <li key={`${p.id}_${d.id}`}>
                                                     <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
                                                         <div className="flex min-w-0 items-center gap-3">
                                                             <PhotoThumb
-                                                                url={p.foto_url}
+                                                                url={foto}
                                                                 onClick={() => {
-                                                                    if (!p.foto_url) return;
-                                                                    setImgUrl(p.foto_url);
+                                                                    if (!foto) return;
+                                                                    setImgUrl(foto);
                                                                     setImgTitle(p.nome);
                                                                     setImgOpen(true);
                                                                 }}
@@ -1315,7 +1333,6 @@ export default function Page() {
                     {/* HISTÓRICO */}
                     {tab === 'HISTORICO' ? (
                         <Card className="p-4">
-                            {/* ... mantém igual ao seu (sem alteração relevante) ... */}
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
@@ -1457,8 +1474,7 @@ export default function Page() {
                                                                 {h.solicitante_usuario_id ? (
                                                                     <>
                                                                         {' '}
-                                                                        • Solicitante:{' '}
-                                                                        <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
+                                                                        • Solicitante: <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
                                                                     </>
                                                                 ) : null}
                                                                 {h.observacao ? <> • Obs: {h.observacao}</> : null}
@@ -1572,7 +1588,12 @@ export default function Page() {
             <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
 
             {/* ===== MODAL: ENTRADA ===== */}
-            <Modal open={entradaOpen} title="Entrada" subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto." onClose={() => setEntradaOpen(false)}>
+            <Modal
+                open={entradaOpen}
+                title="Entrada"
+                subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto."
+                onClose={() => setEntradaOpen(false)}
+            >
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Código de barras">
                         <div className="flex gap-2">
