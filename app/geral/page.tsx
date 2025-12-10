@@ -101,7 +101,8 @@ function moneyBRL(n: number) {
     try {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
     } catch {
-        return `R$ ${n.toFixed(2)}`;
+        const safe = Number.isFinite(n) ? n : 0;
+        return `R$ ${safe.toFixed(2)}`;
     }
 }
 
@@ -113,6 +114,15 @@ function normalizeImgUrl(u?: string | null) {
     return t;
 }
 
+async function safeJson<T>(r: Response): Promise<T> {
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(`Resposta inesperada (${ct || 'sem content-type'}). ${txt ? `Conteúdo: ${txt.slice(0, 160)}...` : ''}`.trim());
+    }
+    return (await r.json()) as T;
+}
+
 async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
     const u = new URL(API_BASE, window.location.origin);
     Object.entries(qs).forEach(([k, v]) => {
@@ -121,9 +131,7 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
     });
 
     const r = await fetch(u.toString(), { method: 'GET', cache: 'no-store', credentials: 'include' });
-    const ct = r.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) throw new Error(`Resposta inesperada (${ct}).`);
-    return (await r.json()) as T;
+    return await safeJson<T>(r);
 }
 
 async function apiPost<T>(body: any) {
@@ -134,7 +142,8 @@ async function apiPost<T>(body: any) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-    return (await r.json()) as T & { ok?: boolean; msg?: string; need_login?: 1 };
+
+    return await safeJson<T & { ok?: boolean; msg?: string; need_login?: 1 }>(r);
 }
 
 /* =========================
@@ -279,7 +288,12 @@ function Modal({
                         <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
                         {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
                     </div>
-                    <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose} aria-label="Fechar" type="button">
+                    <button
+                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                        onClick={onClose}
+                        aria-label="Fechar"
+                        type="button"
+                    >
                         ✕
                     </button>
                 </div>
@@ -348,7 +362,11 @@ function ImagePreviewModal({
                 <div className="max-h-[82dvh] overflow-auto p-4">
                     {cleanUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={cleanUrl} alt={title || 'Imagem do produto'} className="mx-auto h-auto w-full max-h-[76dvh] rounded-2xl border border-slate-200 object-contain" />
+                        <img
+                            src={cleanUrl}
+                            alt={title || 'Imagem do produto'}
+                            className="mx-auto h-auto w-full max-h-[76dvh] rounded-2xl border border-slate-200 object-contain"
+                        />
                     ) : (
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Produto sem imagem.</div>
                     )}
@@ -385,7 +403,9 @@ function PhotoThumb({ url, onClick }: { url?: string | null; onClick?: () => voi
             )}
 
             {clickable ? (
-                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] shadow ring-1 ring-slate-200">🔍</span>
+                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] shadow ring-1 ring-slate-200">
+                    🔍
+                </span>
             ) : null}
         </button>
     );
@@ -420,7 +440,11 @@ function BarcodeScannerModal({
             try {
                 const codeReader = new BrowserMultiFormatReader();
                 const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-                const backCam = devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
+
+                if (!devices?.length) throw new Error('Nenhuma câmera encontrada.');
+
+                const backCam =
+                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
 
                 if (!videoRef.current) throw new Error('Vídeo não disponível.');
 
@@ -445,9 +469,12 @@ function BarcodeScannerModal({
 
         return () => {
             cancelled = true;
+
             try {
                 controlsRef.current?.stop();
-            } catch { }
+            } catch {
+                // ignore
+            }
             controlsRef.current = null;
 
             const el = videoRef.current;
@@ -549,12 +576,16 @@ export default function Page() {
         try {
             const j = await apiGet<InitResp>({ init: 1 });
             if (!j.ok) throw new Error(j.msg || 'Falha no init');
+
             setMe(j.me);
             setUsuarios(j.usuarios || []);
             setDepositos(j.depositos || []);
+
+            // manter só ativos no UI principal
             setCategorias((j.categorias || []).filter((c) => Number(c.ativo) === 1));
             setFabricantes((j.fabricantes || []).filter((f) => Number(f.ativo) === 1));
             setProdutos((j.produtos || []).filter((p) => Number(p.ativo) === 1));
+
             setSaldos(j.saldos || []);
         } catch (e: any) {
             setInitErr(e?.message || 'Erro ao carregar.');
@@ -591,7 +622,6 @@ export default function Page() {
     const [catFiltroEstoque, setCatFiltroEstoque] = useState<ID | 'Todos'>('Todos');
     const [fabFiltroEstoque, setFabFiltroEstoque] = useState<ID | 'Todos'>('Todos');
     const [onlyLow, setOnlyLow] = useState(false);
-
 
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
@@ -632,24 +662,9 @@ export default function Page() {
             rows.push({ p, d, qtd, s });
         }
 
-        rows.sort(
-            (a, b) =>
-                a.p.nome.localeCompare(b.p.nome, 'pt-BR') ||
-                a.d.nome.localeCompare(b.d.nome, 'pt-BR')
-        );
+        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, 'pt-BR') || a.d.nome.localeCompare(b.d.nome, 'pt-BR'));
         return rows;
-    }, [
-        saldos,
-        prodById,
-        depById,
-        qEstoque,
-        depFiltroEstoque,
-        catFiltroEstoque,
-        fabFiltroEstoque,
-        onlyLow,
-        catById,
-        fabById,
-    ]);
+    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, catFiltroEstoque, fabFiltroEstoque, onlyLow, catById, fabById]);
 
     // ======= ENTRADA =======
     const [entradaOpen, setEntradaOpen] = useState(false);
@@ -1145,9 +1160,7 @@ export default function Page() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                             <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
-                            <p className="mt-1 text-sm text-slate-600">
-                                Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
-                            </p>
+                            <p className="mt-1 text-sm text-slate-600">Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.</p>
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : '—'}</b>
                             </p>
@@ -1352,7 +1365,9 @@ export default function Page() {
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro por depósito. (Mostrando linhas que têm saldo.)</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Busca por nome/código/categoria/fabricante e filtro por depósito. (Mostrando linhas que têm saldo.)
+                                    </p>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
@@ -1365,13 +1380,15 @@ export default function Page() {
                             </div>
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
-
                                 <Field label="Pesquisar">
                                     <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito, categoria..." />
                                 </Field>
 
                                 <Field label="Depósito">
-                                    <Select value={depFiltroEstoque} onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}>
+                                    <Select
+                                        value={depFiltroEstoque}
+                                        onChange={(e) => setDepFiltroEstoque(e.target.value === 'Todos' ? 'Todos' : Number(e.target.value))}
+                                    >
                                         <option value="Todos">Todos</option>
                                         {depositos.map((d) => (
                                             <option key={d.id} value={d.id}>
@@ -1467,9 +1484,17 @@ export default function Page() {
                                                                     CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor: {moneyBRL(valorNum)}
                                                                 </p>
                                                                 <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                                                                    {cat ? <>Categoria: <b>{cat}</b></> : null}
+                                                                    {cat ? (
+                                                                        <>
+                                                                            Categoria: <b>{cat}</b>
+                                                                        </>
+                                                                    ) : null}
                                                                     {cat && fab ? ' • ' : null}
-                                                                    {fab ? <>Fabricante: <b>{fab}</b></> : null}
+                                                                    {fab ? (
+                                                                        <>
+                                                                            Fabricante: <b>{fab}</b>
+                                                                        </>
+                                                                    ) : null}
                                                                 </p>
                                                                 <p className="mt-0.5 text-[11px] text-slate-500">Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : '—'}</p>
                                                             </div>
@@ -1951,7 +1976,12 @@ export default function Page() {
                 </div>
             </Modal>
 
-            <BarcodeScannerModal open={entradaScanOpen} title="Escanear código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
+            <BarcodeScannerModal
+                open={entradaScanOpen}
+                title="Escanear código de barras (Entrada)"
+                onClose={() => setEntradaScanOpen(false)}
+                onDetected={(code) => setEntradaBarcode(code)}
+            />
 
             {/* ===== MODAL QUICK: CATEGORIA ===== */}
             <Modal open={catQuickOpen} title="Criar categoria" subtitle="Cria e já deixa disponível para seleção." onClose={() => setCatQuickOpen(false)}>
@@ -2081,7 +2111,12 @@ export default function Page() {
                 </div>
             </Modal>
 
-            <BarcodeScannerModal open={saidaScanOpen} title="Escanear código de barras (Saída)" onClose={() => setSaidaScanOpen(false)} onDetected={(code) => onSaidaBarcodePick(code)} />
+            <BarcodeScannerModal
+                open={saidaScanOpen}
+                title="Escanear código de barras (Saída)"
+                onClose={() => setSaidaScanOpen(false)}
+                onDetected={(code) => onSaidaBarcodePick(code)}
+            />
         </main>
     );
 }
