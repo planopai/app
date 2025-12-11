@@ -21,7 +21,6 @@ type Produto = {
     ativo: 0 | 1 | number;
     atualizado_em: string;
 
-    // novos
     categoria_id?: ID | null;
     fabricante_id?: ID | null;
     categoria_nome?: string | null;
@@ -81,7 +80,12 @@ type HistoricoResp = {
 
 type UiTab = 'HOME' | 'ENTRADA' | 'SAIDA' | 'TRANSFERENCIA' | 'ESTOQUE' | 'ALERTAS' | 'HISTORICO' | 'AVANCADO';
 
-const API_BASE = '/api/php/estoque_admin.php';
+/** itens em lote */
+type EntradaItem = { id: number; payload: any; resumo: string };
+type SaidaItem = { id: number; payload: any; resumo: string };
+type TrfItem = { id: number; payload: any; resumo: string };
+
+const API_BASE = '/api/php/materiais_gerais.php';
 
 function clampInt(v: unknown) {
     const n = Number(v);
@@ -106,16 +110,10 @@ function moneyBRL(n: number) {
     }
 }
 
-/** normaliza valores tipo "", "null", "undefined" e monta caminho padrão */
 function normalizeImgUrl(u?: string | null) {
     const t = (u ?? '').toString().trim();
     if (!t || t === 'null' || t === 'undefined') return null;
-
-    // Se já for URL absoluta ou caminho absoluto, mantém
     if (/^https?:\/\//i.test(t) || t.startsWith('/')) return t;
-
-    // Caso contrário, assume que é só o nome do arquivo salvo no PHP
-    // e prefixa a pasta padrão de uploads
     return `/uploads/produtos/${t}`;
 }
 
@@ -588,7 +586,6 @@ export default function Page() {
             setUsuarios(j.usuarios || []);
             setDepositos(j.depositos || []);
 
-            // manter só ativos no UI principal
             setCategorias((j.categorias || []).filter((c) => Number(c.ativo) === 1));
             setFabricantes((j.fabricantes || []).filter((f) => Number(f.ativo) === 1));
             setProdutos((j.produtos || []).filter((p) => Number(p.ativo) === 1));
@@ -691,6 +688,15 @@ export default function Page() {
     const [fabQuickOpen, setFabQuickOpen] = useState(false);
     const [fabQuickNome, setFabQuickNome] = useState('');
 
+    // listas em lote
+    const entradaSeqRef = useRef(1);
+    const saidaSeqRef = useRef(1);
+    const trfSeqRef = useRef(1);
+
+    const [entradaItens, setEntradaItens] = useState<EntradaItem[]>([]);
+    const [saidaItens, setSaidaItens] = useState<SaidaItem[]>([]);
+    const [trfItens, setTrfItens] = useState<TrfItem[]>([]);
+
     useEffect(() => {
         if (depositos.length && !entradaDepositoId) setEntradaDepositoId(depositos[0].id);
     }, [depositos, entradaDepositoId]);
@@ -727,39 +733,7 @@ export default function Page() {
         setNovoFoto(url);
     }
 
-    async function applyEntrada() {
-        if (!me) return alert('Sessão inválida. Recarregue a página.');
-        const deposito_id = Number(entradaDepositoId);
-        const quantidade = clampInt(entradaQtd);
-        const codigo_barras = entradaBarcode.trim();
-
-        if (!deposito_id) return alert('Selecione o depósito.');
-        if (!codigo_barras) return alert('Informe/Leia o código de barras.');
-        if (quantidade <= 0) return alert('Quantidade inválida.');
-
-        const payload: any = {
-            action: 'entrada',
-            deposito_id,
-            quantidade,
-            codigo_barras,
-            observacao: entradaObs.trim() || undefined,
-        };
-
-        if (!entradaProdutoExistente) {
-            const nome = novoNome.trim();
-            if (!nome) return alert('Produto novo: informe o nome.');
-            payload.nome = nome;
-            payload.valor = Number.isFinite(Number(novoValor)) ? Number(novoValor) : 0;
-            payload.minimo = clampInt(novoMin);
-            payload.foto_url = novoFoto || '';
-
-            payload.categoria_id = novoCategoriaId ? Number(novoCategoriaId) : 0;
-            payload.fabricante_id = novoFabricanteId ? Number(novoFabricanteId) : 0;
-        }
-
-        const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
-        if (!r.ok) return alert(r.msg || 'Falha na entrada.');
-
+    function resetEntradaForm() {
         setEntradaBarcode('');
         setEntradaQtd(1);
         setEntradaObs('');
@@ -769,6 +743,109 @@ export default function Page() {
         setNovoFoto('');
         setNovoCategoriaId(0);
         setNovoFabricanteId(0);
+    }
+
+    function buildEntradaPayloadFromForm(): { payload: any; resumo: string } | null {
+        if (!me) {
+            alert('Sessão inválida. Recarregue a página.');
+            return null;
+        }
+        const deposito_id = Number(entradaDepositoId);
+        const quantidade = clampInt(entradaQtd);
+        const codigo_barras = entradaBarcode.trim();
+
+        if (!deposito_id) {
+            alert('Selecione o depósito.');
+            return null;
+        }
+        if (!codigo_barras) {
+            alert('Informe/Leia o código de barras.');
+            return null;
+        }
+        if (quantidade <= 0) {
+            alert('Quantidade inválida.');
+            return null;
+        }
+
+        const payload: any = {
+            action: 'entrada',
+            deposito_id,
+            quantidade,
+            codigo_barras,
+            observacao: entradaObs.trim() || undefined,
+        };
+
+        let nomeProduto = entradaProdutoExistente?.nome || '';
+
+        if (!entradaProdutoExistente) {
+            const nome = novoNome.trim();
+            if (!nome) {
+                alert('Produto novo: informe o nome.');
+                return null;
+            }
+            nomeProduto = nome;
+            payload.nome = nome;
+            payload.valor = Number.isFinite(Number(novoValor)) ? Number(novoValor) : 0;
+            payload.minimo = clampInt(novoMin);
+            payload.foto_url = novoFoto || '';
+
+            payload.categoria_id = novoCategoriaId ? Number(novoCategoriaId) : 0;
+            payload.fabricante_id = novoFabricanteId ? Number(novoFabricanteId) : 0;
+        }
+
+        const resumo = `${nomeProduto || '(sem nome)'} — CB ${codigo_barras} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id
+            }`;
+
+        return { payload, resumo };
+    }
+
+    async function applyEntradaSingle() {
+        const built = buildEntradaPayloadFromForm();
+        if (!built) return;
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>(built.payload);
+        if (!r.ok) return alert(r.msg || 'Falha na entrada.');
+
+        resetEntradaForm();
+        setEntradaOpen(false);
+        await refreshInit();
+        setTab('ESTOQUE');
+    }
+
+    function addEntradaItemToList() {
+        const built = buildEntradaPayloadFromForm();
+        if (!built) return;
+        const id = entradaSeqRef.current++;
+        setEntradaItens((prev) => [...prev, { id, ...built }]);
+        resetEntradaForm();
+    }
+
+    async function applyEntradaLote() {
+        let items = [...entradaItens];
+
+        // se formulário atual estiver preenchido com código, inclui também
+        if (entradaBarcode.trim()) {
+            const built = buildEntradaPayloadFromForm();
+            if (!built) return;
+            const id = entradaSeqRef.current++;
+            items = [...items, { id, ...built }];
+        }
+
+        if (!items.length) {
+            alert('Adicione pelo menos um item para entrada.');
+            return;
+        }
+
+        for (const it of items) {
+            const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
+            if (!r.ok) {
+                alert(`Erro na entrada de "${it.resumo}": ${r.msg || 'Falha.'}`);
+                return;
+            }
+        }
+
+        resetEntradaForm();
+        setEntradaItens([]);
         setEntradaOpen(false);
         await refreshInit();
         setTab('ESTOQUE');
@@ -836,14 +913,26 @@ export default function Page() {
         }
     }, [saidaProdutosNoDeposito, saidaProdutoId]);
 
+    function resetSaidaForm() {
+        setSaidaBarcode('');
+        setSaidaBusca('');
+        setSaidaProdutoId(0);
+        setSaidaQtd(1);
+        setSaidaDestino('');
+        setSaidaObs('');
+    }
+
     function onSaidaBarcodePick(code: string) {
         setSaidaBarcode(code);
         const p = produtos.find((x) => x.codigo_barras === code);
         if (p) setSaidaProdutoId(p.id);
     }
 
-    async function applySaida() {
-        if (!me) return alert('Sessão inválida. Recarregue a página.');
+    function buildSaidaPayloadFromForm(): { payload: any; resumo: string } | null {
+        if (!me) {
+            alert('Sessão inválida. Recarregue a página.');
+            return null;
+        }
 
         const produto_id = Number(saidaProdutoId);
         const deposito_id = Number(saidaDepositoId);
@@ -851,17 +940,35 @@ export default function Page() {
         const solicitante_usuario_id = Number(saidaSolicitanteId);
         const destino_texto = saidaDestino.trim();
 
-        if (!produto_id) return alert('Selecione um produto.');
-        if (!deposito_id) return alert('Selecione o depósito.');
-        if (quantidade <= 0) return alert('Quantidade inválida.');
-        if (!solicitante_usuario_id) return alert('Selecione o solicitante.');
-        if (!destino_texto) return alert('Informe o destino.');
+        if (!produto_id) {
+            alert('Selecione um produto.');
+            return null;
+        }
+        if (!deposito_id) {
+            alert('Selecione o depósito.');
+            return null;
+        }
+        if (quantidade <= 0) {
+            alert('Quantidade inválida.');
+            return null;
+        }
+        if (!solicitante_usuario_id) {
+            alert('Selecione o solicitante.');
+            return null;
+        }
+        if (!destino_texto) {
+            alert('Informe o destino.');
+            return null;
+        }
 
         const s = saldosMap.get(`${produto_id}::${deposito_id}`);
         const atual = s ? clampInt(s.quantidade) : 0;
-        if (quantidade > atual) return alert(`Quantidade maior que disponível (${atual}).`);
+        if (quantidade > atual) {
+            alert(`Quantidade maior que disponível (${atual}).`);
+            return null;
+        }
 
-        const r = await apiPost<{ ok: boolean; msg?: string }>({
+        const payload: any = {
             action: 'saida',
             produto_id,
             deposito_id,
@@ -869,14 +976,60 @@ export default function Page() {
             solicitante_usuario_id,
             destino_texto,
             observacao: saidaObs.trim() || undefined,
-        });
+        };
 
+        const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
+        const resumo = `${prodNome} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id} → ${destino_texto}`;
+
+        return { payload, resumo };
+    }
+
+    async function applySaidaSingle() {
+        const built = buildSaidaPayloadFromForm();
+        if (!built) return;
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>(built.payload);
         if (!r.ok) return alert(r.msg || 'Falha na saída.');
 
-        setSaidaBarcode('');
-        setSaidaQtd(1);
-        setSaidaDestino('');
-        setSaidaObs('');
+        resetSaidaForm();
+        setSaidaOpen(false);
+        await refreshInit();
+        setTab('ESTOQUE');
+    }
+
+    function addSaidaItemToList() {
+        const built = buildSaidaPayloadFromForm();
+        if (!built) return;
+        const id = saidaSeqRef.current++;
+        setSaidaItens((prev) => [...prev, { id, ...built }]);
+        resetSaidaForm();
+    }
+
+    async function applySaidaLote() {
+        let items = [...saidaItens];
+
+        if (saidaProdutoId && saidaDestino.trim()) {
+            const built = buildSaidaPayloadFromForm();
+            if (!built) return;
+            const id = saidaSeqRef.current++;
+            items = [...items, { id, ...built }];
+        }
+
+        if (!items.length) {
+            alert('Adicione pelo menos um item para saída.');
+            return;
+        }
+
+        for (const it of items) {
+            const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
+            if (!r.ok) {
+                alert(`Erro na saída de "${it.resumo}": ${r.msg || 'Falha.'}`);
+                return;
+            }
+        }
+
+        resetSaidaForm();
+        setSaidaItens([]);
         setSaidaOpen(false);
         await refreshInit();
         setTab('ESTOQUE');
@@ -921,8 +1074,18 @@ export default function Page() {
         }
     }, [trfProdutosNaOrigem, trfProdutoId]);
 
-    async function applyTransferencia() {
-        if (!me) return alert('Sessão inválida. Recarregue a página.');
+    function resetTrfForm() {
+        setTrfBusca('');
+        setTrfProdutoId(0);
+        setTrfQtd(1);
+        setTrfObs('');
+    }
+
+    function buildTrfPayloadFromForm(): { payload: any; resumo: string } | null {
+        if (!me) {
+            alert('Sessão inválida. Recarregue a página.');
+            return null;
+        }
 
         const produto_id = Number(trfProdutoId);
         const deposito_origem_id = Number(trfOrigemId);
@@ -930,17 +1093,35 @@ export default function Page() {
         const quantidade = clampInt(trfQtd);
         const solicitante_usuario_id = Number(trfSolicitanteId);
 
-        if (!produto_id) return alert('Selecione um produto.');
-        if (!deposito_origem_id || !deposito_destino_id) return alert('Selecione depósitos.');
-        if (deposito_origem_id === deposito_destino_id) return alert('Origem e destino não podem ser iguais.');
-        if (quantidade <= 0) return alert('Quantidade inválida.');
-        if (!solicitante_usuario_id) return alert('Selecione o solicitante.');
+        if (!produto_id) {
+            alert('Selecione um produto.');
+            return null;
+        }
+        if (!deposito_origem_id || !deposito_destino_id) {
+            alert('Selecione depósitos.');
+            return null;
+        }
+        if (deposito_origem_id === deposito_destino_id) {
+            alert('Origem e destino não podem ser iguais.');
+            return null;
+        }
+        if (quantidade <= 0) {
+            alert('Quantidade inválida.');
+            return null;
+        }
+        if (!solicitante_usuario_id) {
+            alert('Selecione o solicitante.');
+            return null;
+        }
 
         const s = saldosMap.get(`${produto_id}::${deposito_origem_id}`);
         const atual = s ? clampInt(s.quantidade) : 0;
-        if (quantidade > atual) return alert(`Quantidade maior que disponível na origem (${atual}).`);
+        if (quantidade > atual) {
+            alert(`Quantidade maior que disponível na origem (${atual}).`);
+            return null;
+        }
 
-        const r = await apiPost<{ ok: boolean; msg?: string }>({
+        const payload: any = {
             action: 'transferencia',
             produto_id,
             deposito_origem_id,
@@ -948,12 +1129,60 @@ export default function Page() {
             quantidade,
             solicitante_usuario_id,
             observacao: trfObs.trim() || undefined,
-        });
+        };
 
+        const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
+        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id} → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id
+            }`;
+
+        return { payload, resumo };
+    }
+
+    async function applyTransferenciaSingle() {
+        const built = buildTrfPayloadFromForm();
+        if (!built) return;
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>(built.payload);
         if (!r.ok) return alert(r.msg || 'Falha na transferência.');
 
-        setTrfQtd(1);
-        setTrfObs('');
+        resetTrfForm();
+        await refreshInit();
+        setTab('ESTOQUE');
+    }
+
+    function addTrfItemToList() {
+        const built = buildTrfPayloadFromForm();
+        if (!built) return;
+        const id = trfSeqRef.current++;
+        setTrfItens((prev) => [...prev, { id, ...built }]);
+        resetTrfForm();
+    }
+
+    async function applyTransferenciaLote() {
+        let items = [...trfItens];
+
+        if (trfProdutoId) {
+            const built = buildTrfPayloadFromForm();
+            if (!built) return;
+            const id = trfSeqRef.current++;
+            items = [...items, { id, ...built }];
+        }
+
+        if (!items.length) {
+            alert('Adicione pelo menos uma transferência.');
+            return;
+        }
+
+        for (const it of items) {
+            const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
+            if (!r.ok) {
+                alert(`Erro na transferência de "${it.resumo}": ${r.msg || 'Falha.'}`);
+                return;
+            }
+        }
+
+        resetTrfForm();
+        setTrfItens([]);
         await refreshInit();
         setTab('ESTOQUE');
     }
@@ -1248,7 +1477,9 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Leia/digite o código de barras. Se não existir, cadastre o produto.</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.
+                                    </p>
                                 </div>
                                 <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
                                     Abrir Entrada
@@ -1263,7 +1494,9 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Saída</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito).</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito). Também permite lista de itens.
+                                    </p>
                                 </div>
                                 <Button onClick={() => setSaidaOpen(true)} variant="ghost" type="button">
                                     Abrir Saída
@@ -1279,7 +1512,8 @@ export default function Page() {
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        Move quantidade de origem para destino (com validação de saldo).
+                                        Move quantidade de origem para destino (com validação de saldo). É possível montar uma lista de
+                                        transferências.
                                     </p>
                                 </div>
 
@@ -1362,18 +1596,52 @@ export default function Page() {
                                         </div>
 
                                         <div className="sm:col-span-3 flex flex-wrap gap-2">
-                                            <Button onClick={applyTransferencia} disabled={!trfProdutosNaOrigem.length} type="button">
-                                                Confirmar transferência
+                                            <Button type="button" onClick={applyTransferenciaSingle}>
+                                                Confirmar esta transferência
                                             </Button>
-                                            <Button variant="ghost" onClick={() => setTab('ESTOQUE')} type="button">
-                                                Ir para Estoque
+                                            <Button type="button" variant="soft" onClick={addTrfItemToList}>
+                                                Adicionar à lista
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                onClick={applyTransferenciaLote}
+                                                disabled={!trfItens.length && !trfProdutoId}
+                                            >
+                                                Confirmar lista inteira
                                             </Button>
                                         </div>
                                     </div>
                                 </div>
+
+                                {trfItens.length ? (
+                                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                        <p className="text-sm font-semibold text-slate-900">Lista de transferências pendentes</p>
+                                        <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                                            {trfItens.map((it) => (
+                                                <li
+                                                    key={it.id}
+                                                    className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
+                                                >
+                                                    <span className="truncate">{it.resumo}</span>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        onClick={() =>
+                                                            setTrfItens((prev) => prev.filter((x) => x.id !== it.id))
+                                                        }
+                                                    >
+                                                        Remover
+                                                    </Button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ) : null}
                             </div>
                         </Card>
                     ) : null}
+
 
                     {/* ESTOQUE */}
                     {tab === 'ESTOQUE' ? (
@@ -1382,7 +1650,7 @@ export default function Page() {
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        Busca por nome/código/categoria/fabricante e filtro por depósito. (Mostrando linhas que têm saldo.)
+                                        Busca por nome/código/categoria/fabricante e filtro por depósito.
                                     </p>
                                 </div>
                                 <div className="flex gap-2">
@@ -1400,7 +1668,7 @@ export default function Page() {
                                     <TextInput
                                         value={qEstoque}
                                         onChange={(e) => setQEstoque(e.target.value)}
-                                        placeholder="Nome, código, depósito, categoria..."
+                                        placeholder="Nome, código, depósito, categoria, fabricante..."
                                     />
                                 </Field>
 
@@ -1489,7 +1757,9 @@ export default function Page() {
                                 {loading ? (
                                     <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
                                 ) : estoqueRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
+                                    <div className="p-6 text-center text-sm text-slate-500">
+                                        Nenhum registro encontrado.
+                                    </div>
                                 ) : (
                                     <ul className="divide-y divide-slate-200">
                                         {estoqueRows.map(({ p, d, qtd, s }) => {
@@ -1498,8 +1768,12 @@ export default function Page() {
                                             const valorNum = Number(p.valor) || 0;
 
                                             const foto = normalizeImgUrl(p.foto_url);
-                                            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
-                                            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
+                                            const cat =
+                                                p.categoria_nome ||
+                                                (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
+                                            const fab =
+                                                p.fabricante_nome ||
+                                                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
 
                                             return (
                                                 <li key={`${p.id}_${d.id}`}>
@@ -1516,11 +1790,16 @@ export default function Page() {
                                                             />
                                                             <div className="min-w-0">
                                                                 <p className="truncate text-sm font-semibold text-slate-900">
-                                                                    {p.nome} {low ? <span className="text-xs text-red-600">• alerta</span> : null}
+                                                                    {p.nome}{' '}
+                                                                    {low ? (
+                                                                        <span className="text-xs text-red-600">
+                                                                            • alerta
+                                                                        </span>
+                                                                    ) : null}
                                                                 </p>
                                                                 <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                    CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor:{' '}
-                                                                    {moneyBRL(valorNum)}
+                                                                    CB: <b>{p.codigo_barras}</b> • Depósito:{' '}
+                                                                    <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
                                                                 </p>
                                                                 <p className="mt-0.5 truncate text-[11px] text-slate-500">
                                                                     {cat ? (
@@ -1537,13 +1816,17 @@ export default function Page() {
                                                                 </p>
                                                                 <p className="mt-0.5 text-[11px] text-slate-500">
                                                                     Atualizado:{' '}
-                                                                    {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : '—'}
+                                                                    {s?.atualizado_em
+                                                                        ? fmtDateTime(s.atualizado_em)
+                                                                        : '—'}
                                                                 </p>
                                                             </div>
                                                         </div>
 
                                                         <div className="shrink-0 text-right">
-                                                            <p className="text-sm font-semibold text-slate-900">{qtd}</p>
+                                                            <p className="text-sm font-semibold text-slate-900">
+                                                                {qtd}
+                                                            </p>
                                                             <p className="text-xs text-slate-500">mín {min}</p>
                                                         </div>
                                                     </div>
@@ -1562,7 +1845,9 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Alertas (Reposição)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Lista dos itens com quantidade ≤ mínimo.</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Lista dos itens com quantidade ≤ mínimo.
+                                    </p>
                                 </div>
                                 <Button variant="ghost" onClick={() => setTab('ESTOQUE')} type="button">
                                     Voltar ao Estoque
@@ -1571,14 +1856,18 @@ export default function Page() {
 
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
                                 {alertRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum item em alerta 🎉</div>
+                                    <div className="p-6 text-center text-sm text-slate-500">
+                                        Nenhum item em alerta 🎉
+                                    </div>
                                 ) : (
                                     <ul className="divide-y divide-slate-200">
                                         {alertRows.map(({ p, d, qtd, min }) => (
                                             <li key={`${p.id}_${d.id}`} className="px-4 py-3">
                                                 <div className="flex items-center justify-between gap-3">
                                                     <div className="min-w-0">
-                                                        <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
+                                                        <p className="truncate text-sm font-semibold text-slate-900">
+                                                            {p.nome}
+                                                        </p>
                                                         <p className="mt-0.5 truncate text-xs text-slate-600">
                                                             CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
                                                         </p>
@@ -1616,14 +1905,21 @@ export default function Page() {
                                     </p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
+                                    <Button
+                                        variant="ghost"
+                                        onClick={loadHistorico}
+                                        disabled={histLoading}
+                                        type="button"
+                                    >
                                         Atualizar
                                     </Button>
                                 </div>
                             </div>
 
                             {histErr ? (
-                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div>
+                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                    {histErr}
+                                </div>
                             ) : null}
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -1638,7 +1934,12 @@ export default function Page() {
                                 </div>
 
                                 <Field label="Tipo">
-                                    <Select value={histTipo} onChange={(e) => setHistTipo(e.target.value as any)}>
+                                    <Select
+                                        value={histTipo}
+                                        onChange={(e) =>
+                                            setHistTipo(e.target.value as 'Todos' | HistoricoRow['tipo'])
+                                        }
+                                    >
                                         <option value="Todos">Todos</option>
                                         <option value="ENTRADA">Entrada</option>
                                         <option value="SAIDA">Saída</option>
@@ -1648,7 +1949,10 @@ export default function Page() {
                                 </Field>
 
                                 <Field label="Limite">
-                                    <Select value={histLimit} onChange={(e) => setHistLimit(Number(e.target.value))}>
+                                    <Select
+                                        value={histLimit}
+                                        onChange={(e) => setHistLimit(Number(e.target.value))}
+                                    >
                                         <option value={80}>80</option>
                                         <option value={120}>120</option>
                                         <option value={300}>300</option>
@@ -1657,7 +1961,11 @@ export default function Page() {
                                 </Field>
 
                                 <div className="sm:col-span-6 flex flex-wrap gap-2">
-                                    <Button onClick={loadHistorico} disabled={histLoading} type="button">
+                                    <Button
+                                        onClick={loadHistorico}
+                                        disabled={histLoading}
+                                        type="button"
+                                    >
                                         Filtrar
                                     </Button>
                                     <Button
@@ -1674,7 +1982,9 @@ export default function Page() {
                                     </Button>
 
                                     <div className="ml-auto flex items-center gap-2">
-                                        <span className="text-xs text-slate-500">Mostrando: {histRows.length}</span>
+                                        <span className="text-xs text-slate-500">
+                                            Mostrando: {histRows.length}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -1683,7 +1993,9 @@ export default function Page() {
                                 {histLoading ? (
                                     <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
                                 ) : histRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
+                                    <div className="p-6 text-center text-sm text-slate-500">
+                                        Nenhum registro encontrado.
+                                    </div>
                                 ) : (
                                     <ul className="divide-y divide-slate-200">
                                         {histRows.map((h) => {
@@ -1698,10 +2010,14 @@ export default function Page() {
 
                                             const origem =
                                                 h.deposito_origem_nome ||
-                                                (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
+                                                (h.deposito_origem_id
+                                                    ? depById.get(h.deposito_origem_id)?.nome
+                                                    : null);
                                             const destino =
                                                 h.deposito_destino_nome ||
-                                                (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+                                                (h.deposito_destino_id
+                                                    ? depById.get(h.deposito_destino_id)?.nome
+                                                    : null);
 
                                             return (
                                                 <li key={h.id} className="px-4 py-3">
@@ -1758,7 +2074,9 @@ export default function Page() {
                                                                         • Solicitante:{' '}
                                                                         <b>
                                                                             {h.solicitante_nome ||
-                                                                                userById.get(h.solicitante_usuario_id)?.nome ||
+                                                                                userById.get(
+                                                                                    h.solicitante_usuario_id
+                                                                                )?.nome ||
                                                                                 `#${h.solicitante_usuario_id}`}
                                                                         </b>
                                                                     </>
@@ -1961,7 +2279,9 @@ export default function Page() {
 
                                 {/* Exportação */}
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                        Exportação para Conferência (CSV)
+                                    </p>
                                     <p className="mt-1 text-xs text-slate-600">
                                         Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).
                                     </p>
@@ -1973,8 +2293,12 @@ export default function Page() {
                                                 className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3"
                                             >
                                                 <div className="min-w-0">
-                                                    <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
-                                                    <p className="text-[11px] text-slate-500">CSV para conferência</p>
+                                                    <p className="truncate text-sm font-medium text-slate-900">
+                                                        {d.nome}
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-500">
+                                                        CSV para conferência
+                                                    </p>
                                                 </div>
                                                 <Button
                                                     variant="ghost"
@@ -1990,10 +2314,12 @@ export default function Page() {
 
                                 {/* Importação CSV */}
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Importar produtos e saldos via CSV</p>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                        Importar produtos e saldos via CSV
+                                    </p>
                                     <p className="mt-1 text-xs text-slate-600">
-                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO,
-                                        ESTOQUE, PREÇO VENDA... Igual à planilha.
+                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO,
+                                        EST. MINIMO, EST. MAXIMO, ESTOQUE, PREÇO VENDA... Igual à planilha.
                                     </p>
 
                                     <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -2037,13 +2363,18 @@ export default function Page() {
             </div>
 
             {/* POPUP IMAGEM */}
-            <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
+            <ImagePreviewModal
+                open={imgOpen}
+                onClose={() => setImgOpen(false)}
+                url={imgUrl}
+                title={imgTitle}
+            />
 
             {/* MODAL: ENTRADA */}
             <Modal
                 open={entradaOpen}
                 title="Entrada"
-                subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto."
+                subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto. Você pode montar uma lista de vários itens."
                 onClose={() => setEntradaOpen(false)}
             >
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2101,8 +2432,12 @@ export default function Page() {
 
                     {!entradaProdutoExistente && entradaBarcode.trim() ? (
                         <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-sm font-semibold text-slate-900">Produto novo (código não encontrado)</p>
-                            <p className="mt-1 text-xs text-slate-600">Preencha para cadastrar junto com a entrada.</p>
+                            <p className="text-sm font-semibold text-slate-900">
+                                Produto novo (código não encontrado)
+                            </p>
+                            <p className="mt-1 text-xs text-slate-600">
+                                Preencha para cadastrar junto com a entrada.
+                            </p>
 
                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <Field label="Nome do produto">
@@ -2206,13 +2541,53 @@ export default function Page() {
                     ) : null}
 
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applyEntrada} disabled={loading} type="button">
-                            Confirmar entrada
+                        <Button onClick={applyEntradaSingle} disabled={loading} type="button">
+                            Confirmar esta entrada
+                        </Button>
+                        <Button
+                            variant="soft"
+                            onClick={addEntradaItemToList}
+                            type="button"
+                        >
+                            Adicionar à lista
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            onClick={applyEntradaLote}
+                            disabled={!entradaItens.length && !entradaBarcode.trim()}
+                            type="button"
+                        >
+                            Confirmar lista inteira
                         </Button>
                         <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
                             Cancelar
                         </Button>
                     </div>
+
+                    {entradaItens.length ? (
+                        <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-semibold text-slate-900">Lista de entradas pendentes</p>
+                            <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                                {entradaItens.map((it) => (
+                                    <li
+                                        key={it.id}
+                                        className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
+                                    >
+                                        <span className="truncate">{it.resumo}</span>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={() =>
+                                                setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))
+                                            }
+                                        >
+                                            Remover
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
                 </div>
             </Modal>
 
@@ -2287,7 +2662,7 @@ export default function Page() {
             <Modal
                 open={saidaOpen}
                 title="Saída"
-                subtitle="Filtre pelo depósito, procure o produto, ou escaneie por câmera. Operador é fixo."
+                subtitle="Filtre pelo depósito, procure o produto ou escaneie por câmera. Você pode adicionar vários itens na lista."
                 onClose={() => setSaidaOpen(false)}
             >
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2405,16 +2780,57 @@ export default function Page() {
 
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
                         <Button
-                            onClick={applySaida}
+                            onClick={applySaidaSingle}
                             disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId}
                             type="button"
                         >
-                            Confirmar saída
+                            Confirmar esta saída
+                        </Button>
+                        <Button
+                            variant="soft"
+                            onClick={addSaidaItemToList}
+                            disabled={!saidaProdutoId}
+                            type="button"
+                        >
+                            Adicionar à lista
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            onClick={applySaidaLote}
+                            disabled={!saidaItens.length && !saidaProdutoId}
+                            type="button"
+                        >
+                            Confirmar lista inteira
                         </Button>
                         <Button variant="ghost" onClick={() => setSaidaOpen(false)} type="button">
                             Cancelar
                         </Button>
                     </div>
+
+                    {saidaItens.length ? (
+                        <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-semibold text-slate-900">Lista de saídas pendentes</p>
+                            <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                                {saidaItens.map((it) => (
+                                    <li
+                                        key={it.id}
+                                        className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
+                                    >
+                                        <span className="truncate">{it.resumo}</span>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={() =>
+                                                setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))
+                                            }
+                                        >
+                                            Remover
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
                 </div>
             </Modal>
 
