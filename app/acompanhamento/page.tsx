@@ -322,7 +322,7 @@ export default function AcompanhamentoPage() {
                                 ? {
                                     ...x,
                                     tries: (x.tries ?? 0) + 1,
-                                    lastError: json?.erro || "Erro ao enviar (offline queue).",
+                                    lastError: json?.erro || json?.msg || "Erro ao enviar (offline queue).",
                                 }
                                 : x
                         );
@@ -383,7 +383,7 @@ export default function AcompanhamentoPage() {
                 if (avisoInputRef.current) avisoInputRef.current.value = "";
                 fetchAvisos();
             } else {
-                setAvisoMsg({ text: res?.erro || "Erro ao adicionar!", ok: false });
+                setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao adicionar!", ok: false });
             }
         } catch (e: any) {
             setAvisoMsg({ text: e?.message || "Erro ao adicionar!", ok: false });
@@ -403,7 +403,7 @@ export default function AcompanhamentoPage() {
                     setAvisoMsg({ text: "Aviso atualizado!", ok: true });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ text: res?.erro || "Erro ao editar!", ok: false });
+                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao editar!", ok: false });
                 }
             } catch (e: any) {
                 setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
@@ -426,7 +426,7 @@ export default function AcompanhamentoPage() {
                     setAvisoMsg({ text: "Aviso excluído!", ok: true });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ text: res?.erro || "Erro ao excluir!", ok: false });
+                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao excluir!", ok: false });
                 }
             } catch (e: any) {
                 setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
@@ -448,7 +448,7 @@ export default function AcompanhamentoPage() {
                     setAvisoMsg({ text: "Aviso finalizado!", ok: true });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ text: res?.erro || "Erro ao finalizar!", ok: false });
+                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao finalizar!", ok: false });
                 }
             } catch (e: any) {
                 setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
@@ -567,44 +567,47 @@ export default function AcompanhamentoPage() {
     };
 
     /* -------------------- salvar conferência no backend -------------------- */
-    const salvarConferenciaNoPHP = useCallback(async (data: {
-        registro_id: string | number | null | undefined;
-        falecido_nome: string;
-        observacao: string;
-        itens: Array<{
-            key: string;
-            nome: string;
-            qtd: number;
-            ok: 0 | 1;
-            nao_conforme: 0 | 1;
-        }>;
-    }) => {
-        const registro_id = data.registro_id != null ? String(data.registro_id) : "";
-        if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+    const salvarConferenciaNoPHP = useCallback(
+        async (data: {
+            registro_id: string | number | null | undefined;
+            falecido_nome: string;
+            observacao: string;
+            itens: Array<{
+                key: string;
+                nome: string;
+                qtd: number;
+                ok: 0 | 1;
+                nao_conforme: 0 | 1;
+            }>;
+        }) => {
+            const registro_id = data.registro_id != null ? String(data.registro_id) : "";
+            if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-        const r = await fetch(
-            `${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({
-                    registro_id,
-                    falecido_nome: String(data.falecido_nome || "").trim(),
-                    observacao: String(data.observacao || "").trim(),
-                    itens: Array.isArray(data.itens) ? data.itens : [],
-                }),
-            }
-        );
+            const r = await fetch(
+                `${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        registro_id,
+                        falecido_nome: String(data.falecido_nome || "").trim(),
+                        observacao: String(data.observacao || "").trim(),
+                        itens: Array.isArray(data.itens) ? data.itens : [],
+                    }),
+                }
+            );
 
-        if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
-        const json = await r.json().catch(() => null);
-        if (!json) throw new Error("Resposta inválida do servidor.");
-        if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-        if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
+            if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+            const json = await r.json().catch(() => null);
+            if (!json) throw new Error("Resposta inválida do servidor.");
+            if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+            if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
 
-        return json;
-    }, []);
+            return json;
+        },
+        []
+    );
 
     /* -------------------- Aberturas -------------------- */
     const abrirNovoRegistro = useCallback(() => {
@@ -778,7 +781,7 @@ export default function AcompanhamentoPage() {
                 fetchRegistros();
                 setTimeout(() => setWizardOpen(false), 950);
             } else {
-                setWizardMsg({ text: json?.erro || "Erro ao salvar!", ok: false });
+                setWizardMsg({ text: json?.erro || json?.msg || "Erro ao salvar!", ok: false });
             }
         } catch (e: any) {
             enqueueOffline({ ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" }, e?.message);
@@ -860,11 +863,24 @@ export default function AcompanhamentoPage() {
                 if (!ok) return false; // ✅ cancelou => não registrou
             }
 
+            // ✅ fases que exigem confirmação no backend (informativo.php)
+            const needsBackendConfirm = acao === "fase03" || acao === "fase04";
+
             // ✅ Offline: guardou a ação na fila (considera sucesso)
             if (!isOnlineNow()) {
                 try {
                     setAcaoSubmitting(true);
-                    enqueueOffline({ acao: "atualizar_status", id: acaoId, status: acao }, "offline");
+
+                    enqueueOffline(
+                        {
+                            acao: "atualizar_status",
+                            id: acaoId,
+                            status: acao,
+                            ...(needsBackendConfirm ? { confirmar: true } : {}),
+                        },
+                        "offline"
+                    );
+
                     setAcaoMsg({
                         text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
                         ok: true,
@@ -882,6 +898,7 @@ export default function AcompanhamentoPage() {
                     acao: "atualizar_status",
                     id: acaoId,
                     status: acao,
+                    ...(needsBackendConfirm ? { confirmar: true } : {}),
                 });
 
                 if (json?.sucesso) {
@@ -906,14 +923,23 @@ export default function AcompanhamentoPage() {
                     return true; // ✅ sucesso real
                 } else {
                     setAcaoMsg({
-                        text: json?.erro || "Erro ao atualizar status.",
+                        text: String(json?.msg || json?.erro || "Erro ao atualizar status."),
                         ok: false,
                     });
                     return false;
                 }
             } catch (e: any) {
                 // ✅ fallback: guarda offline e considera sucesso
-                enqueueOffline({ acao: "atualizar_status", id: acaoId, status: acao }, e?.message);
+                enqueueOffline(
+                    {
+                        acao: "atualizar_status",
+                        id: acaoId,
+                        status: acao,
+                        ...(needsBackendConfirm ? { confirmar: true } : {}),
+                    },
+                    e?.message
+                );
+
                 setAcaoMsg({
                     text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
                     ok: true,
@@ -934,8 +960,14 @@ export default function AcompanhamentoPage() {
             const id = teleRegistroId ?? acaoId;
             if (id == null) return;
 
+            // ✅ fases que exigem confirmação no backend (informativo.php)
+            const needsBackendConfirm = fase === "fase03" || fase === "fase04";
+
             if (!isOnlineNow()) {
-                enqueueOffline({ acao: "atualizar_status", id, status: fase }, "offline");
+                enqueueOffline(
+                    { acao: "atualizar_status", id, status: fase, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+                    "offline"
+                );
                 return;
             }
 
@@ -944,10 +976,14 @@ export default function AcompanhamentoPage() {
                     acao: "atualizar_status",
                     id,
                     status: fase,
+                    ...(needsBackendConfirm ? { confirmar: true } : {}),
                 });
                 await fetchRegistros();
             } catch (e: any) {
-                enqueueOffline({ acao: "atualizar_status", id, status: fase }, e?.message);
+                enqueueOffline(
+                    { acao: "atualizar_status", id, status: fase, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+                    e?.message
+                );
             } finally {
                 flushOfflineQueue();
             }
@@ -1056,8 +1092,7 @@ export default function AcompanhamentoPage() {
 
     /* -------------------- Helpers -------------------- */
     const findRegistroById = useCallback(
-        (id: Registro["id"] | null): Registro | undefined =>
-            id == null ? undefined : registros.find((x) => String(x.id) === String(id)),
+        (id: Registro["id"] | null): Registro | undefined => (id == null ? undefined : registros.find((x) => String(x.id) === String(id))),
         [registros]
     );
 
@@ -1067,9 +1102,7 @@ export default function AcompanhamentoPage() {
             <header className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Cadastre, acompanhe e atualize o status dos atendimentos.
-                    </p>
+                    <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
                 </div>
                 <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -1097,12 +1130,7 @@ export default function AcompanhamentoPage() {
             />
 
             {/* Modal de escolha: tipo do novo registro */}
-            <Modal
-                open={chooseTipoOpen}
-                onClose={() => setChooseTipoOpen(false)}
-                ariaLabel="Escolher tipo"
-                maxWidth={420}
-            >
+            <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
                 <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
                 <div className="mt-4 grid gap-2">
                     <button
