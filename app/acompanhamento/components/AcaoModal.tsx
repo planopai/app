@@ -70,13 +70,17 @@ export default function AcaoModal({
     registros: Registro[];
     acaoId: Registro["id"] | null | undefined;
 
-    // ✅ vem do page.tsx (offline queue, conferência fase11, etc.)
+    // ✅ vem do page.tsx (mantém offline/telemetria/conferência fase11)
     registrarAcao: (
         acao: string,
-        opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }
+        opts?: {
+            skipMaterialCheck?: boolean;
+            skipConfirm?: boolean;
+            extra?: Record<string, any>; // ✅ opcional (pra confirmar conservação no backend)
+        }
     ) => Promise<any>;
 
-    // ✅ vem do page.tsx (feedback e loading global)
+    // ✅ também vem do page.tsx
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
 
@@ -125,7 +129,6 @@ export default function AcaoModal({
         return { ...r, status: statusFix } as Registro & { status: Fase };
     }, [acaoId, registros]);
 
-    // status online (fallback)
     const [loadingOnline, setLoadingOnline] = useState(false);
     const [onlineError, setOnlineError] = useState<string | null>(null);
     const [online, setOnline] = useState<{
@@ -205,7 +208,6 @@ export default function AcaoModal({
 
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
-
         return (fases as readonly Fase[]).filter((f) => {
             if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
@@ -252,17 +254,6 @@ export default function AcaoModal({
         return meCargo === "tanatopraxista";
     }
 
-    // ✅ helper: fecha modal após sucesso
-    async function executarEFechar(fn: () => Promise<any>) {
-        try {
-            await fn();
-            setOpen(false); // ✅ FECHA AUTOMÁTICO
-        } catch (e: any) {
-            // se registrarAcao lançar erro, mostra no frontMsg
-            setFrontMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
-        }
-    }
-
     async function handleClickFase(f: Fase) {
         setFrontMsg(null);
 
@@ -272,7 +263,7 @@ export default function AcaoModal({
         const requiresVehicle = FASES_COM_VEICULO.includes(f);
         const isConservacao = FASES_CONSERVACAO.includes(f);
 
-        // ✅ Regra: só tanatopraxista pode conservar
+        // ✅ REGRA: apenas Tanatopraxista pode fazer conservação (fase03/fase04)
         if (isConservacao) {
             if (meLoading) {
                 setFrontMsg({ ok: false, text: "Carregando permissões do usuário… tente novamente." });
@@ -290,20 +281,26 @@ export default function AcaoModal({
             const ok = window.confirm(`Confirmar "${acaoToStatus(f)}"?`);
             if (!ok) return;
 
-            // chama o registrarAcao do page.tsx sem novo confirm
-            await executarEFechar(() => registrarAcao(f, { skipConfirm: true }));
+            // chama o pai, sem confirmar de novo
+            try {
+                await registrarAcao(f, { skipConfirm: true, extra: { confirmar: true } });
+            } catch (e: any) {
+                setFrontMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
+            }
             return;
         }
 
-        // ✅ fases com veículo delegam pro page.tsx (telemetria)
-        // aqui NÃO fecha, porque normalmente abre outro modal/fluxo
         if (requiresVehicle && onVeiculoRequired) {
             onVeiculoRequired(acaoId ?? null, f);
             return;
         }
 
-        // ✅ fluxo normal (com confirm padrão + offline etc.) -> fecha no sucesso
-        await executarEFechar(() => registrarAcao(f));
+        try {
+            // para fases normais, deixa o pai confirmar e aplicar offline/telemetria/conferência, etc.
+            await registrarAcao(f);
+        } catch (e: any) {
+            setFrontMsg({ ok: false, text: e?.message || "Falha ao registrar ação." });
+        }
     }
 
     return (
