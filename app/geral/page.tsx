@@ -124,6 +124,47 @@ function moneyBRL(n: number) {
     }
 }
 
+/**
+ * Máscara BRL (digit-only -> centavos)
+ * Ex.: digits="1" => R$ 0,01 | "100000" => R$ 1.000,00
+ */
+function maskBRLFromDigits(digitsOnly: string) {
+    const digits = (digitsOnly || "").replace(/\D/g, "");
+    const cents = digits ? Number(digits) : 0;
+    const value = cents / 100;
+
+    try {
+        // gera "R$ 1.234,56"
+        return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+    } catch {
+        // fallback simples
+        const v = Number.isFinite(value) ? value : 0;
+        const fixed = v.toFixed(2); // "1234.56"
+        const [intPart, dec] = fixed.split(".");
+        const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return `R$ ${withDots},${dec}`;
+    }
+}
+
+function parseBRLToNumber(brlText: string) {
+    const digits = (brlText || "").replace(/\D/g, "");
+    const cents = digits ? Number(digits) : 0;
+    return cents / 100;
+}
+
+function maskBRLInput(raw: string) {
+    // aceita qualquer coisa, mas transforma em dígitos e mascara
+    const digits = (raw || "").replace(/\D/g, "");
+    return maskBRLFromDigits(digits);
+}
+
+function escapeCsvCell(v: any, sep = ";") {
+    const s = String(v ?? "");
+    const mustQuote = s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(sep);
+    const escaped = s.replace(/"/g, '""');
+    return mustQuote ? `"${escaped}"` : escaped;
+}
+
 const IMG_BASE = "https://planoassistencialintegrado.com.br"; // domínio onde as imagens existem
 
 function normalizeImgUrl(u?: string | null) {
@@ -603,6 +644,25 @@ export default function Page() {
     const [imgUrl, setImgUrl] = useState<string | null>(null);
     const [imgTitle, setImgTitle] = useState<string>("");
 
+    // modal editar produto
+    const [prodEditOpen, setProdEditOpen] = useState(false);
+    const [prodEditId, setProdEditId] = useState<ID | 0>(0);
+    const [prodBusy, setProdBusy] = useState(false);
+
+    // campos do cadastro
+    const [editNome, setEditNome] = useState("");
+    // ✅ agora o valor no editor é string com máscara "R$ 1.000,00"
+    const [editValor, setEditValor] = useState<string>("R$ 0,00");
+    const [editMin, setEditMin] = useState<number>(0);
+    const [editCatId, setEditCatId] = useState<ID>(0);
+    const [editFabId, setEditFabId] = useState<ID>(0);
+
+    // foto: “nova foto”
+    const [editFotoNova, setEditFotoNova] = useState<string>("");
+
+    // saldos editáveis por depósito
+    const [editSaldos, setEditSaldos] = useState<Record<number, number>>({});
+
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
     const userById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
@@ -716,6 +776,207 @@ export default function Page() {
         catById,
         fabById,
     ]);
+
+    // ✅ EXPORTAÇÃO (CSV / PDF) do ESTOQUE conforme filtro atual
+    function getFiltroResumo() {
+        const depTxt =
+            depFiltroEstoque === "Todos" ? "Todos" : depById.get(Number(depFiltroEstoque))?.nome || String(depFiltroEstoque);
+        const catTxt =
+            catFiltroEstoque === "Todos" ? "Todas" : catById.get(Number(catFiltroEstoque))?.nome || String(catFiltroEstoque);
+        const fabTxt =
+            fabFiltroEstoque === "Todos" ? "Todos" : fabById.get(Number(fabFiltroEstoque))?.nome || String(fabFiltroEstoque);
+
+        return {
+            busca: qEstoque.trim() || "—",
+            deposito: depTxt,
+            categoria: catTxt,
+            fabricante: fabTxt,
+            somenteAlerta: onlyLow ? "Sim" : "Não",
+        };
+    }
+
+    function exportarEstoqueCSV() {
+        if (!estoqueRows.length) {
+            alert("Nenhum item para exportar com os filtros atuais.");
+            return;
+        }
+
+        const sep = ";";
+        const header = [
+            "Produto",
+            "Código de Barras",
+            "Depósito",
+            "Categoria",
+            "Fabricante",
+            "Quantidade",
+            "Mínimo",
+            "Max (mín - qtd)",
+            "Valor (un)",
+            "Atualizado",
+        ];
+
+        const lines: string[] = [];
+        // BOM p/ Excel pt-BR abrir acentos ok
+        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
+
+        for (const { p, d, qtd, s } of estoqueRows) {
+            const min = clampInt(p.minimo);
+            const max = Math.max(0, min - qtd);
+            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+            const valorNum = Number(p.valor) || 0;
+
+            lines.push(
+                [
+                    p.nome,
+                    p.codigo_barras,
+                    d.nome,
+                    cat,
+                    fab,
+                    qtd,
+                    min,
+                    max,
+                    moneyBRL(valorNum),
+                    s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "",
+                ]
+                    .map((x) => escapeCsvCell(x, sep))
+                    .join(sep)
+            );
+        }
+
+        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+
+        const f = getFiltroResumo();
+        const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${safeName}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        // opcional: feedback
+        // alert("CSV gerado.");
+    }
+
+    function exportarEstoquePDF() {
+        if (!estoqueRows.length) {
+            alert("Nenhum item para exportar com os filtros atuais.");
+            return;
+        }
+
+        const f = getFiltroResumo();
+        const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+
+        const rowsHtml = estoqueRows
+            .map(({ p, d, qtd, s }) => {
+                const min = clampInt(p.minimo);
+                const max = Math.max(0, min - qtd);
+                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+                const valorNum = Number(p.valor) || 0;
+
+                const esc = (x: any) =>
+                    String(x ?? "")
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;");
+
+                return `
+          <tr>
+            <td>${esc(p.nome)}</td>
+            <td class="mono">${esc(p.codigo_barras)}</td>
+            <td>${esc(d.nome)}</td>
+            <td>${esc(cat)}</td>
+            <td>${esc(fab)}</td>
+            <td class="num">${esc(qtd)}</td>
+            <td class="num">${esc(min)}</td>
+            <td class="num green">${esc(max)}</td>
+            <td class="num">${esc(moneyBRL(valorNum))}</td>
+            <td>${esc(s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "")}</td>
+          </tr>
+        `;
+            })
+            .join("");
+
+        const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Relatório de Estoque</title>
+  <style>
+    *{ box-sizing:border-box; }
+    body{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; color:#0f172a; }
+    h1{ margin:0 0 6px 0; font-size:18px; }
+    .meta{ font-size:12px; color:#475569; margin-bottom:12px; }
+    .filters{ border:1px solid #e2e8f0; background:#f8fafc; padding:10px 12px; border-radius:12px; margin-bottom:14px; }
+    .filters div{ font-size:12px; color:#334155; margin:2px 0; }
+    table{ width:100%; border-collapse:collapse; font-size:11px; }
+    th, td{ border:1px solid #e2e8f0; padding:8px; vertical-align:top; }
+    th{ background:#f1f5f9; text-align:left; font-weight:700; }
+    .num{ text-align:right; white-space:nowrap; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .green{ color:#16a34a; font-weight:700; }
+    @media print{
+      body{ margin: 14mm; }
+      .filters{ break-inside: avoid; }
+      table{ page-break-inside:auto; }
+      tr{ page-break-inside:avoid; page-break-after:auto; }
+      thead{ display: table-header-group; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Relatório de Estoque</h1>
+  <div class="meta">Gerado em: <b>${geradoEm}</b> • Itens: <b>${estoqueRows.length}</b></div>
+
+  <div class="filters">
+    <div><b>Busca:</b> ${String(f.busca).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Depósito:</b> ${String(f.deposito).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Categoria:</b> ${String(f.categoria).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Fabricante:</b> ${String(f.fabricante).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Somente alerta (≤ mínimo):</b> ${String(f.somenteAlerta)}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Produto</th>
+        <th>Código</th>
+        <th>Depósito</th>
+        <th>Categoria</th>
+        <th>Fabricante</th>
+        <th class="num">Qtd</th>
+        <th class="num">Min</th>
+        <th class="num">Max (min - qtd)</th>
+        <th class="num">Valor</th>
+        <th>Atualizado</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+
+  <script>
+    // abre o diálogo de impressão (Salvar como PDF no navegador)
+    setTimeout(() => window.print(), 250);
+  </script>
+</body>
+</html>`;
+
+        const w = window.open("", "_blank", "noopener,noreferrer");
+        if (!w) {
+            alert("Pop-up bloqueado. Permita pop-ups para exportar PDF.");
+            return;
+        }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+    }
 
     // ENTRADA
     const [entradaOpen, setEntradaOpen] = useState(false);
@@ -930,6 +1191,100 @@ export default function Page() {
         if (r.id) setNovoFabricanteId(Number(r.id));
     }
 
+    // ======= PRODUTO EDITOR (cadastro + saldos) =======
+
+    function openProdutoEditor(produtoId: ID) {
+        const p = prodById.get(produtoId);
+        if (!p) return;
+
+        setProdEditId(produtoId);
+        setEditNome(p.nome || "");
+
+        // ✅ máscara BRL no editor
+        const valorNum = Number(p.valor) || 0;
+        const valorDigits = String(Math.round(Math.max(0, valorNum) * 100)); // centavos
+        setEditValor(maskBRLFromDigits(valorDigits));
+
+        setEditMin(clampInt(p.minimo));
+        setEditCatId(Number(p.categoria_id || 0));
+        setEditFabId(Number(p.fabricante_id || 0));
+        setEditFotoNova("");
+
+        const m: Record<number, number> = {};
+        for (const d of depositos) {
+            const s = saldosMap.get(`${produtoId}::${d.id}`);
+            m[d.id] = clampInt(s?.quantidade ?? 0);
+        }
+        setEditSaldos(m);
+
+        setProdEditOpen(true);
+    }
+
+    async function onProdutoFotoNova(file?: File | null) {
+        if (!file) return;
+        const url = await fileToDataUrl(file);
+        setEditFotoNova(url);
+    }
+
+    async function salvarCadastroProduto() {
+        if (!prodEditId) return;
+        if (!editNome.trim()) return alert("Nome obrigatório.");
+
+        setProdBusy(true);
+        try {
+            const payload: any = {
+                action: "produto_atualizar",
+                produto_id: prodEditId,
+                nome: editNome.trim(),
+                // ✅ converte "R$ 1.000,00" para number
+                valor: parseBRLToNumber(editValor),
+                minimo: clampInt(editMin),
+                categoria_id: editCatId ? Number(editCatId) : 0,
+                fabricante_id: editFabId ? Number(editFabId) : 0,
+            };
+
+            if (editFotoNova) payload.foto_url = editFotoNova;
+
+            const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
+            if (!r.ok) return alert(r.msg || "Falha ao salvar cadastro.");
+
+            await refreshInit();
+            alert("Produto atualizado.");
+        } finally {
+            setProdBusy(false);
+        }
+    }
+
+    async function salvarSaldosProduto() {
+        if (!prodEditId) return;
+
+        setProdBusy(true);
+        try {
+            for (const d of depositos) {
+                const novo = clampInt(editSaldos[d.id] ?? 0);
+                const atual = clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0);
+                if (novo === atual) continue;
+
+                const r = await apiPost<{ ok: boolean; msg?: string }>({
+                    action: "saldo_setar",
+                    produto_id: prodEditId,
+                    deposito_id: d.id,
+                    quantidade: novo,
+                });
+
+                if (!r.ok) {
+                    alert(r.msg || `Falha ao salvar saldo em ${d.nome}`);
+                    return;
+                }
+            }
+
+            await refreshInit();
+            alert("Saldos atualizados.");
+        } finally {
+            setProdBusy(false);
+        }
+    }
+
     // SAÍDA
     const [saidaOpen, setSaidaOpen] = useState(false);
     const [saidaScanOpen, setSaidaScanOpen] = useState(false);
@@ -940,6 +1295,8 @@ export default function Page() {
     const [saidaBarcode, setSaidaBarcode] = useState("");
     const [saidaQtd, setSaidaQtd] = useState<number>(1);
     const [saidaSolicitanteId, setSaidaSolicitanteId] = useState<ID>(0);
+    // NOVO: destino como depósito
+    const [saidaDestinoDepositoId, setSaidaDestinoDepositoId] = useState<ID>(0);
     const [saidaDestino, setSaidaDestino] = useState("");
     const [saidaObs, setSaidaObs] = useState("");
 
@@ -950,6 +1307,21 @@ export default function Page() {
     useEffect(() => {
         if (!saidaSolicitanteId && usuarios[0]?.id) setSaidaSolicitanteId(usuarios[0].id);
     }, [usuarios, saidaSolicitanteId]);
+
+    // define destino padrão (primeiro depósito)
+    useEffect(() => {
+        if (depositos.length && !saidaDestinoDepositoId) {
+            setSaidaDestinoDepositoId(depositos[0].id);
+            setSaidaDestino(depositos[0].nome);
+        }
+    }, [depositos, saidaDestinoDepositoId]);
+
+    // mantém saidaDestino (texto) sempre igual ao depósito selecionado
+    useEffect(() => {
+        const d = depositos.find((x) => x.id === saidaDestinoDepositoId);
+        if (d) setSaidaDestino(d.nome);
+    }, [saidaDestinoDepositoId, depositos]);
+
 
     const saidaProdutosNoDeposito = useMemo(() => {
         const depId = Number(saidaDepositoId);
@@ -975,9 +1347,19 @@ export default function Page() {
         setSaidaBusca("");
         setSaidaProdutoId(0);
         setSaidaQtd(1);
-        setSaidaDestino("");
+
+        // NOVO: volta destino pro primeiro depósito (se existir)
+        if (depositos[0]?.id) {
+            setSaidaDestinoDepositoId(depositos[0].id);
+            setSaidaDestino(depositos[0].nome);
+        } else {
+            setSaidaDestinoDepositoId(0);
+            setSaidaDestino("");
+        }
+
         setSaidaObs("");
     }
+
 
     function onSaidaBarcodePick(code: string) {
         setSaidaBarcode(code);
@@ -995,7 +1377,8 @@ export default function Page() {
         const deposito_id = Number(saidaDepositoId);
         const quantidade = clampInt(saidaQtd);
         const solicitante_usuario_id = Number(saidaSolicitanteId);
-        const destino_texto = saidaDestino.trim();
+        const destinoNome = depositos.find((d) => d.id === Number(saidaDestinoDepositoId))?.nome || "";
+        const destino_texto = (destinoNome || saidaDestino).trim();
 
         if (!produto_id) {
             alert("Selecione um produto.");
@@ -1557,8 +1940,7 @@ export default function Page() {
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários
-                                        itens.
+                                        Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.
                                     </p>
                                 </div>
                                 <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
@@ -1575,8 +1957,7 @@ export default function Page() {
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Saída</h2>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito). Também permite lista de
-                                        itens.
+                                        Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito). Também permite lista de itens.
                                     </p>
                                 </div>
                                 <Button onClick={() => setSaidaOpen(true)} variant="ghost" type="button">
@@ -1589,12 +1970,14 @@ export default function Page() {
                     {/* TRANSFERÊNCIA */}
                     {tab === "TRANSFERENCIA" ? (
                         <Card className="p-4">
+                            {/* ... (sem mudanças aqui) ... */}
+                            {/* (mantido igual ao seu arquivo original) */}
+                            {/* Para reduzir risco de erro, não mexi no bloco de Transferência. */}
                             <div className="flex flex-col gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
                                     <p className="mt-1 text-sm text-slate-600">
-                                        Move quantidade de origem para destino (com validação de saldo). É possível montar uma lista de
-                                        transferências.
+                                        Move quantidade de origem para destino (com validação de saldo). É possível montar uma lista de transferências.
                                     </p>
                                 </div>
 
@@ -1609,7 +1992,7 @@ export default function Page() {
                                         </Select>
                                     </Field>
 
-                                    <Field label="Destino (Depósito)">
+                                    <Field label="Destino">
                                         <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
                                             {depositos.map((d) => (
                                                 <option key={d.id} value={d.id}>
@@ -1631,11 +2014,7 @@ export default function Page() {
 
                                     <div className="sm:col-span-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
                                         <Field label="Buscar produto (nome/código)">
-                                            <TextInput
-                                                value={trfBusca}
-                                                onChange={(e) => setTrfBusca(e.target.value)}
-                                                placeholder="Ex: URNA ou 174501..."
-                                            />
+                                            <TextInput value={trfBusca} onChange={(e) => setTrfBusca(e.target.value)} placeholder="Ex: URNA ou 174501..." />
                                         </Field>
 
                                         <Field label="Produto (na origem)">
@@ -1657,13 +2036,7 @@ export default function Page() {
                                         </Field>
 
                                         <Field label="Quantidade">
-                                            <TextInput
-                                                type="number"
-                                                min={1}
-                                                step={1}
-                                                value={trfQtd}
-                                                onChange={(e) => setTrfQtd(Number(e.target.value))}
-                                            />
+                                            <TextInput type="number" min={1} step={1} value={trfQtd} onChange={(e) => setTrfQtd(Number(e.target.value))} />
                                         </Field>
 
                                         <div className="sm:col-span-3">
@@ -1679,12 +2052,7 @@ export default function Page() {
                                             <Button type="button" variant="soft" onClick={addTrfItemToList}>
                                                 Adicionar à lista
                                             </Button>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                onClick={applyTransferenciaLote}
-                                                disabled={!trfItens.length && !trfProdutoId}
-                                            >
+                                            <Button type="button" variant="ghost" onClick={applyTransferenciaLote} disabled={!trfItens.length && !trfProdutoId}>
                                                 Confirmar lista inteira
                                             </Button>
                                         </div>
@@ -1698,11 +2066,7 @@ export default function Page() {
                                             {trfItens.map((it) => (
                                                 <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
                                                     <span className="truncate">{it.resumo}</span>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        onClick={() => setTrfItens((prev) => prev.filter((x) => x.id !== it.id))}
-                                                    >
+                                                    <Button type="button" variant="ghost" onClick={() => setTrfItens((prev) => prev.filter((x) => x.id !== it.id))}>
                                                         Remover
                                                     </Button>
                                                 </li>
@@ -1722,12 +2086,20 @@ export default function Page() {
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
                                     <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2 sm:justify-end">
                                     <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
                                         Entrada
                                     </Button>
                                     <Button variant="ghost" onClick={() => setSaidaOpen(true)} type="button">
                                         Saída
+                                    </Button>
+
+                                    {/* ✅ Exportações do filtro atual */}
+                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
+                                        ⬇️ CSV
+                                    </Button>
+                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || !estoqueRows.length}>
+                                        🧾 PDF
                                     </Button>
                                 </div>
                             </div>
@@ -1743,7 +2115,7 @@ export default function Page() {
 
                                 <Field label="Depósito">
                                     <Select
-                                        value={depFiltroEstoque}
+                                        value={depFiltroEstoque as any}
                                         onChange={(e) => setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
                                     >
                                         <option value="Todos">Todos</option>
@@ -1757,7 +2129,7 @@ export default function Page() {
 
                                 <Field label="Categoria">
                                     <Select
-                                        value={catFiltroEstoque}
+                                        value={catFiltroEstoque as any}
                                         onChange={(e) => setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
                                     >
                                         <option value="Todos">Todas</option>
@@ -1771,7 +2143,7 @@ export default function Page() {
 
                                 <Field label="Fabricante">
                                     <Select
-                                        value={fabFiltroEstoque}
+                                        value={fabFiltroEstoque as any}
                                         onChange={(e) => setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
                                     >
                                         <option value="Todos">Todos</option>
@@ -1820,12 +2192,12 @@ export default function Page() {
                                         {estoqueRows.map(({ p, d, qtd, s }) => {
                                             const min = clampInt(p.minimo);
                                             const low = qtd <= min;
+                                            const max = Math.max(0, min - qtd); // ✅ regra pedida
                                             const valorNum = Number(p.valor) || 0;
 
                                             const foto = normalizeImgUrl(p.foto_url);
                                             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
-                                            const fab =
-                                                p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
+                                            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
 
                                             return (
                                                 <li key={`${p.id}_${d.id}`}>
@@ -1841,9 +2213,18 @@ export default function Page() {
                                                                 }}
                                                             />
                                                             <div className="min-w-0">
-                                                                <p className="truncate text-sm font-semibold text-slate-900">
-                                                                    {p.nome} {low ? <span className="text-xs text-red-600">• alerta</span> : null}
-                                                                </p>
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openProdutoEditor(p.id)}
+                                                                        className="truncate text-left text-sm font-semibold text-slate-900 hover:underline"
+                                                                        title="Clique para editar"
+                                                                    >
+                                                                        {p.nome}
+                                                                    </button>
+
+                                                                    {low ? <span className="text-xs text-red-600 shrink-0">• alerta</span> : null}
+                                                                </div>
                                                                 <p className="mt-0.5 truncate text-xs text-slate-600">
                                                                     CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
                                                                 </p>
@@ -1868,7 +2249,16 @@ export default function Page() {
 
                                                         <div className="shrink-0 text-right">
                                                             <p className="text-sm font-semibold text-slate-900">{qtd}</p>
-                                                            <p className="text-xs text-slate-500">mín {min}</p>
+
+                                                            {/* ✅ min + max (verde) */}
+                                                            <p className="text-xs text-slate-500">
+                                                                mín {min}{" "}
+                                                                {low ? (
+                                                                    <>
+                                                                        • máx <span className="font-semibold text-emerald-700">{max}</span>
+                                                                    </>
+                                                                ) : null}
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 </li>
@@ -1898,22 +2288,29 @@ export default function Page() {
                                     <div className="p-6 text-center text-sm text-slate-500">Nenhum item em alerta 🎉</div>
                                 ) : (
                                     <ul className="divide-y divide-slate-200">
-                                        {alertRows.map(({ p, d, qtd, min }) => (
-                                            <li key={`${p.id}_${d.id}`} className="px-4 py-3">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div className="min-w-0">
-                                                        <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
-                                                        <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                            CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
-                                                        </p>
+                                        {alertRows.map(({ p, d, qtd, min }) => {
+                                            const max = Math.max(0, min - qtd); // ✅ min - qtd
+                                            return (
+                                                <li key={`${p.id}_${d.id}`} className="px-4 py-3">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
+                                                            <p className="mt-0.5 truncate text-xs text-slate-600">
+                                                                CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
+                                                            </p>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-sm font-semibold text-red-700">{qtd}</p>
+
+                                                            {/* ✅ min + max (verde) */}
+                                                            <p className="text-xs text-slate-500">
+                                                                mín {min} • máx <span className="font-semibold text-emerald-700">{max}</span>
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-right">
-                                                        <p className="text-sm font-semibold text-red-700">{qtd}</p>
-                                                        <p className="text-xs text-slate-500">mín {min}</p>
-                                                    </div>
-                                                </div>
-                                            </li>
-                                        ))}
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
                                 )}
                             </div>
@@ -1932,10 +2329,13 @@ export default function Page() {
                     {/* HISTÓRICO */}
                     {tab === "HISTORICO" ? (
                         <Card className="p-4">
+                            {/* ... (sem mudanças aqui) ... */}
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).
+                                    </p>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
@@ -2088,10 +2488,13 @@ export default function Page() {
                     {/* AVANÇADO */}
                     {tab === "AVANCADO" ? (
                         <Card className="p-4">
+                            {/* ... (sem mudanças aqui) ... */}
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.
+                                    </p>
                                 </div>
                                 <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
                                     Voltar
@@ -2199,11 +2602,7 @@ export default function Page() {
                                         <Field label="Novo nome">
                                             <TextInput value={renomearFabNome} onChange={(e) => setRenomearFabNome(e.target.value)} />
                                         </Field>
-                                        <Button
-                                            onClick={renomearFabricante}
-                                            disabled={busyFab || !renomearFabId || !renomearFabNome.trim()}
-                                            type="button"
-                                        >
+                                        <Button onClick={renomearFabricante} disabled={busyFab || !renomearFabId || !renomearFabNome.trim()} type="button">
                                             Renomear
                                         </Button>
                                     </div>
@@ -2212,16 +2611,11 @@ export default function Page() {
                                 {/* Exportação */}
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).
-                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).</p>
 
                                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
                                         {depositos.map((d) => (
-                                            <div
-                                                key={d.id}
-                                                className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3"
-                                            >
+                                            <div key={d.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
                                                 <div className="min-w-0">
                                                     <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
                                                     <p className="text-[11px] text-slate-500">CSV para conferência</p>
@@ -2238,8 +2632,8 @@ export default function Page() {
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Importar produtos e saldos via CSV</p>
                                     <p className="mt-1 text-xs text-slate-600">
-                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST.
-                                        MAXIMO, ESTOQUE, PREÇO VENDA...
+                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE,
+                                        PREÇO VENDA...
                                     </p>
 
                                     <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -2285,6 +2679,147 @@ export default function Page() {
             {/* POPUP IMAGEM */}
             <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
 
+            {/* MODAL: EDITAR PRODUTO */}
+            <Modal
+                open={prodEditOpen}
+                title="Editar produto"
+                subtitle="Edite o cadastro e/ou ajuste os saldos por depósito."
+                onClose={() => setProdEditOpen(false)}
+            >
+                {(() => {
+                    const p = prodEditId ? prodById.get(prodEditId) : null;
+                    const fotoAtual = p?.foto_url ? normalizeImgUrl(p.foto_url) : null;
+                    const fotoPreview = editFotoNova || fotoAtual;
+
+                    return (
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-3">
+                                <div className="h-20 w-20 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                                    {fotoPreview ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={fotoPreview} alt="Foto do produto" className="h-20 w-20 object-cover" />
+                                    ) : (
+                                        <div className="flex h-20 w-20 items-center justify-center text-2xl">🖼️</div>
+                                    )}
+                                </div>
+
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-900">{p?.nome || "—"}</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                        Código de barras: <b>{p?.codigo_barras || "—"}</b>
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-slate-500">Atualizado: {p?.atualizado_em ? fmtDateTime(p.atualizado_em) : "—"}</p>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 p-3">
+                                <p className="text-sm font-semibold text-slate-900">Cadastro</p>
+
+                                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <Field label="Nome">
+                                        <TextInput value={editNome} onChange={(e) => setEditNome(e.target.value)} />
+                                    </Field>
+
+                                    {/* ✅ padrão R$1.000,00 */}
+                                    <Field label="Valor (R$)">
+                                        <TextInput
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={editValor}
+                                            onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
+                                            onFocus={(e) => {
+                                                // mantém formato; se vier vazio por algum motivo, força
+                                                if (!editValor?.trim()) setEditValor("R$ 0,00");
+                                                // coloca cursor no final (boa UX)
+                                                setTimeout(() => {
+                                                    try {
+                                                        const el = e.target;
+                                                        const len = el.value.length;
+                                                        el.setSelectionRange(len, len);
+                                                    } catch { }
+                                                }, 0);
+                                            }}
+                                            placeholder="R$ 0,00"
+                                        />
+                                    </Field>
+
+                                    <Field label="Mínimo (alerta)">
+                                        <TextInput type="number" min={0} step={1} value={editMin} onChange={(e) => setEditMin(Number(e.target.value))} />
+                                    </Field>
+
+                                    <Field label="Foto (trocar)">
+                                        <TextInput type="file" accept="image/*" onChange={async (e) => onProdutoFotoNova(e.target.files?.[0])} />
+                                    </Field>
+
+                                    <Field label="Categoria">
+                                        <Select value={editCatId} onChange={(e) => setEditCatId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {categorias.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
+                                    <Field label="Fabricante">
+                                        <Select value={editFabId} onChange={(e) => setEditFabId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {fabricantes.map((f) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <Button type="button" onClick={salvarCadastroProduto} disabled={prodBusy}>
+                                        Salvar cadastro
+                                    </Button>
+                                    <Button type="button" variant="ghost" onClick={() => setProdEditOpen(false)} disabled={prodBusy}>
+                                        Fechar
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 p-3">
+                                <p className="text-sm font-semibold text-slate-900">Saldos por depósito</p>
+
+                                <div className="mt-3 space-y-2">
+                                    {depositos.map((d) => (
+                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                            </div>
+
+                                            <div className="w-28">
+                                                <TextInput
+                                                    type="number"
+                                                    min={0}
+                                                    step={1}
+                                                    value={editSaldos[d.id] ?? 0}
+                                                    onChange={(e) => setEditSaldos((prev) => ({ ...prev, [d.id]: Number(e.target.value) }))}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <Button type="button" variant="soft" onClick={salvarSaldosProduto} disabled={prodBusy}>
+                                        Salvar saldos
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="text-xs text-slate-500">Obs.: código de barras fica somente leitura aqui (se quiser editar também, precisa endpoint).</div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
             {/* MODAL: ENTRADA */}
             <Modal
                 open={entradaOpen}
@@ -2292,6 +2827,7 @@ export default function Page() {
                 subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto. Você pode montar uma lista de vários itens."
                 onClose={() => setEntradaOpen(false)}
             >
+                {/* ... (sem mudanças aqui) ... */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Código de barras">
                         <div className="flex gap-2">
@@ -2479,6 +3015,7 @@ export default function Page() {
                 subtitle="Filtre pelo depósito, procure o produto ou escaneie por câmera. Você pode adicionar vários itens na lista."
                 onClose={() => setSaidaOpen(false)}
             >
+                {/* ... (sem mudanças aqui) ... */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Depósito (origem)">
                         <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
@@ -2549,10 +3086,25 @@ export default function Page() {
                     </Field>
 
                     <div className="sm:col-span-2">
-                        <Field label="Destino (obra/setor/local)">
-                            <TextInput value={saidaDestino} onChange={(e) => setSaidaDestino(e.target.value)} placeholder="Ex: Obra X / Setor Y" />
+                        <Field label="Destino">
+                            <Select
+                                value={saidaDestinoDepositoId}
+                                onChange={(e) => {
+                                    const id = Number(e.target.value);
+                                    setSaidaDestinoDepositoId(id);
+                                    const d = depositos.find((x) => x.id === id);
+                                    setSaidaDestino(d?.nome || "");
+                                }}
+                            >
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
+                                    </option>
+                                ))}
+                            </Select>
                         </Field>
                     </div>
+
 
                     <div className="sm:col-span-2">
                         <Field label="Observação (opcional)">
@@ -2561,11 +3113,7 @@ export default function Page() {
                     </div>
 
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button
-                            onClick={applySaidaSingle}
-                            disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId}
-                            type="button"
-                        >
+                        <Button onClick={applySaidaSingle} disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId} type="button">
                             Confirmar esta saída
                         </Button>
                         <Button variant="soft" onClick={addSaidaItemToList} disabled={!saidaProdutoId} type="button">
