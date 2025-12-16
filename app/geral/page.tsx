@@ -124,11 +124,20 @@ function moneyBRL(n: number) {
     }
 }
 
+const IMG_BASE = "https://planoassistencialintegrado.com.br"; // domínio onde as imagens existem
+
 function normalizeImgUrl(u?: string | null) {
     const t = (u ?? "").toString().trim();
     if (!t || t === "null" || t === "undefined") return null;
-    if (/^https?:\/\//i.test(t) || t.startsWith("/")) return t;
-    return `/uploads/produtos/${t}`;
+
+    // já é URL absoluta
+    if (/^https?:\/\//i.test(t)) return t;
+
+    // veio "/uploads/..." (relativa) -> força domínio principal
+    if (t.startsWith("/")) return `${IMG_BASE}${t}`;
+
+    // veio só o filename -> monta no domínio principal
+    return `${IMG_BASE}/uploads/produtos/${t}`;
 }
 
 async function safeJson<T>(r: Response): Promise<T> {
