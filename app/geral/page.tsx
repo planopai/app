@@ -1992,7 +1992,7 @@ export default function Page() {
                                         </Select>
                                     </Field>
 
-                                    <Field label="Destino (Depósito)">
+                                    <Field label="Destino">
                                         <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
                                             {depositos.map((d) => (
                                                 <option key={d.id} value={d.id}>
@@ -3086,7 +3086,7 @@ export default function Page() {
                     </Field>
 
                     <div className="sm:col-span-2">
-                        <Field label="Destino (depósito)">
+                        <Field label="Destino">
                             <Select
                                 value={saidaDestinoDepositoId}
                                 onChange={(e) => {
