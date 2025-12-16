@@ -305,12 +305,9 @@ function Modal({
         <div
             role="dialog"
             aria-modal="true"
-            className={[
-                "fixed inset-0 z-50",
-                "flex items-center justify-center",
-                "bg-black/45",
-                "min-h-[100dvh] p-4",
-            ].join(" ")}
+            className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(
+                " "
+            )}
             onMouseDown={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
@@ -487,20 +484,16 @@ function BarcodeScannerModal({
 
                 if (!videoRef.current) throw new Error("Vídeo não disponível.");
 
-                const controls = await codeReader.decodeFromVideoDevice(
-                    backCam ?? undefined,
-                    videoRef.current,
-                    (result) => {
-                        if (cancelled) return;
-                        if (result) {
-                            const text = result.getText().trim();
-                            if (text) {
-                                onDetected(text);
-                                onClose();
-                            }
+                const controls = await codeReader.decodeFromVideoDevice(backCam ?? undefined, videoRef.current, (result) => {
+                    if (cancelled) return;
+                    if (result) {
+                        const text = result.getText().trim();
+                        if (text) {
+                            onDetected(text);
+                            onClose();
                         }
                     }
-                );
+                });
 
                 controlsRef.current = { stop: () => controls.stop() };
             } catch (e: any) {
@@ -530,12 +523,7 @@ function BarcodeScannerModal({
     }, [open, onClose, onDetected]);
 
     return (
-        <Modal
-            open={open}
-            title={title}
-            subtitle="Aponte para o código. Ao detectar, preenche automaticamente."
-            onClose={onClose}
-        >
+        <Modal open={open} title={title} subtitle="Aponte para o código. Ao detectar, preenche automaticamente." onClose={onClose}>
             {err ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
             ) : (
@@ -548,9 +536,7 @@ function BarcodeScannerModal({
 
                             <div className="absolute left-1/2 top-1/2 w-[92%] max-w-[560px] -translate-x-1/2 -translate-y-1/2">
                                 <div className="relative mx-auto h-[110px] w-full rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
-                                <p className="mt-2 text-center text-xs text-white/90">
-                                    Centralize o código dentro do retângulo
-                                </p>
+                                <p className="mt-2 text-center text-xs text-white/90">Centralize o código dentro do retângulo</p>
                             </div>
                         </div>
                     </div>
@@ -707,11 +693,7 @@ export default function Page() {
             rows.push({ p, d, qtd, s });
         }
 
-        rows.sort(
-            (a, b) =>
-                a.p.nome.localeCompare(b.p.nome, "pt-BR") ||
-                a.d.nome.localeCompare(b.d.nome, "pt-BR")
-        );
+        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR") || a.d.nome.localeCompare(b.d.nome, "pt-BR"));
         return rows;
     }, [
         saldos,
@@ -973,8 +955,7 @@ export default function Page() {
     }, [saldos, produtos, saidaDepositoId, saidaBusca]);
 
     useEffect(() => {
-        if (!saidaProdutoId && saidaProdutosNoDeposito[0]?.id)
-            setSaidaProdutoId(saidaProdutosNoDeposito[0].id);
+        if (!saidaProdutoId && saidaProdutosNoDeposito[0]?.id) setSaidaProdutoId(saidaProdutosNoDeposito[0].id);
         if (saidaProdutoId && !saidaProdutosNoDeposito.find((p) => p.id === saidaProdutoId)) {
             setSaidaProdutoId(saidaProdutosNoDeposito[0]?.id ?? 0);
         }
@@ -1525,9 +1506,7 @@ export default function Page() {
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Entrada</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Cadastrar (se não existir) e somar saldo no depósito.
-                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">Cadastrar (se não existir) e somar saldo no depósito.</p>
                                     <div className="mt-3">
                                         <Button onClick={() => setEntradaOpen(true)} type="button">
                                             Abrir Entrada
@@ -1537,9 +1516,7 @@ export default function Page() {
 
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Saída</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Escolha depósito, solicitante, destino e quantidade.
-                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">Escolha depósito, solicitante, destino e quantidade.</p>
                                     <div className="mt-3">
                                         <Button onClick={() => setSaidaOpen(true)} type="button">
                                             Abrir Saída
@@ -1549,9 +1526,7 @@ export default function Page() {
 
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Histórico</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Auditoria: entradas/saídas/transferências e cadastros.
-                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">Auditoria: entradas/saídas/transferências e cadastros.</p>
                                     <div className="mt-3">
                                         <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
                                             Ver Histórico
@@ -1636,10 +1611,7 @@ export default function Page() {
                                     </Field>
 
                                     <Field label="Solicitante">
-                                        <Select
-                                            value={trfSolicitanteId}
-                                            onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}
-                                        >
+                                        <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
                                             {usuarios.map((u) => (
                                                 <option key={u.id} value={u.id}>
                                                     {u.nome} ({u.usuario})
@@ -1658,10 +1630,7 @@ export default function Page() {
                                         </Field>
 
                                         <Field label="Produto (na origem)">
-                                            <Select
-                                                value={trfProdutoId}
-                                                onChange={(e) => setTrfProdutoId(Number(e.target.value))}
-                                            >
+                                            <Select value={trfProdutoId} onChange={(e) => setTrfProdutoId(Number(e.target.value))}>
                                                 {trfProdutosNaOrigem.length ? (
                                                     trfProdutosNaOrigem.map((p) => {
                                                         const s = saldosMap.get(`${p.id}::${trfOrigemId}`);
@@ -1690,11 +1659,7 @@ export default function Page() {
 
                                         <div className="sm:col-span-3">
                                             <Field label="Observação (opcional)">
-                                                <TextArea
-                                                    value={trfObs}
-                                                    onChange={(e) => setTrfObs(e.target.value)}
-                                                    placeholder="Detalhes da transferência..."
-                                                />
+                                                <TextArea value={trfObs} onChange={(e) => setTrfObs(e.target.value)} placeholder="Detalhes..." />
                                             </Field>
                                         </div>
 
@@ -1722,10 +1687,7 @@ export default function Page() {
                                         <p className="text-sm font-semibold text-slate-900">Lista de transferências pendentes</p>
                                         <ul className="mt-2 space-y-1 text-xs text-slate-700">
                                             {trfItens.map((it) => (
-                                                <li
-                                                    key={it.id}
-                                                    className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
-                                                >
+                                                <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
                                                     <span className="truncate">{it.resumo}</span>
                                                     <Button
                                                         type="button"
@@ -1749,9 +1711,7 @@ export default function Page() {
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Busca por nome/código/categoria/fabricante e filtro por depósito.
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
@@ -1775,9 +1735,7 @@ export default function Page() {
                                 <Field label="Depósito">
                                     <Select
                                         value={depFiltroEstoque}
-                                        onChange={(e) =>
-                                            setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))
-                                        }
+                                        onChange={(e) => setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
                                     >
                                         <option value="Todos">Todos</option>
                                         {depositos.map((d) => (
@@ -1791,9 +1749,7 @@ export default function Page() {
                                 <Field label="Categoria">
                                     <Select
                                         value={catFiltroEstoque}
-                                        onChange={(e) =>
-                                            setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))
-                                        }
+                                        onChange={(e) => setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
                                     >
                                         <option value="Todos">Todas</option>
                                         {categorias.map((c) => (
@@ -1807,9 +1763,7 @@ export default function Page() {
                                 <Field label="Fabricante">
                                     <Select
                                         value={fabFiltroEstoque}
-                                        onChange={(e) =>
-                                            setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))
-                                        }
+                                        onChange={(e) => setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
                                     >
                                         <option value="Todos">Todos</option>
                                         {fabricantes.map((f) => (
@@ -1860,12 +1814,9 @@ export default function Page() {
                                             const valorNum = Number(p.valor) || 0;
 
                                             const foto = normalizeImgUrl(p.foto_url);
-                                            const cat =
-                                                p.categoria_nome ||
-                                                (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
+                                            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
                                             const fab =
-                                                p.fabricante_nome ||
-                                                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
+                                                p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
 
                                             return (
                                                 <li key={`${p.id}_${d.id}`}>
@@ -1882,12 +1833,10 @@ export default function Page() {
                                                             />
                                                             <div className="min-w-0">
                                                                 <p className="truncate text-sm font-semibold text-slate-900">
-                                                                    {p.nome}{" "}
-                                                                    {low ? <span className="text-xs text-red-600">• alerta</span> : null}
+                                                                    {p.nome} {low ? <span className="text-xs text-red-600">• alerta</span> : null}
                                                                 </p>
                                                                 <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                    CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor{" "}
-                                                                    {moneyBRL(valorNum)}
+                                                                    CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
                                                                 </p>
                                                                 <p className="mt-0.5 truncate text-[11px] text-slate-500">
                                                                     {cat ? (
@@ -1903,8 +1852,7 @@ export default function Page() {
                                                                     ) : null}
                                                                 </p>
                                                                 <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                    Atualizado:{" "}
-                                                                    {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
+                                                                    Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -1938,9 +1886,7 @@ export default function Page() {
 
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
                                 {alertRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">
-                                        Nenhum item em alerta 🎉
-                                    </div>
+                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum item em alerta 🎉</div>
                                 ) : (
                                     <ul className="divide-y divide-slate-200">
                                         {alertRows.map(({ p, d, qtd, min }) => (
@@ -1980,9 +1926,7 @@ export default function Page() {
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
@@ -1992,27 +1936,18 @@ export default function Page() {
                             </div>
 
                             {histErr ? (
-                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                                    {histErr}
-                                </div>
+                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div>
                             ) : null}
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
                                 <div className="sm:col-span-3">
                                     <Field label="Buscar (produto, CB, destino, obs)">
-                                        <TextInput
-                                            value={histQ}
-                                            onChange={(e) => setHistQ(e.target.value)}
-                                            placeholder="Ex: URNA, 1745..., Obra X"
-                                        />
+                                        <TextInput value={histQ} onChange={(e) => setHistQ(e.target.value)} placeholder="Ex: URNA, 1745..., Obra X" />
                                     </Field>
                                 </div>
 
                                 <Field label="Tipo">
-                                    <Select
-                                        value={histTipo}
-                                        onChange={(e) => setHistTipo(e.target.value as "Todos" | HistoricoRow["tipo"])}
-                                    >
+                                    <Select value={histTipo} onChange={(e) => setHistTipo(e.target.value as "Todos" | HistoricoRow["tipo"])}>
                                         <option value="Todos">Todos</option>
                                         <option value="ENTRADA">Entrada</option>
                                         <option value="SAIDA">Saída</option>
@@ -2071,20 +2006,16 @@ export default function Page() {
                                                             : "bg-slate-50 text-slate-700 border-slate-200";
 
                                             const origem =
-                                                h.deposito_origem_nome ||
-                                                (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
+                                                h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
                                             const destino =
-                                                h.deposito_destino_nome ||
-                                                (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+                                                h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
 
                                             return (
                                                 <li key={h.id} className="px-4 py-3">
                                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                                         <div className="min-w-0">
                                                             <div className="flex flex-wrap items-center gap-2">
-                                                                <span
-                                                                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}
-                                                                >
+                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>
                                                                     {h.tipo}
                                                                 </span>
                                                                 <span className="text-xs text-slate-500">{fmtDateTime(h.criado_em)}</span>
@@ -2092,9 +2023,7 @@ export default function Page() {
 
                                                             <p className="mt-2 truncate text-sm font-semibold text-slate-900">
                                                                 {h.produto_nome || `Produto ${h.produto_id}`}{" "}
-                                                                <span className="text-xs font-normal text-slate-500">
-                                                                    • CB {h.codigo_barras_snapshot}
-                                                                </span>
+                                                                <span className="text-xs font-normal text-slate-500">• CB {h.codigo_barras_snapshot}</span>
                                                             </p>
 
                                                             <p className="mt-0.5 text-xs text-slate-600">
@@ -2104,8 +2033,7 @@ export default function Page() {
                                                                     </>
                                                                 ) : h.tipo === "SAIDA" ? (
                                                                     <>
-                                                                        Depósito: <b>{origem || "—"}</b> • Destino:{" "}
-                                                                        <b>{h.destino_texto || "—"}</b>
+                                                                        Depósito: <b>{origem || "—"}</b> • Destino: <b>{h.destino_texto || "—"}</b>
                                                                     </>
                                                                 ) : h.tipo === "TRANSFERENCIA" ? (
                                                                     <>
@@ -2118,11 +2046,7 @@ export default function Page() {
 
                                                             <p className="mt-0.5 text-[11px] text-slate-500">
                                                                 Operador:{" "}
-                                                                <b>
-                                                                    {h.operador_nome ||
-                                                                        userById.get(h.operador_usuario_id)?.nome ||
-                                                                        `#${h.operador_usuario_id}`}
-                                                                </b>
+                                                                <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
                                                                 {h.solicitante_usuario_id ? (
                                                                     <>
                                                                         {" "}
@@ -2139,9 +2063,7 @@ export default function Page() {
                                                         </div>
 
                                                         <div className="shrink-0 text-right">
-                                                            <p className="text-sm font-semibold text-slate-900">
-                                                                {h.quantidade === null ? "—" : h.quantidade}
-                                                            </p>
+                                                            <p className="text-sm font-semibold text-slate-900">{h.quantidade === null ? "—" : h.quantidade}</p>
                                                             <p className="text-xs text-slate-500">qtd</p>
                                                         </div>
                                                     </div>
@@ -2160,9 +2082,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.</p>
                                 </div>
                                 <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
                                     Voltar
@@ -2175,11 +2095,7 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Adicionar Depósito</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
                                         <Field label="Nome do novo depósito">
-                                            <TextInput
-                                                value={novoDepNome}
-                                                onChange={(e) => setNovoDepNome(e.target.value)}
-                                                placeholder="Ex: Almox C"
-                                            />
+                                            <TextInput value={novoDepNome} onChange={(e) => setNovoDepNome(e.target.value)} placeholder="Ex: Almox C" />
                                         </Field>
                                         <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()} type="button">
                                             Criar depósito
@@ -2191,10 +2107,7 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Renomear Depósito</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
                                         <Field label="Depósito">
-                                            <Select
-                                                value={renomearDepId}
-                                                onChange={(e) => setRenomearDepId(Number(e.target.value))}
-                                            >
+                                            <Select value={renomearDepId} onChange={(e) => setRenomearDepId(Number(e.target.value))}>
                                                 {depositos.map((d) => (
                                                     <option key={d.id} value={d.id}>
                                                         {d.nome}
@@ -2203,16 +2116,9 @@ export default function Page() {
                                             </Select>
                                         </Field>
                                         <Field label="Novo nome">
-                                            <TextInput
-                                                value={renomearDepNome}
-                                                onChange={(e) => setRenomearDepNome(e.target.value)}
-                                            />
+                                            <TextInput value={renomearDepNome} onChange={(e) => setRenomearDepNome(e.target.value)} />
                                         </Field>
-                                        <Button
-                                            onClick={renomearDeposito}
-                                            disabled={busyDep || !renomearDepId || !renomearDepNome.trim()}
-                                            type="button"
-                                        >
+                                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()} type="button">
                                             Renomear
                                         </Button>
 
@@ -2227,17 +2133,9 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Adicionar Categoria</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
                                         <Field label="Nome da categoria">
-                                            <TextInput
-                                                value={novoCatNome}
-                                                onChange={(e) => setNovoCatNome(e.target.value)}
-                                                placeholder="Ex: EPIs"
-                                            />
+                                            <TextInput value={novoCatNome} onChange={(e) => setNovoCatNome(e.target.value)} placeholder="Ex: EPIs" />
                                         </Field>
-                                        <Button
-                                            onClick={criarCategoria}
-                                            disabled={busyCat || !novoCatNome.trim()}
-                                            type="button"
-                                        >
+                                        <Button onClick={criarCategoria} disabled={busyCat || !novoCatNome.trim()} type="button">
                                             Criar categoria
                                         </Button>
                                     </div>
@@ -2247,10 +2145,7 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Renomear Categoria</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
                                         <Field label="Categoria">
-                                            <Select
-                                                value={renomearCatId}
-                                                onChange={(e) => setRenomearCatId(Number(e.target.value))}
-                                            >
+                                            <Select value={renomearCatId} onChange={(e) => setRenomearCatId(Number(e.target.value))}>
                                                 {categorias.map((c) => (
                                                     <option key={c.id} value={c.id}>
                                                         {c.nome}
@@ -2259,16 +2154,9 @@ export default function Page() {
                                             </Select>
                                         </Field>
                                         <Field label="Novo nome">
-                                            <TextInput
-                                                value={renomearCatNome}
-                                                onChange={(e) => setRenomearCatNome(e.target.value)}
-                                            />
+                                            <TextInput value={renomearCatNome} onChange={(e) => setRenomearCatNome(e.target.value)} />
                                         </Field>
-                                        <Button
-                                            onClick={renomearCategoria}
-                                            disabled={busyCat || !renomearCatId || !renomearCatNome.trim()}
-                                            type="button"
-                                        >
+                                        <Button onClick={renomearCategoria} disabled={busyCat || !renomearCatId || !renomearCatNome.trim()} type="button">
                                             Renomear
                                         </Button>
                                     </div>
@@ -2279,17 +2167,9 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Adicionar Fabricante</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
                                         <Field label="Nome do fabricante">
-                                            <TextInput
-                                                value={novoFabNome}
-                                                onChange={(e) => setNovoFabNome(e.target.value)}
-                                                placeholder="Ex: 3M"
-                                            />
+                                            <TextInput value={novoFabNome} onChange={(e) => setNovoFabNome(e.target.value)} placeholder="Ex: 3M" />
                                         </Field>
-                                        <Button
-                                            onClick={criarFabricante}
-                                            disabled={busyFab || !novoFabNome.trim()}
-                                            type="button"
-                                        >
+                                        <Button onClick={criarFabricante} disabled={busyFab || !novoFabNome.trim()} type="button">
                                             Criar fabricante
                                         </Button>
                                     </div>
@@ -2299,10 +2179,7 @@ export default function Page() {
                                     <p className="text-sm font-semibold text-slate-900">Renomear Fabricante</p>
                                     <div className="mt-3 grid grid-cols-1 gap-3">
                                         <Field label="Fabricante">
-                                            <Select
-                                                value={renomearFabId}
-                                                onChange={(e) => setRenomearFabId(Number(e.target.value))}
-                                            >
+                                            <Select value={renomearFabId} onChange={(e) => setRenomearFabId(Number(e.target.value))}>
                                                 {fabricantes.map((f) => (
                                                     <option key={f.id} value={f.id}>
                                                         {f.nome}
@@ -2311,10 +2188,7 @@ export default function Page() {
                                             </Select>
                                         </Field>
                                         <Field label="Novo nome">
-                                            <TextInput
-                                                value={renomearFabNome}
-                                                onChange={(e) => setRenomearFabNome(e.target.value)}
-                                            />
+                                            <TextInput value={renomearFabNome} onChange={(e) => setRenomearFabNome(e.target.value)} />
                                         </Field>
                                         <Button
                                             onClick={renomearFabricante}
@@ -2328,9 +2202,7 @@ export default function Page() {
 
                                 {/* Exportação */}
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">
-                                        Exportação para Conferência (CSV)
-                                    </p>
+                                    <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
                                     <p className="mt-1 text-xs text-slate-600">
                                         Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).
                                     </p>
@@ -2345,11 +2217,7 @@ export default function Page() {
                                                     <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
                                                     <p className="text-[11px] text-slate-500">CSV para conferência</p>
                                                 </div>
-                                                <Button
-                                                    variant="ghost"
-                                                    onClick={() => exportarDeposito(d.id)}
-                                                    type="button"
-                                                >
+                                                <Button variant="ghost" onClick={() => exportarDeposito(d.id)} type="button">
                                                     Exportar
                                                 </Button>
                                             </div>
@@ -2359,13 +2227,10 @@ export default function Page() {
 
                                 {/* Importação CSV */}
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">
-                                        Importar produtos e saldos via CSV
-                                    </p>
+                                    <p className="text-sm font-semibold text-slate-900">Importar produtos e saldos via CSV</p>
                                     <p className="mt-1 text-xs text-slate-600">
-                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE,
-                                        DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE, PREÇO VENDA... Igual à
-                                        planilha.
+                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST.
+                                        MAXIMO, ESTOQUE, PREÇO VENDA...
                                     </p>
 
                                     <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -2427,12 +2292,7 @@ export default function Page() {
                                 placeholder="Leia com leitor ou digite"
                                 inputMode="numeric"
                             />
-                            <Button
-                                variant="ghost"
-                                type="button"
-                                onClick={() => setEntradaScanOpen(true)}
-                                title="Abrir câmera"
-                            >
+                            <Button variant="ghost" type="button" onClick={() => setEntradaScanOpen(true)} title="Abrir câmera">
                                 📷 Escanear
                             </Button>
                         </div>
@@ -2449,60 +2309,31 @@ export default function Page() {
                     </Field>
 
                     <Field label="Quantidade (entrada)">
-                        <TextInput
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={entradaQtd}
-                            onChange={(e) => setEntradaQtd(Number(e.target.value))}
-                        />
+                        <TextInput type="number" min={1} step={1} value={entradaQtd} onChange={(e) => setEntradaQtd(Number(e.target.value))} />
                     </Field>
 
                     <div className="sm:col-span-2">
                         <Field label="Observação (opcional)">
-                            <TextArea
-                                value={entradaObs}
-                                onChange={(e) => setEntradaObs(e.target.value)}
-                                placeholder="Detalhes da entrada..."
-                            />
+                            <TextArea value={entradaObs} onChange={(e) => setEntradaObs(e.target.value)} placeholder="Detalhes da entrada..." />
                         </Field>
                     </div>
 
                     {!entradaProdutoExistente && entradaBarcode.trim() ? (
                         <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-sm font-semibold text-slate-900">
-                                Produto novo (código não encontrado)
-                            </p>
-                            <p className="mt-1 text-xs text-slate-600">
-                                Preencha para cadastrar junto com a entrada.
-                            </p>
+                            <p className="text-sm font-semibold text-slate-900">Produto novo (código não encontrado)</p>
+                            <p className="mt-1 text-xs text-slate-600">Preencha para cadastrar junto com a entrada.</p>
 
                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <Field label="Nome do produto">
-                                    <TextInput
-                                        value={novoNome}
-                                        onChange={(e) => setNovoNome(e.target.value)}
-                                        placeholder="Ex: URNA 008 ..."
-                                    />
+                                    <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: URNA 008 ..." />
                                 </Field>
 
                                 <Field label="Valor">
-                                    <TextInput
-                                        type="number"
-                                        step="0.01"
-                                        value={novoValor}
-                                        onChange={(e) => setNovoValor(Number(e.target.value))}
-                                    />
+                                    <TextInput type="number" step="0.01" value={novoValor} onChange={(e) => setNovoValor(Number(e.target.value))} />
                                 </Field>
 
                                 <Field label="Mínimo (alerta)">
-                                    <TextInput
-                                        type="number"
-                                        min={0}
-                                        step={1}
-                                        value={novoMin}
-                                        onChange={(e) => setNovoMin(Number(e.target.value))}
-                                    />
+                                    <TextInput type="number" min={0} step={1} value={novoMin} onChange={(e) => setNovoMin(Number(e.target.value))} />
                                 </Field>
 
                                 <Field label="Foto (arquivo)">
@@ -2518,10 +2349,7 @@ export default function Page() {
 
                                 <Field label="Categoria (opcional)">
                                     <div className="flex gap-2">
-                                        <Select
-                                            value={novoCategoriaId}
-                                            onChange={(e) => setNovoCategoriaId(Number(e.target.value))}
-                                        >
+                                        <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
                                             <option value={0}>—</option>
                                             {categorias.map((c) => (
                                                 <option key={c.id} value={c.id}>
@@ -2529,12 +2357,7 @@ export default function Page() {
                                                 </option>
                                             ))}
                                         </Select>
-                                        <Button
-                                            variant="ghost"
-                                            type="button"
-                                            onClick={() => setCatQuickOpen(true)}
-                                            title="Criar categoria"
-                                        >
+                                        <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)} title="Criar categoria">
                                             ＋
                                         </Button>
                                     </div>
@@ -2542,10 +2365,7 @@ export default function Page() {
 
                                 <Field label="Fabricante (opcional)">
                                     <div className="flex gap-2">
-                                        <Select
-                                            value={novoFabricanteId}
-                                            onChange={(e) => setNovoFabricanteId(Number(e.target.value))}
-                                        >
+                                        <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
                                             <option value={0}>—</option>
                                             {fabricantes.map((f) => (
                                                 <option key={f.id} value={f.id}>
@@ -2553,12 +2373,7 @@ export default function Page() {
                                                 </option>
                                             ))}
                                         </Select>
-                                        <Button
-                                            variant="ghost"
-                                            type="button"
-                                            onClick={() => setFabQuickOpen(true)}
-                                            title="Criar fabricante"
-                                        >
+                                        <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)} title="Criar fabricante">
                                             ＋
                                         </Button>
                                     </div>
@@ -2567,11 +2382,7 @@ export default function Page() {
                                 {novoFoto ? (
                                     <div className="sm:col-span-2">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={novoFoto}
-                                            alt="Prévia"
-                                            className="h-40 w-full rounded-2xl border border-slate-200 object-cover"
-                                        />
+                                        <img src={novoFoto} alt="Prévia" className="h-40 w-full rounded-2xl border border-slate-200 object-cover" />
                                     </div>
                                 ) : null}
                             </div>
@@ -2585,12 +2396,7 @@ export default function Page() {
                         <Button variant="soft" onClick={addEntradaItemToList} type="button">
                             Adicionar à lista
                         </Button>
-                        <Button
-                            variant="ghost"
-                            onClick={applyEntradaLote}
-                            disabled={!entradaItens.length && !entradaBarcode.trim()}
-                            type="button"
-                        >
+                        <Button variant="ghost" onClick={applyEntradaLote} disabled={!entradaItens.length && !entradaBarcode.trim()} type="button">
                             Confirmar lista inteira
                         </Button>
                         <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
@@ -2603,16 +2409,9 @@ export default function Page() {
                             <p className="text-sm font-semibold text-slate-900">Lista de entradas pendentes</p>
                             <ul className="mt-2 space-y-1 text-xs text-slate-700">
                                 {entradaItens.map((it) => (
-                                    <li
-                                        key={it.id}
-                                        className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
-                                    >
+                                    <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
                                         <span className="truncate">{it.resumo}</span>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}
-                                        >
+                                        <Button type="button" variant="ghost" onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}>
                                             Remover
                                         </Button>
                                     </li>
@@ -2631,19 +2430,10 @@ export default function Page() {
             />
 
             {/* MODAL QUICK: CATEGORIA */}
-            <Modal
-                open={catQuickOpen}
-                title="Criar categoria"
-                subtitle="Cria e já deixa disponível para seleção."
-                onClose={() => setCatQuickOpen(false)}
-            >
+            <Modal open={catQuickOpen} title="Criar categoria" subtitle="Cria e já deixa disponível para seleção." onClose={() => setCatQuickOpen(false)}>
                 <div className="grid grid-cols-1 gap-3">
                     <Field label="Nome">
-                        <TextInput
-                            value={catQuickNome}
-                            onChange={(e) => setCatQuickNome(e.target.value)}
-                            placeholder="Ex: EPIs"
-                        />
+                        <TextInput value={catQuickNome} onChange={(e) => setCatQuickNome(e.target.value)} placeholder="Ex: EPIs" />
                     </Field>
                     <div className="flex gap-2">
                         <Button onClick={criarCategoriaQuick} type="button" disabled={!catQuickNome.trim()}>
@@ -2657,19 +2447,10 @@ export default function Page() {
             </Modal>
 
             {/* MODAL QUICK: FABRICANTE */}
-            <Modal
-                open={fabQuickOpen}
-                title="Criar fabricante"
-                subtitle="Cria e já deixa disponível para seleção."
-                onClose={() => setFabQuickOpen(false)}
-            >
+            <Modal open={fabQuickOpen} title="Criar fabricante" subtitle="Cria e já deixa disponível para seleção." onClose={() => setFabQuickOpen(false)}>
                 <div className="grid grid-cols-1 gap-3">
                     <Field label="Nome">
-                        <TextInput
-                            value={fabQuickNome}
-                            onChange={(e) => setFabQuickNome(e.target.value)}
-                            placeholder="Ex: 3M"
-                        />
+                        <TextInput value={fabQuickNome} onChange={(e) => setFabQuickNome(e.target.value)} placeholder="Ex: 3M" />
                     </Field>
                     <div className="flex gap-2">
                         <Button onClick={criarFabricanteQuick} type="button" disabled={!fabQuickNome.trim()}>
@@ -2714,12 +2495,7 @@ export default function Page() {
                                     }
                                 }}
                             />
-                            <Button
-                                variant="ghost"
-                                type="button"
-                                onClick={() => setSaidaScanOpen(true)}
-                                title="Abrir câmera"
-                            >
+                            <Button variant="ghost" type="button" onClick={() => setSaidaScanOpen(true)} title="Abrir câmera">
                                 📷 Escanear
                             </Button>
                         </div>
@@ -2727,18 +2503,11 @@ export default function Page() {
 
                     <div className="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <Field label="Buscar produto (nome/código)">
-                            <TextInput
-                                value={saidaBusca}
-                                onChange={(e) => setSaidaBusca(e.target.value)}
-                                placeholder="Ex: URNA ou 174501..."
-                            />
+                            <TextInput value={saidaBusca} onChange={(e) => setSaidaBusca(e.target.value)} placeholder="Ex: URNA ou 174501..." />
                         </Field>
 
                         <Field label="Produto (no depósito)">
-                            <Select
-                                value={saidaProdutoId}
-                                onChange={(e) => setSaidaProdutoId(Number(e.target.value))}
-                            >
+                            <Select value={saidaProdutoId} onChange={(e) => setSaidaProdutoId(Number(e.target.value))}>
                                 {saidaProdutosNoDeposito.length ? (
                                     saidaProdutosNoDeposito.map((p) => {
                                         const s = saldosMap.get(`${p.id}::${saidaDepositoId}`);
@@ -2757,20 +2526,11 @@ export default function Page() {
                     </div>
 
                     <Field label="Quantidade">
-                        <TextInput
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={saidaQtd}
-                            onChange={(e) => setSaidaQtd(Number(e.target.value))}
-                        />
+                        <TextInput type="number" min={1} step={1} value={saidaQtd} onChange={(e) => setSaidaQtd(Number(e.target.value))} />
                     </Field>
 
                     <Field label="Solicitante">
-                        <Select
-                            value={saidaSolicitanteId}
-                            onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}
-                        >
+                        <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
                             {usuarios.map((u) => (
                                 <option key={u.id} value={u.id}>
                                     {u.nome} ({u.usuario})
@@ -2781,21 +2541,13 @@ export default function Page() {
 
                     <div className="sm:col-span-2">
                         <Field label="Destino (obra/setor/local)">
-                            <TextInput
-                                value={saidaDestino}
-                                onChange={(e) => setSaidaDestino(e.target.value)}
-                                placeholder="Ex: Obra X / Setor Y"
-                            />
+                            <TextInput value={saidaDestino} onChange={(e) => setSaidaDestino(e.target.value)} placeholder="Ex: Obra X / Setor Y" />
                         </Field>
                     </div>
 
                     <div className="sm:col-span-2">
                         <Field label="Observação (opcional)">
-                            <TextArea
-                                value={saidaObs}
-                                onChange={(e) => setSaidaObs(e.target.value)}
-                                placeholder="Detalhes da saída..."
-                            />
+                            <TextArea value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} placeholder="Detalhes da saída..." />
                         </Field>
                     </div>
 
@@ -2807,20 +2559,10 @@ export default function Page() {
                         >
                             Confirmar esta saída
                         </Button>
-                        <Button
-                            variant="soft"
-                            onClick={addSaidaItemToList}
-                            disabled={!saidaProdutoId}
-                            type="button"
-                        >
+                        <Button variant="soft" onClick={addSaidaItemToList} disabled={!saidaProdutoId} type="button">
                             Adicionar à lista
                         </Button>
-                        <Button
-                            variant="ghost"
-                            onClick={applySaidaLote}
-                            disabled={!saidaItens.length && !saidaProdutoId}
-                            type="button"
-                        >
+                        <Button variant="ghost" onClick={applySaidaLote} disabled={!saidaItens.length && !saidaProdutoId} type="button">
                             Confirmar lista inteira
                         </Button>
                         <Button variant="ghost" onClick={() => setSaidaOpen(false)} type="button">
@@ -2833,16 +2575,9 @@ export default function Page() {
                             <p className="text-sm font-semibold text-slate-900">Lista de saídas pendentes</p>
                             <ul className="mt-2 space-y-1 text-xs text-slate-700">
                                 {saidaItens.map((it) => (
-                                    <li
-                                        key={it.id}
-                                        className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
-                                    >
+                                    <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
                                         <span className="truncate">{it.resumo}</span>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            onClick={() => setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))}
-                                        >
+                                        <Button type="button" variant="ghost" onClick={() => setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))}>
                                             Remover
                                         </Button>
                                     </li>
