@@ -124,6 +124,47 @@ function moneyBRL(n: number) {
   }
 }
 
+/**
+ * Máscara BRL (digit-only -> centavos)
+ * Ex.: digits="1" => R$ 0,01 | "100000" => R$ 1.000,00
+ */
+function maskBRLFromDigits(digitsOnly: string) {
+  const digits = (digitsOnly || "").replace(/\D/g, "");
+  const cents = digits ? Number(digits) : 0;
+  const value = cents / 100;
+
+  try {
+    // gera "R$ 1.234,56"
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+  } catch {
+    // fallback simples
+    const v = Number.isFinite(value) ? value : 0;
+    const fixed = v.toFixed(2); // "1234.56"
+    const [intPart, dec] = fixed.split(".");
+    const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return `R$ ${withDots},${dec}`;
+  }
+}
+
+function parseBRLToNumber(brlText: string) {
+  const digits = (brlText || "").replace(/\D/g, "");
+  const cents = digits ? Number(digits) : 0;
+  return cents / 100;
+}
+
+function maskBRLInput(raw: string) {
+  // aceita qualquer coisa, mas transforma em dígitos e mascara
+  const digits = (raw || "").replace(/\D/g, "");
+  return maskBRLFromDigits(digits);
+}
+
+function escapeCsvCell(v: any, sep = ";") {
+  const s = String(v ?? "");
+  const mustQuote = s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(sep);
+  const escaped = s.replace(/"/g, '""');
+  return mustQuote ? `"${escaped}"` : escaped;
+}
+
 const IMG_BASE = "https://planoassistencialintegrado.com.br"; // domínio onde as imagens existem
 
 function normalizeImgUrl(u?: string | null) {
@@ -611,7 +652,8 @@ export default function Page() {
 
   // campos do cadastro
   const [editNome, setEditNome] = useState("");
-  const [editValor, setEditValor] = useState<number>(0);
+  // ✅ agora o valor no editor é string com máscara "R$ 1.000,00"
+  const [editValor, setEditValor] = useState<string>("R$ 0,00");
   const [editMin, setEditMin] = useState<number>(0);
   const [editCatId, setEditCatId] = useState<ID>(0);
   const [editFabId, setEditFabId] = useState<ID>(0);
@@ -735,6 +777,207 @@ export default function Page() {
     catById,
     fabById,
   ]);
+
+  // ✅ EXPORTAÇÃO (CSV / PDF) do ESTOQUE conforme filtro atual
+  function getFiltroResumo() {
+    const depTxt =
+      depFiltroEstoque === "Todos" ? "Todos" : depById.get(Number(depFiltroEstoque))?.nome || String(depFiltroEstoque);
+    const catTxt =
+      catFiltroEstoque === "Todos" ? "Todas" : catById.get(Number(catFiltroEstoque))?.nome || String(catFiltroEstoque);
+    const fabTxt =
+      fabFiltroEstoque === "Todos" ? "Todos" : fabById.get(Number(fabFiltroEstoque))?.nome || String(fabFiltroEstoque);
+
+    return {
+      busca: qEstoque.trim() || "—",
+      deposito: depTxt,
+      categoria: catTxt,
+      fabricante: fabTxt,
+      somenteAlerta: onlyLow ? "Sim" : "Não",
+    };
+  }
+
+  function exportarEstoqueCSV() {
+    if (!estoqueRows.length) {
+      alert("Nenhum item para exportar com os filtros atuais.");
+      return;
+    }
+
+    const sep = ";";
+    const header = [
+      "Produto",
+      "Código de Barras",
+      "Depósito",
+      "Categoria",
+      "Fabricante",
+      "Quantidade",
+      "Mínimo",
+      "Max (mín - qtd)",
+      "Valor (un)",
+      "Atualizado",
+    ];
+
+    const lines: string[] = [];
+    // BOM p/ Excel pt-BR abrir acentos ok
+    lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
+
+    for (const { p, d, qtd, s } of estoqueRows) {
+      const min = clampInt(p.minimo);
+      const max = Math.max(0, min - qtd);
+      const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+      const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+      const valorNum = Number(p.valor) || 0;
+
+      lines.push(
+        [
+          p.nome,
+          p.codigo_barras,
+          d.nome,
+          cat,
+          fab,
+          qtd,
+          min,
+          max,
+          moneyBRL(valorNum),
+          s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "",
+        ]
+          .map((x) => escapeCsvCell(x, sep))
+          .join(sep)
+      );
+    }
+
+    const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const f = getFiltroResumo();
+    const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeName}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    // opcional: feedback
+    // alert("CSV gerado.");
+  }
+
+  function exportarEstoquePDF() {
+    if (!estoqueRows.length) {
+      alert("Nenhum item para exportar com os filtros atuais.");
+      return;
+    }
+
+    const f = getFiltroResumo();
+    const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+
+    const rowsHtml = estoqueRows
+      .map(({ p, d, qtd, s }) => {
+        const min = clampInt(p.minimo);
+        const max = Math.max(0, min - qtd);
+        const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+        const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+        const valorNum = Number(p.valor) || 0;
+
+        const esc = (x: any) =>
+          String(x ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+
+        return `
+          <tr>
+            <td>${esc(p.nome)}</td>
+            <td class="mono">${esc(p.codigo_barras)}</td>
+            <td>${esc(d.nome)}</td>
+            <td>${esc(cat)}</td>
+            <td>${esc(fab)}</td>
+            <td class="num">${esc(qtd)}</td>
+            <td class="num">${esc(min)}</td>
+            <td class="num green">${esc(max)}</td>
+            <td class="num">${esc(moneyBRL(valorNum))}</td>
+            <td>${esc(s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "")}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Relatório de Estoque</title>
+  <style>
+    *{ box-sizing:border-box; }
+    body{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; color:#0f172a; }
+    h1{ margin:0 0 6px 0; font-size:18px; }
+    .meta{ font-size:12px; color:#475569; margin-bottom:12px; }
+    .filters{ border:1px solid #e2e8f0; background:#f8fafc; padding:10px 12px; border-radius:12px; margin-bottom:14px; }
+    .filters div{ font-size:12px; color:#334155; margin:2px 0; }
+    table{ width:100%; border-collapse:collapse; font-size:11px; }
+    th, td{ border:1px solid #e2e8f0; padding:8px; vertical-align:top; }
+    th{ background:#f1f5f9; text-align:left; font-weight:700; }
+    .num{ text-align:right; white-space:nowrap; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .green{ color:#16a34a; font-weight:700; }
+    @media print{
+      body{ margin: 14mm; }
+      .filters{ break-inside: avoid; }
+      table{ page-break-inside:auto; }
+      tr{ page-break-inside:avoid; page-break-after:auto; }
+      thead{ display: table-header-group; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Relatório de Estoque</h1>
+  <div class="meta">Gerado em: <b>${geradoEm}</b> • Itens: <b>${estoqueRows.length}</b></div>
+
+  <div class="filters">
+    <div><b>Busca:</b> ${String(f.busca).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Depósito:</b> ${String(f.deposito).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Categoria:</b> ${String(f.categoria).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Fabricante:</b> ${String(f.fabricante).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Somente alerta (≤ mínimo):</b> ${String(f.somenteAlerta)}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Produto</th>
+        <th>Código</th>
+        <th>Depósito</th>
+        <th>Categoria</th>
+        <th>Fabricante</th>
+        <th class="num">Qtd</th>
+        <th class="num">Min</th>
+        <th class="num">Max (min - qtd)</th>
+        <th class="num">Valor</th>
+        <th>Atualizado</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+
+  <script>
+    // abre o diálogo de impressão (Salvar como PDF no navegador)
+    setTimeout(() => window.print(), 250);
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank", "noopener,noreferrer");
+    if (!w) {
+      alert("Pop-up bloqueado. Permita pop-ups para exportar PDF.");
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
 
   // ENTRADA
   const [entradaOpen, setEntradaOpen] = useState(false);
@@ -958,7 +1201,12 @@ export default function Page() {
 
     setProdEditId(produtoId);
     setEditNome(p.nome || "");
-    setEditValor(Number(p.valor) || 0);
+
+    // ✅ máscara BRL no editor
+    const valorNum = Number(p.valor) || 0;
+    const valorDigits = String(Math.round(Math.max(0, valorNum) * 100)); // centavos
+    setEditValor(maskBRLFromDigits(valorDigits));
+
     setEditMin(clampInt(p.minimo));
     setEditCatId(Number(p.categoria_id || 0));
     setEditFabId(Number(p.fabricante_id || 0));
@@ -990,7 +1238,8 @@ export default function Page() {
         action: "produto_atualizar",
         produto_id: prodEditId,
         nome: editNome.trim(),
-        valor: Number.isFinite(Number(editValor)) ? Number(editValor) : 0,
+        // ✅ converte "R$ 1.000,00" para number
+        valor: parseBRLToNumber(editValor),
         minimo: clampInt(editMin),
         categoria_id: editCatId ? Number(editCatId) : 0,
         fabricante_id: editFabId ? Number(editFabId) : 0,
@@ -1697,6 +1946,9 @@ export default function Page() {
           {/* TRANSFERÊNCIA */}
           {tab === "TRANSFERENCIA" ? (
             <Card className="p-4">
+              {/* ... (sem mudanças aqui) ... */}
+              {/* (mantido igual ao seu arquivo original) */}
+              {/* Para reduzir risco de erro, não mexi no bloco de Transferência. */}
               <div className="flex flex-col gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
@@ -1810,12 +2062,20 @@ export default function Page() {
                   <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
                   <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 sm:justify-end">
                   <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
                     Entrada
                   </Button>
                   <Button variant="ghost" onClick={() => setSaidaOpen(true)} type="button">
                     Saída
+                  </Button>
+
+                  {/* ✅ Exportações do filtro atual */}
+                  <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
+                    ⬇️ CSV
+                  </Button>
+                  <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || !estoqueRows.length}>
+                    🧾 PDF
                   </Button>
                 </div>
               </div>
@@ -1908,6 +2168,7 @@ export default function Page() {
                     {estoqueRows.map(({ p, d, qtd, s }) => {
                       const min = clampInt(p.minimo);
                       const low = qtd <= min;
+                      const max = Math.max(0, min - qtd); // ✅ regra pedida
                       const valorNum = Number(p.valor) || 0;
 
                       const foto = normalizeImgUrl(p.foto_url);
@@ -1964,7 +2225,16 @@ export default function Page() {
 
                             <div className="shrink-0 text-right">
                               <p className="text-sm font-semibold text-slate-900">{qtd}</p>
-                              <p className="text-xs text-slate-500">mín {min}</p>
+
+                              {/* ✅ min + max (verde) */}
+                              <p className="text-xs text-slate-500">
+                                mín {min}{" "}
+                                {low ? (
+                                  <>
+                                    • máx <span className="font-semibold text-emerald-700">{max}</span>
+                                  </>
+                                ) : null}
+                              </p>
                             </div>
                           </div>
                         </li>
@@ -1994,22 +2264,29 @@ export default function Page() {
                   <div className="p-6 text-center text-sm text-slate-500">Nenhum item em alerta 🎉</div>
                 ) : (
                   <ul className="divide-y divide-slate-200">
-                    {alertRows.map(({ p, d, qtd, min }) => (
-                      <li key={`${p.id}_${d.id}`} className="px-4 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
-                            <p className="mt-0.5 truncate text-xs text-slate-600">
-                              CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
-                            </p>
+                    {alertRows.map(({ p, d, qtd, min }) => {
+                      const max = Math.max(0, min - qtd); // ✅ min - qtd
+                      return (
+                        <li key={`${p.id}_${d.id}`} className="px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
+                              <p className="mt-0.5 truncate text-xs text-slate-600">
+                                CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-red-700">{qtd}</p>
+
+                              {/* ✅ min + max (verde) */}
+                              <p className="text-xs text-slate-500">
+                                mín {min} • máx <span className="font-semibold text-emerald-700">{max}</span>
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-semibold text-red-700">{qtd}</p>
-                            <p className="text-xs text-slate-500">mín {min}</p>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -2028,6 +2305,7 @@ export default function Page() {
           {/* HISTÓRICO */}
           {tab === "HISTORICO" ? (
             <Card className="p-4">
+              {/* ... (sem mudanças aqui) ... */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
@@ -2186,6 +2464,7 @@ export default function Page() {
           {/* AVANÇADO */}
           {tab === "AVANCADO" ? (
             <Card className="p-4">
+              {/* ... (sem mudanças aqui) ... */}
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
@@ -2417,8 +2696,27 @@ export default function Page() {
                     <TextInput value={editNome} onChange={(e) => setEditNome(e.target.value)} />
                   </Field>
 
+                  {/* ✅ padrão R$1.000,00 */}
                   <Field label="Valor (R$)">
-                    <TextInput type="number" step="0.01" value={editValor} onChange={(e) => setEditValor(Number(e.target.value))} />
+                    <TextInput
+                      type="text"
+                      inputMode="numeric"
+                      value={editValor}
+                      onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
+                      onFocus={(e) => {
+                        // mantém formato; se vier vazio por algum motivo, força
+                        if (!editValor?.trim()) setEditValor("R$ 0,00");
+                        // coloca cursor no final (boa UX)
+                        setTimeout(() => {
+                          try {
+                            const el = e.target;
+                            const len = el.value.length;
+                            el.setSelectionRange(len, len);
+                          } catch {}
+                        }, 0);
+                      }}
+                      placeholder="R$ 0,00"
+                    />
                   </Field>
 
                   <Field label="Mínimo (alerta)">
@@ -2492,9 +2790,7 @@ export default function Page() {
                 </div>
               </div>
 
-              <div className="text-xs text-slate-500">
-                Obs.: código de barras fica somente leitura aqui (se quiser editar também, precisa endpoint).
-              </div>
+              <div className="text-xs text-slate-500">Obs.: código de barras fica somente leitura aqui (se quiser editar também, precisa endpoint).</div>
             </div>
           );
         })()}
@@ -2507,6 +2803,7 @@ export default function Page() {
         subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto. Você pode montar uma lista de vários itens."
         onClose={() => setEntradaOpen(false)}
       >
+        {/* ... (sem mudanças aqui) ... */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Código de barras">
             <div className="flex gap-2">
@@ -2694,6 +2991,7 @@ export default function Page() {
         subtitle="Filtre pelo depósito, procure o produto ou escaneie por câmera. Você pode adicionar vários itens na lista."
         onClose={() => setSaidaOpen(false)}
       >
+        {/* ... (sem mudanças aqui) ... */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Depósito (origem)">
             <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
