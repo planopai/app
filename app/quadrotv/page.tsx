@@ -105,7 +105,6 @@ type Registro = {
     assistencia?: string;
     tanato?: string;
 
-    // ✅ novo campo (Invol)
     invol?: any;
 
     ornamentacao?: string;
@@ -114,11 +113,9 @@ type Registro = {
     local?: string;
     local_sepultamento?: string;
 
-    // campos antigos
     materiais?: string;
     material?: string;
 
-    // possíveis campos do backend/relatórios
     materiais_json?: any;
     material_json?: any;
 
@@ -141,23 +138,15 @@ type LogItem = {
 /* =========================
    Helpers comuns
    ========================= */
-
-/**
- * React já escapa strings.
- * O seu problema real era o backend mandar entidades HTML (&quot; etc).
- * Então aqui a gente DECODIFICA entidades para exibir bonito.
- */
 function decodeHtmlEntitiesOnce(input: string): string {
     if (!input) return input;
 
-    // Browser (client): usa textarea pra decodificar corretamente
     if (typeof window !== "undefined" && typeof document !== "undefined") {
         const ta = document.createElement("textarea");
         ta.innerHTML = input;
         return ta.value;
     }
 
-    // Fallback (caso raríssimo)
     return input
         .replace(/&quot;/g, '"')
         .replace(/&apos;/g, "'")
@@ -165,11 +154,14 @@ function decodeHtmlEntitiesOnce(input: string): string {
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&amp;/g, "&")
-        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-        .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)));
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+            String.fromCharCode(parseInt(hex, 16))
+        )
+        .replace(/&#(\d+);/g, (_, num) =>
+            String.fromCharCode(parseInt(num, 10))
+        );
 }
 
-/** algumas vezes vem “duplamente escapado” (ex: &amp;quot;) */
 function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
     let s = String(input ?? "");
     for (let i = 0; i < maxPasses; i++) {
@@ -180,7 +172,6 @@ function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
     return s;
 }
 
-// antes era "sanitize" (escapava tudo e causava &quot; na tela)
 const sanitize = (t?: any) => decodeHtmlEntitiesDeep(String(t ?? ""));
 
 const shown = (v?: any, fallback = "a definir") => {
@@ -200,7 +191,6 @@ type MatLookupInfo = {
 
 type MatLine = { text: string; itemKey?: string };
 
-/** ✅ NOVO: formata quantidade sempre ANTES do nome (ex: "2x Luvas", "1x Extensão") */
 function qtyPrefixFromAny(qtdRaw: any): string {
     const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
     if (!qtdStr) return "1x";
@@ -214,20 +204,18 @@ function qtyPrefixFromAny(qtdRaw: any): string {
         return `${val}x`;
     }
 
-    // tenta pegar número no começo (ex: "2 un", "3,5kg")
     const m = normalized.match(/^(\d+(?:\.\d+)?)/);
     if (m?.[1]) return `${m[1]}x`;
 
-    // fallback: ainda assim coloca algo como "Xx"
     return `${normalized}x`;
 }
 
-/** ✅ NOVO: garante "QTDx Nome" mesmo quando veio "Nome (QTD)" ou só "Nome" */
 function normalizeMatTextToQtyPrefix(text: string): string {
-    const s = decodeHtmlEntitiesDeep(String(text ?? "")).replace(/\s+/g, " ").trim();
+    const s = decodeHtmlEntitiesDeep(String(text ?? ""))
+        .replace(/\s+/g, " ")
+        .trim();
     if (!s) return s;
 
-    // já está com "2x Nome"
     let m = s.match(/^(\d+(?:[.,]\d+)?)\s*[xX]\s*(.+)$/);
     if (m) {
         const qtd = m[1].replace(",", ".");
@@ -235,7 +223,6 @@ function normalizeMatTextToQtyPrefix(text: string): string {
         return `${qtd}x ${nome}`;
     }
 
-    // está como "Nome (2)" -> vira "2x Nome"
     m = s.match(/^(.+?)\s*\(\s*(\d+(?:[.,]\d+)?)\s*\)\s*$/);
     if (m) {
         const nome = m[1].trim();
@@ -243,11 +230,9 @@ function normalizeMatTextToQtyPrefix(text: string): string {
         return `${qtd}x ${nome}`;
     }
 
-    // caso padrão: sem qtd -> 1x
     return `1x ${s}`;
 }
 
-/* ✅ NOVO (copy-safe): decide se um item é “material real” (evita "1x Sim"/"1x Item" e afins) */
 function isRealMaterialForClipboard(item: string): boolean {
     const s = decodeHtmlEntitiesDeep(String(item ?? "")).trim();
     if (!s) return false;
@@ -262,14 +247,11 @@ function isRealMaterialForClipboard(item: string): boolean {
     return true;
 }
 
-/** ✅ detecta lixo do tipo "Json: {...}" mesmo com prefixo "1x " */
 function isJsonNoiseLine(raw: any): boolean {
     const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
     if (!s) return false;
 
     const low = s.toLowerCase().replace(/\s+/g, " ").trim();
-
-    // "json: {...}" OU "1x json: {...}" OU "2x Json: {}"
     return /^(\d+(?:[.,]\d+)?\s*[xX]\s*)?json\s*:/.test(low);
 }
 
@@ -284,20 +266,16 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         const low = s.toLowerCase().trim();
 
-        // ✅ NOVO: mata também "1x Json: {}" (e variações)
         if (isJsonNoiseLine(s)) return;
 
-        // continua protegendo JSON puro
         if (low.startsWith("{") || low.startsWith("[")) return;
         if (looksLikeMateriaisJson(s)) return;
 
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        // ✅ aqui garante "QTDx Nome" SEMPRE
         const withQtd = normalizeMatTextToQtyPrefix(s);
         if (!withQtd) return;
 
-        // ✅ NOVO: se após normalizar virar algo como "1x Json: {}", corta também
         if (isJsonNoiseLine(withQtd)) return;
 
         if (seen.has(withQtd)) return;
@@ -309,18 +287,10 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
         if (!nome) return;
 
-        // ✅ sempre prefixa quantidade (mesmo 1)
         const prefix = qtyPrefixFromAny(qtdRaw);
         pushItem(`${prefix} ${nome}`);
     };
 
-    /**
-     * Extrai materiais de JSON padrão:
-     * {
-     *   "item3": { "checked": true, "qtd": 1, "nome": "Extensão", ... },
-     * }
-     * ou array de objetos com {nome, checked, qtd}
-     */
     const extractFromStructured = (raw: unknown): boolean => {
         const items: { nome: any; qtd?: any }[] = [];
 
@@ -342,13 +312,23 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
                 const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
                 const checkedVal = (node as any).checked;
-                const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
+                const qtdVal =
+                    (node as any).qtd ??
+                    (node as any).quantidade ??
+                    (node as any).qtd_item;
 
                 if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
                     items.push({ nome: maybeNome, qtd: qtdVal });
                 }
 
-                const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
+                const containerKeys = [
+                    "itens",
+                    "items",
+                    "materiais",
+                    "materiais_json",
+                    "material_json",
+                    "data",
+                ];
                 for (const k of containerKeys) {
                     if ((node as any)[k] != null) walk((node as any)[k]);
                 }
@@ -380,7 +360,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     };
 
     const addFromMixedObject = (obj: Record<string, unknown>) => {
-        // 1) pega materiais_<nome>_qtd primeiro
         for (const [key, value] of Object.entries(obj)) {
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (!m) continue;
@@ -395,7 +374,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
         }
 
-        // 2) booleans/números em materiais_<nome>
         for (const [key, value] of Object.entries(obj)) {
             if (/^materiais_.+?_qtd$/i.test(key)) continue;
 
@@ -419,11 +397,9 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                 continue;
             }
 
-            // se não for número, mantém como texto (mas ainda prefixa 1x no nome “principal”)
             pushItem(`1x ${nome}: ${valStr}`);
         }
 
-        // 3) se o objeto for um "mapa" comum de { item: qtd }
         for (const [k, v] of Object.entries(obj)) {
             if (k === "materiais_json" || k === "material_json") continue;
             if (/^materiais_.+/i.test(k)) continue;
@@ -440,7 +416,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             } else if (asBool(valStr)) {
                 pushItem(`1x ${nome}`);
             } else {
-                // sem número: vira 1x "Nome: valor"
                 pushItem(`1x ${nome}: ${valStr}`);
             }
         }
@@ -449,14 +424,12 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     const addFromUnknown = ((raw: unknown) => {
         if (raw == null || raw === "") return;
 
-        // Array
         if (Array.isArray(raw)) {
             if (extractFromStructured(raw)) return;
             for (const it of raw) pushItem(it);
             return;
         }
 
-        // Objeto
         if (isPlainObject(raw)) {
             if (extractFromStructured(raw)) return;
 
@@ -466,34 +439,27 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             return;
         }
 
-        // String
         if (typeof raw === "string") {
             let s = decodeHtmlEntitiesDeep(raw).trim();
             if (!s) return;
 
             const original = s;
-
-            // remove prefixos comuns tipo "Json:"
             s = s.replace(/^\s*json\s*:\s*/i, "").trim();
 
-            // 1) tenta parsear JSON
             const parsed = tryParseJsonFromStringMaybeEmbedded(s);
             if (parsed != null) {
                 if (extractFromStructured(parsed)) return;
                 return;
             }
 
-            // 2) tenta extrair por regex (nome/qtd)
             const extracted = extractMateriaisByRegex(s);
             if (extracted.length) {
                 extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
                 return;
             }
 
-            // 3) se parece JSON de materiais, ignora
             if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
 
-            // 4) listas normais
             if (s.includes("\n")) {
                 s.split("\n")
                     .map((x) => x.trim())
@@ -509,11 +475,17 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                 return;
             }
             if (s.includes(";")) {
-                s.split(";").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s.split(";")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
             if (s.includes(",")) {
-                s.split(",").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s.split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
 
@@ -521,20 +493,17 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             return;
         }
 
-        // ✅ ALTERAÇÃO: se vier number/boolean (ruído), NÃO gera material nenhum
         if (typeof raw === "number") return;
         if (typeof raw === "boolean") return;
 
         pushItem(String(raw));
     }) as (raw: unknown) => void;
 
-    // 1) fontes diretas
     addFromUnknown((registro as any).materiais_json);
     addFromUnknown((registro as any).material_json);
     addFromUnknown((registro as any).materiais);
     addFromUnknown((registro as any).material);
 
-    // 2) varredura por chaves materiais_* no próprio registro
     if (isPlainObject(registro)) {
         const obj = registro as Record<string, unknown>;
         const picked: Record<string, unknown> = {};
@@ -554,7 +523,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     return out;
 }
 
-/* ✅ extrai materiais estruturados preservando a key "itemXX" para agrupar por categoria */
 function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
     const out: MatLine[] = [];
     const seen = new Set<string>();
@@ -566,7 +534,6 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
 
         const low = s.toLowerCase().trim();
 
-        // ✅ NOVO: mata também "1x Json: {}"
         if (isJsonNoiseLine(s)) return;
 
         if (low.startsWith("{") || low.startsWith("[")) return;
@@ -576,7 +543,6 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
         const withQtd = normalizeMatTextToQtyPrefix(s);
         if (!withQtd) return;
 
-        // ✅ NOVO: se normalizado virar "1x Json: {}", corta também
         if (isJsonNoiseLine(withQtd)) return;
 
         if (seen.has(withQtd)) return;
@@ -619,20 +585,32 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
 
             const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
             const checkedVal = (node as any).checked;
-            const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
+            const qtdVal =
+                (node as any).qtd ??
+                (node as any).quantidade ??
+                (node as any).qtd_item;
 
             const inferredKey =
                 normalizeItemKeyFromAny((node as any).item_id) ??
                 normalizeItemKeyFromAny((node as any).itemId) ??
                 normalizeItemKeyFromAny((node as any).item_key) ??
                 normalizeItemKeyFromAny((node as any).id) ??
-                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey) ? parentKey : undefined);
+                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey)
+                    ? parentKey
+                    : undefined);
 
             if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
                 pushNomeQtd(maybeNome, qtdVal, inferredKey);
             }
 
-            const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
+            const containerKeys = [
+                "itens",
+                "items",
+                "materiais",
+                "materiais_json",
+                "material_json",
+                "data",
+            ];
             for (const k of containerKeys) {
                 if ((node as any)[k] != null) walk((node as any)[k], k);
             }
@@ -683,7 +661,9 @@ function MateriaisValue({
         return [...structured, ...extras];
     })();
 
-    const filteredLines = (lines ?? []).filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
+    const filteredLines = (lines ?? []).filter(
+        (l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text)
+    );
 
     if (!filteredLines || filteredLines.length === 0) return <span>{fallback}</span>;
 
@@ -743,7 +723,9 @@ function ensureHttpsUrl(raw: string): string {
     }
 
     if (/^(www\.)/i.test(s)) return `https://${s}`;
-    if (/^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s))
+    if (
+        /^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)
+    )
         return `https://${s}`;
 
     return s;
@@ -794,6 +776,34 @@ function dateOr(d?: string) {
     const f = formatDateBr(raw);
     if (!f || f === "00/00/0000") return "a definir";
     return f;
+}
+
+/** ✅ NOVO: mostra só dia/mês (17/12) para a coluna "Sepultamento" */
+function dateDayMonthOr(d?: string) {
+    const raw = (d ?? "").trim();
+    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
+
+    // yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const [, mm, dd] = raw.split("-");
+        return `${dd}/${mm}`;
+    }
+
+    // dd/mm/yyyy
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+        const [dd, mm] = raw.split("/");
+        return `${dd}/${mm}`;
+    }
+
+    // tenta achar um dd/mm em qualquer lugar
+    const m2 = raw.match(/(\d{2})\/(\d{2})/);
+    if (m2) return `${m2[1]}/${m2[2]}`;
+
+    // tenta achar yyyy-mm-dd embutido
+    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}`;
+
+    return raw;
 }
 
 function timeOr(t?: string) {
@@ -987,11 +997,9 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
-    // ====== ✅ NOVO: Materiais agrupados por categoria (ex: "Básico 01") ======
     const structured = extractMateriaisStructuredWithKey(r);
     const flat = normalizeMateriaisFromRegistro(r);
 
-    // Une structured + extras do flat (sem duplicar)
     const linesAll: MatLine[] = (() => {
         if (structured.length === 0) return flat.map((t) => ({ text: t }));
         const have = new Set(structured.map((x) => x.text));
@@ -1001,7 +1009,6 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
 
     const filtered = linesAll.filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
 
-    // Agrupa por categoria (catNome)
     const groups = new Map<string, { ordem: number; items: { text: string; itemOrdem: number }[] }>();
 
     for (const it of filtered) {
@@ -1214,10 +1221,7 @@ export default function QuadroAtendimentoPage() {
         async function load() {
             try {
                 const url = `${BASE_INFO}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, {
-                    ttlMs: 6_000,
-                    cacheKey: "informativo_listar",
-                });
+                const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
                 if (!alive) return;
                 const arr = Array.isArray(j) ? (j as Registro[]) : [];
                 setRegistros(arr);
@@ -1235,18 +1239,15 @@ export default function QuadroAtendimentoPage() {
         };
     }, []);
 
-    // ✅ CORRIGIDO (sem duplicação e sem código solto)
+    // ✅ sem duplicação
     useEffect(() => {
         let alive = true;
-        const BASE_AVISOS: string = "/api/php/avisos.php?listar=1";
+        const BASE_AVISOS = "/api/php/avisos.php?listar=1";
 
         async function load() {
             try {
                 const url = `${BASE_AVISOS}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, {
-                    ttlMs: 15_000,
-                    cacheKey: "avisos_listar",
-                });
+                const j = await fetchJsonFast<any>(url, { ttlMs: 15_000, cacheKey: "avisos_listar" });
                 if (!alive) return;
                 const arr = Array.isArray(j) ? (j as Aviso[]) : [];
                 setAvisos(arr);
@@ -1258,7 +1259,6 @@ export default function QuadroAtendimentoPage() {
 
         load();
         const id = setInterval(load, 20000);
-
         return () => {
             alive = false;
             clearInterval(id);
@@ -1399,10 +1399,7 @@ export default function QuadroAtendimentoPage() {
             const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
             const url = `${BASE}&_ts=${Date.now()}`;
 
-            const json: any = await fetchJsonFast<any>(url, {
-                ttlMs: 20_000,
-                cacheKey: `hist_${sepId}`,
-            });
+            const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
 
             let logs: LogItem[] = [];
             if (Array.isArray(json)) logs = json as LogItem[];
@@ -1429,19 +1426,12 @@ export default function QuadroAtendimentoPage() {
     }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const obsList = useCallback(
-        (missing: string[]) =>
-            missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.",
+        (missing: string[]) => (missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo."),
         []
     );
 
-    const missingEtapa0 = useCallback(
-        (r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)),
-        []
-    );
-    const missingEtapa1 = useCallback(
-        (r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)),
-        []
-    );
+    const missingEtapa0 = useCallback((r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)), []);
+    const missingEtapa1 = useCallback((r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)), []);
     const missingEtapa2 = useCallback((r: Registro) => {
         const miss: string[] = [];
         if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
@@ -1474,7 +1464,6 @@ export default function QuadroAtendimentoPage() {
             <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} />
             <MobileCards ativos={ativosOrdenados} onSelect={showDetail} />
 
-            {/* ✅ AVISOS EM UMA LINHA, ROLANDO DA DIREITA PARA ESQUERDA */}
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
@@ -1492,8 +1481,7 @@ export default function QuadroAtendimentoPage() {
                             <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
                                 <button
                                     onClick={toggleTimelineDetalhe}
-                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""
-                                        }`}
+                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
                                     aria-label="Linha do tempo"
                                     title="Ver linha do tempo deste atendimento"
                                 >
@@ -1509,11 +1497,7 @@ export default function QuadroAtendimentoPage() {
                                     {copied ? "Copiado!" : "Copiar"}
                                 </button>
 
-                                <button
-                                    onClick={closeDetail}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Fechar"
-                                >
+                                <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
                                     Fechar
                                 </button>
                             </div>
@@ -1537,11 +1521,7 @@ export default function QuadroAtendimentoPage() {
                                 </div>
 
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(
-                                            detail.status
-                                        )}`}
-                                    >
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
                                         {capStatus(detail.status)}
                                     </span>
                                     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
@@ -1555,8 +1535,7 @@ export default function QuadroAtendimentoPage() {
                                             <div className="min-w-0">
                                                 <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
                                                 <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                    Logs deste atendimento:{" "}
-                                                    <b className="font-semibold">{shown(detail.falecido)}</b>
+                                                    Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
                                                 </div>
                                             </div>
                                             <button
@@ -1568,19 +1547,11 @@ export default function QuadroAtendimentoPage() {
                                             </button>
                                         </div>
 
-                                        {detailLogsLoading && (
-                                            <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>
-                                        )}
-                                        {detailLogsError && (
-                                            <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">
-                                                {detailLogsError}
-                                            </p>
-                                        )}
+                                        {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
+                                        {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="mt-2 text-sm text-muted-foreground">
-                                                Nenhum log encontrado para este atendimento.
-                                            </p>
+                                            <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
                                         )}
 
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
@@ -1600,11 +1571,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Religião" value={shown(detail.religiao)} />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    <Field
-                                        label="Obs. Atendimento"
-                                        value={shown(detail.observacao_atendimento, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1614,24 +1581,12 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-
                                     <Field label="Invol" value={involSimNao(detail.invol)} />
+                                    <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
-                                    <Field
-                                        label="Ornamentação"
-                                        value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)}
-                                    />
-
-                                    {/* ✅ Materiais agora sempre mostra "QTDx Nome" */}
-                                    {normalizeMateriaisFromRegistro(detail).filter(
-                                        (x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)
-                                    ).length > 0 && (
-                                            <Field
-                                                label="Materiais"
-                                                value={<MateriaisValue registro={detail} lookup={matLookup} />}
-                                                className="sm:col-span-2"
-                                            />
-                                        )}
+                                    {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
+                                        <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                    )}
 
                                     <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
                                 </div>
@@ -1644,11 +1599,7 @@ export default function QuadroAtendimentoPage() {
                                 </div>
                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    <Field
-                                        label="Obs. Velório"
-                                        value={shown(detail.observacao_velorio01, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1657,11 +1608,7 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
                                     <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
                                     <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    <Field
-                                        label="Obs. Sepultamento"
-                                        value={shown(detail.observacao_velorio02, "")}
-                                        className="sm:col-span-2"
-                                    />
+                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
                                 </div>
                             </Topic>
 
@@ -1690,9 +1637,8 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     }, [avisos]);
 
     const durationSec = useMemo(() => {
-        // duração proporcional ao tamanho do texto (mantém suave e previsível)
         const totalChars = items.reduce((acc, it) => acc + it.usuario.length + it.mensagem.length + 10, 0);
-        const sec = Math.round(totalChars / 10); // 10 chars ~ 1s (ajuste se quiser)
+        const sec = Math.round(totalChars / 10);
         return Math.max(18, Math.min(60, sec));
     }, [items]);
 
@@ -1703,10 +1649,10 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
         <div className="flex items-center gap-10 px-4 py-2 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
             {items.map((x, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                    {x.usuario ? <strong className="font-semibold">{x.usuario}</strong> : null}
-                    {x.mensagem ? <span className="text-slate-800">{x.mensagem}</span> : null}
-                    <span className="text-muted-foreground">•</span>
+                <div key={i} className="flex items-center gap-2 text-sm text-foreground dark:text-white">
+                    {x.usuario ? <strong className="font-semibold text-foreground dark:text-white">{x.usuario}</strong> : null}
+                    {x.mensagem ? <span className="text-foreground dark:text-white">{x.mensagem}</span> : null}
+                    <span className="text-muted-foreground dark:text-white/70">•</span>
                 </div>
             ))}
         </div>
@@ -1714,36 +1660,36 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
 
     return (
         <div className="relative w-full overflow-hidden rounded-xl border bg-background/60">
-            {/* faixa animada (pausa no hover) */}
-            <div className="qa-avisos-track flex w-max" style={{ ["--qa-avisos-duration" as any]: `${durationSec}s` }}>
+            <div className="qa-avisos-track flex w-max" style={{ animationDuration: `${durationSec}s` }}>
                 <RenderItems />
                 <RenderItems ariaHidden />
             </div>
 
-            {/* CSS embutido para não depender do globals.css */}
             <style jsx global>{`
-                @keyframes qa-avisos-marquee {
-                    0% {
-                        transform: translateX(0);
-                    }
-                    100% {
-                        transform: translateX(-50%);
-                    }
-                }
-                .qa-avisos-track {
-                    will-change: transform;
-                    animation: qa-avisos-marquee var(--qa-avisos-duration, 35s) linear infinite;
-                }
-                .qa-avisos-track:hover {
-                    animation-play-state: paused;
-                }
-                @media (prefers-reduced-motion: reduce) {
-                    .qa-avisos-track {
-                        animation: none !important;
-                        transform: none !important;
-                    }
-                }
-            `}</style>
+        @keyframes qa-avisos-marquee {
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+        .qa-avisos-track {
+          will-change: transform;
+          animation-name: qa-avisos-marquee;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        .qa-avisos-track:hover {
+          animation-play-state: paused;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .qa-avisos-track {
+            animation: none !important;
+            transform: none !important;
+          }
+        }
+      `}</style>
         </div>
     );
 }
@@ -1766,7 +1712,8 @@ const DesktopTable = React.memo(function DesktopTable({
                             <th>Data</th>
                             <th>Falecido(a)</th>
                             <th>Local</th>
-                            <th>Hora</th>
+                            {/* ✅ TROCA "Hora" por "Sepultamento" */}
+                            <th>Sepultamento</th>
                             <th>Agente</th>
                             <th>Status</th>
                             <th>Etapas</th>
@@ -1783,7 +1730,7 @@ const DesktopTable = React.memo(function DesktopTable({
                             ativos.map((r, i) => {
                                 const preenchidas = etapasPreenchidas(r);
                                 return (
-                                    <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
+                                    <tr key={i} className="[&>td]:px-4 [&>td]:py-3 align-top">
                                         <td>{dateOr(r.data)}</td>
                                         <td>
                                             <button
@@ -1797,7 +1744,15 @@ const DesktopTable = React.memo(function DesktopTable({
                                         <td>
                                             <LocalVelorioValue value={r.local_velorio} />
                                         </td>
-                                        <td>{timeOr(r.hora_fim_velorio)}</td>
+
+                                        {/* ✅ DUAS LINHAS: 1ª dia/mês do sepultamento, 2ª hora */}
+                                        <td>
+                                            <div className="leading-tight">
+                                                <div className="text-xs text-muted-foreground">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                                <div className="mt-0.5">{timeOr(r.hora_fim_velorio)}</div>
+                                            </div>
+                                        </td>
+
                                         <td>{shown(r.agente)}</td>
                                         <td>
                                             <span
@@ -1832,9 +1787,7 @@ const MobileCards = React.memo(function MobileCards({
     return (
         <div className="sm:hidden space-y-3">
             {ativos.length === 0 ? (
-                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">
-                    Nenhum atendimento encontrado.
-                </div>
+                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">Nenhum atendimento encontrado.</div>
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
@@ -1860,15 +1813,11 @@ const MobileCards = React.memo(function MobileCards({
 
                             <div className="mt-2 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2">
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}
-                                    >
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
                                         {statusTxt}
                                     </span>
                                     <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(
-                                            convKind
-                                        )}`}
+                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(convKind)}`}
                                         title="Convênio"
                                     >
                                         {convKind}
@@ -1973,17 +1922,13 @@ function isLikelyBooleanMap(obj: Record<string, unknown>) {
     return boolish / entries.length >= 0.8;
 }
 
-/* ✅ detecta se a string “parece” ser JSON de materiais */
 function looksLikeMateriaisJson(s: string) {
     const t = (s || "").toLowerCase();
     return (t.includes('"nome"') && t.includes('"checked"')) || t.includes('"item');
 }
 
-/* ✅ extrai nome/qtd mesmo se o JSON estiver “quebrado” e não der JSON.parse */
 function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: string }> {
-    const s = decodeHtmlEntitiesDeep(text)
-        .replace(/[“”]/g, '"')
-        .replace(/[‘’]/g, "'");
+    const s = decodeHtmlEntitiesDeep(text).replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
 
     const out: Array<{ nome: string; qtd?: string }> = [];
 
@@ -2019,7 +1964,7 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
         try {
             return JSON.parse(slice);
         } catch {
-            /* ignorar */
+            /* ignore */
         }
     }
     return null;
@@ -2172,9 +2117,7 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                 return (
                     <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">
-                                {iconForAction(ent.acao, ent.status_novo)}
-                            </div>
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
 
                             <div className="flex-1 min-w-0">
                                 <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
@@ -2186,12 +2129,10 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                                             {statusLabel}
                                         </span>
                                     )}
-                     ,           </div>
+                                </div>
 
                                 {usuarioVisivel && (
-                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                        Usuário: {ent.usuario ?? ""}
-                                    </div>
+                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">Usuário: {ent.usuario ?? ""}</div>
                                 )}
 
                                 {detalhes}
