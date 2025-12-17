@@ -778,28 +778,24 @@ function dateOr(d?: string) {
     return f;
 }
 
-/** ✅ NOVO: mostra só dia/mês (17/12) para a coluna "Sepultamento" */
+/** ✅ mostra só dia/mês (17/12) para a coluna "Sepultamento" */
 function dateDayMonthOr(d?: string) {
     const raw = (d ?? "").trim();
     if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
 
-    // yyyy-mm-dd
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
         const [, mm, dd] = raw.split("-");
         return `${dd}/${mm}`;
     }
 
-    // dd/mm/yyyy
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
         const [dd, mm] = raw.split("/");
         return `${dd}/${mm}`;
     }
 
-    // tenta achar um dd/mm em qualquer lugar
     const m2 = raw.match(/(\d{2})\/(\d{2})/);
     if (m2) return `${m2[1]}/${m2[2]}`;
 
-    // tenta achar yyyy-mm-dd embutido
     const m = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
     if (m) return `${m[3]}/${m[2]}`;
 
@@ -1239,7 +1235,6 @@ export default function QuadroAtendimentoPage() {
         };
     }, []);
 
-    // ✅ sem duplicação
     useEffect(() => {
         let alive = true;
         const BASE_AVISOS = "/api/php/avisos.php?listar=1";
@@ -1625,7 +1620,6 @@ export default function QuadroAtendimentoPage() {
 }
 
 /* ===== ✅ Avisos em ticker (uma linha, rolando direita -> esquerda) ===== */
-
 function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     const items = useMemo(() => {
         return (avisos ?? [])
@@ -1667,12 +1661,8 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
 
             <style jsx global>{`
         @keyframes qa-avisos-marquee {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
         }
         .qa-avisos-track {
           will-change: transform;
@@ -1695,7 +1685,6 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
 }
 
 /* ===== Listas Memoizadas ===== */
-
 const DesktopTable = React.memo(function DesktopTable({
     ativos,
     onSelect,
@@ -1712,13 +1701,13 @@ const DesktopTable = React.memo(function DesktopTable({
                             <th>Data</th>
                             <th>Falecido(a)</th>
                             <th>Local</th>
-                            {/* ✅ TROCA "Hora" por "Sepultamento" */}
                             <th>Sepultamento</th>
                             <th>Agente</th>
                             <th>Status</th>
                             <th>Etapas</th>
                         </tr>
                     </thead>
+
                     <tbody className="divide-y">
                         {ativos.length === 0 ? (
                             <tr>
@@ -1732,20 +1721,22 @@ const DesktopTable = React.memo(function DesktopTable({
                                 return (
                                     <tr key={i} className="[&>td]:px-4 [&>td]:py-3 align-top">
                                         <td>{dateOr(r.data)}</td>
-                                        <td>
+
+                                        {/* ✅ FIX: força alinhamento à esquerda SEMPRE */}
+                                        <td className="text-left">
                                             <button
-                                                className="font-semibold underline-offset-2 hover:underline"
+                                                className="w-full text-left font-semibold underline-offset-2 hover:underline break-words [overflow-wrap:anywhere]"
                                                 onClick={() => onSelect(r)}
                                                 title="Ver detalhes"
                                             >
                                                 {shown(r.falecido)}
                                             </button>
                                         </td>
+
                                         <td>
                                             <LocalVelorioValue value={r.local_velorio} />
                                         </td>
 
-                                        {/* ✅ DUAS LINHAS: 1ª dia/mês do sepultamento, 2ª hora */}
                                         <td>
                                             <div className="leading-tight">
                                                 <div className="text-xs text-muted-foreground">{dateDayMonthOr(r.data_fim_velorio)}</div>
@@ -1755,11 +1746,7 @@ const DesktopTable = React.memo(function DesktopTable({
 
                                         <td>{shown(r.agente)}</td>
                                         <td>
-                                            <span
-                                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(
-                                                    r.status
-                                                )}`}
-                                            >
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}>
                                                 {capStatus(r.status) || "a definir"}
                                             </span>
                                         </td>
@@ -1858,7 +1845,6 @@ const MobileCards = React.memo(function MobileCards({
 });
 
 /* ===== Componentes auxiliares ===== */
-
 function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
     return (
         <section className="rounded-xl border bg-background p-3 sm:p-4">
@@ -1910,7 +1896,6 @@ function EtapasRow({ registro }: { registro: Registro }) {
 }
 
 /* ===== Linha do Tempo (Logs) ===== */
-
 function isLikelyBooleanMap(obj: Record<string, unknown>) {
     const entries = Object.entries(obj);
     if (entries.length === 0) return false;
@@ -2132,7 +2117,9 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                                 </div>
 
                                 {usuarioVisivel && (
-                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">Usuário: {ent.usuario ?? ""}</div>
+                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                        Usuário: {ent.usuario ?? ""}
+                                    </div>
                                 )}
 
                                 {detalhes}
