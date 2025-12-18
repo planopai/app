@@ -78,15 +78,7 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
-type UiTab =
-    | "HOME"
-    | "ENTRADA"
-    | "SAIDA"
-    | "TRANSFERENCIA"
-    | "ESTOQUE"
-    | "ALERTAS"
-    | "HISTORICO"
-    | "AVANCADO";
+type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "HISTORICO" | "AVANCADO";
 
 /** itens em lote */
 type EntradaItem = { id: number; payload: any; resumo: string };
@@ -134,12 +126,10 @@ function maskBRLFromDigits(digitsOnly: string) {
     const value = cents / 100;
 
     try {
-        // gera "R$ 1.234,56"
         return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
     } catch {
-        // fallback simples
         const v = Number.isFinite(value) ? value : 0;
-        const fixed = v.toFixed(2); // "1234.56"
+        const fixed = v.toFixed(2);
         const [intPart, dec] = fixed.split(".");
         const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
         return `R$ ${withDots},${dec}`;
@@ -153,7 +143,6 @@ function parseBRLToNumber(brlText: string) {
 }
 
 function maskBRLInput(raw: string) {
-    // aceita qualquer coisa, mas transforma em dígitos e mascara
     const digits = (raw || "").replace(/\D/g, "");
     return maskBRLFromDigits(digits);
 }
@@ -165,19 +154,14 @@ function escapeCsvCell(v: any, sep = ";") {
     return mustQuote ? `"${escaped}"` : escaped;
 }
 
-const IMG_BASE = "https://planoassistencialintegrado.com.br"; // domínio onde as imagens existem
+const IMG_BASE = "https://planoassistencialintegrado.com.br";
 
 function normalizeImgUrl(u?: string | null) {
     const t = (u ?? "").toString().trim();
     if (!t || t === "null" || t === "undefined") return null;
 
-    // já é URL absoluta
     if (/^https?:\/\//i.test(t)) return t;
-
-    // veio "/uploads/..." (relativa) -> força domínio principal
     if (t.startsWith("/")) return `${IMG_BASE}${t}`;
-
-    // veio só o filename -> monta no domínio principal
     return `${IMG_BASE}/uploads/produtos/${t}`;
 }
 
@@ -622,6 +606,120 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
 }
 
 /* =========================
+   COMBOBOX (Produto)
+========================= */
+
+function ProductCombobox({
+    label,
+    placeholder,
+    produtos,
+    valueId,
+    onChangeId,
+    saldoByProdId,
+    query,
+    setQuery,
+    disabled,
+}: {
+    label: string;
+    placeholder?: string;
+    produtos: Produto[];
+    valueId: ID;
+    onChangeId: (id: ID) => void;
+    saldoByProdId?: Map<ID, number>;
+    query: string;
+    setQuery: (v: string) => void;
+    disabled?: boolean;
+}) {
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+
+    const list = useMemo(() => {
+        const qq = query.trim().toLowerCase();
+        const base = !qq
+            ? produtos
+            : produtos.filter((p) => `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq));
+        return base.slice(0, 30);
+    }, [produtos, query]);
+
+    useEffect(() => {
+        const onDoc = (e: MouseEvent) => {
+            if (!wrapRef.current) return;
+            if (!wrapRef.current.contains(e.target as any)) setOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        return () => document.removeEventListener("mousedown", onDoc);
+    }, []);
+
+    useEffect(() => {
+        const sel = valueId ? produtos.find((p) => p.id === valueId) : null;
+        if (sel && !query.trim()) {
+            setQuery(`${sel.nome}`);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [valueId]);
+
+    return (
+        <Field label={label}>
+            <div ref={wrapRef} className="relative">
+                <TextInput
+                    value={query}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        setOpen(true);
+                        if (valueId) onChangeId(0);
+                    }}
+                    onFocus={() => setOpen(true)}
+                    placeholder={placeholder || "Digite para buscar..."}
+                    disabled={disabled}
+                />
+
+                {open ? (
+                    <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                        {list.length === 0 ? (
+                            <div className="p-3 text-sm text-slate-600">Nenhum produto encontrado.</div>
+                        ) : (
+                            <ul className="max-h-64 overflow-auto py-1">
+                                {list.map((p) => {
+                                    const disp = saldoByProdId?.get(p.id);
+                                    return (
+                                        <li key={p.id}>
+                                            <button
+                                                type="button"
+                                                className={[
+                                                    "w-full px-3 py-2 text-left text-sm hover:bg-slate-50",
+                                                    valueId === p.id ? "bg-slate-50" : "",
+                                                ].join(" ")}
+                                                onClick={() => {
+                                                    onChangeId(p.id);
+                                                    setQuery(p.nome);
+                                                    setOpen(false);
+                                                }}
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="truncate font-medium text-slate-900">{p.nome}</span>
+                                                    {typeof disp === "number" ? (
+                                                        <span className="shrink-0 text-xs text-slate-600">
+                                                            disp: <b>{disp}</b>
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <div className="mt-0.5 truncate text-xs text-slate-600">
+                                                    CB: <b>{p.codigo_barras}</b>
+                                                </div>
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+                ) : null}
+            </div>
+        </Field>
+    );
+}
+
+/* =========================
    PAGE
 ========================= */
 
@@ -651,7 +749,6 @@ export default function Page() {
 
     // campos do cadastro
     const [editNome, setEditNome] = useState("");
-    // ✅ agora o valor no editor é string com máscara "R$ 1.000,00"
     const [editValor, setEditValor] = useState<string>("R$ 0,00");
     const [editMin, setEditMin] = useState<number>(0);
     const [editCatId, setEditCatId] = useState<ID>(0);
@@ -703,16 +800,16 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ALERTAS
+    // ALERTAS (agora só contagem / filtro, não existe mais aba)
     const alertRows = useMemo(() => {
-        const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo }> = [];
+        const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo; rep: number }> = [];
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
             const min = clampInt(p.minimo);
             const qtd = clampInt(s.quantidade);
-            if (qtd <= min) rows.push({ p, d, qtd, min, s });
+            if (qtd <= min) rows.push({ p, d, qtd, min, s, rep: Math.max(0, min - qtd) });
         }
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR"));
         return rows;
@@ -729,7 +826,7 @@ export default function Page() {
 
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
-        const rows: Array<{ p: Produto; d: Deposito; qtd: number; s?: Saldo }> = [];
+        const rows: Array<{ p: Produto; d: Deposito; qtd: number; s?: Saldo; min: number; rep: number }> = [];
 
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
@@ -750,6 +847,8 @@ export default function Page() {
 
             const qtd = clampInt(s.quantidade);
             const min = clampInt(p.minimo);
+            const rep = Math.max(0, min - qtd);
+
             if (onlyLow && !(qtd <= min)) continue;
 
             if (qq) {
@@ -759,7 +858,7 @@ export default function Page() {
                 if (!blob.includes(qq)) continue;
             }
 
-            rows.push({ p, d, qtd, s });
+            rows.push({ p, d, qtd, s, min, rep });
         }
 
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR") || a.d.nome.localeCompare(b.d.nome, "pt-BR"));
@@ -802,43 +901,18 @@ export default function Page() {
         }
 
         const sep = ";";
-        const header = [
-            "Produto",
-            "Código de Barras",
-            "Depósito",
-            "Categoria",
-            "Fabricante",
-            "Quantidade",
-            "Mínimo",
-            "Max (mín - qtd)",
-            "Valor (un)",
-            "Atualizado",
-        ];
+        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)", "Atualizado"];
 
         const lines: string[] = [];
-        // BOM p/ Excel pt-BR abrir acentos ok
         lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
 
-        for (const { p, d, qtd, s } of estoqueRows) {
-            const min = clampInt(p.minimo);
-            const max = Math.max(0, min - qtd);
+        for (const { p, d, qtd, s, min, rep } of estoqueRows) {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
             const valorNum = Number(p.valor) || 0;
 
             lines.push(
-                [
-                    p.nome,
-                    p.codigo_barras,
-                    d.nome,
-                    cat,
-                    fab,
-                    qtd,
-                    min,
-                    max,
-                    moneyBRL(valorNum),
-                    s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "",
-                ]
+                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), s?.atualizado_em ? fmtDateTime(s.atualizado_em) : ""]
                     .map((x) => escapeCsvCell(x, sep))
                     .join(sep)
             );
@@ -847,7 +921,6 @@ export default function Page() {
         const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
 
-        const f = getFiltroResumo();
         const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
         const a = document.createElement("a");
         a.href = url;
@@ -856,9 +929,6 @@ export default function Page() {
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-
-        // opcional: feedback
-        // alert("CSV gerado.");
     }
 
     function exportarEstoquePDF() {
@@ -871,9 +941,7 @@ export default function Page() {
         const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
 
         const rowsHtml = estoqueRows
-            .map(({ p, d, qtd, s }) => {
-                const min = clampInt(p.minimo);
-                const max = Math.max(0, min - qtd);
+            .map(({ p, d, qtd, s, min, rep }) => {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
                 const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
                 const valorNum = Number(p.valor) || 0;
@@ -885,16 +953,18 @@ export default function Page() {
                         .replace(/>/g, "&gt;")
                         .replace(/"/g, "&quot;");
 
+                const low = qtd <= min;
+
                 return `
-          <tr>
+          <tr class="${low ? "low" : ""}">
             <td>${esc(p.nome)}</td>
             <td class="mono">${esc(p.codigo_barras)}</td>
             <td>${esc(d.nome)}</td>
             <td>${esc(cat)}</td>
             <td>${esc(fab)}</td>
-            <td class="num">${esc(qtd)}</td>
+            <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
             <td class="num">${esc(min)}</td>
-            <td class="num green">${esc(max)}</td>
+            <td class="num green"><b>${esc(rep)}</b></td>
             <td class="num">${esc(moneyBRL(valorNum))}</td>
             <td>${esc(s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "")}</td>
           </tr>
@@ -919,7 +989,9 @@ export default function Page() {
     th{ background:#f1f5f9; text-align:left; font-weight:700; }
     .num{ text-align:right; white-space:nowrap; }
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-    .green{ color:#16a34a; font-weight:700; }
+    .green{ color:#16a34a; }
+    .red{ color:#b91c1c; }
+    .low td{ background:#fff7f7; }
     @media print{
       body{ margin: 14mm; }
       .filters{ break-inside: avoid; }
@@ -951,7 +1023,7 @@ export default function Page() {
         <th>Fabricante</th>
         <th class="num">Qtd</th>
         <th class="num">Min</th>
-        <th class="num">Max (min - qtd)</th>
+        <th class="num">Rep</th>
         <th class="num">Valor</th>
         <th>Atualizado</th>
       </tr>
@@ -962,7 +1034,6 @@ export default function Page() {
   </table>
 
   <script>
-    // abre o diálogo de impressão (Salvar como PDF no navegador)
     setTimeout(() => window.print(), 250);
   </script>
 </body>
@@ -1135,7 +1206,6 @@ export default function Page() {
     async function applyEntradaLote() {
         let items = [...entradaItens];
 
-        // se formulário atual estiver preenchido com código, inclui também
         if (entradaBarcode.trim()) {
             const built = buildEntradaPayloadFromForm();
             if (!built) return;
@@ -1200,9 +1270,8 @@ export default function Page() {
         setProdEditId(produtoId);
         setEditNome(p.nome || "");
 
-        // ✅ máscara BRL no editor
         const valorNum = Number(p.valor) || 0;
-        const valorDigits = String(Math.round(Math.max(0, valorNum) * 100)); // centavos
+        const valorDigits = String(Math.round(Math.max(0, valorNum) * 100));
         setEditValor(maskBRLFromDigits(valorDigits));
 
         setEditMin(clampInt(p.minimo));
@@ -1236,7 +1305,6 @@ export default function Page() {
                 action: "produto_atualizar",
                 produto_id: prodEditId,
                 nome: editNome.trim(),
-                // ✅ converte "R$ 1.000,00" para number
                 valor: parseBRLToNumber(editValor),
                 minimo: clampInt(editMin),
                 categoria_id: editCatId ? Number(editCatId) : 0,
@@ -1285,19 +1353,24 @@ export default function Page() {
         }
     }
 
-    // SAÍDA
+    /* =========================
+       SAÍDA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
+    ========================= */
+
     const [saidaOpen, setSaidaOpen] = useState(false);
     const [saidaScanOpen, setSaidaScanOpen] = useState(false);
 
-    const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(0);
-    const [saidaBusca, setSaidaBusca] = useState("");
-    const [saidaProdutoId, setSaidaProdutoId] = useState<ID>(0);
-    const [saidaBarcode, setSaidaBarcode] = useState("");
-    const [saidaQtd, setSaidaQtd] = useState<number>(1);
     const [saidaSolicitanteId, setSaidaSolicitanteId] = useState<ID>(0);
-    // NOVO: destino como depósito
+    const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(0);
     const [saidaDestinoDepositoId, setSaidaDestinoDepositoId] = useState<ID>(0);
-    const [saidaDestino, setSaidaDestino] = useState("");
+
+    const [saidaBarcode, setSaidaBarcode] = useState("");
+    const [saidaCategoriaId, setSaidaCategoriaId] = useState<ID | "Todas">("Todas");
+
+    const [saidaProdutoId, setSaidaProdutoId] = useState<ID>(0);
+    const [saidaProdQuery, setSaidaProdQuery] = useState("");
+
+    const [saidaQtd, setSaidaQtd] = useState<number>(1);
     const [saidaObs, setSaidaObs] = useState("");
 
     useEffect(() => {
@@ -1305,66 +1378,58 @@ export default function Page() {
     }, [depositos, saidaDepositoId]);
 
     useEffect(() => {
+        if (depositos.length && !saidaDestinoDepositoId) setSaidaDestinoDepositoId(depositos[0].id);
+    }, [depositos, saidaDestinoDepositoId]);
+
+    useEffect(() => {
         if (!saidaSolicitanteId && usuarios[0]?.id) setSaidaSolicitanteId(usuarios[0].id);
     }, [usuarios, saidaSolicitanteId]);
 
-    // define destino padrão (primeiro depósito)
-    useEffect(() => {
-        if (depositos.length && !saidaDestinoDepositoId) {
-            setSaidaDestinoDepositoId(depositos[0].id);
-            setSaidaDestino(depositos[0].nome);
+    const saidaSaldoByProd = useMemo(() => {
+        const m = new Map<ID, number>();
+        const depId = Number(saidaDepositoId);
+        for (const s of saldos) {
+            if (s.deposito_id !== depId) continue;
+            m.set(s.produto_id, clampInt(s.quantidade));
         }
-    }, [depositos, saidaDestinoDepositoId]);
-
-    // mantém saidaDestino (texto) sempre igual ao depósito selecionado
-    useEffect(() => {
-        const d = depositos.find((x) => x.id === saidaDestinoDepositoId);
-        if (d) setSaidaDestino(d.nome);
-    }, [saidaDestinoDepositoId, depositos]);
-
+        return m;
+    }, [saldos, saidaDepositoId]);
 
     const saidaProdutosNoDeposito = useMemo(() => {
         const depId = Number(saidaDepositoId);
         const ids = new Set<ID>();
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
-        const qq = saidaBusca.trim().toLowerCase();
-        return produtos
-            .filter((p) => ids.has(p.id))
-            .filter((p) => (!qq ? true : `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq)))
-            .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [saldos, produtos, saidaDepositoId, saidaBusca]);
+        let list = produtos.filter((p) => ids.has(p.id));
 
-    useEffect(() => {
-        if (!saidaProdutoId && saidaProdutosNoDeposito[0]?.id) setSaidaProdutoId(saidaProdutosNoDeposito[0].id);
-        if (saidaProdutoId && !saidaProdutosNoDeposito.find((p) => p.id === saidaProdutoId)) {
-            setSaidaProdutoId(saidaProdutosNoDeposito[0]?.id ?? 0);
-        }
-    }, [saidaProdutosNoDeposito, saidaProdutoId]);
-
-    function resetSaidaForm() {
-        setSaidaBarcode("");
-        setSaidaBusca("");
-        setSaidaProdutoId(0);
-        setSaidaQtd(1);
-
-        // NOVO: volta destino pro primeiro depósito (se existir)
-        if (depositos[0]?.id) {
-            setSaidaDestinoDepositoId(depositos[0].id);
-            setSaidaDestino(depositos[0].nome);
-        } else {
-            setSaidaDestinoDepositoId(0);
-            setSaidaDestino("");
+        if (saidaCategoriaId !== "Todas") {
+            list = list.filter((p) => Number(p.categoria_id || 0) === Number(saidaCategoriaId));
         }
 
-        setSaidaObs("");
-    }
-
+        return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    }, [saldos, produtos, saidaDepositoId, saidaCategoriaId]);
 
     function onSaidaBarcodePick(code: string) {
         setSaidaBarcode(code);
         const p = produtos.find((x) => x.codigo_barras === code);
-        if (p) setSaidaProdutoId(p.id);
+        if (p) {
+            setSaidaProdutoId(p.id);
+            setSaidaProdQuery(p.nome);
+        }
+    }
+
+    function resetSaidaItemFields() {
+        setSaidaBarcode("");
+        setSaidaCategoriaId("Todas");
+        setSaidaProdutoId(0);
+        setSaidaProdQuery("");
+        setSaidaQtd(1);
+        setSaidaObs("");
+    }
+
+    function resetSaidaAll() {
+        setSaidaItens([]);
+        resetSaidaItemFields();
     }
 
     function buildSaidaPayloadFromForm(): { payload: any; resumo: string } | null {
@@ -1378,26 +1443,26 @@ export default function Page() {
         const quantidade = clampInt(saidaQtd);
         const solicitante_usuario_id = Number(saidaSolicitanteId);
         const destinoNome = depositos.find((d) => d.id === Number(saidaDestinoDepositoId))?.nome || "";
-        const destino_texto = (destinoNome || saidaDestino).trim();
+        const destino_texto = (destinoNome || "").trim();
 
-        if (!produto_id) {
-            alert("Selecione um produto.");
+        if (!solicitante_usuario_id) {
+            alert("Selecione o solicitante.");
             return null;
         }
         if (!deposito_id) {
             alert("Selecione o depósito.");
             return null;
         }
+        if (!produto_id) {
+            alert("Selecione um produto.");
+            return null;
+        }
         if (quantidade <= 0) {
             alert("Quantidade inválida.");
             return null;
         }
-        if (!solicitante_usuario_id) {
-            alert("Selecione o solicitante.");
-            return null;
-        }
         if (!destino_texto) {
-            alert("Informe o destino.");
+            alert("Selecione o destino.");
             return null;
         }
 
@@ -1419,23 +1484,9 @@ export default function Page() {
         };
 
         const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
-        const resumo = `${prodNome} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id
-            } → ${destino_texto}`;
+        const resumo = `${prodNome} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id} → ${destino_texto}`;
 
         return { payload, resumo };
-    }
-
-    async function applySaidaSingle() {
-        const built = buildSaidaPayloadFromForm();
-        if (!built) return;
-
-        const r = await apiPost<{ ok: boolean; msg?: string }>(built.payload);
-        if (!r.ok) return alert(r.msg || "Falha na saída.");
-
-        resetSaidaForm();
-        setSaidaOpen(false);
-        await refreshInit();
-        setTab("ESTOQUE");
     }
 
     function addSaidaItemToList() {
@@ -1443,13 +1494,13 @@ export default function Page() {
         if (!built) return;
         const id = saidaSeqRef.current++;
         setSaidaItens((prev) => [...prev, { id, ...built }]);
-        resetSaidaForm();
+        resetSaidaItemFields();
     }
 
-    async function applySaidaLote() {
+    async function confirmarSaida() {
         let items = [...saidaItens];
 
-        if (saidaProdutoId && saidaDestino.trim()) {
+        if (saidaProdutoId) {
             const built = buildSaidaPayloadFromForm();
             if (!built) return;
             const id = saidaSeqRef.current++;
@@ -1469,20 +1520,33 @@ export default function Page() {
             }
         }
 
-        resetSaidaForm();
-        setSaidaItens([]);
+        resetSaidaAll();
         setSaidaOpen(false);
         await refreshInit();
         setTab("ESTOQUE");
     }
 
-    // TRANSFERÊNCIA
-    const [trfBusca, setTrfBusca] = useState("");
-    const [trfProdutoId, setTrfProdutoId] = useState<ID>(0);
+    function cancelarSaida() {
+        resetSaidaAll();
+        setSaidaOpen(false);
+    }
+
+    /* =========================
+       TRANSFERÊNCIA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
+    ========================= */
+
+    const [trfOpen, setTrfOpen] = useState(false);
+
+    const [trfSolicitanteId, setTrfSolicitanteId] = useState<ID>(0);
     const [trfOrigemId, setTrfOrigemId] = useState<ID>(0);
     const [trfDestinoId, setTrfDestinoId] = useState<ID>(0);
+
+    const [trfCategoriaId, setTrfCategoriaId] = useState<ID | "Todas">("Todas");
+
+    const [trfProdutoId, setTrfProdutoId] = useState<ID>(0);
+    const [trfProdQuery, setTrfProdQuery] = useState("");
+
     const [trfQtd, setTrfQtd] = useState<number>(1);
-    const [trfSolicitanteId, setTrfSolicitanteId] = useState<ID>(0);
     const [trfObs, setTrfObs] = useState("");
 
     useEffect(() => {
@@ -1496,30 +1560,41 @@ export default function Page() {
         if (!trfSolicitanteId && usuarios[0]?.id) setTrfSolicitanteId(usuarios[0].id);
     }, [usuarios, trfSolicitanteId]);
 
+    const trfSaldoByProd = useMemo(() => {
+        const m = new Map<ID, number>();
+        const depId = Number(trfOrigemId);
+        for (const s of saldos) {
+            if (s.deposito_id !== depId) continue;
+            m.set(s.produto_id, clampInt(s.quantidade));
+        }
+        return m;
+    }, [saldos, trfOrigemId]);
+
     const trfProdutosNaOrigem = useMemo(() => {
         const depId = Number(trfOrigemId);
         const ids = new Set<ID>();
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
-        const qq = trfBusca.trim().toLowerCase();
-        return produtos
-            .filter((p) => ids.has(p.id))
-            .filter((p) => (!qq ? true : `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq)))
-            .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [saldos, produtos, trfOrigemId, trfBusca]);
+        let list = produtos.filter((p) => ids.has(p.id));
 
-    useEffect(() => {
-        if (!trfProdutoId && trfProdutosNaOrigem[0]?.id) setTrfProdutoId(trfProdutosNaOrigem[0].id);
-        if (trfProdutoId && !trfProdutosNaOrigem.find((p) => p.id === trfProdutoId)) {
-            setTrfProdutoId(trfProdutosNaOrigem[0]?.id ?? 0);
+        if (trfCategoriaId !== "Todas") {
+            list = list.filter((p) => Number(p.categoria_id || 0) === Number(trfCategoriaId));
         }
-    }, [trfProdutosNaOrigem, trfProdutoId]);
 
-    function resetTrfForm() {
-        setTrfBusca("");
+        return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    }, [saldos, produtos, trfOrigemId, trfCategoriaId]);
+
+    function resetTrfItemFields() {
+        setTrfCategoriaId("Todas");
         setTrfProdutoId(0);
+        setTrfProdQuery("");
         setTrfQtd(1);
         setTrfObs("");
+    }
+
+    function resetTrfAll() {
+        setTrfItens([]);
+        resetTrfItemFields();
     }
 
     function buildTrfPayloadFromForm(): { payload: any; resumo: string } | null {
@@ -1534,6 +1609,10 @@ export default function Page() {
         const quantidade = clampInt(trfQtd);
         const solicitante_usuario_id = Number(trfSolicitanteId);
 
+        if (!solicitante_usuario_id) {
+            alert("Selecione o solicitante.");
+            return null;
+        }
         if (!produto_id) {
             alert("Selecione um produto.");
             return null;
@@ -1548,10 +1627,6 @@ export default function Page() {
         }
         if (quantidade <= 0) {
             alert("Quantidade inválida.");
-            return null;
-        }
-        if (!solicitante_usuario_id) {
-            alert("Selecione o solicitante.");
             return null;
         }
 
@@ -1573,22 +1648,10 @@ export default function Page() {
         };
 
         const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
-        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id
-            } → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id}`;
+        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id} → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id
+            }`;
 
         return { payload, resumo };
-    }
-
-    async function applyTransferenciaSingle() {
-        const built = buildTrfPayloadFromForm();
-        if (!built) return;
-
-        const r = await apiPost<{ ok: boolean; msg?: string }>(built.payload);
-        if (!r.ok) return alert(r.msg || "Falha na transferência.");
-
-        resetTrfForm();
-        await refreshInit();
-        setTab("ESTOQUE");
     }
 
     function addTrfItemToList() {
@@ -1596,10 +1659,10 @@ export default function Page() {
         if (!built) return;
         const id = trfSeqRef.current++;
         setTrfItens((prev) => [...prev, { id, ...built }]);
-        resetTrfForm();
+        resetTrfItemFields();
     }
 
-    async function applyTransferenciaLote() {
+    async function confirmarTransferencia() {
         let items = [...trfItens];
 
         if (trfProdutoId) {
@@ -1622,13 +1685,21 @@ export default function Page() {
             }
         }
 
-        resetTrfForm();
-        setTrfItens([]);
+        resetTrfAll();
+        setTrfOpen(false);
         await refreshInit();
         setTab("ESTOQUE");
     }
 
-    // AVANÇADO - Depósitos
+    function cancelarTransferencia() {
+        resetTrfAll();
+        setTrfOpen(false);
+    }
+
+    /* =========================
+       AVANÇADO - Depósitos
+    ========================= */
+
     const [novoDepNome, setNovoDepNome] = useState("");
     const [renomearDepId, setRenomearDepId] = useState<ID>(0);
     const [renomearDepNome, setRenomearDepNome] = useState("");
@@ -1795,7 +1866,10 @@ export default function Page() {
         }
     }
 
-    // HISTÓRICO
+    /* =========================
+       HISTÓRICO
+    ========================= */
+
     const [histLoading, setHistLoading] = useState(false);
     const [histErr, setHistErr] = useState("");
     const [histRows, setHistRows] = useState<HistoricoRow[]>([]);
@@ -1832,14 +1906,11 @@ export default function Page() {
             [
                 ["HOME", "Movimentação"],
                 ["ENTRADA", "Entrada"],
-                ["SAIDA", "Saída"],
-                ["TRANSFERENCIA", "Transferência"],
                 ["ESTOQUE", "Estoque"],
-                ["ALERTAS", `Alertas (${alertCount})`],
                 ["HISTORICO", "Histórico"],
                 ["AVANCADO", "Avançado"],
             ] as const,
-        [alertCount]
+        []
     );
 
     return (
@@ -1850,7 +1921,7 @@ export default function Page() {
                         <div className="min-w-0">
                             <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
                             <p className="mt-1 text-sm text-slate-600">
-                                Entrada, Saída, Transferência, Estoque por depósito, Alertas, Histórico e Avançado.
+                                Entrada (aba própria), Saída e Transferência (dentro de Movimentação), Estoque por depósito (com filtro de Alertas), Histórico e Avançado.
                             </p>
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : "—"}</b>
@@ -1883,7 +1954,7 @@ export default function Page() {
                     </div>
 
                     <Card className="hidden p-2 sm:block">
-                        <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
+                        <div className="grid grid-cols-5 gap-2">
                             {tabs.map(([k, label]) => (
                                 <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
                             ))}
@@ -1892,26 +1963,26 @@ export default function Page() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-4">
-                    {/* HOME */}
+                    {/* HOME / MOVIMENTAÇÃO */}
                     {tab === "HOME" ? (
                         <Card className="p-4">
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Entrada</p>
-                                    <p className="mt-1 text-xs text-slate-600">Cadastrar (se não existir) e somar saldo no depósito.</p>
+                                    <p className="text-sm font-semibold text-slate-900">Saída</p>
+                                    <p className="mt-1 text-xs text-slate-600">Selecione solicitante, depósito, destino, produto e quantidade.</p>
                                     <div className="mt-3">
-                                        <Button onClick={() => setEntradaOpen(true)} type="button">
-                                            Abrir Entrada
+                                        <Button onClick={() => setSaidaOpen(true)} type="button">
+                                            Abrir Saída
                                         </Button>
                                     </div>
                                 </div>
 
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Saída</p>
-                                    <p className="mt-1 text-xs text-slate-600">Escolha depósito, solicitante, destino e quantidade.</p>
+                                    <p className="text-sm font-semibold text-slate-900">Transferência</p>
+                                    <p className="mt-1 text-xs text-slate-600">Move quantidade de origem para destino com validação de saldo.</p>
                                     <div className="mt-3">
-                                        <Button onClick={() => setSaidaOpen(true)} type="button">
-                                            Abrir Saída
+                                        <Button onClick={() => setTrfOpen(true)} type="button">
+                                            Abrir Transferência
                                         </Button>
                                     </div>
                                 </div>
@@ -1950,134 +2021,6 @@ export default function Page() {
                         </Card>
                     ) : null}
 
-                    {/* SAÍDA (atalho) */}
-                    {tab === "SAIDA" ? (
-                        <Card className="p-4">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <h2 className="text-base font-semibold text-slate-900">Saída</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Pode escanear por câmera ou pesquisar manualmente (filtrando por depósito). Também permite lista de itens.
-                                    </p>
-                                </div>
-                                <Button onClick={() => setSaidaOpen(true)} variant="ghost" type="button">
-                                    Abrir Saída
-                                </Button>
-                            </div>
-                        </Card>
-                    ) : null}
-
-                    {/* TRANSFERÊNCIA */}
-                    {tab === "TRANSFERENCIA" ? (
-                        <Card className="p-4">
-                            {/* ... (sem mudanças aqui) ... */}
-                            {/* (mantido igual ao seu arquivo original) */}
-                            {/* Para reduzir risco de erro, não mexi no bloco de Transferência. */}
-                            <div className="flex flex-col gap-3">
-                                <div>
-                                    <h2 className="text-base font-semibold text-slate-900">Transferência entre Depósitos</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Move quantidade de origem para destino (com validação de saldo). É possível montar uma lista de transferências.
-                                    </p>
-                                </div>
-
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                    <Field label="Origem (Depósito)">
-                                        <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
-                                            {depositos.map((d) => (
-                                                <option key={d.id} value={d.id}>
-                                                    {d.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
-
-                                    <Field label="Destino">
-                                        <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
-                                            {depositos.map((d) => (
-                                                <option key={d.id} value={d.id}>
-                                                    {d.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
-
-                                    <Field label="Solicitante">
-                                        <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
-                                            {usuarios.map((u) => (
-                                                <option key={u.id} value={u.id}>
-                                                    {u.nome} ({u.usuario})
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
-
-                                    <div className="sm:col-span-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                        <Field label="Buscar produto (nome/código)">
-                                            <TextInput value={trfBusca} onChange={(e) => setTrfBusca(e.target.value)} placeholder="Ex: URNA ou 174501..." />
-                                        </Field>
-
-                                        <Field label="Produto (na origem)">
-                                            <Select value={trfProdutoId} onChange={(e) => setTrfProdutoId(Number(e.target.value))}>
-                                                {trfProdutosNaOrigem.length ? (
-                                                    trfProdutosNaOrigem.map((p) => {
-                                                        const s = saldosMap.get(`${p.id}::${trfOrigemId}`);
-                                                        const qtd = s ? clampInt(s.quantidade) : 0;
-                                                        return (
-                                                            <option key={p.id} value={p.id}>
-                                                                {p.nome} — CB:{p.codigo_barras} — disp:{qtd}
-                                                            </option>
-                                                        );
-                                                    })
-                                                ) : (
-                                                    <option value={0}>Sem itens no depósito</option>
-                                                )}
-                                            </Select>
-                                        </Field>
-
-                                        <Field label="Quantidade">
-                                            <TextInput type="number" min={1} step={1} value={trfQtd} onChange={(e) => setTrfQtd(Number(e.target.value))} />
-                                        </Field>
-
-                                        <div className="sm:col-span-3">
-                                            <Field label="Observação (opcional)">
-                                                <TextArea value={trfObs} onChange={(e) => setTrfObs(e.target.value)} placeholder="Detalhes..." />
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-3 flex flex-wrap gap-2">
-                                            <Button type="button" onClick={applyTransferenciaSingle}>
-                                                Confirmar esta transferência
-                                            </Button>
-                                            <Button type="button" variant="soft" onClick={addTrfItemToList}>
-                                                Adicionar à lista
-                                            </Button>
-                                            <Button type="button" variant="ghost" onClick={applyTransferenciaLote} disabled={!trfItens.length && !trfProdutoId}>
-                                                Confirmar lista inteira
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {trfItens.length ? (
-                                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                        <p className="text-sm font-semibold text-slate-900">Lista de transferências pendentes</p>
-                                        <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                                            {trfItens.map((it) => (
-                                                <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
-                                                    <span className="truncate">{it.resumo}</span>
-                                                    <Button type="button" variant="ghost" onClick={() => setTrfItens((prev) => prev.filter((x) => x.id !== it.id))}>
-                                                        Remover
-                                                    </Button>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                ) : null}
-                            </div>
-                        </Card>
-                    ) : null}
-
                     {/* ESTOQUE */}
                     {tab === "ESTOQUE" ? (
                         <Card className="p-4">
@@ -2093,8 +2036,10 @@ export default function Page() {
                                     <Button variant="ghost" onClick={() => setSaidaOpen(true)} type="button">
                                         Saída
                                     </Button>
+                                    <Button variant="ghost" onClick={() => setTrfOpen(true)} type="button">
+                                        Transferência
+                                    </Button>
 
-                                    {/* ✅ Exportações do filtro atual */}
                                     <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
                                         ⬇️ CSV
                                     </Button>
@@ -2155,7 +2100,7 @@ export default function Page() {
                                     </Select>
                                 </Field>
 
-                                <Field label="Somente alerta (≤ mínimo)">
+                                <Field label="Somente alerta (≤ mín)">
                                     <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
                                         <input
                                             id="onlyLow"
@@ -2172,7 +2117,13 @@ export default function Page() {
 
                                 <Field label="Ações">
                                     <div className="flex gap-2">
-                                        <Button variant="ghost" onClick={() => setTab("ALERTAS")} type="button">
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setOnlyLow(true);
+                                            }}
+                                            type="button"
+                                        >
                                             Alertas ({alertCount})
                                         </Button>
                                         <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
@@ -2188,140 +2139,153 @@ export default function Page() {
                                 ) : estoqueRows.length === 0 ? (
                                     <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
                                 ) : (
-                                    <ul className="divide-y divide-slate-200">
-                                        {estoqueRows.map(({ p, d, qtd, s }) => {
-                                            const min = clampInt(p.minimo);
-                                            const low = qtd <= min;
-                                            const max = Math.max(0, min - qtd); // ✅ regra pedida
-                                            const valorNum = Number(p.valor) || 0;
+                                    <>
+                                        {/* MOBILE (igual ao que já era) */}
+                                        <ul className="divide-y divide-slate-200 sm:hidden">
+                                            {estoqueRows.map(({ p, d, qtd, s, min, rep }) => {
+                                                const low = qtd <= min;
+                                                const valorNum = Number(p.valor) || 0;
 
-                                            const foto = normalizeImgUrl(p.foto_url);
-                                            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
-                                            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
+                                                const foto = normalizeImgUrl(p.foto_url);
+                                                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
+                                                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
 
-                                            return (
-                                                <li key={`${p.id}_${d.id}`}>
-                                                    <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
-                                                        <div className="flex min-w-0 items-center gap-3">
-                                                            <PhotoThumb
-                                                                url={foto}
-                                                                onClick={() => {
-                                                                    if (!foto) return;
-                                                                    setImgUrl(foto);
-                                                                    setImgTitle(p.nome);
-                                                                    setImgOpen(true);
-                                                                }}
-                                                            />
-                                                            <div className="min-w-0">
-                                                                <div className="flex items-center gap-2 min-w-0">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => openProdutoEditor(p.id)}
-                                                                        className="truncate text-left text-sm font-semibold text-slate-900 hover:underline"
-                                                                        title="Clique para editar"
-                                                                    >
-                                                                        {p.nome}
-                                                                    </button>
+                                                return (
+                                                    <li key={`${p.id}_${d.id}`}>
+                                                        <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
+                                                            <div className="flex min-w-0 items-center gap-3">
+                                                                <PhotoThumb
+                                                                    url={foto}
+                                                                    onClick={() => {
+                                                                        if (!foto) return;
+                                                                        setImgUrl(foto);
+                                                                        setImgTitle(p.nome);
+                                                                        setImgOpen(true);
+                                                                    }}
+                                                                />
+                                                                <div className="min-w-0">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openProdutoEditor(p.id)}
+                                                                            className="truncate text-left text-sm font-semibold text-slate-900 hover:underline"
+                                                                            title="Clique para editar"
+                                                                        >
+                                                                            {p.nome}
+                                                                        </button>
 
-                                                                    {low ? <span className="text-xs text-red-600 shrink-0">• alerta</span> : null}
+                                                                        {low ? <span className="text-xs text-red-600 shrink-0">• alerta</span> : null}
+                                                                    </div>
+                                                                    <p className="mt-0.5 truncate text-xs text-slate-600">
+                                                                        CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
+                                                                    </p>
+                                                                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                                                                        {cat ? (
+                                                                            <>
+                                                                                Categoria: <b>{cat}</b>
+                                                                            </>
+                                                                        ) : null}
+                                                                        {cat && fab ? " • " : null}
+                                                                        {fab ? (
+                                                                            <>
+                                                                                Fabricante: <b>{fab}</b>
+                                                                            </>
+                                                                        ) : null}
+                                                                    </p>
+                                                                    <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                        Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
+                                                                    </p>
                                                                 </div>
-                                                                <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                    CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
+                                                            </div>
+
+                                                            <div className="shrink-0 text-right">
+                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
+                                                                    {qtd}
                                                                 </p>
-                                                                <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                                                                    {cat ? (
-                                                                        <>
-                                                                            Categoria: <b>{cat}</b>
-                                                                        </>
-                                                                    ) : null}
-                                                                    {cat && fab ? " • " : null}
-                                                                    {fab ? (
-                                                                        <>
-                                                                            Fabricante: <b>{fab}</b>
-                                                                        </>
-                                                                    ) : null}
-                                                                </p>
-                                                                <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                    Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
+                                                                <p className="text-xs text-slate-500">
+                                                                    Min {min} • Rep <span className="font-semibold text-emerald-700">{rep}</span>
                                                                 </p>
                                                             </div>
                                                         </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
 
-                                                        <div className="shrink-0 text-right">
-                                                            <p className="text-sm font-semibold text-slate-900">{qtd}</p>
-
-                                                            {/* ✅ min + max (verde) */}
-                                                            <p className="text-xs text-slate-500">
-                                                                mín {min}{" "}
-                                                                {low ? (
-                                                                    <>
-                                                                        • máx <span className="font-semibold text-emerald-700">{max}</span>
-                                                                    </>
-                                                                ) : null}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
+                                        {/* PC (TABELA) */}
+                                        <div className="hidden sm:block">
+                                            <div className="overflow-auto">
+                                                <table className="min-w-full border-separate border-spacing-0">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Código</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Min</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Atualizado</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {estoqueRows.map(({ p, d, qtd, s, min, rep }) => {
+                                                            const low = qtd <= min;
+                                                            const valorNum = Number(p.valor) || 0;
+                                                            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "");
+                                                            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "");
+                                                            return (
+                                                                <tr key={`${p.id}_${d.id}`} className={low ? "bg-rose-50/40" : "bg-white"}>
+                                                                    <td className="border-b border-slate-200 px-3 py-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <PhotoThumb
+                                                                                url={p.foto_url}
+                                                                                onClick={() => {
+                                                                                    const foto = normalizeImgUrl(p.foto_url);
+                                                                                    if (!foto) return;
+                                                                                    setImgUrl(foto);
+                                                                                    setImgTitle(p.nome);
+                                                                                    setImgOpen(true);
+                                                                                }}
+                                                                            />
+                                                                            <div className="min-w-0">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openProdutoEditor(p.id)}
+                                                                                    className="truncate text-sm font-semibold text-slate-900 hover:underline"
+                                                                                >
+                                                                                    {p.nome}
+                                                                                </button>
+                                                                                {low ? <div className="text-xs text-red-600">alerta</div> : <div className="text-xs text-slate-500">—</div>}
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                        <span className="font-mono text-xs">{p.codigo_barras}</span>
+                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat || "—"}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab || "—"}</td>
+                                                                    <td className={["border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
+                                                                        {qtd}
+                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{min}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-emerald-700">{rep}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{moneyBRL(valorNum)}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-xs text-slate-600">
+                                                                        {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </>
                                 )}
-                            </div>
-                        </Card>
-                    ) : null}
-
-                    {/* ALERTAS */}
-                    {tab === "ALERTAS" ? (
-                        <Card className="p-4">
-                            <div className="flex items-start justify-between gap-3">
-                                <div>
-                                    <h2 className="text-base font-semibold text-slate-900">Alertas (Reposição)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Lista dos itens com quantidade ≤ mínimo.</p>
-                                </div>
-                                <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
-                                    Voltar ao Estoque
-                                </Button>
-                            </div>
-
-                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-                                {alertRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum item em alerta 🎉</div>
-                                ) : (
-                                    <ul className="divide-y divide-slate-200">
-                                        {alertRows.map(({ p, d, qtd, min }) => {
-                                            const max = Math.max(0, min - qtd); // ✅ min - qtd
-                                            return (
-                                                <li key={`${p.id}_${d.id}`} className="px-4 py-3">
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <p className="truncate text-sm font-semibold text-slate-900">{p.nome}</p>
-                                                            <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b>
-                                                            </p>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <p className="text-sm font-semibold text-red-700">{qtd}</p>
-
-                                                            {/* ✅ min + max (verde) */}
-                                                            <p className="text-xs text-slate-500">
-                                                                mín {min} • máx <span className="font-semibold text-emerald-700">{max}</span>
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                <Button onClick={() => setEntradaOpen(true)} type="button">
-                                    Fazer Entrada
-                                </Button>
-                                <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
-                                    Ver Histórico
-                                </Button>
                             </div>
                         </Card>
                     ) : null}
@@ -2329,13 +2293,10 @@ export default function Page() {
                     {/* HISTÓRICO */}
                     {tab === "HISTORICO" ? (
                         <Card className="p-4">
-                            {/* ... (sem mudanças aqui) ... */}
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
@@ -2454,16 +2415,13 @@ export default function Page() {
                                                             </p>
 
                                                             <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                Operador:{" "}
-                                                                <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
+                                                                Operador: <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
                                                                 {h.solicitante_usuario_id ? (
                                                                     <>
                                                                         {" "}
                                                                         • Solicitante:{" "}
                                                                         <b>
-                                                                            {h.solicitante_nome ||
-                                                                                userById.get(h.solicitante_usuario_id)?.nome ||
-                                                                                `#${h.solicitante_usuario_id}`}
+                                                                            {h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}
                                                                         </b>
                                                                     </>
                                                                 ) : null}
@@ -2488,7 +2446,6 @@ export default function Page() {
                     {/* AVANÇADO */}
                     {tab === "AVANCADO" ? (
                         <Card className="p-4">
-                            {/* ... (sem mudanças aqui) ... */}
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
@@ -2632,8 +2589,7 @@ export default function Page() {
                                 <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Importar produtos e saldos via CSV</p>
                                     <p className="mt-1 text-xs text-slate-600">
-                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE,
-                                        PREÇO VENDA...
+                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE, PREÇO VENDA...
                                     </p>
 
                                     <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -2680,12 +2636,7 @@ export default function Page() {
             <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
 
             {/* MODAL: EDITAR PRODUTO */}
-            <Modal
-                open={prodEditOpen}
-                title="Editar produto"
-                subtitle="Edite o cadastro e/ou ajuste os saldos por depósito."
-                onClose={() => setProdEditOpen(false)}
-            >
+            <Modal open={prodEditOpen} title="Editar produto" subtitle="Edite o cadastro e/ou ajuste os saldos por depósito." onClose={() => setProdEditOpen(false)}>
                 {(() => {
                     const p = prodEditId ? prodById.get(prodEditId) : null;
                     const fotoAtual = p?.foto_url ? normalizeImgUrl(p.foto_url) : null;
@@ -2720,35 +2671,23 @@ export default function Page() {
                                         <TextInput value={editNome} onChange={(e) => setEditNome(e.target.value)} />
                                     </Field>
 
-                                    {/* ✅ padrão R$1.000,00 */}
                                     <Field label="Valor (R$)">
                                         <TextInput
                                             type="text"
                                             inputMode="numeric"
                                             value={editValor}
                                             onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
-                                            onFocus={(e) => {
-                                                // mantém formato; se vier vazio por algum motivo, força
-                                                if (!editValor?.trim()) setEditValor("R$ 0,00");
-                                                // coloca cursor no final (boa UX)
-                                                setTimeout(() => {
-                                                    try {
-                                                        const el = e.target;
-                                                        const len = el.value.length;
-                                                        el.setSelectionRange(len, len);
-                                                    } catch { }
-                                                }, 0);
-                                            }}
                                             placeholder="R$ 0,00"
                                         />
                                     </Field>
 
-                                    <Field label="Mínimo (alerta)">
-                                        <TextInput type="number" min={0} step={1} value={editMin} onChange={(e) => setEditMin(Number(e.target.value))} />
-                                    </Field>
-
-                                    <Field label="Foto (trocar)">
-                                        <TextInput type="file" accept="image/*" onChange={async (e) => onProdutoFotoNova(e.target.files?.[0])} />
+                                    <Field label="Mínimo">
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            value={editMin}
+                                            onChange={(e) => setEditMin(clampInt(e.target.value))}
+                                        />
                                     </Field>
 
                                     <Field label="Categoria">
@@ -2772,13 +2711,46 @@ export default function Page() {
                                             ))}
                                         </Select>
                                     </Field>
+
+                                    <div className="sm:col-span-2">
+                                        <Field label="Nova foto (opcional)" hint="Envie uma imagem para substituir a atual.">
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => onProdutoFotoNova(e.target.files?.[0])}
+                                                className="block w-full text-sm text-slate-700"
+                                            />
+                                        </Field>
+
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {fotoPreview ? (
+                                                <Button
+                                                    variant="ghost"
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setImgUrl(fotoPreview);
+                                                        setImgTitle(p?.nome || "Imagem do produto");
+                                                        setImgOpen(true);
+                                                    }}
+                                                >
+                                                    Ver imagem
+                                                </Button>
+                                            ) : null}
+
+                                            {editFotoNova ? (
+                                                <Button variant="ghost" type="button" onClick={() => setEditFotoNova("")}>
+                                                    Remover nova foto
+                                                </Button>
+                                            ) : null}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                    <Button type="button" onClick={salvarCadastroProduto} disabled={prodBusy}>
+                                    <Button onClick={salvarCadastroProduto} disabled={prodBusy || !editNome.trim()} type="button">
                                         Salvar cadastro
                                     </Button>
-                                    <Button type="button" variant="ghost" onClick={() => setProdEditOpen(false)} disabled={prodBusy}>
+                                    <Button variant="ghost" onClick={() => setProdEditOpen(false)} disabled={prodBusy} type="button">
                                         Fechar
                                     </Button>
                                 </div>
@@ -2786,21 +2758,26 @@ export default function Page() {
 
                             <div className="rounded-2xl border border-slate-200 p-3">
                                 <p className="text-sm font-semibold text-slate-900">Saldos por depósito</p>
+                                <p className="mt-1 text-xs text-slate-600">Ajuste manual (gera AJUSTE). Use com cuidado.</p>
 
-                                <div className="mt-3 space-y-2">
+                                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     {depositos.map((d) => (
-                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
                                             <div className="min-w-0">
                                                 <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                                <p className="text-[11px] text-slate-500">Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}</p>
                                             </div>
-
-                                            <div className="w-28">
+                                            <div className="w-[120px]">
                                                 <TextInput
                                                     type="number"
                                                     min={0}
-                                                    step={1}
-                                                    value={editSaldos[d.id] ?? 0}
-                                                    onChange={(e) => setEditSaldos((prev) => ({ ...prev, [d.id]: Number(e.target.value) }))}
+                                                    value={clampInt(editSaldos[d.id] ?? 0)}
+                                                    onChange={(e) =>
+                                                        setEditSaldos((prev) => ({
+                                                            ...prev,
+                                                            [d.id]: clampInt(e.target.value),
+                                                        }))
+                                                    }
                                                 />
                                             </div>
                                         </div>
@@ -2808,13 +2785,11 @@ export default function Page() {
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                    <Button type="button" variant="soft" onClick={salvarSaldosProduto} disabled={prodBusy}>
+                                    <Button onClick={salvarSaldosProduto} disabled={prodBusy || !prodEditId} type="button">
                                         Salvar saldos
                                     </Button>
                                 </div>
                             </div>
-
-                            <div className="text-xs text-slate-500">Obs.: código de barras fica somente leitura aqui (se quiser editar também, precisa endpoint).</div>
                         </div>
                     );
                 })()}
@@ -2824,139 +2799,151 @@ export default function Page() {
             <Modal
                 open={entradaOpen}
                 title="Entrada"
-                subtitle="Leia/digite o código (ou use a câmera). Se não existir, preencha dados do produto. Você pode montar uma lista de vários itens."
+                subtitle="Leia/digite o código e confirme. Se o produto não existir, cadastre na hora."
                 onClose={() => setEntradaOpen(false)}
             >
-                {/* ... (sem mudanças aqui) ... */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Código de barras">
-                        <div className="flex gap-2">
-                            <TextInput
-                                value={entradaBarcode}
-                                onChange={(e) => setEntradaBarcode(e.target.value)}
-                                placeholder="Leia com leitor ou digite"
-                                inputMode="numeric"
-                            />
-                            <Button variant="ghost" type="button" onClick={() => setEntradaScanOpen(true)} title="Abrir câmera">
-                                📷 Escanear
-                            </Button>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+                        <div className="sm:col-span-3">
+                            <Field label="Código de barras" hint="Você pode usar a câmera (Scan).">
+                                <div className="flex gap-2">
+                                    <TextInput
+                                        value={entradaBarcode}
+                                        onChange={(e) => setEntradaBarcode(e.target.value)}
+                                        placeholder="Ex: 789..."
+                                        inputMode="numeric"
+                                    />
+                                    <Button variant="soft" onClick={() => setEntradaScanOpen(true)} type="button">
+                                        📷 Scan
+                                    </Button>
+                                </div>
+                            </Field>
                         </div>
-                    </Field>
 
-                    <Field label="Depósito (entrada)">
-                        <Select value={entradaDepositoId} onChange={(e) => setEntradaDepositoId(Number(e.target.value))}>
-                            {depositos.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                    {d.nome}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
+                        <div className="sm:col-span-2">
+                            <Field label="Depósito">
+                                <Select value={entradaDepositoId} onChange={(e) => setEntradaDepositoId(Number(e.target.value))}>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
 
-                    <Field label="Quantidade (entrada)">
-                        <TextInput type="number" min={1} step={1} value={entradaQtd} onChange={(e) => setEntradaQtd(Number(e.target.value))} />
-                    </Field>
+                        <div className="sm:col-span-1">
+                            <Field label="Qtd">
+                                <TextInput type="number" min={1} value={entradaQtd} onChange={(e) => setEntradaQtd(clampInt(e.target.value) || 1)} />
+                            </Field>
+                        </div>
 
-                    <div className="sm:col-span-2">
-                        <Field label="Observação (opcional)">
-                            <TextArea value={entradaObs} onChange={(e) => setEntradaObs(e.target.value)} placeholder="Detalhes da entrada..." />
-                        </Field>
+                        <div className="sm:col-span-6">
+                            <Field label="Observação (opcional)">
+                                <TextArea value={entradaObs} onChange={(e) => setEntradaObs(e.target.value)} placeholder="Ex: NF 123 / Compra / Ajuste..." />
+                            </Field>
+                        </div>
                     </div>
 
-                    {!entradaProdutoExistente && entradaBarcode.trim() ? (
-                        <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-sm font-semibold text-slate-900">Produto novo (código não encontrado)</p>
-                            <p className="mt-1 text-xs text-slate-600">Preencha para cadastrar junto com a entrada.</p>
+                    {entradaProdutoExistente ? (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            Produto encontrado: <b>{entradaProdutoExistente.nome}</b>{" "}
+                            <span className="text-xs text-emerald-700">• clique no nome na tabela de estoque para editar</span>
+                        </div>
+                    ) : entradaBarcode.trim() ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="text-sm font-semibold text-slate-900">Cadastro rápido (produto novo)</p>
+                            <p className="mt-1 text-xs text-slate-600">Preencha o mínimo necessário para cadastrar.</p>
 
-                            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <Field label="Nome do produto">
-                                    <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: URNA 008 ..." />
-                                </Field>
+                            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                                <div className="sm:col-span-3">
+                                    <Field label="Nome do produto">
+                                        <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: Luva nitrílica M" />
+                                    </Field>
+                                </div>
 
-                                <Field label="Valor">
-                                    <TextInput type="number" step="0.01" value={novoValor} onChange={(e) => setNovoValor(Number(e.target.value))} />
-                                </Field>
+                                <div className="sm:col-span-2">
+                                    <Field label="Valor (R$)">
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            step="0.01"
+                                            value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"}
+                                            onChange={(e) => setNovoValor(Number(e.target.value || 0))}
+                                        />
+                                    </Field>
+                                </div>
 
-                                <Field label="Mínimo (alerta)">
-                                    <TextInput type="number" min={0} step={1} value={novoMin} onChange={(e) => setNovoMin(Number(e.target.value))} />
-                                </Field>
+                                <div className="sm:col-span-1">
+                                    <Field label="Mínimo">
+                                        <TextInput type="number" min={0} value={novoMin} onChange={(e) => setNovoMin(clampInt(e.target.value))} />
+                                    </Field>
+                                </div>
 
-                                <Field label="Foto (arquivo)">
-                                    <TextInput
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={async (e) => {
-                                            const file = e.target.files?.[0];
-                                            await onEntradaFoto(file);
-                                        }}
-                                    />
-                                </Field>
+                                <div className="sm:col-span-3">
+                                    <Field label="Categoria (opcional)">
+                                        <div className="flex gap-2">
+                                            <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
+                                                <option value={0}>—</option>
+                                                {categorias.map((c) => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                            <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)}>
+                                                + Nova
+                                            </Button>
+                                        </div>
+                                    </Field>
+                                </div>
 
-                                <Field label="Categoria (opcional)">
-                                    <div className="flex gap-2">
-                                        <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
-                                            <option value={0}>—</option>
-                                            {categorias.map((c) => (
-                                                <option key={c.id} value={c.id}>
-                                                    {c.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                        <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)} title="Criar categoria">
-                                            ＋
-                                        </Button>
-                                    </div>
-                                </Field>
+                                <div className="sm:col-span-3">
+                                    <Field label="Fabricante (opcional)">
+                                        <div className="flex gap-2">
+                                            <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
+                                                <option value={0}>—</option>
+                                                {fabricantes.map((f) => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                            <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)}>
+                                                + Novo
+                                            </Button>
+                                        </div>
+                                    </Field>
+                                </div>
 
-                                <Field label="Fabricante (opcional)">
-                                    <div className="flex gap-2">
-                                        <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
-                                            <option value={0}>—</option>
-                                            {fabricantes.map((f) => (
-                                                <option key={f.id} value={f.id}>
-                                                    {f.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                        <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)} title="Criar fabricante">
-                                            ＋
-                                        </Button>
-                                    </div>
-                                </Field>
-
-                                {novoFoto ? (
-                                    <div className="sm:col-span-2">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={novoFoto} alt="Prévia" className="h-40 w-full rounded-2xl border border-slate-200 object-cover" />
-                                    </div>
-                                ) : null}
+                                <div className="sm:col-span-6">
+                                    <Field label="Foto (opcional)" hint="Você pode enviar uma imagem (fica em base64) ou colar uma URL no campo abaixo.">
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <input type="file" accept="image/*" onChange={(e) => onEntradaFoto(e.target.files?.[0])} className="block w-full text-sm" />
+                                            <TextInput value={novoFoto} onChange={(e) => setNovoFoto(e.target.value)} placeholder="...ou cole URL / base64 (data:)" />
+                                        </div>
+                                    </Field>
+                                </div>
                             </div>
                         </div>
-                    ) : null}
-
-                    <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applyEntradaSingle} disabled={loading} type="button">
-                            Confirmar esta entrada
-                        </Button>
-                        <Button variant="soft" onClick={addEntradaItemToList} type="button">
-                            Adicionar à lista
-                        </Button>
-                        <Button variant="ghost" onClick={applyEntradaLote} disabled={!entradaItens.length && !entradaBarcode.trim()} type="button">
-                            Confirmar lista inteira
-                        </Button>
-                        <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
-                            Cancelar
-                        </Button>
-                    </div>
+                    ) : (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                            Informe o código de barras para continuar.
+                        </div>
+                    )}
 
                     {entradaItens.length ? (
-                        <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-sm font-semibold text-slate-900">Lista de entradas pendentes</p>
-                            <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
+                            <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
                                 {entradaItens.map((it) => (
-                                    <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
-                                        <span className="truncate">{it.resumo}</span>
-                                        <Button type="button" variant="ghost" onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}>
+                                    <li key={it.id} className="flex items-center justify-between gap-2 p-3">
+                                        <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}
+                                        >
                                             Remover
                                         </Button>
                                     </li>
@@ -2964,22 +2951,311 @@ export default function Page() {
                             </ul>
                         </div>
                     ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="soft" onClick={addEntradaItemToList} type="button" disabled={!entradaBarcode.trim()}>
+                            + Adicionar à lista
+                        </Button>
+
+                        <Button onClick={applyEntradaSingle} type="button" disabled={!entradaBarcode.trim()}>
+                            Confirmar 1 item
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            onClick={applyEntradaLote}
+                            type="button"
+                            disabled={!entradaItens.length && !entradaBarcode.trim()}
+                        >
+                            Confirmar lote
+                        </Button>
+
+                        <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
+                            Fechar
+                        </Button>
+                    </div>
                 </div>
             </Modal>
 
-            <BarcodeScannerModal
-                open={entradaScanOpen}
-                title="Escanear código de barras (Entrada)"
-                onClose={() => setEntradaScanOpen(false)}
-                onDetected={(code) => setEntradaBarcode(code)}
-            />
+            {/* MODAL: SAÍDA */}
+            <Modal
+                open={saidaOpen}
+                title="Saída"
+                subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível."
+                onClose={cancelarSaida}
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+                        <div className="sm:col-span-2">
+                            <Field label="Solicitante">
+                                <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
+                                    {usuarios.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                            {u.nome} ({u.usuario})
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
 
-            {/* MODAL QUICK: CATEGORIA */}
-            <Modal open={catQuickOpen} title="Criar categoria" subtitle="Cria e já deixa disponível para seleção." onClose={() => setCatQuickOpen(false)}>
-                <div className="grid grid-cols-1 gap-3">
+                        <div className="sm:col-span-2">
+                            <Field label="Depósito (origem)">
+                                <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Destino">
+                                <Select value={saidaDestinoDepositoId} onChange={(e) => setSaidaDestinoDepositoId(Number(e.target.value))}>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-3">
+                            <Field label="Código de barras (opcional)">
+                                <div className="flex gap-2">
+                                    <TextInput
+                                        value={saidaBarcode}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            setSaidaBarcode(v);
+                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                            if (p) {
+                                                setSaidaProdutoId(p.id);
+                                                setSaidaProdQuery(p.nome);
+                                            }
+                                        }}
+                                        placeholder="Digite ou use Scan"
+                                        inputMode="numeric"
+                                    />
+                                    <Button variant="soft" onClick={() => setSaidaScanOpen(true)} type="button">
+                                        📷 Scan
+                                    </Button>
+                                </div>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-3">
+                            <Field label="Categoria (filtro)">
+                                <Select
+                                    value={saidaCategoriaId as any}
+                                    onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                                >
+                                    <option value="Todas">Todas</option>
+                                    {categorias.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-6">
+                            <ProductCombobox
+                                label="Produto"
+                                produtos={saidaProdutosNoDeposito}
+                                valueId={saidaProdutoId}
+                                onChangeId={(id) => {
+                                    setSaidaProdutoId(id);
+                                    const p = prodById.get(id);
+                                    if (p) setSaidaBarcode(p.codigo_barras);
+                                }}
+                                saldoByProdId={saidaSaldoByProd}
+                                query={saidaProdQuery}
+                                setQuery={setSaidaProdQuery}
+                                disabled={!saidaDepositoId}
+                            />
+                            {saidaProdutoId ? (
+                                <p className="mt-2 text-xs text-slate-600">
+                                    Disponível no depósito: <b>{saidaSaldoByProd.get(saidaProdutoId) ?? 0}</b>
+                                </p>
+                            ) : null}
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Qtd">
+                                <TextInput type="number" min={1} value={saidaQtd} onChange={(e) => setSaidaQtd(clampInt(e.target.value) || 1)} />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-4">
+                            <Field label="Observação (opcional)">
+                                <TextInput value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} placeholder="Ex: Obra X / Setor Y..." />
+                            </Field>
+                        </div>
+                    </div>
+
+                    {saidaItens.length ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
+                            <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
+                                {saidaItens.map((it) => (
+                                    <li key={it.id} className="flex items-center justify-between gap-2 p-3">
+                                        <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
+                                        <Button variant="ghost" type="button" onClick={() => setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))}>
+                                            Remover
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="soft" onClick={addSaidaItemToList} type="button" disabled={!saidaProdutoId}>
+                            + Adicionar à lista
+                        </Button>
+                        <Button onClick={confirmarSaida} type="button">
+                            Confirmar
+                        </Button>
+                        <Button variant="ghost" onClick={cancelarSaida} type="button">
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* MODAL: TRANSFERÊNCIA */}
+            <Modal
+                open={trfOpen}
+                title="Transferência"
+                subtitle="Move quantidade de um depósito para outro (com validação de saldo)."
+                onClose={cancelarTransferencia}
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+                        <div className="sm:col-span-2">
+                            <Field label="Solicitante">
+                                <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
+                                    {usuarios.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                            {u.nome} ({u.usuario})
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Origem">
+                                <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Destino">
+                                <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-3">
+                            <Field label="Categoria (filtro)">
+                                <Select
+                                    value={trfCategoriaId as any}
+                                    onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                                >
+                                    <option value="Todas">Todas</option>
+                                    {categorias.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-3">
+                            <ProductCombobox
+                                label="Produto (na origem)"
+                                produtos={trfProdutosNaOrigem}
+                                valueId={trfProdutoId}
+                                onChangeId={(id) => setTrfProdutoId(id)}
+                                saldoByProdId={trfSaldoByProd}
+                                query={trfProdQuery}
+                                setQuery={setTrfProdQuery}
+                                disabled={!trfOrigemId}
+                            />
+                            {trfProdutoId ? (
+                                <p className="mt-2 text-xs text-slate-600">
+                                    Disponível na origem: <b>{trfSaldoByProd.get(trfProdutoId) ?? 0}</b>
+                                </p>
+                            ) : null}
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Qtd">
+                                <TextInput type="number" min={1} value={trfQtd} onChange={(e) => setTrfQtd(clampInt(e.target.value) || 1)} />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-4">
+                            <Field label="Observação (opcional)">
+                                <TextInput value={trfObs} onChange={(e) => setTrfObs(e.target.value)} placeholder="Ex: remanejamento / conferência..." />
+                            </Field>
+                        </div>
+                    </div>
+
+                    {trfItens.length ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="text-sm font-semibold text-slate-900">Transferências na fila</p>
+                            <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
+                                {trfItens.map((it) => (
+                                    <li key={it.id} className="flex items-center justify-between gap-2 p-3">
+                                        <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
+                                        <Button variant="ghost" type="button" onClick={() => setTrfItens((prev) => prev.filter((x) => x.id !== it.id))}>
+                                            Remover
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="soft" onClick={addTrfItemToList} type="button" disabled={!trfProdutoId}>
+                            + Adicionar à lista
+                        </Button>
+                        <Button onClick={confirmarTransferencia} type="button">
+                            Confirmar
+                        </Button>
+                        <Button variant="ghost" onClick={cancelarTransferencia} type="button">
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* MODAL: CRIAR CATEGORIA (QUICK) */}
+            <Modal open={catQuickOpen} title="Nova categoria" subtitle="Crie e selecione automaticamente." onClose={() => setCatQuickOpen(false)}>
+                <div className="space-y-3">
                     <Field label="Nome">
                         <TextInput value={catQuickNome} onChange={(e) => setCatQuickNome(e.target.value)} placeholder="Ex: EPIs" />
                     </Field>
+
                     <div className="flex gap-2">
                         <Button onClick={criarCategoriaQuick} type="button" disabled={!catQuickNome.trim()}>
                             Criar
@@ -2991,12 +3267,13 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL QUICK: FABRICANTE */}
-            <Modal open={fabQuickOpen} title="Criar fabricante" subtitle="Cria e já deixa disponível para seleção." onClose={() => setFabQuickOpen(false)}>
-                <div className="grid grid-cols-1 gap-3">
+            {/* MODAL: CRIAR FABRICANTE (QUICK) */}
+            <Modal open={fabQuickOpen} title="Novo fabricante" subtitle="Crie e selecione automaticamente." onClose={() => setFabQuickOpen(false)}>
+                <div className="space-y-3">
                     <Field label="Nome">
                         <TextInput value={fabQuickNome} onChange={(e) => setFabQuickNome(e.target.value)} placeholder="Ex: 3M" />
                     </Field>
+
                     <div className="flex gap-2">
                         <Button onClick={criarFabricanteQuick} type="button" disabled={!fabQuickNome.trim()}>
                             Criar
@@ -3008,146 +3285,16 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: SAÍDA */}
-            <Modal
-                open={saidaOpen}
-                title="Saída"
-                subtitle="Filtre pelo depósito, procure o produto ou escaneie por câmera. Você pode adicionar vários itens na lista."
-                onClose={() => setSaidaOpen(false)}
-            >
-                {/* ... (sem mudanças aqui) ... */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Depósito (origem)">
-                        <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
-                            {depositos.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                    {d.nome}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Código de barras (opcional)">
-                        <div className="flex gap-2">
-                            <TextInput
-                                value={saidaBarcode}
-                                onChange={(e) => setSaidaBarcode(e.target.value)}
-                                placeholder="Escaneie ou digite"
-                                inputMode="numeric"
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        const code = saidaBarcode.trim();
-                                        if (code) onSaidaBarcodePick(code);
-                                    }
-                                }}
-                            />
-                            <Button variant="ghost" type="button" onClick={() => setSaidaScanOpen(true)} title="Abrir câmera">
-                                📷 Escanear
-                            </Button>
-                        </div>
-                    </Field>
-
-                    <div className="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <Field label="Buscar produto (nome/código)">
-                            <TextInput value={saidaBusca} onChange={(e) => setSaidaBusca(e.target.value)} placeholder="Ex: URNA ou 174501..." />
-                        </Field>
-
-                        <Field label="Produto (no depósito)">
-                            <Select value={saidaProdutoId} onChange={(e) => setSaidaProdutoId(Number(e.target.value))}>
-                                {saidaProdutosNoDeposito.length ? (
-                                    saidaProdutosNoDeposito.map((p) => {
-                                        const s = saldosMap.get(`${p.id}::${saidaDepositoId}`);
-                                        const qtd = s ? clampInt(s.quantidade) : 0;
-                                        return (
-                                            <option key={p.id} value={p.id}>
-                                                {p.nome} — CB:{p.codigo_barras} — disp:{qtd}
-                                            </option>
-                                        );
-                                    })
-                                ) : (
-                                    <option value={0}>Sem itens no depósito</option>
-                                )}
-                            </Select>
-                        </Field>
-                    </div>
-
-                    <Field label="Quantidade">
-                        <TextInput type="number" min={1} step={1} value={saidaQtd} onChange={(e) => setSaidaQtd(Number(e.target.value))} />
-                    </Field>
-
-                    <Field label="Solicitante">
-                        <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
-                            {usuarios.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.nome} ({u.usuario})
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <div className="sm:col-span-2">
-                        <Field label="Destino">
-                            <Select
-                                value={saidaDestinoDepositoId}
-                                onChange={(e) => {
-                                    const id = Number(e.target.value);
-                                    setSaidaDestinoDepositoId(id);
-                                    const d = depositos.find((x) => x.id === id);
-                                    setSaidaDestino(d?.nome || "");
-                                }}
-                            >
-                                {depositos.map((d) => (
-                                    <option key={d.id} value={d.id}>
-                                        {d.nome}
-                                    </option>
-                                ))}
-                            </Select>
-                        </Field>
-                    </div>
-
-
-                    <div className="sm:col-span-2">
-                        <Field label="Observação (opcional)">
-                            <TextArea value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} placeholder="Detalhes da saída..." />
-                        </Field>
-                    </div>
-
-                    <div className="sm:col-span-2 flex flex-wrap gap-2">
-                        <Button onClick={applySaidaSingle} disabled={loading || !saidaProdutosNoDeposito.length || !saidaProdutoId} type="button">
-                            Confirmar esta saída
-                        </Button>
-                        <Button variant="soft" onClick={addSaidaItemToList} disabled={!saidaProdutoId} type="button">
-                            Adicionar à lista
-                        </Button>
-                        <Button variant="ghost" onClick={applySaidaLote} disabled={!saidaItens.length && !saidaProdutoId} type="button">
-                            Confirmar lista inteira
-                        </Button>
-                        <Button variant="ghost" onClick={() => setSaidaOpen(false)} type="button">
-                            Cancelar
-                        </Button>
-                    </div>
-
-                    {saidaItens.length ? (
-                        <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-sm font-semibold text-slate-900">Lista de saídas pendentes</p>
-                            <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                                {saidaItens.map((it) => (
-                                    <li key={it.id} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
-                                        <span className="truncate">{it.resumo}</span>
-                                        <Button type="button" variant="ghost" onClick={() => setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))}>
-                                            Remover
-                                        </Button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    ) : null}
-                </div>
-            </Modal>
-
+            {/* SCANNERS */}
+            <BarcodeScannerModal
+                open={entradaScanOpen}
+                title="Ler código de barras (Entrada)"
+                onClose={() => setEntradaScanOpen(false)}
+                onDetected={(code) => setEntradaBarcode(code)}
+            />
             <BarcodeScannerModal
                 open={saidaScanOpen}
-                title="Escanear código de barras (Saída)"
+                title="Ler código de barras (Saída)"
                 onClose={() => setSaidaScanOpen(false)}
                 onDetected={(code) => onSaidaBarcodePick(code)}
             />
