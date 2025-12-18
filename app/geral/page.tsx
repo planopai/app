@@ -339,9 +339,7 @@ function Modal({
         <div
             role="dialog"
             aria-modal="true"
-            className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(
-                " "
-            )}
+            className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(" ")}
             onMouseDown={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
@@ -418,11 +416,7 @@ function ImagePreviewModal({
                         <h2 className="truncate text-base font-semibold text-slate-900">{title || "Imagem do produto"}</h2>
                         <p className="mt-1 text-sm text-slate-600">Clique fora ou pressione ESC para fechar.</p>
                     </div>
-                    <button
-                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
-                        onClick={onClose}
-                        type="button"
-                    >
+                    <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose} type="button">
                         ✕
                     </button>
                 </div>
@@ -436,9 +430,7 @@ function ImagePreviewModal({
                             className="mx-auto h-auto w-full max-h-[76dvh] rounded-2xl border border-slate-200 object-contain"
                         />
                     ) : (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-                            Produto sem imagem.
-                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Produto sem imagem.</div>
                     )}
                 </div>
             </div>
@@ -635,9 +627,7 @@ function ProductCombobox({
 
     const list = useMemo(() => {
         const qq = query.trim().toLowerCase();
-        const base = !qq
-            ? produtos
-            : produtos.filter((p) => `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq));
+        const base = !qq ? produtos : produtos.filter((p) => `${p.nome} ${p.codigo_barras}`.toLowerCase().includes(qq));
         return base.slice(0, 30);
     }, [produtos, query]);
 
@@ -996,7 +986,7 @@ export default function Page() {
       body{ margin: 14mm; }
       .filters{ break-inside: avoid; }
       table{ page-break-inside:auto; }
-      tr{ page-break-inside:avoid; page-break-after:auto; }
+      tr{ page-break-inside:avoidavoid; page-break-after:auto; }
       thead{ display: table-header-group; }
     }
   </style>
@@ -1354,8 +1344,8 @@ export default function Page() {
     }
 
     /* =========================
-       SAÍDA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
-    ========================= */
+         SAÍDA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
+      ========================= */
 
     const [saidaOpen, setSaidaOpen] = useState(false);
     const [saidaScanOpen, setSaidaScanOpen] = useState(false);
@@ -1532,8 +1522,8 @@ export default function Page() {
     }
 
     /* =========================
-       TRANSFERÊNCIA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
-    ========================= */
+         TRANSFERÊNCIA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
+      ========================= */
 
     const [trfOpen, setTrfOpen] = useState(false);
 
@@ -1648,8 +1638,8 @@ export default function Page() {
         };
 
         const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
-        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id} → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id
-            }`;
+        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id
+            } → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id}`;
 
         return { payload, resumo };
     }
@@ -1697,8 +1687,8 @@ export default function Page() {
     }
 
     /* =========================
-       AVANÇADO - Depósitos
-    ========================= */
+         AVANÇADO - Depósitos
+      ========================= */
 
     const [novoDepNome, setNovoDepNome] = useState("");
     const [renomearDepId, setRenomearDepId] = useState<ID>(0);
@@ -1867,8 +1857,8 @@ export default function Page() {
     }
 
     /* =========================
-       HISTÓRICO
-    ========================= */
+         HISTÓRICO
+      ========================= */
 
     const [histLoading, setHistLoading] = useState(false);
     const [histErr, setHistErr] = useState("");
@@ -2140,7 +2130,7 @@ export default function Page() {
                                     <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
                                 ) : (
                                     <>
-                                        {/* MOBILE (igual ao que já era) */}
+                                        {/* MOBILE */}
                                         <ul className="divide-y divide-slate-200 sm:hidden">
                                             {estoqueRows.map(({ p, d, qtd, s, min, rep }) => {
                                                 const low = qtd <= min;
@@ -2199,9 +2189,7 @@ export default function Page() {
                                                             </div>
 
                                                             <div className="shrink-0 text-right">
-                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
-                                                                    {qtd}
-                                                                </p>
+                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>{qtd}</p>
                                                                 <p className="text-xs text-slate-500">
                                                                     Min {min} • Rep <span className="font-semibold text-emerald-700">{rep}</span>
                                                                 </p>
@@ -2212,7 +2200,7 @@ export default function Page() {
                                             })}
                                         </ul>
 
-                                        {/* PC (TABELA) */}
+                                        {/* PC */}
                                         <div className="hidden sm:block">
                                             <div className="overflow-auto">
                                                 <table className="min-w-full border-separate border-spacing-0">
@@ -2268,15 +2256,18 @@ export default function Page() {
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat || "—"}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab || "—"}</td>
-                                                                    <td className={["border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
+                                                                    <td
+                                                                        className={[
+                                                                            "border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold",
+                                                                            low ? "text-red-700" : "text-slate-900",
+                                                                        ].join(" ")}
+                                                                    >
                                                                         {qtd}
                                                                     </td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{min}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-emerald-700">{rep}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{moneyBRL(valorNum)}</td>
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-xs text-slate-600">
-                                                                        {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
-                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-xs text-slate-600">{s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}</td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -2305,9 +2296,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            {histErr ? (
-                                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div>
-                            ) : null}
+                            {histErr ? <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div> : null}
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
                                 <div className="sm:col-span-3">
@@ -2375,19 +2364,15 @@ export default function Page() {
                                                             ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                                                             : "bg-slate-50 text-slate-700 border-slate-200";
 
-                                            const origem =
-                                                h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
-                                            const destino =
-                                                h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+                                            const origem = h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
+                                            const destino = h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
 
                                             return (
                                                 <li key={h.id} className="px-4 py-3">
                                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                                         <div className="min-w-0">
                                                             <div className="flex flex-wrap items-center gap-2">
-                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>
-                                                                    {h.tipo}
-                                                                </span>
+                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>{h.tipo}</span>
                                                                 <span className="text-xs text-slate-500">{fmtDateTime(h.criado_em)}</span>
                                                             </div>
 
@@ -2420,9 +2405,7 @@ export default function Page() {
                                                                     <>
                                                                         {" "}
                                                                         • Solicitante:{" "}
-                                                                        <b>
-                                                                            {h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}
-                                                                        </b>
+                                                                        <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
                                                                     </>
                                                                 ) : null}
                                                                 {h.observacao ? <> • Obs: {h.observacao}</> : null}
@@ -2449,9 +2432,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.</p>
                                 </div>
                                 <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
                                     Voltar
@@ -2682,12 +2663,7 @@ export default function Page() {
                                     </Field>
 
                                     <Field label="Mínimo">
-                                        <TextInput
-                                            type="number"
-                                            min={0}
-                                            value={editMin}
-                                            onChange={(e) => setEditMin(clampInt(e.target.value))}
-                                        />
+                                        <TextInput type="number" min={0} value={editMin} onChange={(e) => setEditMin(clampInt(e.target.value))} />
                                     </Field>
 
                                     <Field label="Categoria">
@@ -2765,7 +2741,9 @@ export default function Page() {
                                         <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
                                             <div className="min-w-0">
                                                 <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
-                                                <p className="text-[11px] text-slate-500">Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}</p>
+                                                <p className="text-[11px] text-slate-500">
+                                                    Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}
+                                                </p>
                                             </div>
                                             <div className="w-[120px]">
                                                 <TextInput
@@ -2927,9 +2905,7 @@ export default function Page() {
                             </div>
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                            Informe o código de barras para continuar.
-                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">Informe o código de barras para continuar.</div>
                     )}
 
                     {entradaItens.length ? (
@@ -2939,11 +2915,7 @@ export default function Page() {
                                 {entradaItens.map((it) => (
                                     <li key={it.id} className="flex items-center justify-between gap-2 p-3">
                                         <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
-                                        <Button
-                                            variant="ghost"
-                                            type="button"
-                                            onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}
-                                        >
+                                        <Button variant="ghost" type="button" onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}>
                                             Remover
                                         </Button>
                                     </li>
@@ -2961,12 +2933,7 @@ export default function Page() {
                             Confirmar 1 item
                         </Button>
 
-                        <Button
-                            variant="ghost"
-                            onClick={applyEntradaLote}
-                            type="button"
-                            disabled={!entradaItens.length && !entradaBarcode.trim()}
-                        >
+                        <Button variant="ghost" onClick={applyEntradaLote} type="button" disabled={!entradaItens.length && !entradaBarcode.trim()}>
                             Confirmar lote
                         </Button>
 
@@ -2978,12 +2945,7 @@ export default function Page() {
             </Modal>
 
             {/* MODAL: SAÍDA */}
-            <Modal
-                open={saidaOpen}
-                title="Saída"
-                subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível."
-                onClose={cancelarSaida}
-            >
+            <Modal open={saidaOpen} title="Saída" subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível." onClose={cancelarSaida}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-2">
@@ -3048,10 +3010,7 @@ export default function Page() {
 
                         <div className="sm:col-span-3">
                             <Field label="Categoria (filtro)">
-                                <Select
-                                    value={saidaCategoriaId as any}
-                                    onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
-                                >
+                                <Select value={saidaCategoriaId as any} onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
                                     <option value="Todas">Todas</option>
                                     {categorias.map((c) => (
                                         <option key={c.id} value={c.id}>
@@ -3128,12 +3087,7 @@ export default function Page() {
             </Modal>
 
             {/* MODAL: TRANSFERÊNCIA */}
-            <Modal
-                open={trfOpen}
-                title="Transferência"
-                subtitle="Move quantidade de um depósito para outro (com validação de saldo)."
-                onClose={cancelarTransferencia}
-            >
+            <Modal open={trfOpen} title="Transferência" subtitle="Move quantidade de um depósito para outro (com validação de saldo)." onClose={cancelarTransferencia}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-2">
@@ -3174,10 +3128,7 @@ export default function Page() {
 
                         <div className="sm:col-span-3">
                             <Field label="Categoria (filtro)">
-                                <Select
-                                    value={trfCategoriaId as any}
-                                    onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
-                                >
+                                <Select value={trfCategoriaId as any} onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
                                     <option value="Todas">Todas</option>
                                     {categorias.map((c) => (
                                         <option key={c.id} value={c.id}>
@@ -3286,18 +3237,8 @@ export default function Page() {
             </Modal>
 
             {/* SCANNERS */}
-            <BarcodeScannerModal
-                open={entradaScanOpen}
-                title="Ler código de barras (Entrada)"
-                onClose={() => setEntradaScanOpen(false)}
-                onDetected={(code) => setEntradaBarcode(code)}
-            />
-            <BarcodeScannerModal
-                open={saidaScanOpen}
-                title="Ler código de barras (Saída)"
-                onClose={() => setSaidaScanOpen(false)}
-                onDetected={(code) => onSaidaBarcodePick(code)}
-            />
+            <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
+            <BarcodeScannerModal open={saidaScanOpen} title="Ler código de barras (Saída)" onClose={() => setSaidaScanOpen(false)} onDetected={(code) => onSaidaBarcodePick(code)} />
         </main>
     );
 }
