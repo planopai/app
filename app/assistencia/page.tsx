@@ -1028,7 +1028,7 @@ export default function MateriaisAdminPage() {
                 </div>
             )}
 
-            {/* Modal CRUD Materiais */}
+            {/* Modal CRUDDDD Materiais */}
             {modal.open && (
                 <div
                     className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
