@@ -821,7 +821,7 @@ export default function AcompanhamentoPage() {
 
   /**
    * ✅ IMPORTANTE:
-   * Agora retorna boolean:
+   * Agora retorna
    * - true  => ação registrada/armazenada (online ou offline) e pode fechar modal
    * - false => não registrou (cancelou confirm, abriu conferência fase11, etc.)
    */
