@@ -204,7 +204,8 @@ export async function obterMateriaisMap(force = false): Promise<MateriaisMap> {
 export async function listarFalecidos(): Promise<FalecidoItem[]> {
     try {
         const json = await fetchJson<any>(LISTAR_FALECIDOS, { ttlMs: 10_000 });
-        if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as FalecidoItem[];
+        if (json?.sucesso && Array.isArray(json?.dados))
+            return json.dados as FalecidoItem[];
         if (Array.isArray(json)) return json as FalecidoItem[];
         return [];
     } catch {
@@ -215,7 +216,8 @@ export async function listarFalecidos(): Promise<FalecidoItem[]> {
 export async function listarLogPorId(id: string): Promise<LogItem[]> {
     try {
         const json = await fetchJson<any>(LOG_POR_ID(id), { ttlMs: 20_000 });
-        if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as LogItem[];
+        if (json?.sucesso && Array.isArray(json?.dados))
+            return json.dados as LogItem[];
         if (Array.isArray(json)) return json as LogItem[];
         return [];
     } catch {
@@ -226,7 +228,8 @@ export async function listarLogPorId(id: string): Promise<LogItem[]> {
 export async function listarAnalitico(): Promise<RegistroAnalise[]> {
     try {
         const json = await fetchJson<any>(LISTAR_ANALITICO, { ttlMs: 10_000 });
-        if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as RegistroAnalise[];
+        if (json?.sucesso && Array.isArray(json?.dados))
+            return json.dados as RegistroAnalise[];
         if (Array.isArray(json)) return json as RegistroAnalise[];
         return [];
     } catch {
@@ -241,6 +244,12 @@ export type FalecidoComCriacao = FalecidoItem & { criacao?: string };
 /**
  * Agora a criação vem do backend (campo `criacao` do seu SQL).
  * Zero chamadas extras de log: MUITO mais rápido.
+ *
+ * ✅ Correções:
+ * - resolve ID como `sepultamento_id` OU `id` (para não virar "")
+ * - só grava no criacaoMap se tiver ID válido (evita chave "")
+ * - fallback de data inclui created_at/datahora/ultima_datahora
+ * - injeta `criacao` no item para UI ordenar/filtrar
  */
 export async function listarFalecidosComCriacao(): Promise<{
     lista: FalecidoComCriacao[];
@@ -249,11 +258,27 @@ export async function listarFalecidosComCriacao(): Promise<{
     const listaRaw = await listarFalecidos();
 
     const criacaoMap: Record<string, string> = {};
+
     const lista = (listaRaw || []).map((r: any) => {
-        const id = String(r.sepultamento_id || "");
-        const criacao = String(r.criacao || r.ultima_datahora || r.ultima_datahora || "");
-        criacaoMap[id] = criacao;
-        return { ...r, criacao } as FalecidoComCriacao;
+        const id = String(r?.sepultamento_id ?? r?.id ?? "").trim();
+
+        const criacao = String(
+            r?.criacao ??
+            r?.created_at ??
+            r?.ultima_datahora ??
+            r?.datahora ??
+            ""
+        ).trim();
+
+        // evita sobrescrever tudo em criacaoMap[""]
+        if (id) criacaoMap[id] = criacao;
+
+        return {
+            ...r,
+            // garante consistência para o resto do app
+            sepultamento_id: id || String(r?.sepultamento_id || "").trim(),
+            criacao,
+        } as FalecidoComCriacao;
     });
 
     return { lista, criacaoMap };
