@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useEffect, useMemo, useState } from "react";
 import BarraFiltros from "./BarraFiltros";
 import ListaRegistros from "./ListaRegistros";
@@ -11,9 +12,14 @@ import { FalecidoItem } from "./TiposHistorico";
    Helpers: ID e Datas
    ========================= */
 
+/**
+ * ✅ CORREÇÃO PRINCIPAL:
+ * - usar `||` ao invés de `??` para cair no `id` quando `sepultamento_id` vier ""
+ * - isso resolve registros de "outras empresas" que vêm com poucas fases/ID diferente
+ */
 function getRegistroId(item: FalecidoItem): string {
     const anyItem = item as any;
-    return String(item?.sepultamento_id ?? anyItem?.id ?? "").trim();
+    return String(item?.sepultamento_id || anyItem?.id || "").trim();
 }
 
 // dd/mm/aaaa[, HH:MM[:SS]]
@@ -81,7 +87,10 @@ function makeRange(de?: string, ate?: string) {
 }
 
 /** Melhor data disponível para um item (ordenação/filtragem). */
-function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+function getItemDate(
+    item: FalecidoItem,
+    criacaoMap: Record<string, string>
+): Date | null {
     const id = getRegistroId(item);
     const candidatos = [
         id ? criacaoMap[id] : undefined,
@@ -90,6 +99,7 @@ function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Da
         (item as any).data_inicio_velorio,
         (item as any).data_fim_velorio,
     ];
+
     for (const c of candidatos) {
         const d = parseDateFlex(String(c || ""));
         if (d) return d;
@@ -127,8 +137,8 @@ export default function PaginaHistoricoSepultamentos() {
             setLoadingLista(true);
             try {
                 const { lista, criacaoMap } = await listarFalecidosComCriacao();
-                setLista(lista);
-                setCriacaoMap(criacaoMap);
+                setLista(Array.isArray(lista) ? lista : []);
+                setCriacaoMap(criacaoMap || {});
             } finally {
                 setLoadingLista(false);
             }
@@ -142,14 +152,20 @@ export default function PaginaHistoricoSepultamentos() {
         const { start, end } = makeRange(filtroDe, filtroAte);
 
         const base = (lista || []).filter((reg) => {
-            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) return false;
+            // filtro por nome (se falecido vier vazio, não bloqueia quando nome está vazio)
+            if (nome) {
+                const n = String(reg?.falecido || "").toLowerCase();
+                if (!n.includes(nome)) return false;
+            }
 
+            // filtro por período
             if (start || end) {
                 const d = getItemDate(reg, criacaoMap);
                 if (!d) return false;
                 if (start && d < start) return false;
                 if (end && d > end) return false;
             }
+
             return true;
         });
 
@@ -179,6 +195,7 @@ export default function PaginaHistoricoSepultamentos() {
     useEffect(() => {
         if (!analiseOpen) return;
         carregarAnalise();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [analiseOpen, aDe, aAte, somenteTanato]);
 
     const selecionadoId = registroSelecionado ? getRegistroId(registroSelecionado) : undefined;
@@ -211,7 +228,7 @@ export default function PaginaHistoricoSepultamentos() {
                 totalPaginas={totalPaginas}
                 onPaginaAnterior={() => setPagina((p) => Math.max(1, p - 1))}
                 onPaginaProxima={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-                selecionadoId={selecionadoId}  // ✅ agora usa sepultamento_id OU id
+                selecionadoId={selecionadoId} // ✅ agora funciona p/ sepultamento_id "" também
                 onSelecionar={abrirModal}
                 criacaoMap={criacaoMap}
             />
