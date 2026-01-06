@@ -1,4 +1,5 @@
 "use client";
+
 import React from "react";
 import { FalecidoItem } from "./TiposHistorico";
 import { formataDataHora } from "./UtilDatas";
@@ -29,7 +30,9 @@ function getRegistroId(item: FalecidoItem): string {
 function parseBrDate(s: string): Date | null {
     const m = s
         ?.trim()
-        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        .match(
+            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+        );
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -71,7 +74,10 @@ function parseDateFlex(s?: string | null): Date | null {
    2) item.created_at
    3) item.data / data_inicio_velorio / etc (quando existir)
 */
-function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+function getItemDate(
+    item: FalecidoItem,
+    criacaoMap: Record<string, string>
+): Date | null {
     const id = getRegistroId(item);
     const candidatos = [
         id ? criacaoMap[id] : undefined,
@@ -80,6 +86,7 @@ function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Da
         (item as any).data_inicio_velorio,
         (item as any).data_fim_velorio,
     ];
+
     for (const c of candidatos) {
         const d = parseDateFlex(String(c || ""));
         if (d) return d;
@@ -98,16 +105,38 @@ export default function ListaRegistros({
     onSelecionar,
     criacaoMap,
 }: Props) {
-    // 1) Deduplica por ID resolvido (a última ocorrência vence)
+    /**
+     * 1) Deduplica de forma segura:
+     * - NÃO descarta itens sem ID (cria ID sintético)
+     * - se houver duplicados com mesmo ID, mantém o mais recente pela melhor data
+     */
     const semDuplicados = React.useMemo(() => {
         const map = new Map<string, FalecidoItem>();
-        for (const it of registros || []) {
-            const id = getRegistroId(it);
-            if (!id) continue; // evita colapsar tudo em "undefined"
-            map.set(id, it);
+
+        for (let i = 0; i < (registros || []).length; i++) {
+            const it = registros[i];
+            let id = getRegistroId(it);
+
+            // Se não tiver id, cria um id sintético para NÃO sumir
+            if (!id) {
+                const created = (it as any).created_at || "";
+                id = `sem-id-${i}-${String(created)}`;
+                map.set(id, it);
+                continue;
+            }
+
+            const atual = map.get(id);
+            if (!atual) {
+                map.set(id, it);
+            } else {
+                const dNovo = getItemDate(it, criacaoMap)?.getTime() ?? 0;
+                const dAtual = getItemDate(atual, criacaoMap)?.getTime() ?? 0;
+                if (dNovo >= dAtual) map.set(id, it);
+            }
         }
+
         return Array.from(map.values());
-    }, [registros]);
+    }, [registros, criacaoMap]);
 
     // 2) Ordena DESC pela melhor data
     const ordenados = React.useMemo(() => {
@@ -133,10 +162,16 @@ export default function ListaRegistros({
                     <div className="p-4 text-center">Nenhum registro encontrado.</div>
                 ) : (
                     <ul>
-                        {ordenados.map((item) => {
+                        {ordenados.map((item, idx) => {
                             const id = getRegistroId(item);
-                            const criadoEm = (id ? criacaoMap[id] : "") || (item as any).created_at || "";
-                            const key = `${id}-${criadoEm || "s/created"}`;
+
+                            // data exibida no UI
+                            const criadoEm =
+                                (id ? criacaoMap[id] : "") || (item as any).created_at || "";
+
+                            // key estável mesmo sem id
+                            const key =
+                                (id ? `id-${id}` : `sem-id-${idx}`) + `-${criadoEm || "s-data"}`;
 
                             return (
                                 <li key={key}>
@@ -146,7 +181,9 @@ export default function ListaRegistros({
                                             }`}
                                         onClick={() => onSelecionar(item)}
                                     >
-                                        <div className="flex-1 text-left font-medium truncate">{item.falecido}</div>
+                                        <div className="flex-1 text-left font-medium truncate">
+                                            {item.falecido}
+                                        </div>
                                         <div className="text-xs text-muted-foreground text-right">
                                             {criadoEm ? formataDataHora(criadoEm) : "—"}
                                         </div>
