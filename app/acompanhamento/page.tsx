@@ -49,7 +49,7 @@ function addTerceiroIdToSession(id: string | number | undefined | null) {
       arr.push(sid);
       sessionStorage.setItem("terceiro_ids", JSON.stringify(arr));
     }
-  } catch {}
+  } catch { }
 }
 
 /* ----------- resolve tipo a partir de um registro existente ----------- */
@@ -126,7 +126,7 @@ function safeWriteQueue(items: OfflineQueueItem[]) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
-  } catch {}
+  } catch { }
 }
 
 function genQid() {
@@ -155,11 +155,11 @@ function enqueueOffline(payload: any, errMsg?: string) {
 function resolveFalecidoNome(r: any): string {
   return String(
     r?.falecido ??
-      r?.nome_falecido ??
-      r?.falecido_nome ??
-      r?.nome_do_falecido ??
-      r?.nome ??
-      ""
+    r?.nome_falecido ??
+    r?.falecido_nome ??
+    r?.nome_do_falecido ??
+    r?.nome ??
+    ""
   ).trim();
 }
 
@@ -271,10 +271,10 @@ export default function AcompanhamentoPage() {
 
       const sane: Registro[] = Array.isArray(data)
         ? data.map((it: any) => ({
-            ...it,
-            id: it?.id != null ? String(it.id) : it.id,
-            status: normalizarStatus(it?.status) ?? it?.status,
-          }))
+          ...it,
+          id: it?.id != null ? String(it.id) : it.id,
+          status: normalizarStatus(it?.status) ?? it?.status,
+        }))
         : [];
 
       setRegistros(sane);
@@ -312,7 +312,7 @@ export default function AcompanhamentoPage() {
                 const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? null;
                 addTerceiroIdToSession(novoId);
               }
-            } catch {}
+            } catch { }
 
             const after = safeReadQueue().filter((x) => x.qid !== item.qid);
             safeWriteQueue(after);
@@ -320,10 +320,10 @@ export default function AcompanhamentoPage() {
             const after = safeReadQueue().map((x) =>
               x.qid === item.qid
                 ? {
-                    ...x,
-                    tries: (x.tries ?? 0) + 1,
-                    lastError: json?.erro || json?.msg || "Erro ao enviar (offline queue).",
-                  }
+                  ...x,
+                  tries: (x.tries ?? 0) + 1,
+                  lastError: json?.erro || json?.msg || "Erro ao enviar (offline queue).",
+                }
                 : x
             );
             safeWriteQueue(after);
@@ -333,10 +333,10 @@ export default function AcompanhamentoPage() {
           const after = safeReadQueue().map((x) =>
             x.qid === item.qid
               ? {
-                  ...x,
-                  tries: (x.tries ?? 0) + 1,
-                  lastError: e?.message || "Falha ao enviar (offline queue).",
-                }
+                ...x,
+                tries: (x.tries ?? 0) + 1,
+                lastError: e?.message || "Falha ao enviar (offline queue).",
+              }
               : x
           );
           safeWriteQueue(after);
@@ -517,7 +517,7 @@ export default function AcompanhamentoPage() {
       try {
         const parsed = JSON.parse(String((r as any).materiais_json));
         return normalizeMateriaisState(parsed);
-      } catch {}
+      } catch { }
     }
 
     const out: MateriaisState = {};
@@ -534,7 +534,7 @@ export default function AcompanhamentoPage() {
           nome: nomeBase.replace(/_/g, " "),
         } as any;
       }
-    } catch {}
+    } catch { }
 
     return out;
   };
@@ -546,7 +546,7 @@ export default function AcompanhamentoPage() {
       try {
         const parsed = JSON.parse(String(r.arrumacao_json));
         Object.assign(base, parsed);
-      } catch {}
+      } catch { }
     }
 
     (Object.keys(base) as Array<keyof ArrumacaoState>).forEach((k) => {

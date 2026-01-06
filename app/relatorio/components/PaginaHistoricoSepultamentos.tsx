@@ -7,9 +7,14 @@ import ModalDetalheRegistro from "./ModalDetalheRegistro";
 import { listarFalecidosComCriacao, listarAnalitico } from "./Api";
 import { FalecidoItem } from "./TiposHistorico";
 
-/* =========================================================
-   Parsers de data robustos (BR e ISO) + helpers de intervalo
-   ========================================================= */
+/* =========================
+   Helpers: ID e Datas
+   ========================= */
+
+function getRegistroId(item: FalecidoItem): string {
+    const anyItem = item as any;
+    return String(item?.sepultamento_id ?? anyItem?.id ?? "").trim();
+}
 
 // dd/mm/aaaa[, HH:MM[:SS]]
 function parseBrDate(s: string): Date | null {
@@ -27,7 +32,6 @@ function parseIsoDate(s: string): Date | null {
     const t = s?.trim().replace(" ", "T");
     if (!t) return null;
 
-    // aaaa-mm-dd
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) {
         const [, yyyy, mm, dd] = m;
@@ -35,7 +39,6 @@ function parseIsoDate(s: string): Date | null {
         return isNaN(d.getTime()) ? null : d;
     }
 
-    // aaaa-mm-ddTHH:MM[:SS]
     m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
     if (m) {
         const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
@@ -63,31 +66,25 @@ function endOfDay(d: Date) {
     return x;
 }
 
-/** Constrói intervalo inclusivo [start..end]. Se informar só uma data, usa só aquele dia. */
 function makeRange(de?: string, ate?: string) {
     const d0 = de ? parseDateFlex(de) : null;
     const d1 = ate ? parseDateFlex(ate) : null;
 
-    // se só um foi informado, usa aquele mesmo dia
     const baseStart = d0 ?? d1;
     const baseEnd = d1 ?? d0;
 
     const start = baseStart ? startOfDay(baseStart) : null;
     const end = baseEnd ? endOfDay(baseEnd) : null;
 
-    // se invertido, mantemos inclusivo sem quebrar
     if (start && end && end < start) return { start: end, end: start };
     return { start, end };
 }
 
 /** Melhor data disponível para um item (ordenação/filtragem). */
-function getItemDate(
-    item: FalecidoItem,
-    criacaoMap: Record<string, string>
-): Date | null {
-    const id = String(item.sepultamento_id);
+function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+    const id = getRegistroId(item);
     const candidatos = [
-        criacaoMap[id], // normalmente "dd/mm/aaaa HH:MM:SS"
+        id ? criacaoMap[id] : undefined,
         (item as any).created_at,
         (item as any).data,
         (item as any).data_inicio_velorio,
@@ -100,28 +97,20 @@ function getItemDate(
     return null;
 }
 
-/* =========================================================
-   Página
-   ========================================================= */
 export default function PaginaHistoricoSepultamentos() {
     const [lista, setLista] = useState<FalecidoItem[]>([]);
     const [loadingLista, setLoadingLista] = useState(false);
 
-    // filtros da lista
     const [pagina, setPagina] = useState(1);
     const [filtroNome, setFiltroNome] = useState("");
     const [filtroDe, setFiltroDe] = useState("");
     const [filtroAte, setFiltroAte] = useState("");
 
-    // modal de detalhes
     const [modalAberto, setModalAberto] = useState(false);
-    const [registroSelecionado, setRegistroSelecionado] =
-        useState<FalecidoItem | null>(null);
+    const [registroSelecionado, setRegistroSelecionado] = useState<FalecidoItem | null>(null);
 
-    // ====== ESTADO DO MODAL DE ANÁLISE ======
     const [analiseOpen, setAnaliseOpen] = useState(false);
 
-    // período padrão do modal: mês atual
     const hoje = new Date();
     const yyyy = hoje.getFullYear();
     const mm = String(hoje.getMonth() + 1).padStart(2, "0");
@@ -131,10 +120,8 @@ export default function PaginaHistoricoSepultamentos() {
     const [aAte, setAAte] = useState(`${yyyy}-${mm}-${dd}`);
     const [somenteTanato, setSomenteTanato] = useState(false);
 
-    // mapa de criação por registro (lista principal)
     const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
 
-    // carregar lista (com data de criação)
     useEffect(() => {
         (async () => {
             setLoadingLista(true);
@@ -150,16 +137,13 @@ export default function PaginaHistoricoSepultamentos() {
 
     const porPagina = 10;
 
-    // FILTRAGEM + ORDEM (DESC)
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
         const { start, end } = makeRange(filtroDe, filtroAte);
 
         const base = (lista || []).filter((reg) => {
-            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) {
-                return false;
-            }
-            // filtrar por data quando informado
+            if (nome && reg.falecido && !reg.falecido.toLowerCase().includes(nome)) return false;
+
             if (start || end) {
                 const d = getItemDate(reg, criacaoMap);
                 if (!d) return false;
@@ -174,7 +158,7 @@ export default function PaginaHistoricoSepultamentos() {
             const db = getItemDate(b, criacaoMap);
             const ta = da ? da.getTime() : 0;
             const tb = db ? db.getTime() : 0;
-            return tb - ta; // DESC (mais novo primeiro)
+            return tb - ta;
         });
 
         return base;
@@ -188,16 +172,16 @@ export default function PaginaHistoricoSepultamentos() {
         setModalAberto(true);
     }
 
-    // (opcional) ainda usado pelo botão Recarregar dentro do modal
     async function carregarAnalise() {
         await listarAnalitico();
     }
 
-    // preload quando abrir o modal de análise (opcional)
     useEffect(() => {
         if (!analiseOpen) return;
         carregarAnalise();
     }, [analiseOpen, aDe, aAte, somenteTanato]);
+
+    const selecionadoId = registroSelecionado ? getRegistroId(registroSelecionado) : undefined;
 
     return (
         <div className="p-4 flex flex-col gap-3">
@@ -227,7 +211,7 @@ export default function PaginaHistoricoSepultamentos() {
                 totalPaginas={totalPaginas}
                 onPaginaAnterior={() => setPagina((p) => Math.max(1, p - 1))}
                 onPaginaProxima={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-                selecionadoId={registroSelecionado?.sepultamento_id}
+                selecionadoId={selecionadoId}  // ✅ agora usa sepultamento_id OU id
                 onSelecionar={abrirModal}
                 criacaoMap={criacaoMap}
             />
@@ -238,7 +222,6 @@ export default function PaginaHistoricoSepultamentos() {
                 onFechar={() => setModalAberto(false)}
             />
 
-            {/* Modal de análise (usa seu próprio carregamento interno) */}
             <ModalAnaliseGeral
                 aberto={analiseOpen}
                 onFechar={() => setAnaliseOpen(false)}

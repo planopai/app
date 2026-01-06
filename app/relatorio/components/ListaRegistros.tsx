@@ -15,15 +15,21 @@ interface Props {
     criacaoMap: Record<string, string>;
 }
 
-/* ===== Parsers de data seguros (BR e ISO) ===== */
+/* =========================
+   Helpers: ID e Datas
+   ========================= */
+
+function getRegistroId(item: FalecidoItem): string {
+    // fallback para registros que não têm sepultamento_id (ex.: "terceiro")
+    const anyItem = item as any;
+    return String(item?.sepultamento_id ?? anyItem?.id ?? "").trim();
+}
 
 // dd/mm/aaaa[, HH:MM:SS]
 function parseBrDate(s: string): Date | null {
     const m = s
         ?.trim()
-        .match(
-            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-        );
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -65,13 +71,10 @@ function parseDateFlex(s?: string | null): Date | null {
    2) item.created_at
    3) item.data / data_inicio_velorio / etc (quando existir)
 */
-function getItemDate(
-    item: FalecidoItem,
-    criacaoMap: Record<string, string>
-): Date | null {
-    const id = String(item.sepultamento_id);
+function getItemDate(item: FalecidoItem, criacaoMap: Record<string, string>): Date | null {
+    const id = getRegistroId(item);
     const candidatos = [
-        criacaoMap[id],
+        id ? criacaoMap[id] : undefined,
         (item as any).created_at,
         (item as any).data,
         (item as any).data_inicio_velorio,
@@ -95,11 +98,13 @@ export default function ListaRegistros({
     onSelecionar,
     criacaoMap,
 }: Props) {
-    // 1) Deduplica por sepultamento_id (a última ocorrência vence)
+    // 1) Deduplica por ID resolvido (a última ocorrência vence)
     const semDuplicados = React.useMemo(() => {
         const map = new Map<string, FalecidoItem>();
         for (const it of registros || []) {
-            map.set(String(it.sepultamento_id), it);
+            const id = getRegistroId(it);
+            if (!id) continue; // evita colapsar tudo em "undefined"
+            map.set(id, it);
         }
         return Array.from(map.values());
     }, [registros]);
@@ -129,11 +134,8 @@ export default function ListaRegistros({
                 ) : (
                     <ul>
                         {ordenados.map((item) => {
-                            const id = String(item.sepultamento_id);
-                            const criadoEm =
-                                criacaoMap[id] || (item as any).created_at || "";
-
-                            // key única e estável mesmo com registros repetidos ao longo das páginas
+                            const id = getRegistroId(item);
+                            const criadoEm = (id ? criacaoMap[id] : "") || (item as any).created_at || "";
                             const key = `${id}-${criadoEm || "s/created"}`;
 
                             return (
@@ -144,9 +146,7 @@ export default function ListaRegistros({
                                             }`}
                                         onClick={() => onSelecionar(item)}
                                     >
-                                        <div className="flex-1 text-left font-medium truncate">
-                                            {item.falecido}
-                                        </div>
+                                        <div className="flex-1 text-left font-medium truncate">{item.falecido}</div>
                                         <div className="text-xs text-muted-foreground text-right">
                                             {criadoEm ? formataDataHora(criadoEm) : "—"}
                                         </div>
