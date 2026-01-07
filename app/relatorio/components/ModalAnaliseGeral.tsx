@@ -62,9 +62,7 @@ function ItemCard({
                 <div className="flex items-start justify-between">
                     <div className="text-3xl font-extrabold leading-none">{fmt0(valor)}</div>
                     {tipo && (
-                        <span
-                            className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}
-                        >
+                        <span className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}>
                             {ICONES_TIPO[tipo] ? `${ICONES_TIPO[tipo]} ` : ""}
                             {tipo}
                         </span>
@@ -92,9 +90,7 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 function parseBrDate(s: string): Date | null {
     const m = s
         .trim()
-        .match(
-            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-        );
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -172,28 +168,26 @@ const titleCase = (s: string) =>
         .map((p) => (p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ""))
         .join(" ");
 
-/**
- * ✅ Correção: usa regra principal fase02 -> fase03 (mais confiável e bate com SQL),
- * mantendo fallback por texto para compatibilidade.
- */
 function isInicioConservacao(log: any): boolean {
-    const ant = norm(String(log?.status_anterior || ""));
-    const novo = norm(String(log?.status_novo || log?.status || ""));
-
-    // regra principal
-    if (ant === "fase02" && novo === "fase03") return true;
-
-    // fallback por texto
     const acao = norm(String(log?.acao || ""));
+    const novo = norm(String(log?.status_novo || log?.status || ""));
     const titulo = norm(String(log?.titulo || ""));
     const texto = `${acao} ${novo} ${titulo}`;
 
-    return (
+    const matchConservacao =
         /inicio\s*(de\s*)?conservacao/.test(texto) ||
         /iniciou\s*conservacao/.test(texto) ||
         /conservacao\s*iniciada/.test(texto) ||
-        /fase\s*0*3\b/.test(texto)
-    );
+        /fase\s*0*3\b/.test(texto);
+
+    const matchMudancaStatus =
+        acao.includes("status") ||
+        acao.includes("situacao") ||
+        acao.includes("fase") ||
+        acao.includes("alterou") ||
+        acao.includes("mudou");
+
+    return matchConservacao && (matchMudancaStatus || titulo.includes("inicio") || novo.includes("inicio"));
 }
 
 function agenteDoLog(log: any): string {
@@ -217,7 +211,8 @@ function agenteDoLog(log: any): string {
     try {
         const det =
             typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
-        const poss = pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
+        const poss =
+            pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
         if (poss) return String(poss).trim();
     } catch { }
     return "";
@@ -230,16 +225,18 @@ function logTs(log: any): number {
 }
 
 /**
- * ✅ Correção do TANATO para bater com SQL:
- * retorna TODOS os "inícios de conservação" no período (conta por LOG),
- * em vez de dedupe por sepultamento.
+ * Retorna o PRIMEIRO "Início de Conservação" dentro do período:
+ * - Isso garante que NÃO conta 2 vezes no mesmo atendimento/sepultamento.
+ * - Prefere com agente preenchido.
+ * - Se nenhum com agente, pega o mais antigo dentro do período mesmo assim.
  */
-function findIniciosNoPeriodo(
+function findPrimeiroInicioNoPeriodo(
     logs: any[],
     start: Date | null,
     end: Date | null
-): any[] {
-    const out: any[] = [];
+): any | null {
+    let bestAny: any | null = null;
+    let bestWithAgent: any | null = null;
 
     for (const log of logs || []) {
         if (!isInicioConservacao(log)) continue;
@@ -250,11 +247,18 @@ function findIniciosNoPeriodo(
         if (start && t < start.getTime()) continue;
         if (end && t > end.getTime()) continue;
 
-        out.push(log);
+        // bestAny
+        if (!bestAny) bestAny = log;
+        else if (t < logTs(bestAny)) bestAny = log;
+
+        const ag = agenteDoLog(log).trim();
+        if (ag) {
+            if (!bestWithAgent) bestWithAgent = log;
+            else if (t < logTs(bestWithAgent)) bestWithAgent = log;
+        }
     }
 
-    out.sort((a, b) => logTs(a) - logTs(b));
-    return out;
+    return bestWithAgent || bestAny;
 }
 
 /* =========================
@@ -359,7 +363,9 @@ export default function ModalAnaliseGeral({
 
     /* ==========================================================
        TANATO: "Tanato = Sim" (analítico) + "Início de Conservação" (log)
-       ✅ Agora conta por LOG (fase02->fase03) para bater com SQL.
+       - NÃO conta início 2x no mesmo atendimento/sepultamento:
+         1 entidade = no máximo 1 contagem (pega o primeiro início no período)
+       - busca logs só dos TANATO=SIM (economiza chamadas)
        ========================================================== */
     type CacheEntry = { logs: any[]; fetched: boolean };
 
@@ -372,6 +378,7 @@ export default function ModalAnaliseGeral({
         const entityMap = new Map<string, Set<string>>();
 
         for (const r of dados || []) {
+            // ✅ parâmetro extra: Tanato = Sim
             if (normSimNao(String((r as any).tanato || "")) !== "sim") continue;
 
             const key = getEntityKey(r);
@@ -471,7 +478,7 @@ export default function ModalAnaliseGeral({
     } = React.useMemo(() => {
         const { start, end } = rangeTanato;
 
-        // TANATO: agora conta por LOG (não dedupe)
+        // TANATO: por entidade (dedupe)
         const byKey: Record<string, number> = {};
         const displayByKey: Record<string, string> = {};
         let semResp = 0;
@@ -485,28 +492,26 @@ export default function ModalAnaliseGeral({
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
-        let cPref = 0,
-            cPart = 0,
-            cAssoc = 0;
+        let cPref = 0, cPart = 0, cAssoc = 0;
 
-        // ===== TANATO (Tanato=Sim + inícios no período) =====
-        // ✅ Conta cada início (fase02->fase03) encontrado no período (bate com SQL)
+        // ===== TANATO (Tanato=Sim + primeiro "início" no período) =====
+        // 1 entidade = no máximo 1 contagem => NÃO conta duas vezes no mesmo atendimento
         for (const [entityKey, entry] of Object.entries(cacheRef.current)) {
             if (!entry?.fetched) continue;
+
+            // segurança: só considera TANATO=SIM (parâmetro extra)
             if (!tanatoEntities.keySet.has(entityKey)) continue;
 
-            const inicios = findIniciosNoPeriodo(entry.logs || [], start, end);
-            if (!inicios.length) continue;
+            const inicio = findPrimeiroInicioNoPeriodo(entry.logs || [], start, end);
+            if (!inicio) continue; // sem início no período => não conta tanato
 
-            for (const log of inicios) {
-                const nome = agenteDoLog(log).trim();
-                if (nome) {
-                    const k = norm(nome);
-                    byKey[k] = (byKey[k] || 0) + 1;
-                    if (!displayByKey[k]) displayByKey[k] = titleCase(nome);
-                } else {
-                    semResp++;
-                }
+            const nome = agenteDoLog(inicio).trim();
+            if (nome) {
+                const k = norm(nome);
+                byKey[k] = (byKey[k] || 0) + 1;
+                if (!displayByKey[k]) displayByKey[k] = titleCase(nome);
+            } else {
+                semResp++;
             }
         }
 
@@ -534,8 +539,7 @@ export default function ModalAnaliseGeral({
                 ""
             ).toLowerCase();
             if (convTxt.includes("prefeitura")) cPref++;
-            else if (convTxt.includes("associado") || convTxt.includes("associação"))
-                cAssoc++;
+            else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
             else if (convTxt.includes("particular")) cPart++;
         }
 
@@ -582,8 +586,7 @@ export default function ModalAnaliseGeral({
                     <div>
                         <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
                         <p className="text-xs text-gray-500">
-                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)}{" "}
-                            registro(s)
+                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -685,29 +688,12 @@ export default function ModalAnaliseGeral({
                             {/* CONVÊNIOS */}
                             <div className="rounded-2xl border overflow-hidden mb-6">
                                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">
-                                        Atendimentos por convênio
-                                    </div>
+                                    <div className="text-sm font-semibold">Atendimentos por convênio</div>
                                 </div>
                                 <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard
-                                        titulo="Prefeitura"
-                                        valor={convPref}
-                                        tipo="Convênio"
-                                        destaque="indigo"
-                                    />
-                                    <ItemCard
-                                        titulo="Particular"
-                                        valor={convPart}
-                                        tipo="Convênio"
-                                        destaque="teal"
-                                    />
-                                    <ItemCard
-                                        titulo="Associado"
-                                        valor={convAssoc}
-                                        tipo="Convênio"
-                                        destaque="rose"
-                                    />
+                                    <ItemCard titulo="Prefeitura" valor={convPref} tipo="Convênio" destaque="indigo" />
+                                    <ItemCard titulo="Particular" valor={convPart} tipo="Convênio" destaque="teal" />
+                                    <ItemCard titulo="Associado" valor={convAssoc} tipo="Convênio" destaque="rose" />
                                 </div>
                             </div>
 
@@ -715,12 +701,8 @@ export default function ModalAnaliseGeral({
                             {!somenteTanato && (
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                        <div className="text-sm font-semibold">
-                                            Itens consumidos (Arrumação)
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                            Mostrando os 12 itens
-                                        </div>
+                                        <div className="text-sm font-semibold">Itens consumidos (Arrumação)</div>
+                                        <div className="text-xs text-gray-500">Mostrando os 12 itens</div>
                                     </div>
                                     <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                         {ARR_KEYS.map((k, idx) => (
