@@ -35,7 +35,7 @@ function ItemCard({
     titulo: string;
     valor: number;
     tipo?: string;
-    subtexto?: string;
+    subtexto?: React.ReactNode;
     destaque?: "blue" | "yellow" | "sky" | "teal" | "indigo" | "rose";
 }) {
     const leftBar = {
@@ -60,13 +60,9 @@ function ItemCard({
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className={`border-l-4 ${leftBar} p-4`}>
                 <div className="flex items-start justify-between">
-                    <div className="text-3xl font-extrabold leading-none">
-                        {fmt0(valor)}
-                    </div>
+                    <div className="text-3xl font-extrabold leading-none">{fmt0(valor)}</div>
                     {tipo && (
-                        <span
-                            className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}
-                        >
+                        <span className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}>
                             {ICONES_TIPO[tipo] ? `${ICONES_TIPO[tipo]} ` : ""}
                             {tipo}
                         </span>
@@ -94,9 +90,7 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 function parseBrDate(s: string): Date | null {
     const m = s
         .trim()
-        .match(
-            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-        );
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -163,12 +157,7 @@ function makeRange(aDe?: string, aAte?: string) {
 }
 
 /* =========================
-   Helpers TANATO (pegar APENAS o "Início de Conservação" puro)
-   Regras:
-   - Só conta o PRIMEIRO início no período por entidade
-   - Só conta se for log "atualizou status" (não "editou")
-   - Só conta se detalhes estiver vazio (sem edições/alterações)
-   - Só conta se usuário for Sandro ou Joseildo
+   Helpers TANATO (somente início puro)
    ========================= */
 const norm = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -183,6 +172,17 @@ function logTs(log: any): number {
     const s = String(log?.datahora || log?.data || log?.created_at || "");
     const d = parseDateFlex(s);
     return d ? d.getTime() : Number.NaN;
+}
+
+function fmtDateHora(ts: number) {
+    if (!Number.isFinite(ts)) return "";
+    return new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(new Date(ts));
 }
 
 function agenteDoLog(log: any): string {
@@ -206,8 +206,7 @@ function agenteDoLog(log: any): string {
     try {
         const det =
             typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
-        const poss =
-            pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
+        const poss = pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
         if (poss) return String(poss).trim();
     } catch { }
     return "";
@@ -248,10 +247,10 @@ function isInicioConservacaoPuro(log: any): boolean {
     const titulo = norm(String(log?.titulo || ""));
     const texto = `${acao} ${statusNovo} ${titulo}`;
 
-    // 1) Excluir qualquer tipo de "editou"
+    // 1) excluir "editou"
     if (acao.includes("edit")) return false;
 
-    // 2) Tem que ser mudança de status
+    // 2) tem que ser mudança de status
     const matchMudancaStatus =
         acao.includes("atualizou status") ||
         acao.includes("atualizou situacao") ||
@@ -261,35 +260,33 @@ function isInicioConservacaoPuro(log: any): boolean {
 
     if (!matchMudancaStatus) return false;
 
-    // 3) Exigir fase02 -> fase03 quando existir status_anterior/status_novo
+    // 3) exigir fase02 -> fase03 quando houver campos
     const temFases = !!(log?.status_anterior || log?.status_novo);
     if (temFases) {
         if (!(statusAnterior === "fase02" && statusNovo === "fase03")) return false;
     } else {
-        // fallback textual
         const matchConservacao =
             /inicio\s*(de\s*)?conservacao/.test(texto) ||
             /iniciou\s*conservacao/.test(texto) ||
             /conservacao\s*iniciada/.test(texto) ||
             /fase\s*0*3\b/.test(texto);
-
         if (!matchConservacao) return false;
     }
 
-    // 4) Detalhes devem estar vazios
+    // 4) detalhes vazio
     if (!isDetalhesVazio(log)) return false;
 
     return true;
 }
 
-function agentePermitido(log: any): "Sandro" | "Joseildo" | "" {
+type AgenteFix = "Sandro" | "Joseildo";
+function agentePermitido(log: any): AgenteFix | "" {
     const a = norm(agenteDoLog(log));
     if (a === "sandro") return "Sandro";
     if (a === "joseildo") return "Joseildo";
     return "";
 }
 
-/** Primeiro início PURO no período (mais antigo) */
 function findPrimeiroInicioPuroNoPeriodo(
     logs: any[],
     start: Date | null,
@@ -334,17 +331,99 @@ function getIdsParaTentar(r: RegistroAnalise): string[] {
     return Array.from(new Set(candidates));
 }
 
-/** chave de entidade: prioriza sepultamento_id; se não tiver, cai no primeiro ID disponível */
 function getEntityKey(r: RegistroAnalise): string {
     const anyR = r as any;
-    const primary = String(
-        anyR.sepultamento_id || anyR.sepultamentoId || anyR.id_sepultamento || ""
-    ).trim();
-
+    const primary = String(anyR.sepultamento_id || anyR.sepultamentoId || anyR.id_sepultamento || "").trim();
     if (primary) return primary;
 
     const ids = getIdsParaTentar(r);
     return ids[0] || "";
+}
+
+/* =========================
+   Falecido (para o modal)
+   ========================= */
+function getFalecidoNome(r: RegistroAnalise): string {
+    const anyR = r as any;
+    const nome =
+        anyR.falecido ||
+        anyR.falecido_nome ||
+        anyR.nome_falecido ||
+        anyR.falecidoNome ||
+        anyR.nomeFalecido ||
+        anyR.nome ||
+        anyR.falecido_nome_completo ||
+        "";
+    return String(nome || "").trim();
+}
+
+/* =========================
+   Modal de lista (Tanato)
+   ========================= */
+type TanatoItem = {
+    entityKey: string;
+    falecido: string;
+    ts: number;
+};
+
+function ModalListaTanato({
+    aberto,
+    onFechar,
+    agente,
+    itens,
+}: {
+    aberto: boolean;
+    onFechar: () => void;
+    agente: string;
+    itens: TanatoItem[];
+}) {
+    if (!aberto) return null;
+
+    const itensOrdenados = [...(itens || [])].sort((a, b) => a.ts - b.ts);
+
+    return (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
+            <div className="bg-white w-[96%] md:w-[80%] lg:w-[60%] rounded-2xl shadow-2xl max-h-[90%] overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b p-4 bg-white/90 backdrop-blur">
+                    <div>
+                        <div className="text-base font-bold">Tanatopraxia — {agente}</div>
+                        <div className="text-xs text-gray-500">{fmt0(itensOrdenados.length)} falecido(s)</div>
+                    </div>
+                    <button
+                        onClick={onFechar}
+                        className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                    >
+                        Fechar
+                    </button>
+                </div>
+
+                <div className="p-4 overflow-y-auto max-h-[78vh]">
+                    {itensOrdenados.length === 0 ? (
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                            Nenhum registro para este agente no período.
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {itensOrdenados.map((it) => (
+                                <div
+                                    key={it.entityKey}
+                                    className="rounded-xl border border-gray-200 bg-white p-3"
+                                >
+                                    <div className="text-sm font-semibold text-gray-900">
+                                        {it.falecido || "(Sem nome do falecido)"}
+                                    </div>
+                                    <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-3">
+                                        <span>Data/hora: {fmtDateHora(it.ts) || "—"}</span>
+                                        <span>Entidade: {it.entityKey}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 /* =========================
@@ -374,6 +453,12 @@ export default function ModalAnaliseGeral({
     const [busy, setBusy] = React.useState(false);
     const [dados, setDados] = React.useState<RegistroAnalise[]>([]);
     const [erro, setErro] = React.useState<string | null>(null);
+
+    const [tanatoModal, setTanatoModal] = React.useState<{
+        aberto: boolean;
+        agente: string;
+        itens: TanatoItem[];
+    }>({ aberto: false, agente: "", itens: [] });
 
     const carregar = React.useCallback(async () => {
         try {
@@ -412,7 +497,6 @@ export default function ModalAnaliseGeral({
 
     const registrosComEventoNoPeriodo = dadosPeriodo.length;
 
-    // Período para TANATO ser definido pelo filtro da tela
     const rangeTanato = React.useMemo(() => makeRange(aDe, aAte), [aDe, aAte]);
 
     type CacheEntry = { logs: any[]; fetched: boolean };
@@ -421,7 +505,6 @@ export default function ModalAnaliseGeral({
     const inFlightRef = React.useRef<Set<string>>(new Set());
     const [cacheVersion, setCacheVersion] = React.useState(0);
 
-    // Lista de entidades TANATO=SIM + ids para tentar buscar log
     const tanatoEntities = React.useMemo(() => {
         const entityMap = new Map<string, Set<string>>();
 
@@ -447,6 +530,19 @@ export default function ModalAnaliseGeral({
         const keySet = new Set(list.map((x) => x.key));
 
         return { list, keySet };
+    }, [dados]);
+
+    // Mapa entidade -> nome do falecido (para o modal)
+    const falecidoByEntity = React.useMemo(() => {
+        const m: Record<string, string> = {};
+        for (const r of dados || []) {
+            const k = getEntityKey(r);
+            if (!k) continue;
+            if (m[k]) continue;
+            const nome = getFalecidoNome(r);
+            if (nome) m[k] = nome;
+        }
+        return m;
     }, [dados]);
 
     React.useEffect(() => {
@@ -507,6 +603,7 @@ export default function ModalAnaliseGeral({
     const {
         tanatoCount,
         agentesOrdenados,
+        tanatoItensPorAgente,
         assistTotal,
         ornNatural,
         ornArtificial,
@@ -519,6 +616,10 @@ export default function ModalAnaliseGeral({
 
         const byKey: Record<string, number> = {};
         const displayByKey: Record<string, string> = {};
+        const itensPorAgente: Record<string, TanatoItem[]> = {
+            sandro: [],
+            joseildo: [],
+        };
 
         let assist = 0;
         let ornNat = 0;
@@ -543,9 +644,25 @@ export default function ModalAnaliseGeral({
             const agente = agentePermitido(inicio);
             if (!agente) continue;
 
-            const k = norm(agente);
-            byKey[k] = (byKey[k] || 0) + 1;
-            displayByKey[k] = agente;
+            const agenteK = norm(agente); // "sandro" | "joseildo"
+            byKey[agenteK] = (byKey[agenteK] || 0) + 1;
+            displayByKey[agenteK] = agente;
+
+            // itens para auditoria no modal
+            const ts = logTs(inicio);
+            const falecido = falecidoByEntity[entityKey] || "";
+            itensPorAgente[agenteK] = itensPorAgente[agenteK] || [];
+            itensPorAgente[agenteK].push({ entityKey, falecido, ts });
+        }
+
+        // dedupe por entityKey dentro do agente (segurança extra)
+        for (const k of Object.keys(itensPorAgente)) {
+            const seen = new Set<string>();
+            itensPorAgente[k] = (itensPorAgente[k] || []).filter((it) => {
+                if (seen.has(it.entityKey)) return false;
+                seen.add(it.entityKey);
+                return true;
+            });
         }
 
         // ===== RESTO (analítico filtrado por dadosPeriodo) =====
@@ -572,13 +689,12 @@ export default function ModalAnaliseGeral({
                 ""
             ).toLowerCase();
             if (convTxt.includes("prefeitura")) cPref++;
-            else if (convTxt.includes("associado") || convTxt.includes("associação"))
-                cAssoc++;
+            else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
             else if (convTxt.includes("particular")) cPart++;
         }
 
         const agentesOrdenados = Object.entries(byKey)
-            .map(([k, count]) => ({ display: displayByKey[k] || titleCase(k), count }))
+            .map(([k, count]) => ({ key: k, display: displayByKey[k] || titleCase(k), count }))
             .sort((a, b) => b.count - a.count);
 
         const tanatoCount = agentesOrdenados.reduce((s, a) => s + a.count, 0);
@@ -586,6 +702,7 @@ export default function ModalAnaliseGeral({
         return {
             tanatoCount,
             agentesOrdenados,
+            tanatoItensPorAgente: itensPorAgente,
             assistTotal: assist,
             ornNatural: ornNat,
             ornArtificial: ornArt,
@@ -594,164 +711,190 @@ export default function ModalAnaliseGeral({
             convPart: cPart,
             convAssoc: cAssoc,
         };
-    }, [dadosPeriodo, rangeTanato, cacheVersion, tanatoEntities]);
+    }, [dadosPeriodo, rangeTanato, cacheVersion, tanatoEntities, falecidoByEntity]);
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
 
     const subTanato = React.useMemo(() => {
-        const parts: string[] = [];
-        if (agentesOrdenados.length) {
-            parts.push(...agentesOrdenados.map((a) => `${a.display}: ${fmt0(a.count)}`));
-        }
-        return parts.length ? parts.join(" · ") : undefined;
-    }, [agentesOrdenados]);
+        if (!agentesOrdenados.length) return undefined;
+
+        return (
+            <div className="flex flex-wrap gap-x-2 gap-y-1">
+                {agentesOrdenados.map((a, idx) => (
+                    <React.Fragment key={a.key}>
+                        <button
+                            type="button"
+                            className="underline decoration-dotted hover:opacity-80"
+                            onClick={() => {
+                                const itens = tanatoItensPorAgente?.[a.key] || [];
+                                setTanatoModal({ aberto: true, agente: a.display, itens });
+                            }}
+                            title="Clique para ver a lista de falecidos"
+                        >
+                            {a.display}: {fmt0(a.count)}
+                        </button>
+                        {idx < agentesOrdenados.length - 1 ? <span>·</span> : null}
+                    </React.Fragment>
+                ))}
+            </div>
+        );
+    }, [agentesOrdenados, tanatoItensPorAgente]);
 
     if (!aberto) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
-                {/* Cabeçalho */}
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/90 p-4 backdrop-blur">
-                    <div>
-                        <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
-                        <p className="text-xs text-gray-500">
-                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)}{" "}
-                            registro(s)
-                        </p>
+        <>
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
+                    {/* Cabeçalho */}
+                    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/90 p-4 backdrop-blur">
+                        <div>
+                            <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
+                            <p className="text-xs text-gray-500">
+                                Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleRecarregar}
+                                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                            >
+                                Recarregar
+                            </button>
+                            <button
+                                onClick={onFechar}
+                                className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                            >
+                                Fechar
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleRecarregar}
-                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-                        >
-                            Recarregar
-                        </button>
-                        <button
-                            onClick={onFechar}
-                            className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-                        >
-                            Fechar
-                        </button>
-                    </div>
-                </div>
 
-                {/* Filtros */}
-                <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <label className="flex flex-col gap-1">
-                        <span className="text-xs text-gray-500">Data inicial</span>
-                        <input
-                            type="date"
-                            value={aDe || ""}
-                            onChange={(e) => setADe(e.target.value)}
-                            className="rounded-md border px-3 py-2"
-                        />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                        <span className="text-xs text-gray-500">Data final</span>
-                        <input
-                            type="date"
-                            value={aAte || ""}
-                            onChange={(e) => setAAte(e.target.value)}
-                            className="rounded-md border px-3 py-2"
-                        />
-                    </label>
-                    <label className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            checked={!!somenteTanato}
-                            onChange={(e) => setSomenteTanato(e.target.checked)}
-                        />
-                        <span className="text-sm">Ocultar cards de itens</span>
-                    </label>
-                    <div className="text-sm text-gray-500 self-center">
-                        Se informar apenas uma data, usamos <b>só aquele dia</b>.
+                    {/* Filtros */}
+                    <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <label className="flex flex-col gap-1">
+                            <span className="text-xs text-gray-500">Data inicial</span>
+                            <input
+                                type="date"
+                                value={aDe || ""}
+                                onChange={(e) => setADe(e.target.value)}
+                                className="rounded-md border px-3 py-2"
+                            />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                            <span className="text-xs text-gray-500">Data final</span>
+                            <input
+                                type="date"
+                                value={aAte || ""}
+                                onChange={(e) => setAAte(e.target.value)}
+                                className="rounded-md border px-3 py-2"
+                            />
+                        </label>
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={!!somenteTanato}
+                                onChange={(e) => setSomenteTanato(e.target.checked)}
+                            />
+                            <span className="text-sm">Ocultar cards de itens</span>
+                        </label>
+                        <div className="text-sm text-gray-500 self-center">
+                            Se informar apenas uma data, usamos <b>só aquele dia</b>.
+                        </div>
                     </div>
-                </div>
 
-                {/* Corpo */}
-                <div className="p-4 pt-0">
-                    {busy ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
-                            Carregando análise…
-                        </div>
-                    ) : erro ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-red-600">
-                            {erro}
-                        </div>
-                    ) : dadosPeriodo.length === 0 ? (
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
-                            Nenhum dado para o período/filtro selecionado.
-                        </div>
-                    ) : (
-                        <>
-                            {/* ITENS PRINCIPAIS */}
-                            <div className="rounded-2xl border overflow-hidden mb-6">
-                                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">Itens principais</div>
-                                </div>
-                                <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard
-                                        titulo="Tanatopraxia"
-                                        valor={tanatoCount}
-                                        subtexto={subTanato}
-                                        tipo="Principal"
-                                        destaque="indigo"
-                                    />
-                                    <ItemCard
-                                        titulo="Assistências"
-                                        valor={assistTotal}
-                                        tipo="Principal"
-                                        destaque="teal"
-                                    />
-                                    <ItemCard
-                                        titulo="Ornamentações"
-                                        valor={ornTotal}
-                                        subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(
-                                            ornArtificial || 0
-                                        )}`}
-                                        tipo="Principal"
-                                        destaque="rose"
-                                    />
-                                </div>
+                    {/* Corpo */}
+                    <div className="p-4 pt-0">
+                        {busy ? (
+                            <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                                Carregando análise…
                             </div>
-
-                            {/* CONVÊNIOS */}
-                            <div className="rounded-2xl border overflow-hidden mb-6">
-                                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                    <div className="text-sm font-semibold">Atendimentos por convênio</div>
-                                </div>
-                                <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                    <ItemCard titulo="Prefeitura" valor={convPref} tipo="Convênio" destaque="indigo" />
-                                    <ItemCard titulo="Particular" valor={convPart} tipo="Convênio" destaque="teal" />
-                                    <ItemCard titulo="Associado" valor={convAssoc} tipo="Convênio" destaque="rose" />
-                                </div>
+                        ) : erro ? (
+                            <div className="rounded-lg border p-6 text-center text-sm text-red-600">
+                                {erro}
                             </div>
-
-                            {/* 12 ITENS DE ARRUMAÇÃO */}
-                            {!somenteTanato && (
+                        ) : dadosPeriodo.length === 0 ? (
+                            <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                                Nenhum dado para o período/filtro selecionado.
+                            </div>
+                        ) : (
+                            <>
+                                {/* ITENS PRINCIPAIS */}
                                 <div className="rounded-2xl border overflow-hidden mb-6">
                                     <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                                        <div className="text-sm font-semibold">Itens consumidos (Arrumação)</div>
-                                        <div className="text-xs text-gray-500">Mostrando os 12 itens</div>
+                                        <div className="text-sm font-semibold">Itens principais</div>
                                     </div>
-                                    <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                        {ARR_KEYS.map((k, idx) => (
-                                            <ItemCard
-                                                key={k}
-                                                titulo={ARR_LABELS[k]}
-                                                valor={qtdArrumacaoFixas[k] || 0}
-                                                tipo="Conservação do Corpo"
-                                                destaque={DESTAQUES[idx % DESTAQUES.length]}
-                                            />
-                                        ))}
+                                    <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        <ItemCard
+                                            titulo="Tanatopraxia"
+                                            valor={tanatoCount}
+                                            subtexto={subTanato}
+                                            tipo="Principal"
+                                            destaque="indigo"
+                                        />
+                                        <ItemCard
+                                            titulo="Assistências"
+                                            valor={assistTotal}
+                                            tipo="Principal"
+                                            destaque="teal"
+                                        />
+                                        <ItemCard
+                                            titulo="Ornamentações"
+                                            valor={ornTotal}
+                                            subtexto={`Natural: ${fmt0(ornNatural || 0)} · Artificial: ${fmt0(
+                                                ornArtificial || 0
+                                            )}`}
+                                            tipo="Principal"
+                                            destaque="rose"
+                                        />
                                     </div>
                                 </div>
-                            )}
-                        </>
-                    )}
+
+                                {/* CONVÊNIOS */}
+                                <div className="rounded-2xl border overflow-hidden mb-6">
+                                    <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                        <div className="text-sm font-semibold">Atendimentos por convênio</div>
+                                    </div>
+                                    <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        <ItemCard titulo="Prefeitura" valor={convPref} tipo="Convênio" destaque="indigo" />
+                                        <ItemCard titulo="Particular" valor={convPart} tipo="Convênio" destaque="teal" />
+                                        <ItemCard titulo="Associado" valor={convAssoc} tipo="Convênio" destaque="rose" />
+                                    </div>
+                                </div>
+
+                                {/* 12 ITENS DE ARRUMAÇÃO */}
+                                {!somenteTanato && (
+                                    <div className="rounded-2xl border overflow-hidden mb-6">
+                                        <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                            <div className="text-sm font-semibold">Itens consumidos (Arrumação)</div>
+                                            <div className="text-xs text-gray-500">Mostrando os 12 itens</div>
+                                        </div>
+                                        <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                            {ARR_KEYS.map((k, idx) => (
+                                                <ItemCard
+                                                    key={k}
+                                                    titulo={ARR_LABELS[k]}
+                                                    valor={qtdArrumacaoFixas[k] || 0}
+                                                    tipo="Conservação do Corpo"
+                                                    destaque={DESTAQUES[idx % DESTAQUES.length]}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>
+
+            {/* Modal de auditoria do Tanato */}
+            <ModalListaTanato
+                aberto={tanatoModal.aberto}
+                agente={tanatoModal.agente}
+                itens={tanatoModal.itens}
+                onFechar={() => setTanatoModal({ aberto: false, agente: "", itens: [] })}
+            />
+        </>
     );
 }
