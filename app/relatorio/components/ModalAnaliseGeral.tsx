@@ -60,9 +60,13 @@ function ItemCard({
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className={`border-l-4 ${leftBar} p-4`}>
                 <div className="flex items-start justify-between">
-                    <div className="text-3xl font-extrabold leading-none">{fmt0(valor)}</div>
+                    <div className="text-3xl font-extrabold leading-none">
+                        {fmt0(valor)}
+                    </div>
                     {tipo && (
-                        <span className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}>
+                        <span
+                            className={`ml-2 rounded-md px-2 py-1 text-[11px] font-semibold ${chipColor}`}
+                        >
                             {ICONES_TIPO[tipo] ? `${ICONES_TIPO[tipo]} ` : ""}
                             {tipo}
                         </span>
@@ -90,7 +94,9 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 function parseBrDate(s: string): Date | null {
     const m = s
         .trim()
-        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        .match(
+            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+        );
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -157,7 +163,12 @@ function makeRange(aDe?: string, aAte?: string) {
 }
 
 /* =========================
-   Helpers de log (INÍCIO DE CONSERVAÇÃO)
+   Helpers TANATO (pegar APENAS o "Início de Conservação" puro)
+   Regras:
+   - Só conta o PRIMEIRO início no período por entidade
+   - Só conta se for log "atualizou status" (não "editou")
+   - Só conta se detalhes estiver vazio (sem edições/alterações)
+   - Só conta se usuário for Sandro ou Joseildo
    ========================= */
 const norm = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -168,26 +179,10 @@ const titleCase = (s: string) =>
         .map((p) => (p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ""))
         .join(" ");
 
-function isInicioConservacao(log: any): boolean {
-    const acao = norm(String(log?.acao || ""));
-    const novo = norm(String(log?.status_novo || log?.status || ""));
-    const titulo = norm(String(log?.titulo || ""));
-    const texto = `${acao} ${novo} ${titulo}`;
-
-    const matchConservacao =
-        /inicio\s*(de\s*)?conservacao/.test(texto) ||
-        /iniciou\s*conservacao/.test(texto) ||
-        /conservacao\s*iniciada/.test(texto) ||
-        /fase\s*0*3\b/.test(texto);
-
-    const matchMudancaStatus =
-        acao.includes("status") ||
-        acao.includes("situacao") ||
-        acao.includes("fase") ||
-        acao.includes("alterou") ||
-        acao.includes("mudou");
-
-    return matchConservacao && (matchMudancaStatus || titulo.includes("inicio") || novo.includes("inicio"));
+function logTs(log: any): number {
+    const s = String(log?.datahora || log?.data || log?.created_at || "");
+    const d = parseDateFlex(s);
+    return d ? d.getTime() : Number.NaN;
 }
 
 function agenteDoLog(log: any): string {
@@ -218,47 +213,106 @@ function agenteDoLog(log: any): string {
     return "";
 }
 
-function logTs(log: any): number {
-    const s = String(log?.datahora || log?.data || log?.created_at || "");
-    const d = parseDateFlex(s);
-    return d ? d.getTime() : Number.NaN;
+function isDetalhesVazio(log: any): boolean {
+    const d = log?.detalhes;
+
+    if (d === null || d === undefined) return true;
+
+    if (typeof d === "string") {
+        const s = d.trim();
+        if (!s) return true;
+        if (s === "null") return true;
+        if (s === "{}") return true;
+
+        try {
+            const obj = JSON.parse(s);
+            if (obj === null) return true;
+            if (typeof obj === "object" && obj && Object.keys(obj).length === 0) return true;
+            return false;
+        } catch {
+            return false;
+        }
+    }
+
+    if (typeof d === "object") {
+        return Object.keys(d || {}).length === 0;
+    }
+
+    return false;
 }
 
-/**
- * Retorna o PRIMEIRO "Início de Conservação" dentro do período:
- * - Isso garante que NÃO conta 2 vezes no mesmo atendimento/sepultamento.
- * - Prefere com agente preenchido.
- * - Se nenhum com agente, pega o mais antigo dentro do período mesmo assim.
- */
-function findPrimeiroInicioNoPeriodo(
+function isInicioConservacaoPuro(log: any): boolean {
+    const acao = norm(String(log?.acao || ""));
+    const statusAnterior = norm(String(log?.status_anterior || ""));
+    const statusNovo = norm(String(log?.status_novo || log?.status || ""));
+    const titulo = norm(String(log?.titulo || ""));
+    const texto = `${acao} ${statusNovo} ${titulo}`;
+
+    // 1) Excluir qualquer tipo de "editou"
+    if (acao.includes("edit")) return false;
+
+    // 2) Tem que ser mudança de status
+    const matchMudancaStatus =
+        acao.includes("atualizou status") ||
+        acao.includes("atualizou situacao") ||
+        acao.includes("alterou status") ||
+        acao.includes("mudou status") ||
+        acao.includes("status");
+
+    if (!matchMudancaStatus) return false;
+
+    // 3) Exigir fase02 -> fase03 quando existir status_anterior/status_novo
+    const temFases = !!(log?.status_anterior || log?.status_novo);
+    if (temFases) {
+        if (!(statusAnterior === "fase02" && statusNovo === "fase03")) return false;
+    } else {
+        // fallback textual
+        const matchConservacao =
+            /inicio\s*(de\s*)?conservacao/.test(texto) ||
+            /iniciou\s*conservacao/.test(texto) ||
+            /conservacao\s*iniciada/.test(texto) ||
+            /fase\s*0*3\b/.test(texto);
+
+        if (!matchConservacao) return false;
+    }
+
+    // 4) Detalhes devem estar vazios
+    if (!isDetalhesVazio(log)) return false;
+
+    return true;
+}
+
+function agentePermitido(log: any): "Sandro" | "Joseildo" | "" {
+    const a = norm(agenteDoLog(log));
+    if (a === "sandro") return "Sandro";
+    if (a === "joseildo") return "Joseildo";
+    return "";
+}
+
+/** Primeiro início PURO no período (mais antigo) */
+function findPrimeiroInicioPuroNoPeriodo(
     logs: any[],
     start: Date | null,
     end: Date | null
 ): any | null {
-    let bestAny: any | null = null;
-    let bestWithAgent: any | null = null;
+    let best: any | null = null;
 
     for (const log of logs || []) {
-        if (!isInicioConservacao(log)) continue;
+        if (!isInicioConservacaoPuro(log)) continue;
+
+        const ag = agentePermitido(log);
+        if (!ag) continue;
 
         const t = logTs(log);
         if (Number.isNaN(t)) continue;
-
         if (start && t < start.getTime()) continue;
         if (end && t > end.getTime()) continue;
 
-        // bestAny
-        if (!bestAny) bestAny = log;
-        else if (t < logTs(bestAny)) bestAny = log;
-
-        const ag = agenteDoLog(log).trim();
-        if (ag) {
-            if (!bestWithAgent) bestWithAgent = log;
-            else if (t < logTs(bestWithAgent)) bestWithAgent = log;
-        }
+        if (!best) best = log;
+        else if (t < logTs(best)) best = log;
     }
 
-    return bestWithAgent || bestAny;
+    return best;
 }
 
 /* =========================
@@ -361,12 +415,6 @@ export default function ModalAnaliseGeral({
     // Período para TANATO ser definido pelo filtro da tela
     const rangeTanato = React.useMemo(() => makeRange(aDe, aAte), [aDe, aAte]);
 
-    /* ==========================================================
-       TANATO: "Tanato = Sim" (analítico) + "Início de Conservação" (log)
-       - NÃO conta início 2x no mesmo atendimento/sepultamento:
-         1 entidade = no máximo 1 contagem (pega o primeiro início no período)
-       - busca logs só dos TANATO=SIM (economiza chamadas)
-       ========================================================== */
     type CacheEntry = { logs: any[]; fetched: boolean };
 
     const cacheRef = React.useRef<Record<string, CacheEntry>>({});
@@ -378,7 +426,6 @@ export default function ModalAnaliseGeral({
         const entityMap = new Map<string, Set<string>>();
 
         for (const r of dados || []) {
-            // ✅ parâmetro extra: Tanato = Sim
             if (normSimNao(String((r as any).tanato || "")) !== "sim") continue;
 
             const key = getEntityKey(r);
@@ -405,7 +452,6 @@ export default function ModalAnaliseGeral({
     React.useEffect(() => {
         if (!aberto) return;
 
-        // evita travar se tiver coisa demais
         if (tanatoEntities.list.length > 800) return;
 
         const targets = tanatoEntities.list.filter(
@@ -427,7 +473,6 @@ export default function ModalAnaliseGeral({
                     try {
                         let logs: any[] = [];
 
-                        // tenta ids até achar algum retorno que contenha logs
                         for (const id of item.idsToTry) {
                             try {
                                 const res = await listarLogPorId(id);
@@ -435,9 +480,7 @@ export default function ModalAnaliseGeral({
                                     logs = res;
                                     break;
                                 }
-                            } catch {
-                                // tenta próximo id
-                            }
+                            } catch { }
                         }
 
                         cacheRef.current[item.key] = { logs, fetched: true };
@@ -461,13 +504,9 @@ export default function ModalAnaliseGeral({
         };
     }, [aberto, tanatoEntities]);
 
-    /* =========================
-       Agregações
-       ========================= */
     const {
         tanatoCount,
         agentesOrdenados,
-        tanatoSemResponsavel,
         assistTotal,
         ornNatural,
         ornArtificial,
@@ -478,12 +517,9 @@ export default function ModalAnaliseGeral({
     } = React.useMemo(() => {
         const { start, end } = rangeTanato;
 
-        // TANATO: por entidade (dedupe)
         const byKey: Record<string, number> = {};
         const displayByKey: Record<string, string> = {};
-        let semResp = 0;
 
-        // outros cards continuam do analítico no período
         let assist = 0;
         let ornNat = 0;
         let ornArt = 0;
@@ -492,27 +528,24 @@ export default function ModalAnaliseGeral({
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
-        let cPref = 0, cPart = 0, cAssoc = 0;
+        let cPref = 0,
+            cPart = 0,
+            cAssoc = 0;
 
-        // ===== TANATO (Tanato=Sim + primeiro "início" no período) =====
-        // 1 entidade = no máximo 1 contagem => NÃO conta duas vezes no mesmo atendimento
+        // ===== TANATO (somente início PURO + somente Sandro/Joseildo) =====
         for (const [entityKey, entry] of Object.entries(cacheRef.current)) {
             if (!entry?.fetched) continue;
-
-            // segurança: só considera TANATO=SIM (parâmetro extra)
             if (!tanatoEntities.keySet.has(entityKey)) continue;
 
-            const inicio = findPrimeiroInicioNoPeriodo(entry.logs || [], start, end);
-            if (!inicio) continue; // sem início no período => não conta tanato
+            const inicio = findPrimeiroInicioPuroNoPeriodo(entry.logs || [], start, end);
+            if (!inicio) continue;
 
-            const nome = agenteDoLog(inicio).trim();
-            if (nome) {
-                const k = norm(nome);
-                byKey[k] = (byKey[k] || 0) + 1;
-                if (!displayByKey[k]) displayByKey[k] = titleCase(nome);
-            } else {
-                semResp++;
-            }
+            const agente = agentePermitido(inicio);
+            if (!agente) continue;
+
+            const k = norm(agente);
+            byKey[k] = (byKey[k] || 0) + 1;
+            displayByKey[k] = agente;
         }
 
         // ===== RESTO (analítico filtrado por dadosPeriodo) =====
@@ -539,12 +572,13 @@ export default function ModalAnaliseGeral({
                 ""
             ).toLowerCase();
             if (convTxt.includes("prefeitura")) cPref++;
-            else if (convTxt.includes("associado") || convTxt.includes("associação")) cAssoc++;
+            else if (convTxt.includes("associado") || convTxt.includes("associação"))
+                cAssoc++;
             else if (convTxt.includes("particular")) cPart++;
         }
 
         const agentesOrdenados = Object.entries(byKey)
-            .map(([k, count]) => ({ display: displayByKey[k] || k, count }))
+            .map(([k, count]) => ({ display: displayByKey[k] || titleCase(k), count }))
             .sort((a, b) => b.count - a.count);
 
         const tanatoCount = agentesOrdenados.reduce((s, a) => s + a.count, 0);
@@ -552,7 +586,6 @@ export default function ModalAnaliseGeral({
         return {
             tanatoCount,
             agentesOrdenados,
-            tanatoSemResponsavel: semResp,
             assistTotal: assist,
             ornNatural: ornNat,
             ornArtificial: ornArt,
@@ -570,11 +603,8 @@ export default function ModalAnaliseGeral({
         if (agentesOrdenados.length) {
             parts.push(...agentesOrdenados.map((a) => `${a.display}: ${fmt0(a.count)}`));
         }
-        if (tanatoSemResponsavel) {
-            parts.push(`Sem responsável: ${fmt0(tanatoSemResponsavel)}`);
-        }
         return parts.length ? parts.join(" · ") : undefined;
-    }, [agentesOrdenados, tanatoSemResponsavel]);
+    }, [agentesOrdenados]);
 
     if (!aberto) return null;
 
@@ -586,7 +616,8 @@ export default function ModalAnaliseGeral({
                     <div>
                         <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
                         <p className="text-xs text-gray-500">
-                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
+                            Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)}{" "}
+                            registro(s)
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
