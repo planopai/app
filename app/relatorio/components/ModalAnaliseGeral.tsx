@@ -209,8 +209,10 @@ function agenteDoLog(log: any): string {
     if (direct) return String(direct).trim();
 
     try {
-        const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
-        const poss = pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
+        const det =
+            typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
+        const poss =
+            pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
         if (poss) return String(poss).trim();
     } catch { }
     return "";
@@ -223,11 +225,16 @@ function logTs(log: any): number {
 }
 
 /**
- * Retorna o primeiro "Início de Conservação" DENTRO do período.
+ * Retorna o PRIMEIRO "Início de Conservação" dentro do período:
+ * - Isso garante que NÃO conta 2 vezes no mesmo atendimento/sepultamento.
  * - Prefere com agente preenchido.
  * - Se nenhum com agente, pega o mais antigo dentro do período mesmo assim.
  */
-function findInicioNoPeriodo(logs: any[], start: Date | null, end: Date | null): any | null {
+function findPrimeiroInicioNoPeriodo(
+    logs: any[],
+    start: Date | null,
+    end: Date | null
+): any | null {
     let bestAny: any | null = null;
     let bestWithAgent: any | null = null;
 
@@ -270,20 +277,15 @@ function getIdsParaTentar(r: RegistroAnalise): string[] {
         .map((x: any) => String(x || "").trim())
         .filter(Boolean);
 
-    // unique
     return Array.from(new Set(candidates));
 }
 
 /** chave de entidade: prioriza sepultamento_id; se não tiver, cai no primeiro ID disponível */
 function getEntityKey(r: RegistroAnalise): string {
     const anyR = r as any;
-    const primary =
-        String(
-            anyR.sepultamento_id ||
-            anyR.sepultamentoId ||
-            anyR.id_sepultamento ||
-            ""
-        ).trim();
+    const primary = String(
+        anyR.sepultamento_id || anyR.sepultamentoId || anyR.id_sepultamento || ""
+    ).trim();
 
     if (primary) return primary;
 
@@ -342,7 +344,7 @@ export default function ModalAnaliseGeral({
         carregar();
     }, [onRecarregar, carregar]);
 
-    // filtro por período (continua para os demais cards)
+    // filtro por período (para os demais cards)
     const dadosPeriodo = React.useMemo(() => {
         const { start, end } = makeRange(aDe, aAte);
         return (dados || []).filter((r) => {
@@ -356,10 +358,14 @@ export default function ModalAnaliseGeral({
 
     const registrosComEventoNoPeriodo = dadosPeriodo.length;
 
+    // Período para TANATO ser definido pelo filtro da tela
+    const rangeTanato = React.useMemo(() => makeRange(aDe, aAte), [aDe, aAte]);
+
     /* ==========================================================
-       TANATO: BASEADO SOMENTE NO "INÍCIO DE CONSERVAÇÃO" (LOG)
-       - dedupe por sepultamento (entityKey)
-       - busca logs por ids candidatos e cacheia
+       TANATO: "Tanato = Sim" (analítico) + "Início de Conservação" (log)
+       - NÃO conta início 2x no mesmo atendimento/sepultamento:
+         1 entidade = no máximo 1 contagem (pega o primeiro início no período)
+       - busca logs só dos TANATO=SIM (economiza chamadas)
        ========================================================== */
     type CacheEntry = { logs: any[]; fetched: boolean };
 
@@ -367,18 +373,17 @@ export default function ModalAnaliseGeral({
     const inFlightRef = React.useRef<Set<string>>(new Set());
     const [cacheVersion, setCacheVersion] = React.useState(0);
 
-    // Período para tanato ser definido pelo filtro da tela
-    const rangeTanato = React.useMemo(() => makeRange(aDe, aAte), [aDe, aAte]);
-
-    React.useEffect(() => {
-        if (!aberto) return;
-
-        // monta entidades a partir do analítico (para saber quais IDs existem)
+    // Lista de entidades TANATO=SIM + ids para tentar buscar log
+    const tanatoEntities = React.useMemo(() => {
         const entityMap = new Map<string, Set<string>>();
 
         for (const r of dados || []) {
+            // ✅ parâmetro extra: Tanato = Sim
+            if (normSimNao(String((r as any).tanato || "")) !== "sim") continue;
+
             const key = getEntityKey(r);
             if (!key) continue;
+
             const ids = getIdsParaTentar(r);
             if (!ids.length) continue;
 
@@ -387,19 +392,23 @@ export default function ModalAnaliseGeral({
             for (const id of ids) set.add(id);
         }
 
-        const entities = Array.from(entityMap.entries()).map(([key, idSet]) => ({
+        const list = Array.from(entityMap.entries()).map(([key, idSet]) => ({
             key,
             idsToTry: Array.from(idSet),
         }));
 
-        // evita travar se tiver coisa demais
-        // (se isso acontecer, o ideal é criar endpoint no backend por período)
-        if (entities.length > 800) {
-            // não trava o app tentando buscar milhares de logs
-            return;
-        }
+        const keySet = new Set(list.map((x) => x.key));
 
-        const targets = entities.filter(
+        return { list, keySet };
+    }, [dados]);
+
+    React.useEffect(() => {
+        if (!aberto) return;
+
+        // evita travar se tiver coisa demais
+        if (tanatoEntities.list.length > 800) return;
+
+        const targets = tanatoEntities.list.filter(
             (e) => !cacheRef.current[e.key]?.fetched && !inFlightRef.current.has(e.key)
         );
 
@@ -426,7 +435,6 @@ export default function ModalAnaliseGeral({
                                     logs = res;
                                     break;
                                 }
-                                // se retorna algo "não array", ignora
                             } catch {
                                 // tenta próximo id
                             }
@@ -451,7 +459,7 @@ export default function ModalAnaliseGeral({
         return () => {
             cancel = true;
         };
-    }, [aberto, dados]);
+    }, [aberto, tanatoEntities]);
 
     /* =========================
        Agregações
@@ -484,17 +492,18 @@ export default function ModalAnaliseGeral({
             ARR_KEYS.map((k) => [k, 0])
         ) as Record<string, number>;
 
-        let cPref = 0,
-            cPart = 0,
-            cAssoc = 0;
+        let cPref = 0, cPart = 0, cAssoc = 0;
 
-        // ===== TANATO (somente logs de início no período) =====
-        // percorre o cache (uma vez por entidade)
+        // ===== TANATO (Tanato=Sim + primeiro "início" no período) =====
+        // 1 entidade = no máximo 1 contagem => NÃO conta duas vezes no mesmo atendimento
         for (const [entityKey, entry] of Object.entries(cacheRef.current)) {
             if (!entry?.fetched) continue;
 
-            const inicio = findInicioNoPeriodo(entry.logs || [], start, end);
-            if (!inicio) continue; // não tem "início de conservação" no período => não conta tanato
+            // segurança: só considera TANATO=SIM (parâmetro extra)
+            if (!tanatoEntities.keySet.has(entityKey)) continue;
+
+            const inicio = findPrimeiroInicioNoPeriodo(entry.logs || [], start, end);
+            if (!inicio) continue; // sem início no período => não conta tanato
 
             const nome = agenteDoLog(inicio).trim();
             if (nome) {
@@ -552,7 +561,7 @@ export default function ModalAnaliseGeral({
             convPart: cPart,
             convAssoc: cAssoc,
         };
-    }, [dadosPeriodo, rangeTanato, cacheVersion]);
+    }, [dadosPeriodo, rangeTanato, cacheVersion, tanatoEntities]);
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
 
@@ -684,7 +693,6 @@ export default function ModalAnaliseGeral({
                                 <div className="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                     <ItemCard titulo="Prefeitura" valor={convPref} tipo="Convênio" destaque="indigo" />
                                     <ItemCard titulo="Particular" valor={convPart} tipo="Convênio" destaque="teal" />
-
                                     <ItemCard titulo="Associado" valor={convAssoc} tipo="Convênio" destaque="rose" />
                                 </div>
                             </div>
