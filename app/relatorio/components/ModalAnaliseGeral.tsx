@@ -90,9 +90,7 @@ const DESTAQUES: Array<"blue" | "yellow" | "sky" | "teal" | "indigo" | "rose"> =
 function parseBrDate(s: string): Date | null {
     const m = s
         .trim()
-        .match(
-            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-        );
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
     if (!m) return null;
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -144,9 +142,7 @@ function makeRange(aDe?: string, aAte?: string) {
     if (start && end && end < start) {
         return {
             start: end,
-            end: new Date(
-                start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000
-            ),
+            end: new Date(start.getTime() + 23 * 3600 * 1000 + 59 * 60000 + 59 * 1000),
         };
     }
     return { start, end };
@@ -164,7 +160,6 @@ const titleCase = (s: string) =>
         .map((p) => (p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ""))
         .join(" ");
 
-/** reconhece estritamente o log de “Início de Conservação” */
 function isInicioConservacaoStrict(log: any): boolean {
     const acao = norm(String(log?.acao || ""));
     const novo = norm(String(log?.status_novo || log?.status || ""));
@@ -180,7 +175,6 @@ function isInicioConservacaoStrict(log: any): boolean {
     return matchByStatus || matchByTitle;
 }
 
-/** tenta extrair o nome do usuário do log */
 function agenteDoLog(log: any): string {
     const pick = (o: any) =>
         o?.usuario || o?.user || o?.operador || o?.agente || o?.nome || o?.name || "";
@@ -195,23 +189,25 @@ function agenteDoLog(log: any): string {
     return "";
 }
 
-/**
- * devolve o primeiro log (cronológico) que iniciou a conservação
- * (sem sort: mais leve e evita travamentos)
- */
+/** sem sort (mais leve) */
 function findInicioConservacaoLog(logs: any[]): any | null {
     let best: any | null = null;
-
     for (const log of logs || []) {
         if (!isInicioConservacaoStrict(log)) continue;
-
         const dh = String(log?.datahora || "");
         if (!best) best = log;
         else if (dh && dh < String(best?.datahora || "")) best = log;
     }
-
     return best;
 }
+
+/* =========================
+   Tipos internos (Tanato via log)
+   ========================= */
+type TanatoInfo = {
+    hasInicio: boolean; // existe "Início de Conservação"?
+    agente: string;     // nome do agente (pode ser "")
+};
 
 /* =========================
    Componente
@@ -278,36 +274,44 @@ export default function ModalAnaliseGeral({
 
     const registrosComEventoNoPeriodo = dadosPeriodo.length;
 
-    /* ========= Resolve responsável de TANATO *via logs* ========= */
-    const respCacheRef = React.useRef<Record<string, string>>({});
+    /**
+     * (Opcional mas ajuda MUITO) Debounce para não disparar busca de logs
+     * toda vez que mexe no filtro rapidamente.
+     */
+    const [dadosPeriodoDebounced, setDadosPeriodoDebounced] = React.useState(dadosPeriodo);
+    React.useEffect(() => {
+        const t = setTimeout(() => setDadosPeriodoDebounced(dadosPeriodo), 250);
+        return () => clearTimeout(t);
+    }, [dadosPeriodo]);
+
+    /* ========= TANATO via logs ========= */
+    const tanatoCacheRef = React.useRef<Record<string, TanatoInfo>>({});
     const inFlightRef = React.useRef<Set<string>>(new Set());
-    const [respPorSepultamentoId, setRespPorSepultamentoId] = React.useState<
-        Record<string, string>
+    const [tanatoPorSepultamentoId, setTanatoPorSepultamentoId] = React.useState<
+        Record<string, TanatoInfo>
     >({});
 
-    React.useEffect(() => {
-        const idsAlvo = Array.from(
-            new Set(
-                (dadosPeriodo || [])
-                    .filter((r) => normSimNao(String((r as any).tanato || "")) === "sim")
-                    // BUG FIX: usa SOMENTE sepultamento_id (não cai no id da linha)
-                    .map((r) => String((r as any).sepultamento_id || "").trim())
-                    .filter(
-                        (id) =>
-                            id &&
-                            !respCacheRef.current[id] &&
-                            !inFlightRef.current.has(id)
-                    )
-            )
-        );
+    // IDs únicos do período (não filtra por r.tanato!)
+    const sepultamentoIdsPeriodo = React.useMemo(() => {
+        const ids = new Set<string>();
+        for (const r of dadosPeriodoDebounced || []) {
+            const id = String((r as any).sepultamento_id || "").trim();
+            if (id) ids.add(id);
+        }
+        return Array.from(ids);
+    }, [dadosPeriodoDebounced]);
 
+    React.useEffect(() => {
+        const idsAlvo = sepultamentoIdsPeriodo.filter(
+            (id) => !tanatoCacheRef.current[id] && !inFlightRef.current.has(id)
+        );
         if (idsAlvo.length === 0) return;
 
         let cancel = false;
 
         async function run(maxConc = 4) {
             let i = 0;
-            const out: Record<string, string> = {};
+            const out: Record<string, TanatoInfo> = {};
 
             for (const id of idsAlvo) inFlightRef.current.add(id);
 
@@ -317,9 +321,12 @@ export default function ModalAnaliseGeral({
                     try {
                         const logs = await listarLogPorId(id);
                         const inicio = findInicioConservacaoLog(logs || []);
-                        out[id] = inicio ? agenteDoLog(inicio) : "";
+                        out[id] = {
+                            hasInicio: !!inicio,
+                            agente: inicio ? agenteDoLog(inicio) : "",
+                        };
                     } catch {
-                        out[id] = "";
+                        out[id] = { hasInicio: false, agente: "" };
                     } finally {
                         inFlightRef.current.delete(id);
                     }
@@ -332,19 +339,18 @@ export default function ModalAnaliseGeral({
 
             if (cancel) return;
 
-            Object.assign(respCacheRef.current, out);
-            setRespPorSepultamentoId((prev) => ({ ...prev, ...out }));
+            Object.assign(tanatoCacheRef.current, out);
+            setTanatoPorSepultamentoId((prev) => ({ ...prev, ...out }));
         }
 
         run();
-
         return () => {
             cancel = true;
         };
-    }, [dadosPeriodo]);
+    }, [sepultamentoIdsPeriodo]);
 
     /* =========================
-       Agregações (Tanato por sepultamento ÚNICO)
+       Agregações
        ========================= */
     const {
         tanatoCount,
@@ -358,11 +364,13 @@ export default function ModalAnaliseGeral({
         convPart,
         convAssoc,
     } = React.useMemo(() => {
-        const tanatoIds = new Set<string>();
+        // TANATO por agente (via log)
         const byAgenteIds: Record<string, Set<string>> = {};
         const displayByKey: Record<string, string> = {};
-
         let tanatoSemResp = 0;
+        let tanatoTotal = 0;
+
+        // outros cards (mantive exatamente como você já tinha: por LINHA do analítico)
         let assist = 0;
         let ornNat = 0;
         let ornArt = 0;
@@ -375,30 +383,29 @@ export default function ModalAnaliseGeral({
             cPart = 0,
             cAssoc = 0;
 
-        for (const r of dadosPeriodo) {
-            // TANATO (por sepultamento único)
-            if (normSimNao(String((r as any).tanato || "")) === "sim") {
-                const sepId = String((r as any).sepultamento_id || "").trim();
+        // Tanato: percorre os sepultamentos únicos do período
+        for (const sepId of sepultamentoIdsPeriodo) {
+            const info = tanatoPorSepultamentoId[sepId];
+            if (!info) continue; // ainda carregando logs
 
-                if (sepId && !tanatoIds.has(sepId)) {
-                    tanatoIds.add(sepId);
-
-                    const nome = (respPorSepultamentoId[sepId] || "").trim();
-                    if (nome) {
-                        const key = norm(nome);
-                        if (!byAgenteIds[key]) byAgenteIds[key] = new Set<string>();
-                        byAgenteIds[key].add(sepId);
-                        if (!displayByKey[key]) displayByKey[key] = titleCase(nome);
-                    } else {
-                        tanatoSemResp++;
-                    }
+            if (info.hasInicio) {
+                tanatoTotal++;
+                const nome = (info.agente || "").trim();
+                if (nome) {
+                    const key = norm(nome);
+                    if (!byAgenteIds[key]) byAgenteIds[key] = new Set<string>();
+                    byAgenteIds[key].add(sepId);
+                    if (!displayByKey[key]) displayByKey[key] = titleCase(nome);
+                } else {
+                    tanatoSemResp++;
                 }
             }
+        }
 
-            // ASSISTÊNCIAS (mantido: por linha "sim")
+        // Outros agregados continuam por linha do analítico
+        for (const r of dadosPeriodoDebounced) {
             if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
 
-            // ORNAMENTAÇÃO (mantido: por linha)
             const ornTxt = String(
                 (r as any).ornamentacao_tipo ||
                 (r as any).ornamentacao ||
@@ -408,11 +415,9 @@ export default function ModalAnaliseGeral({
             if (ornTxt.includes("natural")) ornNat++;
             else if (ornTxt.includes("artificial")) ornArt++;
 
-            // ARRUMAÇÃO (mantido: por linha)
             const estadosArr = extrairEstadoArrumacao(r);
             for (const k of ARR_KEYS) if (estadosArr[k]) arr[k] = (arr[k] || 0) + 1;
 
-            // CONVÊNIOS (mantido: por linha)
             const convTxt = String(
                 (r as any).convenio ||
                 (r as any).tipo_convenio ||
@@ -430,7 +435,7 @@ export default function ModalAnaliseGeral({
             .sort((a, b) => b.count - a.count);
 
         return {
-            tanatoCount: tanatoIds.size,
+            tanatoCount: tanatoTotal,
             agentesOrdenados,
             tanatoSemResponsavel: tanatoSemResp,
             assistTotal: assist,
@@ -441,7 +446,7 @@ export default function ModalAnaliseGeral({
             convPart: cPart,
             convAssoc: cAssoc,
         };
-    }, [dadosPeriodo, respPorSepultamentoId]);
+    }, [dadosPeriodoDebounced, sepultamentoIdsPeriodo, tanatoPorSepultamentoId]);
 
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
 
@@ -528,7 +533,7 @@ export default function ModalAnaliseGeral({
                         <div className="rounded-lg border p-6 text-center text-sm text-red-600">
                             {erro}
                         </div>
-                    ) : dadosPeriodo.length === 0 ? (
+                    ) : dadosPeriodoDebounced.length === 0 ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
                             Nenhum dado para o período/filtro selecionado.
                         </div>
