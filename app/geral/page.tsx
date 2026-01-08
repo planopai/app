@@ -80,7 +80,6 @@ type HistoricoResp = {
 
 type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "HISTORICO" | "AVANCADO";
 
-/** itens em lote */
 type EntradaItem = { id: number; payload: any; resumo: string };
 type SaidaItem = { id: number; payload: any; resumo: string };
 type TrfItem = { id: number; payload: any; resumo: string };
@@ -116,10 +115,6 @@ function moneyBRL(n: number) {
     }
 }
 
-/**
- * Máscara BRL (digit-only -> centavos)
- * Ex.: digits="1" => R$ 0,01 | "100000" => R$ 1.000,00
- */
 function maskBRLFromDigits(digitsOnly: string) {
     const digits = (digitsOnly || "").replace(/\D/g, "");
     const cents = digits ? Number(digits) : 0;
@@ -209,11 +204,7 @@ async function apiPost<T>(body: any) {
 ========================= */
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return (
-        <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>
-            {children}
-        </section>
-    );
+    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -226,18 +217,22 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     );
 }
 
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-    return (
-        <input
-            {...props}
-            className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
-                "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
-                props.className ?? "",
-            ].join(" ")}
-        />
-    );
-}
+const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+    function TextInput(props, ref) {
+        return (
+            <input
+                ref={ref}
+                {...props}
+                className={[
+                    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
+                    "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                    props.className ?? "",
+                ].join(" ")}
+            />
+        );
+    }
+);
+
 
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     return (
@@ -301,7 +296,7 @@ function Badge({ children }: { children: React.ReactNode }) {
 }
 
 /* =========================
-   MODAL
+   MODAL (não fecha clicando fora; fecha pelo X/botões)
 ========================= */
 
 function Modal({
@@ -310,19 +305,25 @@ function Modal({
     subtitle,
     onClose,
     children,
+    closeOnBackdrop = false,
+    closeOnEsc = false,
 }: {
     open: boolean;
     title: string;
     subtitle?: string;
     onClose: () => void;
     children: React.ReactNode;
+    closeOnBackdrop?: boolean;
+    closeOnEsc?: boolean;
 }) {
     useEffect(() => {
         if (!open) return;
+        if (!closeOnEsc) return;
+
         const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [open, onClose]);
+    }, [open, closeOnEsc, onClose]);
 
     useEffect(() => {
         if (!open) return;
@@ -341,6 +342,7 @@ function Modal({
             aria-modal="true"
             className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(" ")}
             onMouseDown={(e) => {
+                if (!closeOnBackdrop) return;
                 if (e.target === e.currentTarget) onClose();
             }}
         >
@@ -355,6 +357,7 @@ function Modal({
                         onClick={onClose}
                         aria-label="Fechar"
                         type="button"
+                        title="Fechar"
                     >
                         ✕
                     </button>
@@ -367,7 +370,48 @@ function Modal({
 }
 
 /* =========================
-   POPUP IMAGEM
+   CONFIRM DIALOG
+========================= */
+
+function ConfirmDialog({
+    open,
+    title,
+    message,
+    confirmText = "Sim, confirmar",
+    cancelText = "Cancelar",
+    onConfirm,
+    onCancel,
+}: {
+    open: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+}) {
+    return (
+        <Modal open={open} title={title} subtitle={message} onClose={onCancel}>
+            <div className="mt-2 flex flex-col gap-3">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Atenção: após confirmar, a movimentação será registrada no sistema.
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-2">
+                    <Button onClick={onConfirm} type="button">
+                        {confirmText}
+                    </Button>
+                    <Button variant="ghost" onClick={onCancel} type="button">
+                        {cancelText}
+                    </Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+/* =========================
+   POPUP IMAGEM (não fecha clicando fora)
 ========================= */
 
 function ImagePreviewModal({
@@ -385,13 +429,6 @@ function ImagePreviewModal({
 
     useEffect(() => {
         if (!open) return;
-        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [open, onClose]);
-
-    useEffect(() => {
-        if (!open) return;
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
         return () => {
@@ -402,19 +439,12 @@ function ImagePreviewModal({
     if (!open) return null;
 
     return (
-        <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center bg-black/70 p-4"
-            onMouseDown={(e) => {
-                if (e.target === e.currentTarget) onClose();
-            }}
-        >
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center bg-black/70 p-4">
             <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
                     <div className="min-w-0">
                         <h2 className="truncate text-base font-semibold text-slate-900">{title || "Imagem do produto"}</h2>
-                        <p className="mt-1 text-sm text-slate-600">Clique fora ou pressione ESC para fechar.</p>
+                        <p className="mt-1 text-sm text-slate-600">Feche pelo ✕ no canto superior direito.</p>
                     </div>
                     <button className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={onClose} type="button">
                         ✕
@@ -502,12 +532,9 @@ function BarcodeScannerModal({
             try {
                 const codeReader = new BrowserMultiFormatReader();
                 const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-
                 if (!devices?.length) throw new Error("Nenhuma câmera encontrada.");
 
-                const backCam =
-                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
-
+                const backCam = devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
                 if (!videoRef.current) throw new Error("Vídeo não disponível.");
 
                 const controls = await codeReader.decodeFromVideoDevice(backCam ?? undefined, videoRef.current, (result) => {
@@ -598,7 +625,7 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
 }
 
 /* =========================
-   COMBOBOX (Produto)
+   COMBOBOX (Produto) - CORRIGIDO (seleciona e FECHA SEMPRE)
 ========================= */
 
 function ProductCombobox({
@@ -623,6 +650,7 @@ function ProductCombobox({
     disabled?: boolean;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
     const [open, setOpen] = useState(false);
 
     const list = useMemo(() => {
@@ -640,11 +668,18 @@ function ProductCombobox({
         return () => document.removeEventListener("mousedown", onDoc);
     }, []);
 
+    // quando o valueId muda (por scan / digitar CB / etc), FECHA a lista também
     useEffect(() => {
-        const sel = valueId ? produtos.find((p) => p.id === valueId) : null;
-        if (sel && !query.trim()) {
-            setQuery(`${sel.nome}`);
+        if (!valueId) return;
+        setOpen(false);
+
+        const sel = produtos.find((p) => p.id === valueId) || null;
+        if (sel && (!query.trim() || query.trim() !== sel.nome)) {
+            setQuery(sel.nome);
         }
+
+        // tira foco para evitar reabrir por eventos de foco em alguns devices
+        requestAnimationFrame(() => inputRef.current?.blur());
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [valueId]);
 
@@ -652,6 +687,7 @@ function ProductCombobox({
         <Field label={label}>
             <div ref={wrapRef} className="relative">
                 <TextInput
+                    ref={inputRef}
                     value={query}
                     onChange={(e) => {
                         setQuery(e.target.value);
@@ -679,10 +715,15 @@ function ProductCombobox({
                                                     "w-full px-3 py-2 text-left text-sm hover:bg-slate-50",
                                                     valueId === p.id ? "bg-slate-50" : "",
                                                 ].join(" ")}
+                                                onMouseDown={(e) => {
+                                                    // garante seleção mesmo antes de blur/focus e evita reabrir
+                                                    e.preventDefault();
+                                                }}
                                                 onClick={() => {
                                                     onChangeId(p.id);
                                                     setQuery(p.nome);
                                                     setOpen(false);
+                                                    requestAnimationFrame(() => inputRef.current?.blur());
                                                 }}
                                             >
                                                 <div className="flex items-center justify-between gap-2">
@@ -790,7 +831,7 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ALERTAS (agora só contagem / filtro, não existe mais aba)
+    // ALERTAS
     const alertRows = useMemo(() => {
         const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo; rep: number }> = [];
         for (const s of saldos) {
@@ -853,27 +894,12 @@ export default function Page() {
 
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR") || a.d.nome.localeCompare(b.d.nome, "pt-BR"));
         return rows;
-    }, [
-        saldos,
-        prodById,
-        depById,
-        qEstoque,
-        depFiltroEstoque,
-        catFiltroEstoque,
-        fabFiltroEstoque,
-        onlyLow,
-        catById,
-        fabById,
-    ]);
+    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, catFiltroEstoque, fabFiltroEstoque, onlyLow, catById, fabById]);
 
-    // ✅ EXPORTAÇÃO (CSV / PDF) do ESTOQUE conforme filtro atual
     function getFiltroResumo() {
-        const depTxt =
-            depFiltroEstoque === "Todos" ? "Todos" : depById.get(Number(depFiltroEstoque))?.nome || String(depFiltroEstoque);
-        const catTxt =
-            catFiltroEstoque === "Todos" ? "Todas" : catById.get(Number(catFiltroEstoque))?.nome || String(catFiltroEstoque);
-        const fabTxt =
-            fabFiltroEstoque === "Todos" ? "Todos" : fabById.get(Number(fabFiltroEstoque))?.nome || String(fabFiltroEstoque);
+        const depTxt = depFiltroEstoque === "Todos" ? "Todos" : depById.get(Number(depFiltroEstoque))?.nome || String(depFiltroEstoque);
+        const catTxt = catFiltroEstoque === "Todos" ? "Todas" : catById.get(Number(catFiltroEstoque))?.nome || String(catFiltroEstoque);
+        const fabTxt = fabFiltroEstoque === "Todos" ? "Todos" : fabById.get(Number(fabFiltroEstoque))?.nome || String(fabFiltroEstoque);
 
         return {
             busca: qEstoque.trim() || "—",
@@ -1251,7 +1277,7 @@ export default function Page() {
         if (r.id) setNovoFabricanteId(Number(r.id));
     }
 
-    // ======= PRODUTO EDITOR (cadastro + saldos) =======
+    // ======= PRODUTO EDITOR =======
 
     function openProdutoEditor(produtoId: ID) {
         const p = prodById.get(produtoId);
@@ -1344,11 +1370,12 @@ export default function Page() {
     }
 
     /* =========================
-         SAÍDA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
-      ========================= */
+       SAÍDA
+    ========================= */
 
     const [saidaOpen, setSaidaOpen] = useState(false);
     const [saidaScanOpen, setSaidaScanOpen] = useState(false);
+    const [saidaConfirmOpen, setSaidaConfirmOpen] = useState(false);
 
     const [saidaSolicitanteId, setSaidaSolicitanteId] = useState<ID>(0);
     const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(0);
@@ -1522,15 +1549,18 @@ export default function Page() {
     }
 
     /* =========================
-         TRANSFERÊNCIA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
-      ========================= */
+       TRANSFERÊNCIA (com leitor de código adicionado)
+    ========================= */
 
     const [trfOpen, setTrfOpen] = useState(false);
+    const [trfScanOpen, setTrfScanOpen] = useState(false);
+    const [trfConfirmOpen, setTrfConfirmOpen] = useState(false);
 
     const [trfSolicitanteId, setTrfSolicitanteId] = useState<ID>(0);
     const [trfOrigemId, setTrfOrigemId] = useState<ID>(0);
     const [trfDestinoId, setTrfDestinoId] = useState<ID>(0);
 
+    const [trfBarcode, setTrfBarcode] = useState("");
     const [trfCategoriaId, setTrfCategoriaId] = useState<ID | "Todas">("Todas");
 
     const [trfProdutoId, setTrfProdutoId] = useState<ID>(0);
@@ -1574,7 +1604,17 @@ export default function Page() {
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     }, [saldos, produtos, trfOrigemId, trfCategoriaId]);
 
+    function onTrfBarcodePick(code: string) {
+        setTrfBarcode(code);
+        const p = produtos.find((x) => x.codigo_barras === code);
+        if (p) {
+            setTrfProdutoId(p.id);
+            setTrfProdQuery(p.nome);
+        }
+    }
+
     function resetTrfItemFields() {
+        setTrfBarcode("");
         setTrfCategoriaId("Todas");
         setTrfProdutoId(0);
         setTrfProdQuery("");
@@ -1687,8 +1727,8 @@ export default function Page() {
     }
 
     /* =========================
-         AVANÇADO - Depósitos
-      ========================= */
+       AVANÇADO + HISTÓRICO (mantidos)
+    ========================= */
 
     const [novoDepNome, setNovoDepNome] = useState("");
     const [renomearDepId, setRenomearDepId] = useState<ID>(0);
@@ -1748,7 +1788,7 @@ export default function Page() {
         window.open(url, "_blank", "noopener,noreferrer");
     }
 
-    // AVANÇADO - Categorias
+    // Categorias
     const [novoCatNome, setNovoCatNome] = useState("");
     const [renomearCatId, setRenomearCatId] = useState<ID>(0);
     const [renomearCatNome, setRenomearCatNome] = useState("");
@@ -1802,7 +1842,7 @@ export default function Page() {
         }
     }
 
-    // AVANÇADO - Fabricantes
+    // Fabricantes
     const [novoFabNome, setNovoFabNome] = useState("");
     const [renomearFabId, setRenomearFabId] = useState<ID>(0);
     const [renomearFabNome, setRenomearFabNome] = useState("");
@@ -1856,10 +1896,7 @@ export default function Page() {
         }
     }
 
-    /* =========================
-         HISTÓRICO
-      ========================= */
-
+    // HISTÓRICO
     const [histLoading, setHistLoading] = useState(false);
     const [histErr, setHistErr] = useState("");
     const [histRows, setHistRows] = useState<HistoricoRow[]>([]);
@@ -1989,7 +2026,7 @@ export default function Page() {
                             </div>
 
                             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-                                Dica: na Entrada/Saída você pode usar <b>câmera</b> para ler o código de barras.
+                                Dica: na Entrada/Saída/Transferência você pode usar <b>câmera</b> para ler o código de barras.
                             </div>
                         </Card>
                     ) : null}
@@ -2000,9 +2037,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.
-                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.</p>
                                 </div>
                                 <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
                                     Abrir Entrada
@@ -2041,18 +2076,11 @@ export default function Page() {
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
                                 <Field label="Pesquisar">
-                                    <TextInput
-                                        value={qEstoque}
-                                        onChange={(e) => setQEstoque(e.target.value)}
-                                        placeholder="Nome, código, depósito, categoria, fabricante..."
-                                    />
+                                    <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito, categoria, fabricante..." />
                                 </Field>
 
                                 <Field label="Depósito">
-                                    <Select
-                                        value={depFiltroEstoque as any}
-                                        onChange={(e) => setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
-                                    >
+                                    <Select value={depFiltroEstoque as any} onChange={(e) => setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}>
                                         <option value="Todos">Todos</option>
                                         {depositos.map((d) => (
                                             <option key={d.id} value={d.id}>
@@ -2063,10 +2091,7 @@ export default function Page() {
                                 </Field>
 
                                 <Field label="Categoria">
-                                    <Select
-                                        value={catFiltroEstoque as any}
-                                        onChange={(e) => setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
-                                    >
+                                    <Select value={catFiltroEstoque as any} onChange={(e) => setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}>
                                         <option value="Todos">Todas</option>
                                         {categorias.map((c) => (
                                             <option key={c.id} value={c.id}>
@@ -2077,10 +2102,7 @@ export default function Page() {
                                 </Field>
 
                                 <Field label="Fabricante">
-                                    <Select
-                                        value={fabFiltroEstoque as any}
-                                        onChange={(e) => setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
-                                    >
+                                    <Select value={fabFiltroEstoque as any} onChange={(e) => setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}>
                                         <option value="Todos">Todos</option>
                                         {fabricantes.map((f) => (
                                             <option key={f.id} value={f.id}>
@@ -2092,13 +2114,7 @@ export default function Page() {
 
                                 <Field label="Somente alerta (≤ mín)">
                                     <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-                                        <input
-                                            id="onlyLow"
-                                            type="checkbox"
-                                            checked={onlyLow}
-                                            onChange={(e) => setOnlyLow(e.target.checked)}
-                                            className="h-4 w-4"
-                                        />
+                                        <input id="onlyLow" type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} className="h-4 w-4" />
                                         <label htmlFor="onlyLow" className="text-sm text-slate-700">
                                             Mostrar
                                         </label>
@@ -2182,9 +2198,7 @@ export default function Page() {
                                                                             </>
                                                                         ) : null}
                                                                     </p>
-                                                                    <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                        Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
-                                                                    </p>
+                                                                    <p className="mt-0.5 text-[11px] text-slate-500">Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}</p>
                                                                 </div>
                                                             </div>
 
@@ -2239,11 +2253,7 @@ export default function Page() {
                                                                                 }}
                                                                             />
                                                                             <div className="min-w-0">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => openProdutoEditor(p.id)}
-                                                                                    className="truncate text-sm font-semibold text-slate-900 hover:underline"
-                                                                                >
+                                                                                <button type="button" onClick={() => openProdutoEditor(p.id)} className="truncate text-sm font-semibold text-slate-900 hover:underline">
                                                                                     {p.nome}
                                                                                 </button>
                                                                                 {low ? <div className="text-xs text-red-600">alerta</div> : <div className="text-xs text-slate-500">—</div>}
@@ -2256,12 +2266,7 @@ export default function Page() {
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat || "—"}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab || "—"}</td>
-                                                                    <td
-                                                                        className={[
-                                                                            "border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold",
-                                                                            low ? "text-red-700" : "text-slate-900",
-                                                                        ].join(" ")}
-                                                                    >
+                                                                    <td className={["border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
                                                                         {qtd}
                                                                     </td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{min}</td>
@@ -2404,8 +2409,7 @@ export default function Page() {
                                                                 {h.solicitante_usuario_id ? (
                                                                     <>
                                                                         {" "}
-                                                                        • Solicitante:{" "}
-                                                                        <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
+                                                                        • Solicitante: <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
                                                                     </>
                                                                 ) : null}
                                                                 {h.observacao ? <> • Obs: {h.observacao}</> : null}
@@ -2472,9 +2476,7 @@ export default function Page() {
                                             Renomear
                                         </Button>
 
-                                        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                                            Observação: não há opção de excluir depósito (por segurança).
-                                        </div>
+                                        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Observação: não há opção de excluir depósito (por segurança).</div>
                                     </div>
                                 </div>
 
@@ -2653,13 +2655,7 @@ export default function Page() {
                                     </Field>
 
                                     <Field label="Valor (R$)">
-                                        <TextInput
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={editValor}
-                                            onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
-                                            placeholder="R$ 0,00"
-                                        />
+                                        <TextInput type="text" inputMode="numeric" value={editValor} onChange={(e) => setEditValor(maskBRLInput(e.target.value))} placeholder="R$ 0,00" />
                                     </Field>
 
                                     <Field label="Mínimo">
@@ -2690,12 +2686,7 @@ export default function Page() {
 
                                     <div className="sm:col-span-2">
                                         <Field label="Nova foto (opcional)" hint="Envie uma imagem para substituir a atual.">
-                                            <input
-                                                type="file"
-                                                accept="image/*"
-                                                onChange={(e) => onProdutoFotoNova(e.target.files?.[0])}
-                                                className="block w-full text-sm text-slate-700"
-                                            />
+                                            <input type="file" accept="image/*" onChange={(e) => onProdutoFotoNova(e.target.files?.[0])} className="block w-full text-sm text-slate-700" />
                                         </Field>
 
                                         <div className="mt-2 flex flex-wrap gap-2">
@@ -2741,9 +2732,7 @@ export default function Page() {
                                         <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
                                             <div className="min-w-0">
                                                 <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
-                                                <p className="text-[11px] text-slate-500">
-                                                    Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}
-                                                </p>
+                                                <p className="text-[11px] text-slate-500">Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}</p>
                                             </div>
                                             <div className="w-[120px]">
                                                 <TextInput
@@ -2774,23 +2763,13 @@ export default function Page() {
             </Modal>
 
             {/* MODAL: ENTRADA */}
-            <Modal
-                open={entradaOpen}
-                title="Entrada"
-                subtitle="Leia/digite o código e confirme. Se o produto não existir, cadastre na hora."
-                onClose={() => setEntradaOpen(false)}
-            >
+            <Modal open={entradaOpen} title="Entrada" subtitle="Leia/digite o código e confirme. Se o produto não existir, cadastre na hora." onClose={() => setEntradaOpen(false)}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-3">
                             <Field label="Código de barras" hint="Você pode usar a câmera (Scan).">
                                 <div className="flex gap-2">
-                                    <TextInput
-                                        value={entradaBarcode}
-                                        onChange={(e) => setEntradaBarcode(e.target.value)}
-                                        placeholder="Ex: 789..."
-                                        inputMode="numeric"
-                                    />
+                                    <TextInput value={entradaBarcode} onChange={(e) => setEntradaBarcode(e.target.value)} placeholder="Ex: 789..." inputMode="numeric" />
                                     <Button variant="soft" onClick={() => setEntradaScanOpen(true)} type="button">
                                         📷 Scan
                                     </Button>
@@ -2842,13 +2821,7 @@ export default function Page() {
 
                                 <div className="sm:col-span-2">
                                     <Field label="Valor (R$)">
-                                        <TextInput
-                                            type="number"
-                                            min={0}
-                                            step="0.01"
-                                            value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"}
-                                            onChange={(e) => setNovoValor(Number(e.target.value || 0))}
-                                        />
+                                        <TextInput type="number" min={0} step="0.01" value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"} onChange={(e) => setNovoValor(Number(e.target.value || 0))} />
                                     </Field>
                                 </div>
 
@@ -2944,7 +2917,7 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: SAÍDA */}
+            {/* MODAL: SAÍDA (não fecha clicando fora; confirmar com confirmação extra; botão confirmar mais afastado) */}
             <Modal open={saidaOpen} title="Saída" subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível." onClose={cancelarSaida}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -3029,7 +3002,10 @@ export default function Page() {
                                 onChangeId={(id) => {
                                     setSaidaProdutoId(id);
                                     const p = prodById.get(id);
-                                    if (p) setSaidaBarcode(p.codigo_barras);
+                                    if (p) {
+                                        setSaidaBarcode(p.codigo_barras);
+                                        setSaidaProdQuery(p.nome);
+                                    }
                                 }}
                                 saldoByProdId={saidaSaldoByProd}
                                 query={saidaProdQuery}
@@ -3072,21 +3048,27 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant="soft" onClick={addSaidaItemToList} type="button" disabled={!saidaProdutoId}>
-                            + Adicionar à lista
-                        </Button>
-                        <Button onClick={confirmarSaida} type="button">
-                            Confirmar
-                        </Button>
-                        <Button variant="ghost" onClick={cancelarSaida} type="button">
-                            Cancelar
-                        </Button>
+                    {/* Botões (confirmar mais afastado + confirmação extra) */}
+                    <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap gap-2">
+                            <Button variant="soft" onClick={addSaidaItemToList} type="button" disabled={!saidaProdutoId}>
+                                + Adicionar à lista
+                            </Button>
+                            <Button variant="ghost" onClick={cancelarSaida} type="button">
+                                Cancelar
+                            </Button>
+                        </div>
+
+                        <div className="sm:ml-auto">
+                            <Button onClick={() => setSaidaConfirmOpen(true)} type="button">
+                                Confirmar
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </Modal>
 
-            {/* MODAL: TRANSFERÊNCIA */}
+            {/* MODAL: TRANSFERÊNCIA (com leitor de código; confirmar com confirmação extra; botão confirmar mais afastado) */}
             <Modal open={trfOpen} title="Transferência" subtitle="Move quantidade de um depósito para outro (com validação de saldo)." onClose={cancelarTransferencia}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -3127,6 +3109,30 @@ export default function Page() {
                         </div>
 
                         <div className="sm:col-span-3">
+                            <Field label="Código de barras (opcional)">
+                                <div className="flex gap-2">
+                                    <TextInput
+                                        value={trfBarcode}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            setTrfBarcode(v);
+                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                            if (p) {
+                                                setTrfProdutoId(p.id);
+                                                setTrfProdQuery(p.nome);
+                                            }
+                                        }}
+                                        placeholder="Digite ou use Scan"
+                                        inputMode="numeric"
+                                    />
+                                    <Button variant="soft" onClick={() => setTrfScanOpen(true)} type="button">
+                                        📷 Scan
+                                    </Button>
+                                </div>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-3">
                             <Field label="Categoria (filtro)">
                                 <Select value={trfCategoriaId as any} onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
                                     <option value="Todas">Todas</option>
@@ -3139,12 +3145,19 @@ export default function Page() {
                             </Field>
                         </div>
 
-                        <div className="sm:col-span-3">
+                        <div className="sm:col-span-6">
                             <ProductCombobox
                                 label="Produto (na origem)"
                                 produtos={trfProdutosNaOrigem}
                                 valueId={trfProdutoId}
-                                onChangeId={(id) => setTrfProdutoId(id)}
+                                onChangeId={(id) => {
+                                    setTrfProdutoId(id);
+                                    const p = prodById.get(id);
+                                    if (p) {
+                                        setTrfBarcode(p.codigo_barras);
+                                        setTrfProdQuery(p.nome);
+                                    }
+                                }}
                                 saldoByProdId={trfSaldoByProd}
                                 query={trfProdQuery}
                                 setQuery={setTrfProdQuery}
@@ -3186,16 +3199,21 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant="soft" onClick={addTrfItemToList} type="button" disabled={!trfProdutoId}>
-                            + Adicionar à lista
-                        </Button>
-                        <Button onClick={confirmarTransferencia} type="button">
-                            Confirmar
-                        </Button>
-                        <Button variant="ghost" onClick={cancelarTransferencia} type="button">
-                            Cancelar
-                        </Button>
+                    <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap gap-2">
+                            <Button variant="soft" onClick={addTrfItemToList} type="button" disabled={!trfProdutoId}>
+                                + Adicionar à lista
+                            </Button>
+                            <Button variant="ghost" onClick={cancelarTransferencia} type="button">
+                                Cancelar
+                            </Button>
+                        </div>
+
+                        <div className="sm:ml-auto">
+                            <Button onClick={() => setTrfConfirmOpen(true)} type="button">
+                                Confirmar
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </Modal>
