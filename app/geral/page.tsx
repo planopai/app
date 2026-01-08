@@ -184,9 +184,6 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
         u.searchParams.set(k, String(v));
     });
 
-    // ✅ evita qualquer cache intermediário
-    u.searchParams.set("_", String(Date.now()));
-
     const r = await fetch(u.toString(), {
         method: "GET",
         cache: "no-store",
@@ -229,23 +226,18 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     );
 }
 
-const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-    function TextInput(props, ref) {
-        return (
-            <input
-                {...props}
-                ref={ref}
-                className={[
-                    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
-                    "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
-                    props.className ?? "",
-                ].join(" ")}
-            />
-        );
-    }
-);
-TextInput.displayName = "TextInput";
-
+function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+    return (
+        <input
+            {...props}
+            className={[
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
+                "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                props.className ?? "",
+            ].join(" ")}
+        />
+    );
+}
 
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     return (
@@ -310,7 +302,6 @@ function Badge({ children }: { children: React.ReactNode }) {
 
 /* =========================
    MODAL
-   - Agora pode bloquear fechamento por clique fora / ESC
 ========================= */
 
 function Modal({
@@ -319,24 +310,19 @@ function Modal({
     subtitle,
     onClose,
     children,
-    closeOnBackdrop = true,
-    closeOnEsc = true,
 }: {
     open: boolean;
     title: string;
     subtitle?: string;
     onClose: () => void;
     children: React.ReactNode;
-    closeOnBackdrop?: boolean;
-    closeOnEsc?: boolean;
 }) {
     useEffect(() => {
         if (!open) return;
-        if (!closeOnEsc) return;
         const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [open, onClose, closeOnEsc]);
+    }, [open, onClose]);
 
     useEffect(() => {
         if (!open) return;
@@ -355,7 +341,6 @@ function Modal({
             aria-modal="true"
             className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(" ")}
             onMouseDown={(e) => {
-                if (!closeOnBackdrop) return;
                 if (e.target === e.currentTarget) onClose();
             }}
         >
@@ -382,45 +367,7 @@ function Modal({
 }
 
 /* =========================
-   CONFIRM DIALOG (UI)
-========================= */
-
-function ConfirmDialog({
-    open,
-    title,
-    message,
-    confirmLabel = "Sim, confirmar",
-    cancelLabel = "Voltar",
-    onConfirm,
-    onCancel,
-    busy,
-}: {
-    open: boolean;
-    title: string;
-    message: string;
-    confirmLabel?: string;
-    cancelLabel?: string;
-    onConfirm: () => void;
-    onCancel: () => void;
-    busy?: boolean;
-}) {
-    return (
-        <Modal open={open} title={title} subtitle={message} onClose={onCancel} closeOnBackdrop={false} closeOnEsc={false}>
-            <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="ghost" onClick={onCancel} type="button" disabled={!!busy}>
-                    {cancelLabel}
-                </Button>
-                <Button onClick={onConfirm} type="button" className="sm:ml-auto w-full sm:w-auto" disabled={!!busy}>
-                    {busy ? "Confirmando..." : confirmLabel}
-                </Button>
-            </div>
-        </Modal>
-    );
-}
-
-/* =========================
    POPUP IMAGEM
-   (mantém fechar por clique fora/ESC por conveniência)
 ========================= */
 
 function ImagePreviewModal({
@@ -602,14 +549,7 @@ function BarcodeScannerModal({
     }, [open, onClose, onDetected]);
 
     return (
-        <Modal
-            open={open}
-            title={title}
-            subtitle="Aponte para o código. Ao detectar, preenche automaticamente."
-            onClose={onClose}
-            closeOnBackdrop={false}
-            closeOnEsc={false}
-        >
+        <Modal open={open} title={title} subtitle="Aponte para o código. Ao detectar, preenche automaticamente." onClose={onClose}>
             {err ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
             ) : (
@@ -659,7 +599,6 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
 
 /* =========================
    COMBOBOX (Produto)
-   - Correção: ao selecionar, fecha SEMPRE e dá blur no input (evita lista “presa aberta”)
 ========================= */
 
 function ProductCombobox({
@@ -684,7 +623,6 @@ function ProductCombobox({
     disabled?: boolean;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
     const [open, setOpen] = useState(false);
 
     const list = useMemo(() => {
@@ -707,32 +645,13 @@ function ProductCombobox({
         if (sel && !query.trim()) {
             setQuery(`${sel.nome}`);
         }
-        // ao selecionar via qualquer caminho (click, barcode, etc) -> fecha a lista e “solta” o foco
-        if (valueId) {
-            setOpen(false);
-            requestAnimationFrame(() => inputRef.current?.blur());
-        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [valueId]);
-
-    function pick(p: Produto) {
-        onChangeId(p.id);
-        setQuery(p.nome);
-        setOpen(false);
-
-        // garante fechamento mesmo se houver re-render/foco
-        requestAnimationFrame(() => {
-            setOpen(false);
-            inputRef.current?.blur();
-        });
-        setTimeout(() => setOpen(false), 0);
-    }
 
     return (
         <Field label={label}>
             <div ref={wrapRef} className="relative">
                 <TextInput
-                    ref={inputRef}
                     value={query}
                     onChange={(e) => {
                         setQuery(e.target.value);
@@ -743,7 +662,6 @@ function ProductCombobox({
                     placeholder={placeholder || "Digite para buscar..."}
                     disabled={disabled}
                 />
-
 
                 {open ? (
                     <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
@@ -761,10 +679,12 @@ function ProductCombobox({
                                                     "w-full px-3 py-2 text-left text-sm hover:bg-slate-50",
                                                     valueId === p.id ? "bg-slate-50" : "",
                                                 ].join(" ")}
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => pick(p)}
+                                                onClick={() => {
+                                                    onChangeId(p.id);
+                                                    setQuery(p.nome);
+                                                    setOpen(false);
+                                                }}
                                             >
-
                                                 <div className="flex items-center justify-between gap-2">
                                                     <span className="truncate font-medium text-slate-900">{p.nome}</span>
                                                     {typeof disp === "number" ? (
@@ -830,36 +750,6 @@ export default function Page() {
     // saldos editáveis por depósito
     const [editSaldos, setEditSaldos] = useState<Record<number, number>>({});
 
-    // CONFIRMAÇÃO (segunda etapa)
-    const [confirmOpen, setConfirmOpen] = useState(false);
-    const [confirmTitle, setConfirmTitle] = useState("");
-    const [confirmMessage, setConfirmMessage] = useState("");
-    const confirmFnRef = useRef<null | (() => Promise<void> | void)>(null);
-    const [confirmBusy, setConfirmBusy] = useState(false);
-
-    function askConfirm(title: string, message: string, fn: () => Promise<void> | void) {
-        setConfirmTitle(title);
-        setConfirmMessage(message);
-        confirmFnRef.current = fn;
-        setConfirmOpen(true);
-    }
-
-    async function runConfirm() {
-        const fn = confirmFnRef.current;
-        if (!fn) {
-            setConfirmOpen(false);
-            return;
-        }
-        setConfirmBusy(true);
-        try {
-            await fn();
-        } finally {
-            setConfirmBusy(false);
-            confirmFnRef.current = null;
-            setConfirmOpen(false);
-        }
-    }
-
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
     const userById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
@@ -900,7 +790,7 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ALERTAS
+    // ALERTAS (agora só contagem / filtro, não existe mais aba)
     const alertRows = useMemo(() => {
         const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo; rep: number }> = [];
         for (const s of saldos) {
@@ -1454,7 +1344,7 @@ export default function Page() {
     }
 
     /* =========================
-         SAÍDA
+         SAÍDA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
       ========================= */
 
     const [saidaOpen, setSaidaOpen] = useState(false);
@@ -1597,7 +1487,7 @@ export default function Page() {
         resetSaidaItemFields();
     }
 
-    async function confirmarSaidaAgora() {
+    async function confirmarSaida() {
         let items = [...saidaItens];
 
         if (saidaProdutoId) {
@@ -1626,32 +1516,21 @@ export default function Page() {
         setTab("ESTOQUE");
     }
 
-    function confirmarSaida() {
-        askConfirm(
-            "Confirmar Saída",
-            "Tem certeza que deseja confirmar esta saída? (Depois de confirmar, a movimentação será registrada.)",
-            confirmarSaidaAgora
-        );
-    }
-
     function cancelarSaida() {
         resetSaidaAll();
         setSaidaOpen(false);
     }
 
     /* =========================
-         TRANSFERÊNCIA
-         - Adicionado leitor de código (scanner + input de barcode)
+         TRANSFERÊNCIA (AGORA SOMENTE DENTRO DE MOVIMENTAÇÃO / MODAL)
       ========================= */
 
     const [trfOpen, setTrfOpen] = useState(false);
-    const [trfScanOpen, setTrfScanOpen] = useState(false);
 
     const [trfSolicitanteId, setTrfSolicitanteId] = useState<ID>(0);
     const [trfOrigemId, setTrfOrigemId] = useState<ID>(0);
     const [trfDestinoId, setTrfDestinoId] = useState<ID>(0);
 
-    const [trfBarcode, setTrfBarcode] = useState("");
     const [trfCategoriaId, setTrfCategoriaId] = useState<ID | "Todas">("Todas");
 
     const [trfProdutoId, setTrfProdutoId] = useState<ID>(0);
@@ -1695,17 +1574,7 @@ export default function Page() {
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     }, [saldos, produtos, trfOrigemId, trfCategoriaId]);
 
-    function onTrfBarcodePick(code: string) {
-        setTrfBarcode(code);
-        const p = produtos.find((x) => x.codigo_barras === code);
-        if (p) {
-            setTrfProdutoId(p.id);
-            setTrfProdQuery(p.nome);
-        }
-    }
-
     function resetTrfItemFields() {
-        setTrfBarcode("");
         setTrfCategoriaId("Todas");
         setTrfProdutoId(0);
         setTrfProdQuery("");
@@ -1769,8 +1638,8 @@ export default function Page() {
         };
 
         const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
-        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id} → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id
-            }`;
+        const resumo = `${prodNome} — qtd ${quantidade} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id
+            } → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id}`;
 
         return { payload, resumo };
     }
@@ -1783,7 +1652,7 @@ export default function Page() {
         resetTrfItemFields();
     }
 
-    async function confirmarTransferenciaAgora() {
+    async function confirmarTransferencia() {
         let items = [...trfItens];
 
         if (trfProdutoId) {
@@ -1810,14 +1679,6 @@ export default function Page() {
         setTrfOpen(false);
         await refreshInit();
         setTab("ESTOQUE");
-    }
-
-    function confirmarTransferencia() {
-        askConfirm(
-            "Confirmar Transferência",
-            "Tem certeza que deseja confirmar esta transferência? (Depois de confirmar, a movimentação será registrada.)",
-            confirmarTransferenciaAgora
-        );
     }
 
     function cancelarTransferencia() {
@@ -2128,7 +1989,7 @@ export default function Page() {
                             </div>
 
                             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-                                Dica: na Entrada/Saída/Transferência você pode usar <b>câmera</b> para ler o código de barras.
+                                Dica: na Entrada/Saída você pode usar <b>câmera</b> para ler o código de barras.
                             </div>
                         </Card>
                     ) : null}
@@ -2153,14 +2014,269 @@ export default function Page() {
                     {/* ESTOQUE */}
                     {tab === "ESTOQUE" ? (
                         <Card className="p-4">
-                            {/* ... (tabela/estoque permanece igual ao seu código original) ... */}
-                            {/* Para não estourar a mensagem, mantive o bloco de ESTOQUE/HISTÓRICO/AVANÇADO igual ao seu original,
-                                e as mudanças pedidas estão nos componentes/modais de Saída/Transferência/Modal/Combobox/Scanner/Confirmação.
-                                Se você quiser, eu também posso colar aqui novamente 100% do bloco de ESTOQUE/HISTÓRICO/AVANÇADO igualzinho ao original. */}
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                                Observação: por limite de tamanho da resposta, o bloco <b>ESTOQUE/HISTÓRICO/AVANÇADO</b> ficou oculto aqui (sem alterações).
-                                As alterações solicitadas foram aplicadas nos modais e componentes usados em Saída/Transferência/Scanner/Confirmação.
-                                Se você colar este arquivo no seu projeto, basta manter o miolo desses blocos exatamente como estava no seu original.
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2 sm:justify-end">
+                                    <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
+                                        Entrada
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => setSaidaOpen(true)} type="button">
+                                        Saída
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => setTrfOpen(true)} type="button">
+                                        Transferência
+                                    </Button>
+
+                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
+                                        ⬇️ CSV
+                                    </Button>
+                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || !estoqueRows.length}>
+                                        🧾 PDF
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                                <Field label="Pesquisar">
+                                    <TextInput
+                                        value={qEstoque}
+                                        onChange={(e) => setQEstoque(e.target.value)}
+                                        placeholder="Nome, código, depósito, categoria, fabricante..."
+                                    />
+                                </Field>
+
+                                <Field label="Depósito">
+                                    <Select
+                                        value={depFiltroEstoque as any}
+                                        onChange={(e) => setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
+                                    >
+                                        <option value="Todos">Todos</option>
+                                        {depositos.map((d) => (
+                                            <option key={d.id} value={d.id}>
+                                                {d.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Categoria">
+                                    <Select
+                                        value={catFiltroEstoque as any}
+                                        onChange={(e) => setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
+                                    >
+                                        <option value="Todos">Todas</option>
+                                        {categorias.map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Fabricante">
+                                    <Select
+                                        value={fabFiltroEstoque as any}
+                                        onChange={(e) => setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
+                                    >
+                                        <option value="Todos">Todos</option>
+                                        {fabricantes.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Somente alerta (≤ mín)">
+                                    <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
+                                        <input
+                                            id="onlyLow"
+                                            type="checkbox"
+                                            checked={onlyLow}
+                                            onChange={(e) => setOnlyLow(e.target.checked)}
+                                            className="h-4 w-4"
+                                        />
+                                        <label htmlFor="onlyLow" className="text-sm text-slate-700">
+                                            Mostrar
+                                        </label>
+                                    </div>
+                                </Field>
+
+                                <Field label="Ações">
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setOnlyLow(true);
+                                            }}
+                                            type="button"
+                                        >
+                                            Alertas ({alertCount})
+                                        </Button>
+                                        <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
+                                            Histórico
+                                        </Button>
+                                    </div>
+                                </Field>
+                            </div>
+
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                                {loading ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
+                                ) : estoqueRows.length === 0 ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
+                                ) : (
+                                    <>
+                                        {/* MOBILE */}
+                                        <ul className="divide-y divide-slate-200 sm:hidden">
+                                            {estoqueRows.map(({ p, d, qtd, s, min, rep }) => {
+                                                const low = qtd <= min;
+                                                const valorNum = Number(p.valor) || 0;
+
+                                                const foto = normalizeImgUrl(p.foto_url);
+                                                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
+                                                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
+
+                                                return (
+                                                    <li key={`${p.id}_${d.id}`}>
+                                                        <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
+                                                            <div className="flex min-w-0 items-center gap-3">
+                                                                <PhotoThumb
+                                                                    url={foto}
+                                                                    onClick={() => {
+                                                                        if (!foto) return;
+                                                                        setImgUrl(foto);
+                                                                        setImgTitle(p.nome);
+                                                                        setImgOpen(true);
+                                                                    }}
+                                                                />
+                                                                <div className="min-w-0">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openProdutoEditor(p.id)}
+                                                                            className="truncate text-left text-sm font-semibold text-slate-900 hover:underline"
+                                                                            title="Clique para editar"
+                                                                        >
+                                                                            {p.nome}
+                                                                        </button>
+
+                                                                        {low ? <span className="text-xs text-red-600 shrink-0">• alerta</span> : null}
+                                                                    </div>
+                                                                    <p className="mt-0.5 truncate text-xs text-slate-600">
+                                                                        CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
+                                                                    </p>
+                                                                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                                                                        {cat ? (
+                                                                            <>
+                                                                                Categoria: <b>{cat}</b>
+                                                                            </>
+                                                                        ) : null}
+                                                                        {cat && fab ? " • " : null}
+                                                                        {fab ? (
+                                                                            <>
+                                                                                Fabricante: <b>{fab}</b>
+                                                                            </>
+                                                                        ) : null}
+                                                                    </p>
+                                                                    <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                        Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="shrink-0 text-right">
+                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>{qtd}</p>
+                                                                <p className="text-xs text-slate-500">
+                                                                    Min {min} • Rep <span className="font-semibold text-emerald-700">{rep}</span>
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+
+                                        {/* PC */}
+                                        <div className="hidden sm:block">
+                                            <div className="overflow-auto">
+                                                <table className="min-w-full border-separate border-spacing-0">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Código</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Min</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Atualizado</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {estoqueRows.map(({ p, d, qtd, s, min, rep }) => {
+                                                            const low = qtd <= min;
+                                                            const valorNum = Number(p.valor) || 0;
+                                                            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "");
+                                                            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "");
+                                                            return (
+                                                                <tr key={`${p.id}_${d.id}`} className={low ? "bg-rose-50/40" : "bg-white"}>
+                                                                    <td className="border-b border-slate-200 px-3 py-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <PhotoThumb
+                                                                                url={p.foto_url}
+                                                                                onClick={() => {
+                                                                                    const foto = normalizeImgUrl(p.foto_url);
+                                                                                    if (!foto) return;
+                                                                                    setImgUrl(foto);
+                                                                                    setImgTitle(p.nome);
+                                                                                    setImgOpen(true);
+                                                                                }}
+                                                                            />
+                                                                            <div className="min-w-0">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openProdutoEditor(p.id)}
+                                                                                    className="truncate text-sm font-semibold text-slate-900 hover:underline"
+                                                                                >
+                                                                                    {p.nome}
+                                                                                </button>
+                                                                                {low ? <div className="text-xs text-red-600">alerta</div> : <div className="text-xs text-slate-500">—</div>}
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                        <span className="font-mono text-xs">{p.codigo_barras}</span>
+                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat || "—"}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab || "—"}</td>
+                                                                    <td
+                                                                        className={[
+                                                                            "border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold",
+                                                                            low ? "text-red-700" : "text-slate-900",
+                                                                        ].join(" ")}
+                                                                    >
+                                                                        {qtd}
+                                                                    </td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{min}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-emerald-700">{rep}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{moneyBRL(valorNum)}</td>
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-xs text-slate-600">{s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </Card>
                     ) : null}
@@ -2168,8 +2284,144 @@ export default function Page() {
                     {/* HISTÓRICO */}
                     {tab === "HISTORICO" ? (
                         <Card className="p-4">
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                                Observação: bloco de HISTÓRICO permanece igual ao original (sem alterações).
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
+                                        Atualizar
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {histErr ? <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{histErr}</div> : null}
+
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                                <div className="sm:col-span-3">
+                                    <Field label="Buscar (produto, CB, destino, obs)">
+                                        <TextInput value={histQ} onChange={(e) => setHistQ(e.target.value)} placeholder="Ex: URNA, 1745..., Obra X" />
+                                    </Field>
+                                </div>
+
+                                <Field label="Tipo">
+                                    <Select value={histTipo} onChange={(e) => setHistTipo(e.target.value as "Todos" | HistoricoRow["tipo"])}>
+                                        <option value="Todos">Todos</option>
+                                        <option value="ENTRADA">Entrada</option>
+                                        <option value="SAIDA">Saída</option>
+                                        <option value="TRANSFERENCIA">Transferência</option>
+                                        <option value="CADASTRO_PRODUTO">Cadastro produto</option>
+                                    </Select>
+                                </Field>
+
+                                <Field label="Limite">
+                                    <Select value={histLimit} onChange={(e) => setHistLimit(Number(e.target.value))}>
+                                        <option value={80}>80</option>
+                                        <option value={120}>120</option>
+                                        <option value={300}>300</option>
+                                        <option value={500}>500</option>
+                                    </Select>
+                                </Field>
+
+                                <div className="sm:col-span-6 flex flex-wrap gap-2">
+                                    <Button onClick={loadHistorico} disabled={histLoading} type="button">
+                                        Filtrar
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        onClick={() => {
+                                            setHistQ("");
+                                            setHistTipo("Todos");
+                                            setTimeout(() => loadHistorico(), 0);
+                                        }}
+                                        disabled={histLoading}
+                                        type="button"
+                                    >
+                                        Limpar
+                                    </Button>
+
+                                    <div className="ml-auto flex items-center gap-2">
+                                        <span className="text-xs text-slate-500">Mostrando: {histRows.length}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                                {histLoading ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
+                                ) : histRows.length === 0 ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
+                                ) : (
+                                    <ul className="divide-y divide-slate-200">
+                                        {histRows.map((h) => {
+                                            const tipoBadge =
+                                                h.tipo === "ENTRADA"
+                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    : h.tipo === "SAIDA"
+                                                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                        : h.tipo === "TRANSFERENCIA"
+                                                            ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                                            : "bg-slate-50 text-slate-700 border-slate-200";
+
+                                            const origem = h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
+                                            const destino = h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+
+                                            return (
+                                                <li key={h.id} className="px-4 py-3">
+                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>{h.tipo}</span>
+                                                                <span className="text-xs text-slate-500">{fmtDateTime(h.criado_em)}</span>
+                                                            </div>
+
+                                                            <p className="mt-2 truncate text-sm font-semibold text-slate-900">
+                                                                {h.produto_nome || `Produto ${h.produto_id}`}{" "}
+                                                                <span className="text-xs font-normal text-slate-500">• CB {h.codigo_barras_snapshot}</span>
+                                                            </p>
+
+                                                            <p className="mt-0.5 text-xs text-slate-600">
+                                                                {h.tipo === "ENTRADA" ? (
+                                                                    <>
+                                                                        Depósito: <b>{destino || "—"}</b>
+                                                                    </>
+                                                                ) : h.tipo === "SAIDA" ? (
+                                                                    <>
+                                                                        Depósito: <b>{origem || "—"}</b> • Destino: <b>{h.destino_texto || "—"}</b>
+                                                                    </>
+                                                                ) : h.tipo === "TRANSFERENCIA" ? (
+                                                                    <>
+                                                                        Origem: <b>{origem || "—"}</b> → Destino: <b>{destino || "—"}</b>
+                                                                    </>
+                                                                ) : (
+                                                                    <>—</>
+                                                                )}
+                                                            </p>
+
+                                                            <p className="mt-0.5 text-[11px] text-slate-500">
+                                                                Operador: <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
+                                                                {h.solicitante_usuario_id ? (
+                                                                    <>
+                                                                        {" "}
+                                                                        • Solicitante:{" "}
+                                                                        <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
+                                                                    </>
+                                                                ) : null}
+                                                                {h.observacao ? <> • Obs: {h.observacao}</> : null}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="shrink-0 text-right">
+                                                            <p className="text-sm font-semibold text-slate-900">{h.quantidade === null ? "—" : h.quantidade}</p>
+                                                            <p className="text-xs text-slate-500">qtd</p>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
                             </div>
                         </Card>
                     ) : null}
@@ -2177,8 +2429,184 @@ export default function Page() {
                     {/* AVANÇADO */}
                     {tab === "AVANCADO" ? (
                         <Card className="p-4">
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                                Observação: bloco de AVANÇADO permanece igual ao original (sem alterações).
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.</p>
+                                </div>
+                                <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
+                                    Voltar
+                                </Button>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                {/* Depósitos */}
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar Depósito</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Nome do novo depósito">
+                                            <TextInput value={novoDepNome} onChange={(e) => setNovoDepNome(e.target.value)} placeholder="Ex: Almox C" />
+                                        </Field>
+                                        <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()} type="button">
+                                            Criar depósito
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear Depósito</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Depósito">
+                                            <Select value={renomearDepId} onChange={(e) => setRenomearDepId(Number(e.target.value))}>
+                                                {depositos.map((d) => (
+                                                    <option key={d.id} value={d.id}>
+                                                        {d.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                        <Field label="Novo nome">
+                                            <TextInput value={renomearDepNome} onChange={(e) => setRenomearDepNome(e.target.value)} />
+                                        </Field>
+                                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()} type="button">
+                                            Renomear
+                                        </Button>
+
+                                        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                                            Observação: não há opção de excluir depósito (por segurança).
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Categorias */}
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar Categoria</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Nome da categoria">
+                                            <TextInput value={novoCatNome} onChange={(e) => setNovoCatNome(e.target.value)} placeholder="Ex: EPIs" />
+                                        </Field>
+                                        <Button onClick={criarCategoria} disabled={busyCat || !novoCatNome.trim()} type="button">
+                                            Criar categoria
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear Categoria</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Categoria">
+                                            <Select value={renomearCatId} onChange={(e) => setRenomearCatId(Number(e.target.value))}>
+                                                {categorias.map((c) => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                        <Field label="Novo nome">
+                                            <TextInput value={renomearCatNome} onChange={(e) => setRenomearCatNome(e.target.value)} />
+                                        </Field>
+                                        <Button onClick={renomearCategoria} disabled={busyCat || !renomearCatId || !renomearCatNome.trim()} type="button">
+                                            Renomear
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Fabricantes */}
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar Fabricante</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Nome do fabricante">
+                                            <TextInput value={novoFabNome} onChange={(e) => setNovoFabNome(e.target.value)} placeholder="Ex: 3M" />
+                                        </Field>
+                                        <Button onClick={criarFabricante} disabled={busyFab || !novoFabNome.trim()} type="button">
+                                            Criar fabricante
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear Fabricante</p>
+                                    <div className="mt-3 grid grid-cols-1 gap-3">
+                                        <Field label="Fabricante">
+                                            <Select value={renomearFabId} onChange={(e) => setRenomearFabId(Number(e.target.value))}>
+                                                {fabricantes.map((f) => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                        <Field label="Novo nome">
+                                            <TextInput value={renomearFabNome} onChange={(e) => setRenomearFabNome(e.target.value)} />
+                                        </Field>
+                                        <Button onClick={renomearFabricante} disabled={busyFab || !renomearFabId || !renomearFabNome.trim()} type="button">
+                                            Renomear
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Exportação */}
+                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
+                                    <p className="mt-1 text-xs text-slate-600">Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).</p>
+
+                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        {depositos.map((d) => (
+                                            <div key={d.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                                    <p className="text-[11px] text-slate-500">CSV para conferência</p>
+                                                </div>
+                                                <Button variant="ghost" onClick={() => exportarDeposito(d.id)} type="button">
+                                                    Exportar
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Importação CSV */}
+                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Importar produtos e saldos via CSV</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE, PREÇO VENDA...
+                                    </p>
+
+                                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                                        <input
+                                            type="file"
+                                            accept=".csv,text/csv"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+
+                                                const fd = new FormData();
+                                                fd.append("action", "import_csv");
+                                                fd.append("arquivo", file);
+
+                                                fetch(API_BASE, {
+                                                    method: "POST",
+                                                    body: fd,
+                                                    credentials: "include",
+                                                })
+                                                    .then((r) => r.json())
+                                                    .then((j) => {
+                                                        if (!j.ok) {
+                                                            alert(j.msg || "Falha na importação.");
+                                                            return;
+                                                        }
+                                                        alert(j.msg || "Importação concluída.");
+                                                        refreshInit();
+                                                    })
+                                                    .catch((err) => {
+                                                        console.error(err);
+                                                        alert("Erro na importação.");
+                                                    });
+                                            }}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </Card>
                     ) : null}
@@ -2188,34 +2616,161 @@ export default function Page() {
             {/* POPUP IMAGEM */}
             <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
 
-            {/* CONFIRM DIALOG (2ª confirmação) */}
-            <ConfirmDialog
-                open={confirmOpen}
-                title={confirmTitle}
-                message={confirmMessage}
-                onCancel={() => {
-                    if (confirmBusy) return;
-                    confirmFnRef.current = null;
-                    setConfirmOpen(false);
-                }}
-                onConfirm={runConfirm}
-                busy={confirmBusy}
-            />
-
             {/* MODAL: EDITAR PRODUTO */}
-            <Modal
-                open={prodEditOpen}
-                title="Editar produto"
-                subtitle="Edite o cadastro e/ou ajuste os saldos por depósito."
-                onClose={() => setProdEditOpen(false)}
-                closeOnBackdrop={false}
-                closeOnEsc={false}
-            >
-                {/* (mesmo conteúdo do seu modal editar produto — sem mudanças) */}
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    Observação: conteúdo do modal de editar produto permanece igual ao original (sem alterações funcionais),
-                    apenas com fechamento por clique fora/ESC desabilitado.
-                </div>
+            <Modal open={prodEditOpen} title="Editar produto" subtitle="Edite o cadastro e/ou ajuste os saldos por depósito." onClose={() => setProdEditOpen(false)}>
+                {(() => {
+                    const p = prodEditId ? prodById.get(prodEditId) : null;
+                    const fotoAtual = p?.foto_url ? normalizeImgUrl(p.foto_url) : null;
+                    const fotoPreview = editFotoNova || fotoAtual;
+
+                    return (
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-3">
+                                <div className="h-20 w-20 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                                    {fotoPreview ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={fotoPreview} alt="Foto do produto" className="h-20 w-20 object-cover" />
+                                    ) : (
+                                        <div className="flex h-20 w-20 items-center justify-center text-2xl">🖼️</div>
+                                    )}
+                                </div>
+
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-900">{p?.nome || "—"}</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                        Código de barras: <b>{p?.codigo_barras || "—"}</b>
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-slate-500">Atualizado: {p?.atualizado_em ? fmtDateTime(p.atualizado_em) : "—"}</p>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 p-3">
+                                <p className="text-sm font-semibold text-slate-900">Cadastro</p>
+
+                                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <Field label="Nome">
+                                        <TextInput value={editNome} onChange={(e) => setEditNome(e.target.value)} />
+                                    </Field>
+
+                                    <Field label="Valor (R$)">
+                                        <TextInput
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={editValor}
+                                            onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
+                                            placeholder="R$ 0,00"
+                                        />
+                                    </Field>
+
+                                    <Field label="Mínimo">
+                                        <TextInput type="number" min={0} value={editMin} onChange={(e) => setEditMin(clampInt(e.target.value))} />
+                                    </Field>
+
+                                    <Field label="Categoria">
+                                        <Select value={editCatId} onChange={(e) => setEditCatId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {categorias.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
+                                    <Field label="Fabricante">
+                                        <Select value={editFabId} onChange={(e) => setEditFabId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {fabricantes.map((f) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
+                                    <div className="sm:col-span-2">
+                                        <Field label="Nova foto (opcional)" hint="Envie uma imagem para substituir a atual.">
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => onProdutoFotoNova(e.target.files?.[0])}
+                                                className="block w-full text-sm text-slate-700"
+                                            />
+                                        </Field>
+
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {fotoPreview ? (
+                                                <Button
+                                                    variant="ghost"
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setImgUrl(fotoPreview);
+                                                        setImgTitle(p?.nome || "Imagem do produto");
+                                                        setImgOpen(true);
+                                                    }}
+                                                >
+                                                    Ver imagem
+                                                </Button>
+                                            ) : null}
+
+                                            {editFotoNova ? (
+                                                <Button variant="ghost" type="button" onClick={() => setEditFotoNova("")}>
+                                                    Remover nova foto
+                                                </Button>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <Button onClick={salvarCadastroProduto} disabled={prodBusy || !editNome.trim()} type="button">
+                                        Salvar cadastro
+                                    </Button>
+                                    <Button variant="ghost" onClick={() => setProdEditOpen(false)} disabled={prodBusy} type="button">
+                                        Fechar
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 p-3">
+                                <p className="text-sm font-semibold text-slate-900">Saldos por depósito</p>
+                                <p className="mt-1 text-xs text-slate-600">Ajuste manual (gera AJUSTE). Use com cuidado.</p>
+
+                                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {depositos.map((d) => (
+                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                                <p className="text-[11px] text-slate-500">
+                                                    Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}
+                                                </p>
+                                            </div>
+                                            <div className="w-[120px]">
+                                                <TextInput
+                                                    type="number"
+                                                    min={0}
+                                                    value={clampInt(editSaldos[d.id] ?? 0)}
+                                                    onChange={(e) =>
+                                                        setEditSaldos((prev) => ({
+                                                            ...prev,
+                                                            [d.id]: clampInt(e.target.value),
+                                                        }))
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <Button onClick={salvarSaldosProduto} disabled={prodBusy || !prodEditId} type="button">
+                                        Salvar saldos
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
             </Modal>
 
             {/* MODAL: ENTRADA */}
@@ -2224,25 +2779,173 @@ export default function Page() {
                 title="Entrada"
                 subtitle="Leia/digite o código e confirme. Se o produto não existir, cadastre na hora."
                 onClose={() => setEntradaOpen(false)}
-                closeOnBackdrop={false}
-                closeOnEsc={false}
             >
-                {/* (mesmo conteúdo do seu modal entrada — sem mudanças) */}
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    Observação: conteúdo do modal de Entrada permanece igual ao original (sem alterações funcionais),
-                    apenas com fechamento por clique fora/ESC desabilitado.
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+                        <div className="sm:col-span-3">
+                            <Field label="Código de barras" hint="Você pode usar a câmera (Scan).">
+                                <div className="flex gap-2">
+                                    <TextInput
+                                        value={entradaBarcode}
+                                        onChange={(e) => setEntradaBarcode(e.target.value)}
+                                        placeholder="Ex: 789..."
+                                        inputMode="numeric"
+                                    />
+                                    <Button variant="soft" onClick={() => setEntradaScanOpen(true)} type="button">
+                                        📷 Scan
+                                    </Button>
+                                </div>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Depósito">
+                                <Select value={entradaDepositoId} onChange={(e) => setEntradaDepositoId(Number(e.target.value))}>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-1">
+                            <Field label="Qtd">
+                                <TextInput type="number" min={1} value={entradaQtd} onChange={(e) => setEntradaQtd(clampInt(e.target.value) || 1)} />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-6">
+                            <Field label="Observação (opcional)">
+                                <TextArea value={entradaObs} onChange={(e) => setEntradaObs(e.target.value)} placeholder="Ex: NF 123 / Compra / Ajuste..." />
+                            </Field>
+                        </div>
+                    </div>
+
+                    {entradaProdutoExistente ? (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            Produto encontrado: <b>{entradaProdutoExistente.nome}</b>{" "}
+                            <span className="text-xs text-emerald-700">• clique no nome na tabela de estoque para editar</span>
+                        </div>
+                    ) : entradaBarcode.trim() ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="text-sm font-semibold text-slate-900">Cadastro rápido (produto novo)</p>
+                            <p className="mt-1 text-xs text-slate-600">Preencha o mínimo necessário para cadastrar.</p>
+
+                            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                                <div className="sm:col-span-3">
+                                    <Field label="Nome do produto">
+                                        <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: Luva nitrílica M" />
+                                    </Field>
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <Field label="Valor (R$)">
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            step="0.01"
+                                            value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"}
+                                            onChange={(e) => setNovoValor(Number(e.target.value || 0))}
+                                        />
+                                    </Field>
+                                </div>
+
+                                <div className="sm:col-span-1">
+                                    <Field label="Mínimo">
+                                        <TextInput type="number" min={0} value={novoMin} onChange={(e) => setNovoMin(clampInt(e.target.value))} />
+                                    </Field>
+                                </div>
+
+                                <div className="sm:col-span-3">
+                                    <Field label="Categoria (opcional)">
+                                        <div className="flex gap-2">
+                                            <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
+                                                <option value={0}>—</option>
+                                                {categorias.map((c) => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                            <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)}>
+                                                + Nova
+                                            </Button>
+                                        </div>
+                                    </Field>
+                                </div>
+
+                                <div className="sm:col-span-3">
+                                    <Field label="Fabricante (opcional)">
+                                        <div className="flex gap-2">
+                                            <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
+                                                <option value={0}>—</option>
+                                                {fabricantes.map((f) => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                            <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)}>
+                                                + Novo
+                                            </Button>
+                                        </div>
+                                    </Field>
+                                </div>
+
+                                <div className="sm:col-span-6">
+                                    <Field label="Foto (opcional)" hint="Você pode enviar uma imagem (fica em base64) ou colar uma URL no campo abaixo.">
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <input type="file" accept="image/*" onChange={(e) => onEntradaFoto(e.target.files?.[0])} className="block w-full text-sm" />
+                                            <TextInput value={novoFoto} onChange={(e) => setNovoFoto(e.target.value)} placeholder="...ou cole URL / base64 (data:)" />
+                                        </div>
+                                    </Field>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">Informe o código de barras para continuar.</div>
+                    )}
+
+                    {entradaItens.length ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                            <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
+                            <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
+                                {entradaItens.map((it) => (
+                                    <li key={it.id} className="flex items-center justify-between gap-2 p-3">
+                                        <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
+                                        <Button variant="ghost" type="button" onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}>
+                                            Remover
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="soft" onClick={addEntradaItemToList} type="button" disabled={!entradaBarcode.trim()}>
+                            + Adicionar à lista
+                        </Button>
+
+                        <Button onClick={applyEntradaSingle} type="button" disabled={!entradaBarcode.trim()}>
+                            Confirmar 1 item
+                        </Button>
+
+                        <Button variant="ghost" onClick={applyEntradaLote} type="button" disabled={!entradaItens.length && !entradaBarcode.trim()}>
+                            Confirmar lote
+                        </Button>
+
+                        <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
+                            Fechar
+                        </Button>
+                    </div>
                 </div>
             </Modal>
 
             {/* MODAL: SAÍDA */}
-            <Modal
-                open={saidaOpen}
-                title="Saída"
-                subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível."
-                onClose={cancelarSaida}
-                closeOnBackdrop={false}
-                closeOnEsc={false}
-            >
+            <Modal open={saidaOpen} title="Saída" subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível." onClose={cancelarSaida}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-2">
@@ -2259,16 +2962,7 @@ export default function Page() {
 
                         <div className="sm:col-span-2">
                             <Field label="Depósito (origem)">
-                                <Select
-                                    value={saidaDepositoId}
-                                    onChange={(e) => {
-                                        setSaidaDepositoId(Number(e.target.value));
-                                        // ao trocar depósito, limpa seleção para evitar inconsistência
-                                        setSaidaProdutoId(0);
-                                        setSaidaProdQuery("");
-                                        setSaidaBarcode("");
-                                    }}
-                                >
+                                <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
@@ -2316,10 +3010,7 @@ export default function Page() {
 
                         <div className="sm:col-span-3">
                             <Field label="Categoria (filtro)">
-                                <Select
-                                    value={saidaCategoriaId as any}
-                                    onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
-                                >
+                                <Select value={saidaCategoriaId as any} onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
                                     <option value="Todas">Todas</option>
                                     {categorias.map((c) => (
                                         <option key={c.id} value={c.id}>
@@ -2338,10 +3029,7 @@ export default function Page() {
                                 onChangeId={(id) => {
                                     setSaidaProdutoId(id);
                                     const p = prodById.get(id);
-                                    if (p) {
-                                        setSaidaBarcode(p.codigo_barras);
-                                        setSaidaProdQuery(p.nome);
-                                    }
+                                    if (p) setSaidaBarcode(p.codigo_barras);
                                 }}
                                 saldoByProdId={saidaSaldoByProd}
                                 query={saidaProdQuery}
@@ -2384,32 +3072,22 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    {/* BOTÕES: confirmar mais afastado + 2ª confirmação */}
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <Button variant="soft" onClick={addSaidaItemToList} type="button" disabled={!saidaProdutoId}>
                             + Adicionar à lista
                         </Button>
-
+                        <Button onClick={confirmarSaida} type="button">
+                            Confirmar
+                        </Button>
                         <Button variant="ghost" onClick={cancelarSaida} type="button">
                             Cancelar
-                        </Button>
-
-                        <Button onClick={confirmarSaida} type="button" className="w-full sm:w-auto sm:ml-auto">
-                            Confirmar
                         </Button>
                     </div>
                 </div>
             </Modal>
 
             {/* MODAL: TRANSFERÊNCIA */}
-            <Modal
-                open={trfOpen}
-                title="Transferência"
-                subtitle="Move quantidade de um depósito para outro (com validação de saldo)."
-                onClose={cancelarTransferencia}
-                closeOnBackdrop={false}
-                closeOnEsc={false}
-            >
+            <Modal open={trfOpen} title="Transferência" subtitle="Move quantidade de um depósito para outro (com validação de saldo)." onClose={cancelarTransferencia}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-2">
@@ -2426,16 +3104,7 @@ export default function Page() {
 
                         <div className="sm:col-span-2">
                             <Field label="Origem">
-                                <Select
-                                    value={trfOrigemId}
-                                    onChange={(e) => {
-                                        setTrfOrigemId(Number(e.target.value));
-                                        // limpa seleção quando troca origem
-                                        setTrfProdutoId(0);
-                                        setTrfProdQuery("");
-                                        setTrfBarcode("");
-                                    }}
-                                >
+                                <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
@@ -2457,37 +3126,9 @@ export default function Page() {
                             </Field>
                         </div>
 
-                        {/* ✅ Leitor de código na Transferência */}
-                        <div className="sm:col-span-3">
-                            <Field label="Código de barras (opcional)">
-                                <div className="flex gap-2">
-                                    <TextInput
-                                        value={trfBarcode}
-                                        onChange={(e) => {
-                                            const v = e.target.value;
-                                            setTrfBarcode(v);
-                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
-                                            if (p) {
-                                                setTrfProdutoId(p.id);
-                                                setTrfProdQuery(p.nome);
-                                            }
-                                        }}
-                                        placeholder="Digite ou use Scan"
-                                        inputMode="numeric"
-                                    />
-                                    <Button variant="soft" onClick={() => setTrfScanOpen(true)} type="button">
-                                        📷 Scan
-                                    </Button>
-                                </div>
-                            </Field>
-                        </div>
-
                         <div className="sm:col-span-3">
                             <Field label="Categoria (filtro)">
-                                <Select
-                                    value={trfCategoriaId as any}
-                                    onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
-                                >
+                                <Select value={trfCategoriaId as any} onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
                                     <option value="Todas">Todas</option>
                                     {categorias.map((c) => (
                                         <option key={c.id} value={c.id}>
@@ -2498,19 +3139,12 @@ export default function Page() {
                             </Field>
                         </div>
 
-                        <div className="sm:col-span-6">
+                        <div className="sm:col-span-3">
                             <ProductCombobox
                                 label="Produto (na origem)"
                                 produtos={trfProdutosNaOrigem}
                                 valueId={trfProdutoId}
-                                onChangeId={(id) => {
-                                    setTrfProdutoId(id);
-                                    const p = prodById.get(id);
-                                    if (p) {
-                                        setTrfBarcode(p.codigo_barras);
-                                        setTrfProdQuery(p.nome);
-                                    }
-                                }}
+                                onChangeId={(id) => setTrfProdutoId(id)}
                                 saldoByProdId={trfSaldoByProd}
                                 query={trfProdQuery}
                                 setQuery={setTrfProdQuery}
@@ -2552,32 +3186,22 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    {/* BOTÕES: confirmar mais afastado + 2ª confirmação */}
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <Button variant="soft" onClick={addTrfItemToList} type="button" disabled={!trfProdutoId}>
                             + Adicionar à lista
                         </Button>
-
+                        <Button onClick={confirmarTransferencia} type="button">
+                            Confirmar
+                        </Button>
                         <Button variant="ghost" onClick={cancelarTransferencia} type="button">
                             Cancelar
-                        </Button>
-
-                        <Button onClick={confirmarTransferencia} type="button" className="w-full sm:w-auto sm:ml-auto">
-                            Confirmar
                         </Button>
                     </div>
                 </div>
             </Modal>
 
             {/* MODAL: CRIAR CATEGORIA (QUICK) */}
-            <Modal
-                open={catQuickOpen}
-                title="Nova categoria"
-                subtitle="Crie e selecione automaticamente."
-                onClose={() => setCatQuickOpen(false)}
-                closeOnBackdrop={false}
-                closeOnEsc={false}
-            >
+            <Modal open={catQuickOpen} title="Nova categoria" subtitle="Crie e selecione automaticamente." onClose={() => setCatQuickOpen(false)}>
                 <div className="space-y-3">
                     <Field label="Nome">
                         <TextInput value={catQuickNome} onChange={(e) => setCatQuickNome(e.target.value)} placeholder="Ex: EPIs" />
@@ -2595,14 +3219,7 @@ export default function Page() {
             </Modal>
 
             {/* MODAL: CRIAR FABRICANTE (QUICK) */}
-            <Modal
-                open={fabQuickOpen}
-                title="Novo fabricante"
-                subtitle="Crie e selecione automaticamente."
-                onClose={() => setFabQuickOpen(false)}
-                closeOnBackdrop={false}
-                closeOnEsc={false}
-            >
+            <Modal open={fabQuickOpen} title="Novo fabricante" subtitle="Crie e selecione automaticamente." onClose={() => setFabQuickOpen(false)}>
                 <div className="space-y-3">
                     <Field label="Nome">
                         <TextInput value={fabQuickNome} onChange={(e) => setFabQuickNome(e.target.value)} placeholder="Ex: 3M" />
@@ -2622,7 +3239,6 @@ export default function Page() {
             {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
             <BarcodeScannerModal open={saidaScanOpen} title="Ler código de barras (Saída)" onClose={() => setSaidaScanOpen(false)} onDetected={(code) => onSaidaBarcodePick(code)} />
-            <BarcodeScannerModal open={trfScanOpen} title="Ler código de barras (Transferência)" onClose={() => setTrfScanOpen(false)} onDetected={(code) => onTrfBarcodePick(code)} />
         </main>
     );
 }
