@@ -807,7 +807,7 @@ export default function Page() {
         setLoading(true);
         setInitErr("");
         try {
-            const j = await apiGet<InitResp>({ init: 1 });
+            const j = await apiGet<InitResp>({ init: 1, _ts: Date.now() });
             if (!j.ok) throw new Error(j.msg || "Falha no init");
 
             setMe(j.me);
@@ -828,6 +828,10 @@ export default function Page() {
 
     useEffect(() => {
         refreshInit();
+
+        const onFocus = () => refreshInit();
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -3254,9 +3258,35 @@ export default function Page() {
                 </div>
             </Modal>
 
+            {/* CONFIRMAÇÕES (Saída / Transferência) */}
+            <ConfirmDialog
+                open={saidaConfirmOpen}
+                title="Confirmar saída"
+                message="Tem certeza que deseja confirmar a SAÍDA?"
+                onCancel={() => setSaidaConfirmOpen(false)}
+                onConfirm={async () => {
+                    setSaidaConfirmOpen(false);
+                    await confirmarSaida();
+                }}
+            />
+
+            <ConfirmDialog
+                open={trfConfirmOpen}
+                title="Confirmar transferência"
+                message="Tem certeza que deseja confirmar a TRANSFERÊNCIA?"
+                onCancel={() => setTrfConfirmOpen(false)}
+                onConfirm={async () => {
+                    setTrfConfirmOpen(false);
+                    await confirmarTransferencia();
+                }}
+            />
+
             {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
             <BarcodeScannerModal open={saidaScanOpen} title="Ler código de barras (Saída)" onClose={() => setSaidaScanOpen(false)} onDetected={(code) => onSaidaBarcodePick(code)} />
+
+            {/* FALTAVA ESTE (Transferência) */}
+            <BarcodeScannerModal open={trfScanOpen} title="Ler código de barras (Transferência)" onClose={() => setTrfScanOpen(false)} onDetected={(code) => onTrfBarcodePick(code)} />
         </main>
     );
 }
