@@ -1183,6 +1183,8 @@ export default function Page() {
 
     // NOVO: filtro fabricante + barra de pesquisa/lista de produtos filtrados (Entrada)
     const [entradaFabFiltroId, setEntradaFabFiltroId] = useState<ID | "Todos">("Todos");
+    // NOVO: filtro categoria (Entrada)
+    const [entradaCatFiltroId, setEntradaCatFiltroId] = useState<ID | "Todas">("Todas");
     const [entradaProdutoId, setEntradaProdutoId] = useState<ID>(0);
     const [entradaProdQuery, setEntradaProdQuery] = useState("");
 
@@ -1261,17 +1263,25 @@ export default function Page() {
     // NOVO: lista de produtos filtrada por depósito + fabricante (Entrada)
     const entradaProdutosNoDeposito = useMemo(() => {
         const depId = Number(entradaDepositoId);
+
+        // pega apenas produtos que existem no depósito (tem linha de saldo)
         const ids = new Set<ID>();
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
         let list = produtos.filter((p) => ids.has(p.id));
 
+        // filtro categoria
+        if (entradaCatFiltroId !== "Todas") {
+            list = list.filter((p) => Number(p.categoria_id || 0) === Number(entradaCatFiltroId));
+        }
+
+        // filtro fabricante
         if (entradaFabFiltroId !== "Todos") {
             list = list.filter((p) => Number(p.fabricante_id || 0) === Number(entradaFabFiltroId));
         }
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [saldos, produtos, entradaDepositoId, entradaFabFiltroId]);
+    }, [saldos, produtos, entradaDepositoId, entradaCatFiltroId, entradaFabFiltroId]);
 
     async function fileToDataUrl(file: File): Promise<string> {
         return await new Promise((resolve, reject) => {
