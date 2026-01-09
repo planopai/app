@@ -3153,6 +3153,28 @@ export default function Page() {
                         </div>
 
                         <div className="sm:col-span-2">
+                            <Field label="Categoria (filtro)">
+                                <Select
+                                    value={entradaCatFiltroId as any}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setEntradaCatFiltroId(v === "Todas" ? "Todas" : Number(v));
+                                        setEntradaProdutoId(0);
+                                        setEntradaProdQuery("");
+                                    }}
+                                >
+                                    <option value="Todas">Todas</option>
+                                    {categorias.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+
+                        <div className="sm:col-span-2">
                             <Field label="Fabricante (filtro)">
                                 <Select
                                     value={entradaFabFiltroId as any}
