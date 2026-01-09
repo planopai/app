@@ -204,7 +204,11 @@ async function apiPost<T>(body: any) {
 ========================= */
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return (
+        <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>
+            {children}
+        </section>
+    );
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -217,22 +221,22 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     );
 }
 
-const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-    function TextInput(props, ref) {
-        return (
-            <input
-                ref={ref}
-                {...props}
-                className={[
-                    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
-                    "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
-                    props.className ?? "",
-                ].join(" ")}
-            />
-        );
-    }
-);
-
+const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function TextInput(
+    props,
+    ref
+) {
+    return (
+        <input
+            ref={ref}
+            {...props}
+            className={[
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
+                "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                props.className ?? "",
+            ].join(" ")}
+        />
+    );
+});
 
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     return (
@@ -340,7 +344,9 @@ function Modal({
         <div
             role="dialog"
             aria-modal="true"
-            className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(" ")}
+            className={["fixed inset-0 z-50", "flex items-center justify-center", "bg-black/45", "min-h-[100dvh] p-4"].join(
+                " "
+            )}
             onMouseDown={(e) => {
                 if (!closeOnBackdrop) return;
                 if (e.target === e.currentTarget) onClose();
@@ -406,6 +412,102 @@ function ConfirmDialog({
                     </Button>
                 </div>
             </div>
+        </Modal>
+    );
+}
+
+/* =========================
+   MODAL (POPUP) PARA QUANTIDADE APÓS SCAN (Saída / Transferência)
+========================= */
+
+function ScanQtyModal({
+    open,
+    title,
+    subtitle,
+    produto,
+    depositoNome,
+    disponivel,
+    onClose,
+    onConfirm,
+}: {
+    open: boolean;
+    title: string;
+    subtitle?: string;
+    produto: Produto | null;
+    depositoNome?: string;
+    disponivel: number;
+    onClose: () => void;
+    onConfirm: (quantidade: number) => void;
+}) {
+    const [qtd, setQtd] = useState<number>(1);
+
+    useEffect(() => {
+        if (!open) return;
+        setQtd(1);
+    }, [open, produto?.id]);
+
+    const max = Math.max(0, clampInt(disponivel));
+    const safeQtd = clampInt(qtd) || 1;
+    const invalid = !produto || safeQtd <= 0 || safeQtd > max || max <= 0;
+
+    return (
+        <Modal open={open} title={title} subtitle={subtitle} onClose={onClose}>
+            {!produto ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">Produto não encontrado.</div>
+            ) : (
+                <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-sm font-semibold text-slate-900">{produto.nome}</p>
+                        <p className="mt-1 text-xs text-slate-600">
+                            CB: <b>{produto.codigo_barras}</b>
+                            {depositoNome ? (
+                                <>
+                                    {" "}
+                                    • Depósito: <b>{depositoNome}</b>
+                                </>
+                            ) : null}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-600">
+                            Disponível em estoque: <b>{max}</b>
+                        </p>
+                    </div>
+
+                    {max <= 0 ? (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                            Este produto está <b>sem saldo</b> no depósito selecionado.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <Field label="Quantidade" hint={`Máximo permitido: ${max}`}>
+                                <TextInput
+                                    type="number"
+                                    min={1}
+                                    max={max}
+                                    value={safeQtd}
+                                    onChange={(e) => setQtd(clampInt(e.target.value) || 1)}
+                                />
+                            </Field>
+
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                Ao clicar em <b>OK</b>, o item já entra na lista.
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            type="button"
+                            onClick={() => onConfirm(Math.min(max, Math.max(1, safeQtd)))}
+                            disabled={invalid}
+                        >
+                            OK / Adicionar
+                        </Button>
+                        <Button variant="ghost" type="button" onClick={onClose}>
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            )}
         </Modal>
     );
 }
@@ -534,7 +636,8 @@ function BarcodeScannerModal({
                 const devices = await BrowserMultiFormatReader.listVideoInputDevices();
                 if (!devices?.length) throw new Error("Nenhuma câmera encontrada.");
 
-                const backCam = devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
+                const backCam =
+                    devices.find((d) => /back|traseira|environment/i.test(d.label))?.deviceId || devices[0]?.deviceId;
                 if (!videoRef.current) throw new Error("Vídeo não disponível.");
 
                 const controls = await codeReader.decodeFromVideoDevice(backCam ?? undefined, videoRef.current, (result) => {
@@ -1078,6 +1181,11 @@ export default function Page() {
     const [entradaQtd, setEntradaQtd] = useState<number>(1);
     const [entradaObs, setEntradaObs] = useState("");
 
+    // NOVO: filtro fabricante + barra de pesquisa/lista de produtos filtrados (Entrada)
+    const [entradaFabFiltroId, setEntradaFabFiltroId] = useState<ID | "Todos">("Todos");
+    const [entradaProdutoId, setEntradaProdutoId] = useState<ID>(0);
+    const [entradaProdQuery, setEntradaProdQuery] = useState("");
+
     const [novoNome, setNovoNome] = useState("");
     const [novoValor, setNovoValor] = useState<number>(0);
     const [novoMin, setNovoMin] = useState<number>(0);
@@ -1110,6 +1218,24 @@ export default function Page() {
         return produtos.find((p) => p.codigo_barras === cb) ?? null;
     }, [entradaBarcode, produtos]);
 
+    // NOVO: quando digitar/scanear CB, sincroniza com a barra de pesquisa (Entrada)
+    useEffect(() => {
+        const cb = entradaBarcode.trim();
+        if (!cb) {
+            setEntradaProdutoId(0);
+            // não zera query para não atrapalhar digitação do usuário
+            return;
+        }
+        const p = produtos.find((x) => x.codigo_barras === cb) ?? null;
+        if (p) {
+            setEntradaProdutoId(p.id);
+            setEntradaProdQuery(p.nome);
+        } else {
+            setEntradaProdutoId(0);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entradaBarcode]);
+
     useEffect(() => {
         if (entradaProdutoExistente) {
             setNovoNome("");
@@ -1120,6 +1246,32 @@ export default function Page() {
             setNovoFabricanteId(0);
         }
     }, [entradaProdutoExistente]);
+
+    // NOVO: saldo da Entrada (depósito destino selecionado) para exibir "disp" na lista
+    const entradaSaldoByProd = useMemo(() => {
+        const m = new Map<ID, number>();
+        const depId = Number(entradaDepositoId);
+        for (const s of saldos) {
+            if (s.deposito_id !== depId) continue;
+            m.set(s.produto_id, clampInt(s.quantidade));
+        }
+        return m;
+    }, [saldos, entradaDepositoId]);
+
+    // NOVO: lista de produtos filtrada por depósito + fabricante (Entrada)
+    const entradaProdutosNoDeposito = useMemo(() => {
+        const depId = Number(entradaDepositoId);
+        const ids = new Set<ID>();
+        for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
+
+        let list = produtos.filter((p) => ids.has(p.id));
+
+        if (entradaFabFiltroId !== "Todos") {
+            list = list.filter((p) => Number(p.fabricante_id || 0) === Number(entradaFabFiltroId));
+        }
+
+        return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    }, [saldos, produtos, entradaDepositoId, entradaFabFiltroId]);
 
     async function fileToDataUrl(file: File): Promise<string> {
         return await new Promise((resolve, reject) => {
@@ -1138,6 +1290,9 @@ export default function Page() {
 
     function resetEntradaForm() {
         setEntradaBarcode("");
+        setEntradaProdutoId(0);
+        setEntradaProdQuery("");
+        setEntradaFabFiltroId("Todos");
         setEntradaQtd(1);
         setEntradaObs("");
         setNovoNome("");
@@ -1394,6 +1549,11 @@ export default function Page() {
     const [saidaQtd, setSaidaQtd] = useState<number>(1);
     const [saidaObs, setSaidaObs] = useState("");
 
+    // NOVO: popup de quantidade após SCAN (Saída)
+    const [saidaScanQtyOpen, setSaidaScanQtyOpen] = useState(false);
+    const [saidaScanProduto, setSaidaScanProduto] = useState<Produto | null>(null);
+    const [saidaScanDisponivel, setSaidaScanDisponivel] = useState<number>(0);
+
     useEffect(() => {
         if (depositos.length && !saidaDepositoId) setSaidaDepositoId(depositos[0].id);
     }, [depositos, saidaDepositoId]);
@@ -1431,12 +1591,42 @@ export default function Page() {
     }, [saldos, produtos, saidaDepositoId, saidaCategoriaId]);
 
     function onSaidaBarcodePick(code: string) {
+        // mantém para digitação manual no campo (sem popup)
         setSaidaBarcode(code);
         const p = produtos.find((x) => x.codigo_barras === code);
         if (p) {
             setSaidaProdutoId(p.id);
             setSaidaProdQuery(p.nome);
         }
+    }
+
+    // NOVO: SCAN abre popup para escolher quantidade e adicionar direto na lista
+    function onSaidaBarcodeScanDetected(code: string) {
+        const solicitante_usuario_id = Number(saidaSolicitanteId);
+        const deposito_id = Number(saidaDepositoId);
+        const destinoNome = depositos.find((d) => d.id === Number(saidaDestinoDepositoId))?.nome || "";
+        const destino_texto = (destinoNome || "").trim();
+
+        if (!solicitante_usuario_id) return alert("Selecione o solicitante antes de usar o scanner.");
+        if (!deposito_id) return alert("Selecione o depósito (origem) antes de usar o scanner.");
+        if (!destino_texto) return alert("Selecione o destino antes de usar o scanner.");
+
+        const p = produtos.find((x) => x.codigo_barras === code.trim()) ?? null;
+        if (!p) {
+            alert(`Produto não encontrado para o código: ${code}`);
+            return;
+        }
+
+        const disp = saidaSaldoByProd.get(p.id) ?? 0;
+
+        // preenche campos (opcional) para manter consistência visual
+        setSaidaBarcode(p.codigo_barras);
+        setSaidaProdutoId(p.id);
+        setSaidaProdQuery(p.nome);
+
+        setSaidaScanProduto(p);
+        setSaidaScanDisponivel(disp);
+        setSaidaScanQtyOpen(true);
     }
 
     function resetSaidaItemFields() {
@@ -1510,12 +1700,65 @@ export default function Page() {
         return { payload, resumo };
     }
 
+    // NOVO: builder rápido (para o popup pós scan)
+    function buildSaidaPayloadDirect(produto_id: ID, quantidade: number): { payload: any; resumo: string } | null {
+        if (!me) {
+            alert("Sessão inválida. Recarregue a página.");
+            return null;
+        }
+
+        const deposito_id = Number(saidaDepositoId);
+        const solicitante_usuario_id = Number(saidaSolicitanteId);
+        const destinoNome = depositos.find((d) => d.id === Number(saidaDestinoDepositoId))?.nome || "";
+        const destino_texto = (destinoNome || "").trim();
+
+        if (!solicitante_usuario_id) return alert("Selecione o solicitante."), null;
+        if (!deposito_id) return alert("Selecione o depósito."), null;
+        if (!produto_id) return alert("Selecione um produto."), null;
+        if (clampInt(quantidade) <= 0) return alert("Quantidade inválida."), null;
+        if (!destino_texto) return alert("Selecione o destino."), null;
+
+        const s = saldosMap.get(`${produto_id}::${deposito_id}`);
+        const atual = s ? clampInt(s.quantidade) : 0;
+        if (clampInt(quantidade) > atual) return alert(`Quantidade maior que disponível (${atual}).`), null;
+
+        const payload: any = {
+            action: "saida",
+            produto_id,
+            deposito_id,
+            quantidade: clampInt(quantidade),
+            solicitante_usuario_id,
+            destino_texto,
+            observacao: saidaObs.trim() || undefined,
+        };
+
+        const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
+        const resumo = `${prodNome} — qtd ${clampInt(quantidade)} — Dep ${depById.get(deposito_id)?.nome || deposito_id} → ${destino_texto}`;
+
+        return { payload, resumo };
+    }
+
     function addSaidaItemToList() {
         const built = buildSaidaPayloadFromForm();
         if (!built) return;
         const id = saidaSeqRef.current++;
         setSaidaItens((prev) => [...prev, { id, ...built }]);
         resetSaidaItemFields();
+    }
+
+    // NOVO: adiciona item via popup pós scan
+    function addSaidaItemFromScan(produto_id: ID, quantidade: number) {
+        const built = buildSaidaPayloadDirect(produto_id, quantidade);
+        if (!built) return;
+        const id = saidaSeqRef.current++;
+        setSaidaItens((prev) => [...prev, { id, ...built }]);
+
+        // limpa apenas seleção de item (mantém solicitante/dep/destino)
+        setSaidaBarcode("");
+        setSaidaProdutoId(0);
+        setSaidaProdQuery("");
+        setSaidaQtd(1);
+        // mantém obs e filtros se o usuário quiser repetir
     }
 
     async function confirmarSaida() {
@@ -1573,6 +1816,11 @@ export default function Page() {
     const [trfQtd, setTrfQtd] = useState<number>(1);
     const [trfObs, setTrfObs] = useState("");
 
+    // NOVO: popup de quantidade após SCAN (Transferência)
+    const [trfScanQtyOpen, setTrfScanQtyOpen] = useState(false);
+    const [trfScanProduto, setTrfScanProduto] = useState<Produto | null>(null);
+    const [trfScanDisponivel, setTrfScanDisponivel] = useState<number>(0);
+
     useEffect(() => {
         if (depositos.length) {
             if (!trfOrigemId) setTrfOrigemId(depositos[0].id);
@@ -1609,12 +1857,41 @@ export default function Page() {
     }, [saldos, produtos, trfOrigemId, trfCategoriaId]);
 
     function onTrfBarcodePick(code: string) {
+        // mantém para digitação manual no campo (sem popup)
         setTrfBarcode(code);
         const p = produtos.find((x) => x.codigo_barras === code);
         if (p) {
             setTrfProdutoId(p.id);
             setTrfProdQuery(p.nome);
         }
+    }
+
+    // NOVO: SCAN abre popup para escolher quantidade e adicionar direto na lista
+    function onTrfBarcodeScanDetected(code: string) {
+        const solicitante_usuario_id = Number(trfSolicitanteId);
+        const deposito_origem_id = Number(trfOrigemId);
+        const deposito_destino_id = Number(trfDestinoId);
+
+        if (!solicitante_usuario_id) return alert("Selecione o solicitante antes de usar o scanner.");
+        if (!deposito_origem_id || !deposito_destino_id) return alert("Selecione origem e destino antes de usar o scanner.");
+        if (deposito_origem_id === deposito_destino_id) return alert("Origem e destino não podem ser iguais.");
+
+        const p = produtos.find((x) => x.codigo_barras === code.trim()) ?? null;
+        if (!p) {
+            alert(`Produto não encontrado para o código: ${code}`);
+            return;
+        }
+
+        const disp = trfSaldoByProd.get(p.id) ?? 0;
+
+        // preenche campos (opcional) para manter consistência visual
+        setTrfBarcode(p.codigo_barras);
+        setTrfProdutoId(p.id);
+        setTrfProdQuery(p.nome);
+
+        setTrfScanProduto(p);
+        setTrfScanDisponivel(disp);
+        setTrfScanQtyOpen(true);
     }
 
     function resetTrfItemFields() {
@@ -1688,12 +1965,65 @@ export default function Page() {
         return { payload, resumo };
     }
 
+    // NOVO: builder rápido (para o popup pós scan)
+    function buildTrfPayloadDirect(produto_id: ID, quantidade: number): { payload: any; resumo: string } | null {
+        if (!me) {
+            alert("Sessão inválida. Recarregue a página.");
+            return null;
+        }
+
+        const deposito_origem_id = Number(trfOrigemId);
+        const deposito_destino_id = Number(trfDestinoId);
+        const solicitante_usuario_id = Number(trfSolicitanteId);
+
+        if (!solicitante_usuario_id) return alert("Selecione o solicitante."), null;
+        if (!produto_id) return alert("Selecione um produto."), null;
+        if (!deposito_origem_id || !deposito_destino_id) return alert("Selecione depósitos."), null;
+        if (deposito_origem_id === deposito_destino_id) return alert("Origem e destino não podem ser iguais."), null;
+        if (clampInt(quantidade) <= 0) return alert("Quantidade inválida."), null;
+
+        const s = saldosMap.get(`${produto_id}::${deposito_origem_id}`);
+        const atual = s ? clampInt(s.quantidade) : 0;
+        if (clampInt(quantidade) > atual) return alert(`Quantidade maior que disponível na origem (${atual}).`), null;
+
+        const payload: any = {
+            action: "transferencia",
+            produto_id,
+            deposito_origem_id,
+            deposito_destino_id,
+            quantidade: clampInt(quantidade),
+            solicitante_usuario_id,
+            observacao: trfObs.trim() || undefined,
+        };
+
+        const prodNome = prodById.get(produto_id)?.nome || `#${produto_id}`;
+        const resumo = `${prodNome} — qtd ${clampInt(quantidade)} — ${depById.get(deposito_origem_id)?.nome || deposito_origem_id
+            } → ${depById.get(deposito_destino_id)?.nome || deposito_destino_id}`;
+
+        return { payload, resumo };
+    }
+
     function addTrfItemToList() {
         const built = buildTrfPayloadFromForm();
         if (!built) return;
         const id = trfSeqRef.current++;
         setTrfItens((prev) => [...prev, { id, ...built }]);
         resetTrfItemFields();
+    }
+
+    // NOVO: adiciona item via popup pós scan
+    function addTrfItemFromScan(produto_id: ID, quantidade: number) {
+        const built = buildTrfPayloadDirect(produto_id, quantidade);
+        if (!built) return;
+        const id = trfSeqRef.current++;
+        setTrfItens((prev) => [...prev, { id, ...built }]);
+
+        // limpa apenas seleção de item (mantém solicitante/origem/destino)
+        setTrfBarcode("");
+        setTrfProdutoId(0);
+        setTrfProdQuery("");
+        setTrfQtd(1);
+        // mantém obs e filtros se o usuário quiser repetir
     }
 
     async function confirmarTransferencia() {
@@ -2031,6 +2361,8 @@ export default function Page() {
 
                             <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
                                 Dica: na Entrada/Saída/Transferência você pode usar <b>câmera</b> para ler o código de barras.
+                                <br />
+                                NOVO: em <b>Saída</b> e <b>Transferência</b>, após o scan aparece um <b>popup</b> com o produto, saldo e seleção de quantidade (OK adiciona na lista).
                             </div>
                         </Card>
                     ) : null}
@@ -2041,7 +2373,11 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.
+                                        <br />
+                                        NOVO: filtro de <b>depósito</b> + <b>fabricante</b> e barra de pesquisa para listar produtos filtrados.
+                                    </p>
                                 </div>
                                 <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
                                     Abrir Entrada
