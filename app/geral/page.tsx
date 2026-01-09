@@ -17,6 +17,7 @@ type Produto = {
     codigo_barras: string;
     valor: string | number;
     minimo: number;
+    maximo?: number; // ✅ NOVO
     foto_url?: string | null;
     ativo: 0 | 1 | number;
     atualizado_em: string;
@@ -885,6 +886,7 @@ export default function Page() {
     const [editNome, setEditNome] = useState("");
     const [editValor, setEditValor] = useState<string>("R$ 0,00");
     const [editMin, setEditMin] = useState<number>(0);
+    const [editMax, setEditMax] = useState<number>(0); // ✅ NOVO
     const [editCatId, setEditCatId] = useState<ID>(0);
     const [editFabId, setEditFabId] = useState<ID>(0);
 
@@ -1460,6 +1462,7 @@ export default function Page() {
         setEditValor(maskBRLFromDigits(valorDigits));
 
         setEditMin(clampInt(p.minimo));
+        setEditMax(clampInt((p as any).maximo ?? 0)); // ✅ NOVO
         setEditCatId(Number(p.categoria_id || 0));
         setEditFabId(Number(p.fabricante_id || 0));
         setEditFotoNova("");
@@ -1492,6 +1495,7 @@ export default function Page() {
                 nome: editNome.trim(),
                 valor: parseBRLToNumber(editValor),
                 minimo: clampInt(editMin),
+                maximo: clampInt(editMax), // ✅ NOVO
                 categoria_id: editCatId ? Number(editCatId) : 0,
                 fabricante_id: editFabId ? Number(editFabId) : 0,
             };
@@ -3010,6 +3014,10 @@ export default function Page() {
 
                                     <Field label="Mínimo">
                                         <TextInput type="number" min={0} value={editMin} onChange={(e) => setEditMin(clampInt(e.target.value))} />
+                                    </Field>
+
+                                    <Field label="Máximo">
+                                        <TextInput type="number" min={0} value={editMax} onChange={(e) => setEditMax(clampInt(e.target.value))} />
                                     </Field>
 
                                     <Field label="Categoria">
