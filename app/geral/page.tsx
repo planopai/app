@@ -3118,8 +3118,15 @@ export default function Page() {
                         </div>
 
                         <div className="sm:col-span-2">
-                            <Field label="Depósito">
-                                <Select value={entradaDepositoId} onChange={(e) => setEntradaDepositoId(Number(e.target.value))}>
+                            <Field label="Depósito (entrada)">
+                                <Select
+                                    value={entradaDepositoId}
+                                    onChange={(e) => {
+                                        setEntradaDepositoId(Number(e.target.value));
+                                        setEntradaProdutoId(0);
+                                        setEntradaProdQuery("");
+                                    }}
+                                >
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
@@ -3133,6 +3140,53 @@ export default function Page() {
                             <Field label="Qtd">
                                 <TextInput type="number" min={1} value={entradaQtd} onChange={(e) => setEntradaQtd(clampInt(e.target.value) || 1)} />
                             </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Fabricante (filtro)">
+                                <Select
+                                    value={entradaFabFiltroId as any}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setEntradaFabFiltroId(v === "Todos" ? "Todos" : Number(v));
+                                        setEntradaProdutoId(0);
+                                        setEntradaProdQuery("");
+                                    }}
+                                >
+                                    <option value="Todos">Todos</option>
+                                    {fabricantes.map((f) => (
+                                        <option key={f.id} value={f.id}>
+                                            {f.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-4">
+                            <ProductCombobox
+                                label="Buscar produto (no depósito, filtrado)"
+                                placeholder="Digite nome ou código..."
+                                produtos={entradaProdutosNoDeposito}
+                                valueId={entradaProdutoId}
+                                onChangeId={(id) => {
+                                    setEntradaProdutoId(id);
+                                    const p = prodById.get(id);
+                                    if (p) {
+                                        setEntradaBarcode(p.codigo_barras);
+                                        setEntradaProdQuery(p.nome);
+                                    }
+                                }}
+                                saldoByProdId={entradaSaldoByProd}
+                                query={entradaProdQuery}
+                                setQuery={setEntradaProdQuery}
+                                disabled={!entradaDepositoId}
+                            />
+                            {entradaProdutoId ? (
+                                <p className="mt-2 text-xs text-slate-600">
+                                    Estoque atual neste depósito: <b>{entradaSaldoByProd.get(entradaProdutoId) ?? 0}</b>
+                                </p>
+                            ) : null}
                         </div>
 
                         <div className="sm:col-span-6">
@@ -3257,7 +3311,7 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: SAÍDA (não fecha clicando fora; confirmar com confirmação extra; botão confirmar mais afastado) */}
+            {/* MODAL: SAÍDA */}
             <Modal open={saidaOpen} title="Saída" subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível." onClose={cancelarSaida}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -3319,6 +3373,7 @@ export default function Page() {
                                     </Button>
                                 </div>
                             </Field>
+                            <p className="mt-1 text-[11px] text-slate-500">NOVO: via Scan abre popup para selecionar quantidade e adicionar direto na lista.</p>
                         </div>
 
                         <div className="sm:col-span-3">
@@ -3388,7 +3443,6 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    {/* Botões (confirmar mais afastado + confirmação extra) */}
                     <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex flex-wrap gap-2">
                             <Button variant="soft" onClick={addSaidaItemToList} type="button" disabled={!saidaProdutoId}>
@@ -3408,7 +3462,7 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: TRANSFERÊNCIA (com leitor de código; confirmar com confirmação extra; botão confirmar mais afastado) */}
+            {/* MODAL: TRANSFERÊNCIA */}
             <Modal open={trfOpen} title="Transferência" subtitle="Move quantidade de um depósito para outro (com validação de saldo)." onClose={cancelarTransferencia}>
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -3470,6 +3524,7 @@ export default function Page() {
                                     </Button>
                                 </div>
                             </Field>
+                            <p className="mt-1 text-[11px] text-slate-500">NOVO: via Scan abre popup para selecionar quantidade e adicionar direto na lista.</p>
                         </div>
 
                         <div className="sm:col-span-3">
@@ -3617,12 +3672,66 @@ export default function Page() {
                 }}
             />
 
+            {/* POPUP PÓS-SCAN (Saída) */}
+            <ScanQtyModal
+                open={saidaScanQtyOpen}
+                title="Produto detectado (Saída)"
+                subtitle="Selecione a quantidade para adicionar na lista."
+                produto={saidaScanProduto}
+                depositoNome={depById.get(Number(saidaDepositoId))?.nome || ""}
+                disponivel={saidaScanDisponivel}
+                onClose={() => {
+                    setSaidaScanQtyOpen(false);
+                    setSaidaScanProduto(null);
+                    setSaidaScanDisponivel(0);
+                }}
+                onConfirm={(qtd) => {
+                    if (!saidaScanProduto) return;
+                    addSaidaItemFromScan(saidaScanProduto.id, qtd);
+                    setSaidaScanQtyOpen(false);
+                    setSaidaScanProduto(null);
+                    setSaidaScanDisponivel(0);
+                }}
+            />
+
+            {/* POPUP PÓS-SCAN (Transferência) */}
+            <ScanQtyModal
+                open={trfScanQtyOpen}
+                title="Produto detectado (Transferência)"
+                subtitle="Selecione a quantidade para adicionar na lista."
+                produto={trfScanProduto}
+                depositoNome={depById.get(Number(trfOrigemId))?.nome || ""}
+                disponivel={trfScanDisponivel}
+                onClose={() => {
+                    setTrfScanQtyOpen(false);
+                    setTrfScanProduto(null);
+                    setTrfScanDisponivel(0);
+                }}
+                onConfirm={(qtd) => {
+                    if (!trfScanProduto) return;
+                    addTrfItemFromScan(trfScanProduto.id, qtd);
+                    setTrfScanQtyOpen(false);
+                    setTrfScanProduto(null);
+                    setTrfScanDisponivel(0);
+                }}
+            />
+
             {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
-            <BarcodeScannerModal open={saidaScanOpen} title="Ler código de barras (Saída)" onClose={() => setSaidaScanOpen(false)} onDetected={(code) => onSaidaBarcodePick(code)} />
 
-            {/* FALTAVA ESTE (Transferência) */}
-            <BarcodeScannerModal open={trfScanOpen} title="Ler código de barras (Transferência)" onClose={() => setTrfScanOpen(false)} onDetected={(code) => onTrfBarcodePick(code)} />
+            <BarcodeScannerModal
+                open={saidaScanOpen}
+                title="Ler código de barras (Saída)"
+                onClose={() => setSaidaScanOpen(false)}
+                onDetected={(code) => onSaidaBarcodeScanDetected(code)}
+            />
+
+            <BarcodeScannerModal
+                open={trfScanOpen}
+                title="Ler código de barras (Transferência)"
+                onClose={() => setTrfScanOpen(false)}
+                onDetected={(code) => onTrfBarcodeScanDetected(code)}
+            />
         </main>
     );
 }
