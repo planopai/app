@@ -943,19 +943,33 @@ export default function Page() {
     // ALERTAS
     const alertRows = useMemo(() => {
         const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo; rep: number }> = [];
+
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
+
             const min = clampInt(p.minimo);
+            const max = clampInt((p as any).maximo ?? 0);
             const qtd = clampInt(s.quantidade);
-            if (qtd <= min) rows.push({ p, d, qtd, min, s, rep: Math.max(0, min - qtd) });
+
+            // ✅ alerta quando atingir o mínimo OU abaixo (<=)
+            if (qtd <= min) {
+                rows.push({
+                    p,
+                    d,
+                    qtd,
+                    min,
+                    s,
+                    // ✅ REP = MAX - QTD
+                    rep: Math.max(0, max - qtd),
+                });
+            }
         }
+
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR"));
         return rows;
     }, [saldos, prodById, depById]);
-
-    const alertCount = alertRows.length;
 
     // ESTOQUE
     const [qEstoque, setQEstoque] = useState("");
@@ -987,9 +1001,10 @@ export default function Page() {
 
             const qtd = clampInt(s.quantidade);
             const min = clampInt(p.minimo);
-            const rep = Math.max(0, min - qtd);
+            const max = clampInt((p as any).maximo ?? 0);
+            const rep = Math.max(0, max - qtd); // ✅ REP = MAX - QTD
 
-            if (onlyLow && !(qtd <= min)) continue;
+            if (onlyLow && !(qtd <= min)) continue; // ✅ mantém alerta ao chegar no mínimo
 
             if (qq) {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
