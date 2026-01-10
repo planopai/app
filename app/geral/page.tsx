@@ -971,6 +971,8 @@ export default function Page() {
         return rows;
     }, [saldos, prodById, depById]);
 
+    const alertCount = alertRows.length;
+
     // ESTOQUE
     const [qEstoque, setQEstoque] = useState("");
     const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID | "Todos">("Todos");
