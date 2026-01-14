@@ -30,7 +30,7 @@ import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
 import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
 
-// ✅ NOVO: modal de conferência antes do fase11
+// ✅ modal de conferência antes do fase11
 import MateriaisConferenciaModal, {
   MatCheckItem,
   MateriaisConferenciaResult,
@@ -90,11 +90,12 @@ function mapFaseToTipo(fase: string): TipoTele | null {
   if (fase === "fase09") return "para_sepultamento";
   return null;
 }
+
 // "fase que PARA" a telemetria iniciada por:
 const STOP_BY_START: Record<string, string> = {
-  fase01: "fase02", // Corpo na Clínica
-  fase07: "fase08", // Entrega de Corpo
-  fase09: "fase10", // Sepultamento Concluído
+  fase01: "fase02",
+  fase07: "fase08",
+  fase09: "fase10",
 };
 
 /* =======================================================================
@@ -163,6 +164,21 @@ function resolveFalecidoNome(r: any): string {
   ).trim();
 }
 
+/* =========================
+   ✅ helpers DOM (Wizard inputs)
+   ========================= */
+function readDomValue(id: string): string {
+  if (typeof document === "undefined") return "";
+  const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+  return (el?.value ?? "").toString();
+}
+
+function readDomInt(id: string): number {
+  const v = readDomValue(id).trim();
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.floor(n) : 0;
+}
+
 export default function AcompanhamentoPage() {
   // Tabela
   const [registros, setRegistros] = useState<Registro[]>([]);
@@ -204,16 +220,16 @@ export default function AcompanhamentoPage() {
   const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [acaoSubmitting, setAcaoSubmitting] = useState(false);
 
-  // ✅ NOVO: conferência de materiais antes do "Material Recolhido"
+  // Conferência de materiais antes do fase11
   const [matCheckOpen, setMatCheckOpen] = useState(false);
   const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
   const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
 
-  // ✅ contexto da conferência (para salvar no banco)
+  // contexto da conferência (para salvar no banco)
   const [matCheckRegistroId, setMatCheckRegistroId] = useState<Registro["id"] | null>(null);
   const [matCheckFalecidoNome, setMatCheckFalecidoNome] = useState<string>("");
 
-  // ✅ overlay enquanto salva conferência
+  // overlay enquanto salva conferência
   const [matCheckSaving, setMatCheckSaving] = useState(false);
 
   // Info
@@ -274,6 +290,12 @@ export default function AcompanhamentoPage() {
           ...it,
           id: it?.id != null ? String(it.id) : it.id,
           status: normalizarStatus(it?.status) ?? it?.status,
+
+          // ✅ (opcional) garantir strings/ints coerentes
+          urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
+          urna_produto_id: Number(it?.urna_produto_id ?? 0) || 0,
+          urna_codigo_barras: String(it?.urna_codigo_barras ?? ""),
+          urna_operador_usuario_id: Number(it?.urna_operador_usuario_id ?? 0) || 0,
         }))
         : [];
 
@@ -609,6 +631,33 @@ export default function AcompanhamentoPage() {
     []
   );
 
+  /* --------------------
+     ✅ URNA META (Wizard -> payload)
+     Esses campos são criados no Wizard (inputs hidden):
+     - wizard-urna_deposito_nome
+     - wizard-urna_produto_id
+     - wizard-urna_codigo_barras
+     O informativo.php usa isso para:
+       1) gravar meta da urna no cadastro
+       2) dar BAIXA no estoque automaticamente quando executar fase05
+     -------------------- */
+  const mergeUrnaMetaFromDom = useCallback((next: any) => {
+    const depNome = readDomValue("wizard-urna_deposito_nome").trim().toUpperCase();
+    const pid = readDomInt("wizard-urna_produto_id");
+    const cb = readDomValue("wizard-urna_codigo_barras").trim();
+
+    // só envia se tiver algo (evita “zerar” sem querer em edições antigas)
+    const hasAny = (depNome !== "" && (depNome === "MEMORIAL" || depNome === "FUNERARIA")) || pid > 0 || cb !== "";
+
+    if (hasAny) {
+      next.urna_deposito_nome = depNome;
+      next.urna_produto_id = pid > 0 ? pid : 0;
+      next.urna_codigo_barras = cb;
+    }
+
+    return next;
+  }, []);
+
   /* -------------------- Aberturas -------------------- */
   const abrirNovoRegistro = useCallback(() => {
     setChooseTipoOpen(true);
@@ -639,6 +688,11 @@ export default function AcompanhamentoPage() {
         (empty as any).tipo_atendimento = "funerario";
       }
 
+      // ✅ defaults de meta urna (Wizard vai sobrescrever se usuário escolher)
+      (empty as any).urna_deposito_nome = "MEMORIAL";
+      (empty as any).urna_produto_id = 0;
+      (empty as any).urna_codigo_barras = "";
+
       setWizardData(empty);
       setMateriais(defaultMateriais());
       setArrumacao(defaultArrumacao());
@@ -647,6 +701,7 @@ export default function AcompanhamentoPage() {
       setWizardOpen(true);
     },
     // mantido como você tinha pra não “mexer no resto”
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [wizardStepIndexesForTipo, wizardStep, wizardData]
   );
 
@@ -672,6 +727,11 @@ export default function AcompanhamentoPage() {
         });
         data.id = r.id;
 
+        // ✅ leva metas da urna pra dentro do wizardData (para manter no submit)
+        (data as any).urna_deposito_nome = String((r as any).urna_deposito_nome ?? "");
+        (data as any).urna_produto_id = Number((r as any).urna_produto_id ?? 0) || 0;
+        (data as any).urna_codigo_barras = String((r as any).urna_codigo_barras ?? "");
+
         const mats = parseMateriaisFromRegistro(r);
         setMateriais(mats);
         (data as any).materiais = mats;
@@ -695,7 +755,7 @@ export default function AcompanhamentoPage() {
 
   const salvarGrupoWizard = useCallback((): Registro | null => {
     const grupo = wizardStepIndexesForTipo[wizardStep];
-    const next: Registro = { ...wizardData };
+    const next: any = { ...wizardData };
 
     for (const idx of grupo) {
       const s = (stepsForTipo as any)[idx] as any;
@@ -707,17 +767,20 @@ export default function AcompanhamentoPage() {
         setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
         return null;
       }
-      (next as any)[s.id] = v;
+      next[s.id] = v;
     }
 
     if (wizardData.id != null) next.id = wizardData.id;
 
-    (next as any).materiais = materiais;
-    (next as any).arrumacao = arrumacao;
-    (next as any).tipo_atendimento = tipoAtendimento;
+    next.materiais = materiais;
+    next.arrumacao = arrumacao;
+    next.tipo_atendimento = tipoAtendimento;
+
+    // ✅ IMPORTANTE: anexar meta urna (deposito/produto_id/cb)
+    mergeUrnaMetaFromDom(next);
 
     setWizardData(next);
-    return next;
+    return next as Registro;
   }, [
     wizardData,
     wizardStep,
@@ -727,11 +790,12 @@ export default function AcompanhamentoPage() {
     stepsForTipo,
     obrigatoriosForTipo,
     tipoAtendimento,
+    mergeUrnaMetaFromDom,
   ]);
 
   const concluirWizard = useCallback(async () => {
     if (wizardSubmitting) return;
-    const dataAtualizada = salvarGrupoWizard();
+    const dataAtualizada: any = salvarGrupoWizard();
     if (!dataAtualizada) return;
 
     let grupoObrigatorios: string[];
@@ -749,6 +813,10 @@ export default function AcompanhamentoPage() {
         return;
       }
     }
+
+    // ✅ (opcional) validação leve: se usuário digitou urna mas não selecionou da lista
+    // (produto_id fica 0). Não bloqueia — backend pode aceitar, mas fase05 vai exigir meta.
+    // if (String(dataAtualizada.urna || "").trim() && Number(dataAtualizada.urna_produto_id || 0) <= 0) { ... }
 
     if (!isOnlineNow()) {
       try {
@@ -803,10 +871,6 @@ export default function AcompanhamentoPage() {
     obrigatoriosForTipo,
     wizardStepIndexesForTipo,
     stepsForTipo,
-    wizardStep,
-    wizardData,
-    materiais,
-    arrumacao,
     tipoAtendimento,
     flushOfflineQueue,
   ]);
@@ -820,8 +884,7 @@ export default function AcompanhamentoPage() {
   }, []);
 
   /**
-   * ✅ IMPORTANTE:
-   * Agora retorna
+   * Retorna:
    * - true  => ação registrada/armazenada (online ou offline) e pode fechar modal
    * - false => não registrou (cancelou confirm, abriu conferência fase11, etc.)
    */
@@ -830,8 +893,7 @@ export default function AcompanhamentoPage() {
       if (acaoSubmitting) return false;
       if (acaoId == null) return false;
 
-      // ✅ Antes de "Material Recolhido" (fase11), exigir conferência
-      // -> aqui ainda NÃO registrou de verdade, então retorna false
+      // Antes de "Material Recolhido" (fase11), exigir conferência
       if (acao === "fase11" && !opts?.skipMaterialCheck) {
         const reg = registros.find((x) => String(x.id) === String(acaoId));
         const mats = reg ? parseMateriaisFromRegistro(reg) : {};
@@ -848,25 +910,24 @@ export default function AcompanhamentoPage() {
 
         setMatCheckItens(itens);
 
-        // ✅ contexto para salvar no banco
         setMatCheckRegistroId(reg?.id != null ? String(reg.id) : String(acaoId));
         setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
 
         setMatCheckReturnToAcao(true);
         setAcaoOpen(false);
         setMatCheckOpen(true);
-        return false; // ✅ importante (não fecha “por sucesso”)
+        return false;
       }
 
       if (!opts?.skipConfirm) {
         const ok = window.confirm("Deseja confirmar essa ação?");
-        if (!ok) return false; // ✅ cancelou => não registrou
+        if (!ok) return false;
       }
 
-      // ✅ fases que exigem confirmação no backend (informativo.php)
+      // fases que exigem confirmação no backend
       const needsBackendConfirm = acao === "fase03" || acao === "fase04";
 
-      // ✅ Offline: guardou a ação na fila (considera sucesso)
+      // Offline: guarda ação
       if (!isOnlineNow()) {
         try {
           setAcaoSubmitting(true);
@@ -907,6 +968,7 @@ export default function AcompanhamentoPage() {
             ok: true,
           });
 
+          // Para telemetria
           if (
             teleActive &&
             teleStartFase &&
@@ -920,7 +982,7 @@ export default function AcompanhamentoPage() {
 
           await fetchRegistros();
           setAcaoOpen(false);
-          return true; // ✅ sucesso real
+          return true;
         } else {
           setAcaoMsg({
             text: String(json?.msg || json?.erro || "Erro ao atualizar status."),
@@ -929,7 +991,7 @@ export default function AcompanhamentoPage() {
           return false;
         }
       } catch (e: any) {
-        // ✅ fallback: guarda offline e considera sucesso
+        // fallback: guarda offline e considera sucesso
         enqueueOffline(
           {
             acao: "atualizar_status",
@@ -960,7 +1022,6 @@ export default function AcompanhamentoPage() {
       const id = teleRegistroId ?? acaoId;
       if (id == null) return;
 
-      // ✅ fases que exigem confirmação no backend (informativo.php)
       const needsBackendConfirm = fase === "fase03" || fase === "fase04";
 
       if (!isOnlineNow()) {
@@ -1032,11 +1093,14 @@ export default function AcompanhamentoPage() {
   );
 
   /* -------------------- Assinatura -------------------- */
-  const abrirAssinatura = useCallback((idx: number, tipo: "recebimento" | "requisicao") => {
-    setSignIdx(idx);
-    setSignTipo(tipo);
-    setSignOpen(true);
-  }, []);
+  const abrirAssinatura = useCallback((_idx: number, tipo: "recebimento" | "requisicao") => {
+    const idx = infoIdxResolved;
+    if (idx != null) {
+      setSignIdx(idx);
+      setSignTipo(tipo);
+      setSignOpen(true);
+    }
+  }, [infoIdxResolved]);
 
   /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
   const handleVeiculoRequired = useCallback(
@@ -1083,16 +1147,17 @@ export default function AcompanhamentoPage() {
       { key: "formol", label: "Formol" },
       { key: "mascara", label: "Máscara" },
     ];
-    const arr = wizardData.arrumacao || arrumacao;
+    const arr = (wizardData as any).arrumacao || arrumacao;
     return mapa
       .filter((o) => !!(arr as any)?.[o.key])
       .map((o) => o.label)
       .join(" • ");
-  }, [wizardData.arrumacao, arrumacao]);
+  }, [wizardData, arrumacao]);
 
   /* -------------------- Helpers -------------------- */
   const findRegistroById = useCallback(
-    (id: Registro["id"] | null): Registro | undefined => (id == null ? undefined : registros.find((x) => String(x.id) === String(id))),
+    (id: Registro["id"] | null): Registro | undefined =>
+      id == null ? undefined : registros.find((x) => String(x.id) === String(id)),
     [registros]
   );
 
@@ -1102,7 +1167,9 @@ export default function AcompanhamentoPage() {
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-          <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
+          <p className="text-sm text-muted-foreground">
+            Cadastre, acompanhe e atualize o status dos atendimentos.
+          </p>
         </div>
         <button
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -1129,8 +1196,13 @@ export default function AcompanhamentoPage() {
         avisoInputRef={avisoInputRef}
       />
 
-      {/* Modal de escolha: tipo do novo registro */}
-      <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
+      {/* Modal: escolher tipo no novo registro */}
+      <Modal
+        open={chooseTipoOpen}
+        onClose={() => setChooseTipoOpen(false)}
+        ariaLabel="Escolher tipo"
+        maxWidth={420}
+      >
         <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
         <div className="mt-4 grid gap-2">
           <button
@@ -1201,7 +1273,7 @@ export default function AcompanhamentoPage() {
         onVeiculoRequired={handleVeiculoRequired}
       />
 
-      {/* ✅ NOVO: Conferência obrigatória antes de Material Recolhido */}
+      {/* Conferência obrigatória antes de Material Recolhido */}
       <MateriaisConferenciaModal
         open={matCheckOpen}
         itens={matCheckItens}
@@ -1270,7 +1342,7 @@ export default function AcompanhamentoPage() {
         }}
       />
 
-      {/* ---- Telemetria ---- */}
+      {/* Telemetria */}
       <TelemetriaModal
         ref={teleRef}
         open={teleOpen}
@@ -1293,12 +1365,21 @@ export default function AcompanhamentoPage() {
         }}
       />
 
-      {/* ✅ overlay simples opcional enquanto salva conferência */}
+      {/* overlay enquanto salva conferência */}
       {matCheckSaving ? (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4">
           <div className="rounded-xl bg-background p-4 shadow-xl border">
             <div className="text-sm font-medium">Salvando conferência...</div>
             <div className="mt-1 text-xs text-muted-foreground">Aguarde um instante.</div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ✅ mensagem do wizard (se quiser exibir aqui também) */}
+      {wizardMsg ? (
+        <div className="mt-4">
+          <div className={`rounded-lg border p-3 text-sm ${wizardMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>
+            {wizardMsg.text}
           </div>
         </div>
       ) : null}
