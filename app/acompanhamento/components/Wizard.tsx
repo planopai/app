@@ -24,8 +24,9 @@ type UrnaRow = {
 const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
 
 /* =========================
-   ✅ COMBOBOX URNA (async)
-   - digita -> busca no estoque (PHP)
+   ✅ COMBOBOX URNA (async) + DEPÓSITO
+   - seleciona depósito (MEMORIAL/FUNERARIA)
+   - digita -> busca no estoque filtrando por depósito
    - seleciona -> fecha lista
    - mantém id="wizard-urna" (para salvarGrupoWizard continuar funcionando)
 ========================= */
@@ -47,6 +48,7 @@ function UrnaCombobox({
 
     const [open, setOpen] = useState(false);
     const [q, setQ] = useState(initialValue || "");
+    const [dep, setDep] = useState<"MEMORIAL" | "FUNERARIA">("MEMORIAL"); // ✅ NOVO
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<UrnaRow[]>([]);
@@ -91,6 +93,9 @@ function UrnaCombobox({
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "30");
 
+                // ✅ NOVO: filtra por depósito
+                url.searchParams.set("deposito_nome", dep);
+
                 const r = await fetch(url.toString(), {
                     method: "GET",
                     cache: "no-store",
@@ -118,7 +123,7 @@ function UrnaCombobox({
             clearTimeout(t);
             ac.abort();
         };
-    }, [q, open]);
+    }, [q, open, dep]); // ✅ inclui dep
 
     return (
         <div ref={wrapRef}>
@@ -128,22 +133,41 @@ function UrnaCombobox({
             </label>
 
             <div className="relative">
-                {/* ✅ ESTE INPUT É O QUE O salvarGrupoWizard DEVE LER (id wizard-urna) */}
-                <input
-                    ref={inputRef}
-                    id="wizard-urna"
-                    type="text"
-                    placeholder={placeholder || "Digite para buscar..."}
-                    value={q}
-                    onChange={(e) => {
-                        setQ(e.target.value);
-                        setOpen(true);
-                    }}
-                    onFocus={() => setOpen(true)}
-                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                    disabled={disabled}
-                    autoComplete="off"
-                />
+                {/* ✅ Depósito + Input lado a lado */}
+                <div className="flex gap-2">
+                    <select
+                        className="w-[160px] rounded-md border px-2 py-2 text-sm disabled:opacity-60"
+                        value={dep}
+                        onChange={(e) => {
+                            setDep(e.target.value as any);
+                            setRows([]);
+                            setErr("");
+                            setOpen(true);
+                        }}
+                        disabled={disabled}
+                        title="Depósito"
+                    >
+                        <option value="MEMORIAL">MEMORIAL</option>
+                        <option value="FUNERARIA">FUNERARIA</option>
+                    </select>
+
+                    {/* ✅ ESTE INPUT É O QUE O salvarGrupoWizard DEVE LER (id wizard-urna) */}
+                    <input
+                        ref={inputRef}
+                        id="wizard-urna"
+                        type="text"
+                        placeholder={placeholder || "Digite para buscar..."}
+                        value={q}
+                        onChange={(e) => {
+                            setQ(e.target.value);
+                            setOpen(true);
+                        }}
+                        onFocus={() => setOpen(true)}
+                        className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                        disabled={disabled}
+                        autoComplete="off"
+                    />
+                </div>
 
                 {open ? (
                     <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border bg-white shadow-lg">
@@ -154,7 +178,9 @@ function UrnaCombobox({
                         ) : q.trim().length < 2 ? (
                             <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
                         ) : rows.length === 0 ? (
-                            <div className="p-3 text-sm text-slate-600">Nenhuma urna encontrada no estoque.</div>
+                            <div className="p-3 text-sm text-slate-600">
+                                Nenhuma urna encontrada no estoque ({dep}).
+                            </div>
                         ) : (
                             <ul className="max-h-64 overflow-auto py-1">
                                 {rows.map((it) => (
@@ -188,7 +214,7 @@ function UrnaCombobox({
             </div>
 
             <p className="mt-1 text-[11px] text-slate-500">
-                Dica: digite parte do nome (ou código). Ao selecionar, a lista fecha.
+                Dica: escolha o depósito e digite parte do nome (ou código). Ao selecionar, a lista fecha.
             </p>
         </div>
     );
@@ -266,11 +292,9 @@ export default function Wizard({
     const [assistenciaErro, setAssistenciaErro] = useState<string>("");
 
     useEffect(() => {
-        // quando abrir modal, limpa erro
         if (open) setAssistenciaErro("");
     }, [open]);
 
-    // Descobre em qual grupo está o campo "assistencia"
     const assistenciaGroupIndex = useMemo(() => {
         return wizardStepIndexes.findIndex((arr) =>
             arr.some((idx) => steps[idx]?.id === "assistencia")
@@ -279,16 +303,12 @@ export default function Wizard({
 
     const isRestrito = typeof wizardRestrictGroup === "number";
 
-    // Só obriga quando:
-    // - wizard completo (não restrito), ou
-    // - modo restrito no grupo da assistência
     const requireAssistencia = useMemo(() => {
         if (assistenciaGroupIndex < 0) return false;
         if (!isRestrito) return true;
         return wizardRestrictGroup === assistenciaGroupIndex;
     }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup]);
 
-    // Se a assistência está no grupo atual
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
     const assistenciaNoGrupoAtual = useMemo(
@@ -309,7 +329,7 @@ export default function Wizard({
     const bloqueiaPorAssistencia =
         requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
 
-    // ✅ GPS p/ Local do Velório (link de rota + manual)
+    // ✅ GPS p/ Local do Velório
     const [gpsLoading, setGpsLoading] = useState(false);
     const [gpsMsg, setGpsMsg] = useState<string | null>(null);
     const localVelorioRef = useRef<HTMLInputElement>(null);
@@ -330,7 +350,6 @@ export default function Wizard({
                 const lat = pos.coords.latitude;
                 const lng = pos.coords.longitude;
 
-                // Link de ROTA (o Google Maps assume sua localização como origem)
                 const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
 
                 const el = localVelorioRef.current;
@@ -360,8 +379,6 @@ export default function Wizard({
 
     const goNext = () => {
         if (wizardSubmitting) return;
-
-        // ✅ trava "Próximo" se assistência for obrigatória e estiver vazia
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
 
         const ok = salvarGrupoWizard();
@@ -371,10 +388,7 @@ export default function Wizard({
 
     const tentarConcluir = () => {
         if (wizardSubmitting) return;
-
-        // ✅ trava "Salvar/Concluir" se assistência for obrigatória e estiver vazia
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
-
         concluirWizard();
     };
 
@@ -392,14 +406,7 @@ export default function Wizard({
                         aria-live="polite"
                     >
                         <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
-                            <circle
-                                className="opacity-25"
-                                cx="12"
-                                cy="12"
-                                r="10"
-                                stroke="currentColor"
-                                strokeWidth="4"
-                            />
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                         </svg>
                         Salvando…
@@ -407,7 +414,6 @@ export default function Wizard({
                 )}
             </div>
 
-            {/* Abas informativas */}
             <div className="mt-3 flex flex-wrap gap-2">
                 {wizardStepTitles.map((t, i) => (
                     <span
@@ -422,12 +428,8 @@ export default function Wizard({
 
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {grupoSteps.map((step) => {
-                    // 👉 mostra "Tipo de Ornamentação" somente quando Ornamentação = "Sim"
-                    if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") {
-                        return null;
-                    }
+                    if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
 
-                    // ✅ URNA (autocomplete do estoque)
                     if (step.id === "urna" && step.type === "async_urna") {
                         return (
                             <div key={step.id}>
@@ -442,7 +444,6 @@ export default function Wizard({
                         );
                     }
 
-                    // ✅ Local do Velório (datalist + GPS + opção manual)
                     if (step.id === "local_velorio" && step.type === "datalist") {
                         const listId = `dl-${step.id}`;
                         const currentText = String((wizardData as any)[step.id] ?? "");
@@ -450,8 +451,7 @@ export default function Wizard({
                         return (
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">
-                                    {step.label}{" "}
-                                    <span className="text-xs text-muted-foreground">(endereço ou link)</span>
+                                    {step.label} <span className="text-xs text-muted-foreground">(endereço ou link)</span>
                                 </label>
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -498,10 +498,7 @@ export default function Wizard({
                                 </datalist>
 
                                 {gpsMsg && (
-                                    <div
-                                        className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"
-                                            }`}
-                                    >
+                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>
                                         {gpsMsg}
                                     </div>
                                 )}
@@ -509,7 +506,6 @@ export default function Wizard({
                         );
                     }
 
-                    // Campo custom (abre Arrumação)
                     if (step.type === "custom" && step.id === "arrumacao") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
@@ -523,16 +519,13 @@ export default function Wizard({
                                     >
                                         Selecionar Materiais
                                     </button>
-                                    <span className="text-sm text-muted-foreground">
-                                        {arrumacaoSelecionadaResumo || "Nenhum item selecionado"}
-                                    </span>
+                                    <span className="text-sm text-muted-foreground">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
                                 </div>
                                 <input id="wizard-arrumacao" type="hidden" defaultValue="__custom__" />
                             </div>
                         );
                     }
 
-                    // Assistência (OBRIGATÓRIA: Sim/Não)
                     if (step.id === "assistencia" && step.type === "select") {
                         const showRequiredStar = isRequired(step.id) || requireAssistencia;
 
@@ -545,16 +538,12 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
-                                        }`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
                                         setAssistenciaVal(v);
-
                                         if (isSimNao(v)) setAssistenciaErro("");
-
-                                        // opcional: se escolher "Não", fecha materiais
                                         if (v === "Não") setMateriaisOpen(false);
                                     }}
                                     onBlur={() => {
@@ -572,9 +561,7 @@ export default function Wizard({
                                     ))}
                                 </select>
 
-                                {assistenciaErro && (
-                                    <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>
-                                )}
+                                {assistenciaErro && <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>}
 
                                 {assistenciaVal === "Sim" && (
                                     <div className="mt-2 flex items-center gap-2">
@@ -586,16 +573,13 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">
-                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
-                                        </span>
+                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
                                     </div>
                                 )}
                             </div>
                         );
                     }
 
-                    // Tanato
                     if (step.id === "tanato" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -620,7 +604,6 @@ export default function Wizard({
                         );
                     }
 
-                    // Ornamentação (controla "tipo")
                     if (step.id === "ornamentacao" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -633,9 +616,7 @@ export default function Wizard({
                                         const v = e.target.value;
                                         setOrnamentacaoVal(v);
                                         if (v !== "Sim") {
-                                            const el = document.getElementById(
-                                                "wizard-ornamentacao_tipo"
-                                            ) as HTMLSelectElement | null;
+                                            const el = document.getElementById("wizard-ornamentacao_tipo") as HTMLSelectElement | null;
                                             if (el) el.value = "";
                                         }
                                     }}
@@ -651,7 +632,6 @@ export default function Wizard({
                         );
                     }
 
-                    // Tipo de Ornamentação (aparece só quando Sim)
                     if (step.id === "ornamentacao_tipo" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -672,7 +652,7 @@ export default function Wizard({
                         );
                     }
 
-                    // Campos básicos
+                    // básicos
                     if (step.type === "input") {
                         return (
                             <div key={step.id}>
@@ -787,7 +767,6 @@ export default function Wizard({
                 })}
             </div>
 
-            {/* Rodapé */}
             <div className="mt-6 flex items-center justify-between">
                 <div className="text-xs text-muted-foreground">
                     {isRestrito && (
@@ -798,15 +777,10 @@ export default function Wizard({
                 </div>
 
                 <div className="flex gap-2">
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                        onClick={onClose}
-                        disabled={wizardSubmitting}
-                    >
+                    <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={wizardSubmitting}>
                         Cancelar
                     </button>
 
-                    {/* ✅ QUANDO EDITAR UM ÚNICO GRUPO: exibe apenas SALVAR */}
                     {isRestrito ? (
                         <button
                             className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
@@ -820,11 +794,7 @@ export default function Wizard({
                     ) : (
                         <>
                             {wizardStep > 0 && (
-                                <button
-                                    className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                                    onClick={goPrev}
-                                    disabled={wizardSubmitting}
-                                >
+                                <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={goPrev} disabled={wizardSubmitting}>
                                     Anterior
                                 </button>
                             )}
