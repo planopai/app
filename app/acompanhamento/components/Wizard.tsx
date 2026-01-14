@@ -29,15 +29,16 @@ const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
    - digita -> busca no estoque filtrando por depósito
    - seleciona -> fecha lista
    - mantém id="wizard-urna" (para salvarGrupoWizard continuar funcionando)
+   ✅ UI:
+   - label do select: "Local da Urna"
+   - label do input: "Urna"
 ========================= */
 function UrnaCombobox({
-    label,
     required,
     placeholder,
     initialValue,
     disabled,
 }: {
-    label: string;
     required: boolean;
     placeholder?: string;
     initialValue: string;
@@ -48,7 +49,7 @@ function UrnaCombobox({
 
     const [open, setOpen] = useState(false);
     const [q, setQ] = useState(initialValue || "");
-    const [dep, setDep] = useState<"MEMORIAL" | "FUNERARIA">("MEMORIAL"); // ✅ NOVO
+    const [dep, setDep] = useState<"MEMORIAL" | "FUNERARIA">("MEMORIAL");
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<UrnaRow[]>([]);
@@ -93,7 +94,7 @@ function UrnaCombobox({
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "30");
 
-                // ✅ NOVO: filtra por depósito
+                // ✅ filtra por depósito
                 url.searchParams.set("deposito_nome", dep);
 
                 const r = await fetch(url.toString(), {
@@ -123,50 +124,57 @@ function UrnaCombobox({
             clearTimeout(t);
             ac.abort();
         };
-    }, [q, open, dep]); // ✅ inclui dep
+    }, [q, open, dep]);
 
     return (
         <div ref={wrapRef}>
-            <label className="mb-1 block text-sm font-medium">
-                {label}
-                {required && <span className="text-red-600"> *</span>}
-            </label>
-
             <div className="relative">
-                {/* ✅ Depósito + Input lado a lado */}
-                <div className="flex gap-2">
-                    <select
-                        className="w-[160px] rounded-md border px-2 py-2 text-sm disabled:opacity-60"
-                        value={dep}
-                        onChange={(e) => {
-                            setDep(e.target.value as any);
-                            setRows([]);
-                            setErr("");
-                            setOpen(true);
-                        }}
-                        disabled={disabled}
-                        title="Depósito"
-                    >
-                        <option value="MEMORIAL">MEMORIAL</option>
-                        <option value="FUNERARIA">FUNERARIA</option>
-                    </select>
+                {/* ✅ Local da Urna + Urna (labels separados) */}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr] sm:gap-2">
+                    {/* Local da Urna */}
+                    <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-700">Local da Urna</label>
+                        <select
+                            className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
+                            value={dep}
+                            onChange={(e) => {
+                                setDep(e.target.value as any);
+                                setRows([]);
+                                setErr("");
+                                setOpen(true);
+                            }}
+                            disabled={disabled}
+                            title="Local da Urna"
+                        >
+                            <option value="MEMORIAL">MEMORIAL</option>
+                            <option value="FUNERARIA">FUNERARIA</option>
+                        </select>
+                    </div>
 
-                    {/* ✅ ESTE INPUT É O QUE O salvarGrupoWizard DEVE LER (id wizard-urna) */}
-                    <input
-                        ref={inputRef}
-                        id="wizard-urna"
-                        type="text"
-                        placeholder={placeholder || "Digite para buscar..."}
-                        value={q}
-                        onChange={(e) => {
-                            setQ(e.target.value);
-                            setOpen(true);
-                        }}
-                        onFocus={() => setOpen(true)}
-                        className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                        disabled={disabled}
-                        autoComplete="off"
-                    />
+                    {/* Urna */}
+                    <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-700">
+                            Urna {required && <span className="text-red-600">*</span>}
+                        </label>
+
+                        {/* ✅ ESTE INPUT É O QUE O salvarGrupoWizard DEVE LER (id wizard-urna) */}
+                        <input
+                            ref={inputRef}
+                            id="wizard-urna"
+                            type="text"
+                            placeholder={placeholder || "Digite para buscar..."}
+                            value={q}
+                            onChange={(e) => {
+                                setQ(e.target.value);
+                                setOpen(true);
+                            }}
+                            onFocus={() => setOpen(true)}
+                            className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                            disabled={disabled}
+                            autoComplete="off"
+                            title="Urna"
+                        />
+                    </div>
                 </div>
 
                 {open ? (
@@ -178,9 +186,7 @@ function UrnaCombobox({
                         ) : q.trim().length < 2 ? (
                             <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
                         ) : rows.length === 0 ? (
-                            <div className="p-3 text-sm text-slate-600">
-                                Nenhuma urna encontrada no estoque ({dep}).
-                            </div>
+                            <div className="p-3 text-sm text-slate-600">Nenhuma urna encontrada no estoque ({dep}).</div>
                         ) : (
                             <ul className="max-h-64 overflow-auto py-1">
                                 {rows.map((it) => (
@@ -296,9 +302,7 @@ export default function Wizard({
     }, [open]);
 
     const assistenciaGroupIndex = useMemo(() => {
-        return wizardStepIndexes.findIndex((arr) =>
-            arr.some((idx) => steps[idx]?.id === "assistencia")
-        );
+        return wizardStepIndexes.findIndex((arr) => arr.some((idx) => steps[idx]?.id === "assistencia"));
     }, [wizardStepIndexes, steps]);
 
     const isRestrito = typeof wizardRestrictGroup === "number";
@@ -311,10 +315,7 @@ export default function Wizard({
 
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
-    const assistenciaNoGrupoAtual = useMemo(
-        () => grupoSteps.some((s) => s.id === "assistencia"),
-        [grupoSteps]
-    );
+    const assistenciaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "assistencia"), [grupoSteps]);
 
     const validarAssistencia = () => {
         if (!requireAssistencia) return true;
@@ -326,8 +327,7 @@ export default function Wizard({
         return false;
     };
 
-    const bloqueiaPorAssistencia =
-        requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
+    const bloqueiaPorAssistencia = requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
 
     // ✅ GPS p/ Local do Velório
     const [gpsLoading, setGpsLoading] = useState(false);
@@ -401,10 +401,7 @@ export default function Wizard({
             <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
-                    <span
-                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
-                        aria-live="polite"
-                    >
+                    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700" aria-live="polite">
                         <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
@@ -434,7 +431,6 @@ export default function Wizard({
                         return (
                             <div key={step.id}>
                                 <UrnaCombobox
-                                    label={step.label}
                                     required={isRequired(step.id)}
                                     placeholder={step.placeholder}
                                     initialValue={String((wizardData as any)[step.id] ?? "")}
@@ -497,11 +493,7 @@ export default function Wizard({
                                     ))}
                                 </datalist>
 
-                                {gpsMsg && (
-                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>
-                                        {gpsMsg}
-                                    </div>
-                                )}
+                                {gpsMsg && <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>{gpsMsg}</div>}
                             </div>
                         );
                     }
