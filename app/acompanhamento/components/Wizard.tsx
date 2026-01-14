@@ -3,15 +3,196 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
+import { API as API_ROOT } from "./constants"; // ✅ ajuste o caminho se necessário
 
 type Step = {
     label: string;
     id: string;
-    type: "input" | "select" | "textarea" | "date" | "time" | "datalist" | "custom";
+    type: "input" | "select" | "textarea" | "date" | "time" | "datalist" | "custom" | "async_urna";
     options?: string[];
     placeholder?: string;
     datalist?: string[];
 };
+
+type UrnaRow = {
+    id: number;
+    nome: string;
+    codigo_barras: string;
+    saldo_total: number;
+};
+
+const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
+
+/* =========================
+   ✅ COMBOBOX URNA (async)
+   - digita -> busca no estoque (PHP)
+   - seleciona -> fecha lista
+   - mantém id="wizard-urna" (para salvarGrupoWizard continuar funcionando)
+========================= */
+function UrnaCombobox({
+    label,
+    required,
+    placeholder,
+    initialValue,
+    disabled,
+}: {
+    label: string;
+    required: boolean;
+    placeholder?: string;
+    initialValue: string;
+    disabled?: boolean;
+}) {
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const [open, setOpen] = useState(false);
+    const [q, setQ] = useState(initialValue || "");
+    const [loading, setLoading] = useState(false);
+    const [err, setErr] = useState("");
+    const [rows, setRows] = useState<UrnaRow[]>([]);
+
+    // sincroniza quando abre/edita registro
+    useEffect(() => {
+        setQ(initialValue || "");
+        setRows([]);
+        setErr("");
+        setOpen(false);
+    }, [initialValue]);
+
+    // fecha ao clicar fora
+    useEffect(() => {
+        const onDoc = (e: MouseEvent) => {
+            if (!wrapRef.current) return;
+            if (!wrapRef.current.contains(e.target as any)) setOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        return () => document.removeEventListener("mousedown", onDoc);
+    }, []);
+
+    // debounce + abort
+    useEffect(() => {
+        if (!open) return;
+
+        const qq = q.trim();
+        setErr("");
+
+        if (qq.length < 2) {
+            setRows([]);
+            return;
+        }
+
+        const ac = new AbortController();
+        const t = setTimeout(async () => {
+            setLoading(true);
+            try {
+                const url = new URL(ESTOQUE_API);
+                url.searchParams.set("action", "urnas_buscar");
+                url.searchParams.set("q", qq);
+                url.searchParams.set("somente_com_saldo", "1");
+                url.searchParams.set("limit", "30");
+
+                const r = await fetch(url.toString(), {
+                    method: "GET",
+                    cache: "no-store",
+                    credentials: "include",
+                    signal: ac.signal,
+                });
+
+                const j = await r.json().catch(() => null);
+
+                if (!j?.ok) {
+                    throw new Error(j?.msg || "Falha ao buscar urnas");
+                }
+
+                setRows((j.rows || []) as UrnaRow[]);
+            } catch (e: any) {
+                if (e?.name === "AbortError") return;
+                setErr(e?.message || "Erro na busca");
+                setRows([]);
+            } finally {
+                setLoading(false);
+            }
+        }, 250);
+
+        return () => {
+            clearTimeout(t);
+            ac.abort();
+        };
+    }, [q, open]);
+
+    return (
+        <div ref={wrapRef}>
+            <label className="mb-1 block text-sm font-medium">
+                {label}
+                {required && <span className="text-red-600"> *</span>}
+            </label>
+
+            <div className="relative">
+                {/* ✅ ESTE INPUT É O QUE O salvarGrupoWizard DEVE LER (id wizard-urna) */}
+                <input
+                    ref={inputRef}
+                    id="wizard-urna"
+                    type="text"
+                    placeholder={placeholder || "Digite para buscar..."}
+                    value={q}
+                    onChange={(e) => {
+                        setQ(e.target.value);
+                        setOpen(true);
+                    }}
+                    onFocus={() => setOpen(true)}
+                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                    disabled={disabled}
+                    autoComplete="off"
+                />
+
+                {open ? (
+                    <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border bg-white shadow-lg">
+                        {loading ? (
+                            <div className="p-3 text-sm text-slate-600">Buscando...</div>
+                        ) : err ? (
+                            <div className="p-3 text-sm text-red-600">{err}</div>
+                        ) : q.trim().length < 2 ? (
+                            <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
+                        ) : rows.length === 0 ? (
+                            <div className="p-3 text-sm text-slate-600">Nenhuma urna encontrada no estoque.</div>
+                        ) : (
+                            <ul className="max-h-64 overflow-auto py-1">
+                                {rows.map((it) => (
+                                    <li key={it.id}>
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                                            onMouseDown={(e) => e.preventDefault()} // evita blur antes do clique
+                                            onClick={() => {
+                                                setQ(it.nome);
+                                                setOpen(false);
+                                                requestAnimationFrame(() => inputRef.current?.blur());
+                                            }}
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="truncate font-medium text-slate-900">{it.nome}</span>
+                                                <span className="shrink-0 text-xs text-slate-600">
+                                                    estoque: <b>{Number(it.saldo_total) || 0}</b>
+                                                </span>
+                                            </div>
+                                            <div className="mt-0.5 truncate text-xs text-slate-600">
+                                                CB: <b>{it.codigo_barras}</b>
+                                            </div>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                ) : null}
+            </div>
+
+            <p className="mt-1 text-[11px] text-slate-500">
+                Dica: digite parte do nome (ou código). Ao selecionar, a lista fecha.
+            </p>
+        </div>
+    );
+}
 
 export default function Wizard({
     open,
@@ -76,8 +257,8 @@ export default function Wizard({
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
 
     useEffect(() => {
-        setOrnamentacaoVal(String(wizardData.ornamentacao ?? ""));
-    }, [open, wizardData.ornamentacao]);
+        setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
+    }, [open, (wizardData as any).ornamentacao]);
 
     // ==================== Assistência obrigatória ====================
     const isSimNao = (v: string) => v === "Sim" || v === "Não";
@@ -244,6 +425,21 @@ export default function Wizard({
                     // 👉 mostra "Tipo de Ornamentação" somente quando Ornamentação = "Sim"
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") {
                         return null;
+                    }
+
+                    // ✅ URNA (autocomplete do estoque)
+                    if (step.id === "urna" && step.type === "async_urna") {
+                        return (
+                            <div key={step.id}>
+                                <UrnaCombobox
+                                    label={step.label}
+                                    required={isRequired(step.id)}
+                                    placeholder={step.placeholder}
+                                    initialValue={String((wizardData as any)[step.id] ?? "")}
+                                    disabled={wizardSubmitting}
+                                />
+                            </div>
+                        );
                     }
 
                     // ✅ Local do Velório (datalist + GPS + opção manual)
@@ -463,7 +659,7 @@ export default function Wizard({
                                 <select
                                     id="wizard-ornamentacao_tipo"
                                     className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                                    defaultValue={String(wizardData.ornamentacao_tipo ?? "")}
+                                    defaultValue={String((wizardData as any).ornamentacao_tipo ?? "")}
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Natural", "Artificial"]).map((op) => (

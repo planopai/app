@@ -36,7 +36,10 @@ export const steps = [
             "Associado(a)",
         ],
     },
-    { label: "Urna", id: "urna", type: "input", placeholder: "Digite o Modelo Da Urna" },
+
+    // ✅ ALTERADO: era input, agora autocomplete puxando do estoque
+    { label: "Urna", id: "urna", type: "async_urna", placeholder: "Digite para buscar a urna no estoque..." },
+
     {
         label: "Roupa",
         id: "roupa",
