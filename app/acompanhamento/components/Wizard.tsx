@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
-import { API as API_ROOT } from "./constants"; // ✅ ajuste o caminho se necessário
+import { API as API_ROOT } from "./constants";
 
 type Step = {
     label: string;
@@ -29,10 +29,11 @@ const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
       - wizard-urna_deposito_nome  (MEMORIAL|FUNERARIA)
       - wizard-urna_produto_id     (est_produto.id)
       - wizard-urna_codigo_barras  (codigo de barras)
+
    ✅ CORREÇÕES IMPORTANTES:
-      - NÃO zera produto_id/cb ao inicializar (apenas quando usuário troca depósito)
-      - Em modo edição, carrega meta inicial (dep/produto/cb) vinda do wizardData
-      - Mantém id="wizard-urna" (para salvarGrupoWizard continuar funcionando)
+   1) NÃO limpar produto_id/cb no mount (useEffect(dep) roda no mount!)
+      -> só limpa quando usuário troca depósito de verdade
+   2) Validação externa (Wizard) vai bloquear salvar se urna preenchida e produto_id=0
 ========================= */
 function UrnaCombobox({
     required,
@@ -42,6 +43,8 @@ function UrnaCombobox({
     initialDepositoNome,
     initialProdutoId,
     initialCodigoBarras,
+    errorText,
+    onBlurValidate,
 }: {
     required: boolean;
     placeholder?: string;
@@ -52,6 +55,10 @@ function UrnaCombobox({
     initialDepositoNome?: string;
     initialProdutoId?: number;
     initialCodigoBarras?: string;
+
+    // validação/erro vindo do Wizard
+    errorText?: string;
+    onBlurValidate?: () => void;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -73,8 +80,8 @@ function UrnaCombobox({
     const pidHiddenRef = useRef<HTMLInputElement>(null);
     const cbHiddenRef = useRef<HTMLInputElement>(null);
 
-    // ✅ marca se a troca de depósito foi feita pelo usuário (e não por inicialização)
-    const userChangedDepRef = useRef(false);
+    // ✅ evita limpar produto no mount
+    const didMountDepRef = useRef(false);
 
     function setHiddenMeta(next: { deposito_nome?: string; produto_id?: number; codigo_barras?: string }) {
         const depNome = normalizeDep(next.deposito_nome || dep);
@@ -97,9 +104,6 @@ function UrnaCombobox({
         const pidInit = Number(initialProdutoId || 0) || 0;
         const cbInit = String(initialCodigoBarras || "").trim();
 
-        // IMPORTANTE: isso é inicialização, então NÃO queremos limpar meta depois
-        userChangedDepRef.current = false;
-
         setDep(depInit);
         setQ(initialValue || "");
 
@@ -109,19 +113,26 @@ function UrnaCombobox({
 
         // preenche hidden com o que veio do banco (edição) ou defaults (novo)
         setHiddenMeta({ deposito_nome: depInit, produto_id: pidInit, codigo_barras: cbInit });
+
+        // resetar marcador do dep-effect
+        didMountDepRef.current = false;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialValue, initialDepositoNome, initialProdutoId, initialCodigoBarras]);
 
-    // ✅ quando dep muda:
-    // - sempre atualiza deposito_nome no hidden
-    // - SÓ limpa produto_id/cb se foi o usuário que trocou o depósito
+    // ✅ ao mudar depósito:
+    // - salva depósito no hidden
+    // - limpa produto_id/cb SOMENTE se foi o usuário que mudou (não no mount)
     useEffect(() => {
         setHiddenMeta({ deposito_nome: dep });
 
-        if (userChangedDepRef.current) {
-            clearProdutoMetaOnly();
-            userChangedDepRef.current = false;
+        if (!didMountDepRef.current) {
+            // primeira execução (mount) -> NÃO limpar
+            didMountDepRef.current = true;
+            return;
         }
+
+        // usuário trocou depósito -> limpa pra evitar baixa errada
+        clearProdutoMetaOnly();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dep]);
 
@@ -186,7 +197,7 @@ function UrnaCombobox({
 
     return (
         <div ref={wrapRef}>
-            {/* ✅ hidden metas (o page.tsx vai ler e enviar pro PHP) */}
+            {/* hidden metas (o page.tsx lê e envia pro PHP) */}
             <input ref={depHiddenRef} id="wizard-urna_deposito_nome" type="hidden" defaultValue={dep} />
             <input
                 ref={pidHiddenRef}
@@ -194,7 +205,12 @@ function UrnaCombobox({
                 type="hidden"
                 defaultValue={String(Number(initialProdutoId || 0) || 0)}
             />
-            <input ref={cbHiddenRef} id="wizard-urna_codigo_barras" type="hidden" defaultValue={String(initialCodigoBarras || "")} />
+            <input
+                ref={cbHiddenRef}
+                id="wizard-urna_codigo_barras"
+                type="hidden"
+                defaultValue={String(initialCodigoBarras || "")}
+            />
 
             <div className="relative">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr] sm:gap-2">
@@ -204,7 +220,6 @@ function UrnaCombobox({
                             className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
                             value={dep}
                             onChange={(e) => {
-                                userChangedDepRef.current = true; // ✅ agora sim: o usuário trocou o depósito
                                 const next = normalizeDep(e.target.value);
                                 setDep(next);
                                 setRows([]);
@@ -234,16 +249,23 @@ function UrnaCombobox({
                                 setQ(e.target.value);
                                 setOpen(true);
 
-                                // ✅ digitou manualmente => limpa produto_id/cb (evita inconsistência)
+                                // digitou manualmente => limpa produto_id/cb (evita inconsistência)
                                 clearProdutoMetaOnly();
                                 setHiddenMeta({ deposito_nome: dep });
                             }}
                             onFocus={() => setOpen(true)}
-                            className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                            onBlur={() => {
+                                // validação (Wizard)
+                                onBlurValidate?.();
+                            }}
+                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""
+                                }`}
                             disabled={disabled}
                             autoComplete="off"
                             title="Urna"
                         />
+
+                        {errorText ? <div className="mt-1 text-xs text-red-600">{errorText}</div> : null}
                     </div>
                 </div>
 
@@ -359,15 +381,22 @@ export default function Wizard({
     setArrumacaoOpen: (b: boolean) => void;
 
     salvarGrupoWizard: () => Registro | null;
-    concluirWizard: () => void;
+    concluirWizard: () => Promise<void>; // ✅ CORREÇÃO: era void, mas no page.tsx é async
 
     wizardSubmitting: boolean;
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
 
+    // ✅ erro específico da urna
+    const [urnaErro, setUrnaErro] = useState<string>("");
+
     useEffect(() => {
         setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
     }, [open, (wizardData as any).ornamentacao]);
+
+    useEffect(() => {
+        if (open) setUrnaErro("");
+    }, [open]);
 
     const isSimNao = (v: string) => v === "Sim" || v === "Não";
     const [assistenciaErro, setAssistenciaErro] = useState<string>("");
@@ -388,6 +417,7 @@ export default function Wizard({
         return wizardRestrictGroup === assistenciaGroupIndex;
     }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup]);
 
+    // grupoSteps
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
 
@@ -404,6 +434,28 @@ export default function Wizard({
     };
 
     const bloqueiaPorAssistencia = requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
+
+    // ✅ valida urna: se campo preenchido (ou obrigatório) precisa ter produto_id > 0
+    const validarUrnaSeNecessario = () => {
+        // só valida se a urna está visível neste grupo (senão nem tem hidden no DOM)
+        const urnaStepNoGrupo = grupoSteps.some((s) => s.id === "urna" && s.type === "async_urna");
+        if (!urnaStepNoGrupo) return true;
+
+        const urnaTxt = (document.getElementById("wizard-urna") as HTMLInputElement | null)?.value?.trim() ?? "";
+        const pidStr = (document.getElementById("wizard-urna_produto_id") as HTMLInputElement | null)?.value?.trim() ?? "0";
+        const pid = Number(pidStr) || 0;
+
+        const isRequired = obrigatorios.includes("urna");
+
+        // se obrigatório OU digitou algo, exige seleção válida
+        if ((isRequired || urnaTxt !== "") && pid <= 0) {
+            setUrnaErro("Selecione uma urna da lista (produto do estoque).");
+            return false;
+        }
+
+        setUrnaErro("");
+        return true;
+    };
 
     // GPS p/ Local do Velório
     const [gpsLoading, setGpsLoading] = useState(false);
@@ -456,16 +508,25 @@ export default function Wizard({
     const goNext = () => {
         if (wizardSubmitting) return;
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+        if (!validarUrnaSeNecessario()) return;
 
         const ok = salvarGrupoWizard();
         if (!ok) return;
         if (!isLastStep) setWizardStep(wizardStep + 1);
     };
 
-    const tentarConcluir = () => {
+    const tentarConcluir = async () => {
         if (wizardSubmitting) return;
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
-        concluirWizard();
+        if (!validarUrnaSeNecessario()) return;
+
+        try {
+            await concluirWizard();
+        } catch (e: any) {
+            // evita "Uncaught (in promise)"
+            console.error("Falha ao concluir wizard:", e);
+            alert(e?.message || "Erro ao salvar. Veja o console/Network.");
+        }
     };
 
     const isRequired = (id: string) => obrigatorios.includes(id);
@@ -517,6 +578,8 @@ export default function Wizard({
                                     initialDepositoNome={String((wizardData as any).urna_deposito_nome ?? "MEMORIAL")}
                                     initialProdutoId={Number((wizardData as any).urna_produto_id ?? 0) || 0}
                                     initialCodigoBarras={String((wizardData as any).urna_codigo_barras ?? "")}
+                                    errorText={urnaErro}
+                                    onBlurValidate={validarUrnaSeNecessario}
                                 />
                             </div>
                         );
@@ -616,7 +679,8 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
+                                        }`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -651,9 +715,7 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">
-                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
-                                        </span>
+                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
                                     </div>
                                 )}
                             </div>
