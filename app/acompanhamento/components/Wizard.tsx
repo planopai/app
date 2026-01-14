@@ -29,7 +29,8 @@ const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
       - wizard-urna_deposito_nome  (MEMORIAL|FUNERARIA)
       - wizard-urna_produto_id     (est_produto.id)
       - wizard-urna_codigo_barras  (codigo de barras)
-   ✅ CORREÇÃO:
+   ✅ CORREÇÕES IMPORTANTES:
+      - NÃO zera produto_id/cb ao inicializar (apenas quando usuário troca depósito)
       - Em modo edição, carrega meta inicial (dep/produto/cb) vinda do wizardData
       - Mantém id="wizard-urna" (para salvarGrupoWizard continuar funcionando)
 ========================= */
@@ -47,7 +48,7 @@ function UrnaCombobox({
     initialValue: string;
     disabled?: boolean;
 
-    // ✅ NOVO: meta inicial (para edição)
+    // meta inicial (para edição)
     initialDepositoNome?: string;
     initialProdutoId?: number;
     initialCodigoBarras?: string;
@@ -72,6 +73,9 @@ function UrnaCombobox({
     const pidHiddenRef = useRef<HTMLInputElement>(null);
     const cbHiddenRef = useRef<HTMLInputElement>(null);
 
+    // ✅ marca se a troca de depósito foi feita pelo usuário (e não por inicialização)
+    const userChangedDepRef = useRef(false);
+
     function setHiddenMeta(next: { deposito_nome?: string; produto_id?: number; codigo_barras?: string }) {
         const depNome = normalizeDep(next.deposito_nome || dep);
         const pid = Number(next.produto_id || 0) || 0;
@@ -93,6 +97,9 @@ function UrnaCombobox({
         const pidInit = Number(initialProdutoId || 0) || 0;
         const cbInit = String(initialCodigoBarras || "").trim();
 
+        // IMPORTANTE: isso é inicialização, então NÃO queremos limpar meta depois
+        userChangedDepRef.current = false;
+
         setDep(depInit);
         setQ(initialValue || "");
 
@@ -100,17 +107,21 @@ function UrnaCombobox({
         setErr("");
         setOpen(false);
 
-        // ✅ preenche hidden com o que veio do banco (edição) ou defaults (novo)
+        // preenche hidden com o que veio do banco (edição) ou defaults (novo)
         setHiddenMeta({ deposito_nome: depInit, produto_id: pidInit, codigo_barras: cbInit });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialValue, initialDepositoNome, initialProdutoId, initialCodigoBarras]);
 
-    // ✅ ao mudar depósito manualmente:
-    // - salva depósito no hidden
-    // - limpa produto_id/cb (pra evitar baixa errada)
+    // ✅ quando dep muda:
+    // - sempre atualiza deposito_nome no hidden
+    // - SÓ limpa produto_id/cb se foi o usuário que trocou o depósito
     useEffect(() => {
         setHiddenMeta({ deposito_nome: dep });
-        clearProdutoMetaOnly();
+
+        if (userChangedDepRef.current) {
+            clearProdutoMetaOnly();
+            userChangedDepRef.current = false;
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dep]);
 
@@ -177,7 +188,12 @@ function UrnaCombobox({
         <div ref={wrapRef}>
             {/* ✅ hidden metas (o page.tsx vai ler e enviar pro PHP) */}
             <input ref={depHiddenRef} id="wizard-urna_deposito_nome" type="hidden" defaultValue={dep} />
-            <input ref={pidHiddenRef} id="wizard-urna_produto_id" type="hidden" defaultValue={String(Number(initialProdutoId || 0) || 0)} />
+            <input
+                ref={pidHiddenRef}
+                id="wizard-urna_produto_id"
+                type="hidden"
+                defaultValue={String(Number(initialProdutoId || 0) || 0)}
+            />
             <input ref={cbHiddenRef} id="wizard-urna_codigo_barras" type="hidden" defaultValue={String(initialCodigoBarras || "")} />
 
             <div className="relative">
@@ -188,6 +204,7 @@ function UrnaCombobox({
                             className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
                             value={dep}
                             onChange={(e) => {
+                                userChangedDepRef.current = true; // ✅ agora sim: o usuário trocou o depósito
                                 const next = normalizeDep(e.target.value);
                                 setDep(next);
                                 setRows([]);
@@ -371,7 +388,6 @@ export default function Wizard({
         return wizardRestrictGroup === assistenciaGroupIndex;
     }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup]);
 
-    // ✅ CORREÇÃO: grupoSteps existindo de fato
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
 
@@ -498,7 +514,6 @@ export default function Wizard({
                                     placeholder={step.placeholder}
                                     initialValue={String((wizardData as any)[step.id] ?? "")}
                                     disabled={wizardSubmitting}
-                                    // ✅ passa meta para edição
                                     initialDepositoNome={String((wizardData as any).urna_deposito_nome ?? "MEMORIAL")}
                                     initialProdutoId={Number((wizardData as any).urna_produto_id ?? 0) || 0}
                                     initialCodigoBarras={String((wizardData as any).urna_codigo_barras ?? "")}
@@ -601,8 +616,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
-                                        }`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -637,7 +651,9 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
+                                        </span>
                                     </div>
                                 )}
                             </div>
