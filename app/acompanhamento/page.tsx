@@ -647,13 +647,21 @@ export default function AcompanhamentoPage() {
     const cb = readDomValue("wizard-urna_codigo_barras").trim();
 
     // só envia se tiver algo (evita “zerar” sem querer em edições antigas)
-    const hasAny = (depNome !== "" && (depNome === "MEMORIAL" || depNome === "FUNERARIA")) || pid > 0 || cb !== "";
+    const mergeUrnaMetaFromDom = useCallback((next: any) => {
+      const depNome = readDomValue("wizard-urna_deposito_nome").trim().toUpperCase();
+      const pid = readDomInt("wizard-urna_produto_id");
+      const cb = readDomValue("wizard-urna_codigo_barras").trim();
 
-    if (hasAny) {
-      next.urna_deposito_nome = depNome;
-      next.urna_produto_id = pid > 0 ? pid : 0;
-      next.urna_codigo_barras = cb;
-    }
+      // ✅ Só salva meta se a urna foi realmente selecionada (pid > 0)
+      if (pid > 0) {
+        next.urna_deposito_nome = (depNome === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL");
+        next.urna_produto_id = pid;
+        next.urna_codigo_barras = cb;
+      }
+
+      return next;
+    }, []);
+
 
     return next;
   }, []);
@@ -892,6 +900,21 @@ export default function AcompanhamentoPage() {
     async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }): Promise<boolean> => {
       if (acaoSubmitting) return false;
       if (acaoId == null) return false;
+
+      // ✅ trava fase05 sem urna vinculada
+      if (acao === "fase05") {
+        const reg = registros.find((x) => String(x.id) === String(acaoId));
+        const pid = Number((reg as any)?.urna_produto_id ?? 0) || 0;
+
+        if (pid <= 0) {
+          setAcaoMsg({
+            ok: false,
+            text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
+          });
+          return false;
+        }
+      }
+
 
       // Antes de "Material Recolhido" (fase11), exigir conferência
       if (acao === "fase11" && !opts?.skipMaterialCheck) {
