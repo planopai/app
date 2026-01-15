@@ -38,6 +38,9 @@ import MateriaisConferenciaModal, {
 
 type TipoAtendimento = "funerario" | "terceiro";
 
+// ✅ endpoint da baixa automática (novo PHP independente)
+const URNA_SAIDA_API = `${API}/api/php/urna_saida.php`;
+
 /* -------------------- utils sessão (IDs de terceiros) -------------------- */
 function addTerceiroIdToSession(id: string | number | undefined | null) {
   try {
@@ -639,31 +642,42 @@ export default function AcompanhamentoPage() {
      - wizard-urna_codigo_barras
      O informativo.php usa isso para:
        1) gravar meta da urna no cadastro
-       2) dar BAIXA no estoque automaticamente quando executar fase05
      -------------------- */
   const mergeUrnaMetaFromDom = useCallback((next: any) => {
     const depNome = readDomValue("wizard-urna_deposito_nome").trim().toUpperCase();
     const pid = readDomInt("wizard-urna_produto_id");
     const cb = readDomValue("wizard-urna_codigo_barras").trim();
 
-    // só envia se tiver algo (evita “zerar” sem querer em edições antigas)
-    const mergeUrnaMetaFromDom = useCallback((next: any) => {
-      const depNome = readDomValue("wizard-urna_deposito_nome").trim().toUpperCase();
-      const pid = readDomInt("wizard-urna_produto_id");
-      const cb = readDomValue("wizard-urna_codigo_barras").trim();
-
-      // ✅ Só salva meta se a urna foi realmente selecionada (pid > 0)
-      if (pid > 0) {
-        next.urna_deposito_nome = (depNome === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL");
-        next.urna_produto_id = pid;
-        next.urna_codigo_barras = cb;
-      }
-
-      return next;
-    }, []);
-
+    // ✅ Só salva meta se a urna foi realmente selecionada (pid > 0)
+    if (pid > 0) {
+      next.urna_deposito_nome = depNome === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+      next.urna_produto_id = pid;
+      next.urna_codigo_barras = cb;
+    }
 
     return next;
+  }, []);
+
+  /* --------------------
+     ✅ baixa automática da urna (fase05) via URNA_SAIDA_API
+     - só roda ONLINE (evita inconsistência do estoque)
+     - backend é idempotente (não baixa 2x)
+     -------------------- */
+  const baixarUrnaFase05 = useCallback(async (registro_id: string) => {
+    const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ registro_id }),
+      cache: "no-store",
+    });
+
+    if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+    const j = await r.json().catch(() => null);
+    if (!j) throw new Error("Resposta inválida do servidor (baixa urna).");
+    if (j?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+    if (!r.ok || j?.ok === false) throw new Error(j?.msg || "Falha ao dar baixa na urna (fase05).");
+    return j;
   }, []);
 
   /* -------------------- Aberturas -------------------- */
@@ -708,7 +722,6 @@ export default function AcompanhamentoPage() {
       setTanatoVal(String(empty.tanato || ""));
       setWizardOpen(true);
     },
-    // mantido como você tinha pra não “mexer no resto”
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [wizardStepIndexesForTipo, wizardStep, wizardData]
   );
@@ -822,10 +835,6 @@ export default function AcompanhamentoPage() {
       }
     }
 
-    // ✅ (opcional) validação leve: se usuário digitou urna mas não selecionou da lista
-    // (produto_id fica 0). Não bloqueia — backend pode aceitar, mas fase05 vai exigir meta.
-    // if (String(dataAtualizada.urna || "").trim() && Number(dataAtualizada.urna_produto_id || 0) <= 0) { ... }
-
     if (!isOnlineNow()) {
       try {
         setWizardSubmitting(true);
@@ -913,8 +922,16 @@ export default function AcompanhamentoPage() {
           });
           return false;
         }
-      }
 
+        // ✅ fase05 precisa estar ONLINE para dar baixa no estoque com segurança
+        if (!isOnlineNow()) {
+          setAcaoMsg({
+            ok: false,
+            text: "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática da urna no estoque. Conecte-se e tente novamente.",
+          });
+          return false;
+        }
+      }
 
       // Antes de "Material Recolhido" (fase11), exigir conferência
       if (acao === "fase11" && !opts?.skipMaterialCheck) {
@@ -950,7 +967,7 @@ export default function AcompanhamentoPage() {
       // fases que exigem confirmação no backend
       const needsBackendConfirm = acao === "fase03" || acao === "fase04";
 
-      // Offline: guarda ação
+      // Offline: guarda ação (exceto fase05, já bloqueado acima)
       if (!isOnlineNow()) {
         try {
           setAcaoSubmitting(true);
@@ -973,6 +990,20 @@ export default function AcompanhamentoPage() {
           return true;
         } finally {
           setAcaoSubmitting(false);
+        }
+      }
+
+      // ✅ fase05: baixar urna ANTES de mudar status
+      if (acao === "fase05") {
+        try {
+          setAcaoSubmitting(true);
+          await baixarUrnaFase05(String(acaoId));
+        } catch (e: any) {
+          setAcaoSubmitting(false);
+          setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática da urna (fase05)." });
+          return false;
+        } finally {
+          // não fecha; segue para atualizar_status
         }
       }
 
@@ -1014,7 +1045,7 @@ export default function AcompanhamentoPage() {
           return false;
         }
       } catch (e: any) {
-        // fallback: guarda offline e considera sucesso
+        // fallback: guarda offline e considera sucesso (fase05 não entra aqui pq já foi online)
         enqueueOffline(
           {
             acao: "atualizar_status",
@@ -1036,7 +1067,7 @@ export default function AcompanhamentoPage() {
         flushOfflineQueue();
       }
     },
-    [acaoSubmitting, acaoId, registros, fetchRegistros, teleActive, teleStartFase, flushOfflineQueue]
+    [acaoSubmitting, acaoId, registros, fetchRegistros, teleActive, teleStartFase, flushOfflineQueue, baixarUrnaFase05]
   );
 
   /* ---- Confirmação silenciosa para a TelemetriaModal (start) ---- */

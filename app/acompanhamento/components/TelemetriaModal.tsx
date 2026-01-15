@@ -38,6 +38,7 @@ const VEICULOS: string[] = [
     "DOBLO OZP 9875",
     "SAVEIRO RCQ 5B26",
     "HILUX SKT 5G28",
+    "HILUX QTV 4I21",
     "SAVEIRO ONQ 6794",
     "DUCATO PLV",
     "DUCATO PLL 6E98",
