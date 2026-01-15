@@ -172,7 +172,11 @@ function resolveFalecidoNome(r: any): string {
    ========================= */
 function readDomValue(id: string): string {
   if (typeof document === "undefined") return "";
-  const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+  const el = document.getElementById(id) as
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | HTMLSelectElement
+    | null;
   return (el?.value ?? "").toString();
 }
 
@@ -180,6 +184,52 @@ function readDomInt(id: string): number {
   const v = readDomValue(id).trim();
   const n = Number(v);
   return Number.isFinite(n) ? Math.floor(n) : 0;
+}
+
+/* =========================================================
+   ✅ NORMALIZAÇÃO FORTE DO STATUS (igual ao backend)
+   - garante que "Preparando" => "fase03"
+   - garante que "Aguardando Ornamentação" => "fase04"
+   - garante que fase03/fase04 sempre enviem confirmar:true
+========================================================= */
+function normalizeStatusCode(v: any): string {
+  const raw = String(v ?? "").trim();
+  if (!raw) return "";
+
+  // se já veio "faseXX"
+  const low = raw.toLowerCase();
+  if (low.startsWith("fase")) {
+    const num = low.replace(/\D+/g, "");
+    if (!num) return low;
+    return `fase${num.padStart(2, "0")}`;
+  }
+
+  // remove acentos
+  const noAcc = low.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const key = noAcc.trim();
+
+  const map: Record<string, string> = {
+    "removendo": "fase01",
+    "aguardando procedimento": "fase02",
+    "preparando": "fase03",
+    "aguardando ornamentacao": "fase04",
+    "ornamentando": "fase05",
+    "corpo pronto": "fase06",
+    "transportando": "fase07",
+    "transportando obito p/velorio": "fase07",
+    "transportando obito para velorio": "fase07",
+    "velando": "fase08",
+    "sepultando": "fase09",
+    "sepultamento concluido": "fase10",
+    "material recolhido": "fase11",
+  };
+
+  // tenta map local
+  if (map[key]) return map[key];
+
+  // tenta helper do projeto (se existir mapeamento lá)
+  const helper = normalizarStatus?.(raw);
+  return helper ? String(helper) : raw;
 }
 
 export default function AcompanhamentoPage() {
@@ -608,20 +658,17 @@ export default function AcompanhamentoPage() {
       const registro_id = data.registro_id != null ? String(data.registro_id) : "";
       if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-      const r = await fetch(
-        `${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            registro_id,
-            falecido_nome: String(data.falecido_nome || "").trim(),
-            observacao: String(data.observacao || "").trim(),
-            itens: Array.isArray(data.itens) ? data.itens : [],
-          }),
-        }
-      );
+      const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          registro_id,
+          falecido_nome: String(data.falecido_nome || "").trim(),
+          observacao: String(data.observacao || "").trim(),
+          itens: Array.isArray(data.itens) ? data.itens : [],
+        }),
+      });
 
       if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
       const json = await r.json().catch(() => null);
@@ -636,12 +683,6 @@ export default function AcompanhamentoPage() {
 
   /* --------------------
      ✅ URNA META (Wizard -> payload)
-     Esses campos são criados no Wizard (inputs hidden):
-     - wizard-urna_deposito_nome
-     - wizard-urna_produto_id
-     - wizard-urna_codigo_barras
-     O informativo.php usa isso para:
-       1) gravar meta da urna no cadastro
      -------------------- */
   const mergeUrnaMetaFromDom = useCallback((next: any) => {
     const depNome = readDomValue("wizard-urna_deposito_nome").trim().toUpperCase();
@@ -660,8 +701,6 @@ export default function AcompanhamentoPage() {
 
   /* --------------------
      ✅ baixa automática da urna (fase05) via URNA_SAIDA_API
-     - só roda ONLINE (evita inconsistência do estoque)
-     - backend é idempotente (não baixa 2x)
      -------------------- */
   const baixarUrnaFase05 = useCallback(async (registro_id: string) => {
     const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
@@ -910,15 +949,20 @@ export default function AcompanhamentoPage() {
       if (acaoSubmitting) return false;
       if (acaoId == null) return false;
 
+      // ✅ NORMALIZA status SEMPRE (isso resolve o erro de confirmação)
+      const statusCode = normalizeStatusCode(acao);
+      const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
+
       // ✅ trava fase05 sem urna vinculada
-      if (acao === "fase05") {
+      if (statusCode === "fase05") {
         const reg = registros.find((x) => String(x.id) === String(acaoId));
         const pid = Number((reg as any)?.urna_produto_id ?? 0) || 0;
 
         if (pid <= 0) {
           setAcaoMsg({
             ok: false,
-            text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
+            text:
+              "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
           });
           return false;
         }
@@ -927,14 +971,15 @@ export default function AcompanhamentoPage() {
         if (!isOnlineNow()) {
           setAcaoMsg({
             ok: false,
-            text: "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática da urna no estoque. Conecte-se e tente novamente.",
+            text:
+              "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática da urna no estoque. Conecte-se e tente novamente.",
           });
           return false;
         }
       }
 
       // Antes de "Material Recolhido" (fase11), exigir conferência
-      if (acao === "fase11" && !opts?.skipMaterialCheck) {
+      if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
         const reg = registros.find((x) => String(x.id) === String(acaoId));
         const mats = reg ? parseMateriaisFromRegistro(reg) : {};
 
@@ -964,9 +1009,6 @@ export default function AcompanhamentoPage() {
         if (!ok) return false;
       }
 
-      // fases que exigem confirmação no backend
-      const needsBackendConfirm = acao === "fase03" || acao === "fase04";
-
       // Offline: guarda ação (exceto fase05, já bloqueado acima)
       if (!isOnlineNow()) {
         try {
@@ -976,7 +1018,7 @@ export default function AcompanhamentoPage() {
             {
               acao: "atualizar_status",
               id: acaoId,
-              status: acao,
+              status: statusCode || acao,
               ...(needsBackendConfirm ? { confirmar: true } : {}),
             },
             "offline"
@@ -994,7 +1036,7 @@ export default function AcompanhamentoPage() {
       }
 
       // ✅ fase05: baixar urna ANTES de mudar status
-      if (acao === "fase05") {
+      if (statusCode === "fase05") {
         try {
           setAcaoSubmitting(true);
           await baixarUrnaFase05(String(acaoId));
@@ -1012,22 +1054,22 @@ export default function AcompanhamentoPage() {
         const json = await enviarRegistroPHP({
           acao: "atualizar_status",
           id: acaoId,
-          status: acao,
+          status: statusCode || acao,
           ...(needsBackendConfirm ? { confirmar: true } : {}),
         });
 
         if (json?.sucesso) {
           setAcaoMsg({
-            text: `Status alterado para "${capitalizeStatus(acao)}"`,
+            text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`,
             ok: true,
           });
 
-          // Para telemetria
+          // Para telemetria (compare com status normalizado)
           if (
             teleActive &&
             teleStartFase &&
             STOP_BY_START[teleStartFase] &&
-            STOP_BY_START[teleStartFase] === acao
+            STOP_BY_START[teleStartFase] === (statusCode || acao)
           ) {
             await teleRef.current?.stopAndSave();
             setTeleActive(false);
@@ -1050,7 +1092,7 @@ export default function AcompanhamentoPage() {
           {
             acao: "atualizar_status",
             id: acaoId,
-            status: acao,
+            status: statusCode || acao,
             ...(needsBackendConfirm ? { confirmar: true } : {}),
           },
           e?.message
@@ -1067,7 +1109,16 @@ export default function AcompanhamentoPage() {
         flushOfflineQueue();
       }
     },
-    [acaoSubmitting, acaoId, registros, fetchRegistros, teleActive, teleStartFase, flushOfflineQueue, baixarUrnaFase05]
+    [
+      acaoSubmitting,
+      acaoId,
+      registros,
+      fetchRegistros,
+      teleActive,
+      teleStartFase,
+      flushOfflineQueue,
+      baixarUrnaFase05,
+    ]
   );
 
   /* ---- Confirmação silenciosa para a TelemetriaModal (start) ---- */
@@ -1076,11 +1127,17 @@ export default function AcompanhamentoPage() {
       const id = teleRegistroId ?? acaoId;
       if (id == null) return;
 
-      const needsBackendConfirm = fase === "fase03" || fase === "fase04";
+      const statusCode = normalizeStatusCode(fase);
+      const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
 
       if (!isOnlineNow()) {
         enqueueOffline(
-          { acao: "atualizar_status", id, status: fase, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+          {
+            acao: "atualizar_status",
+            id,
+            status: statusCode || fase,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          },
           "offline"
         );
         return;
@@ -1090,13 +1147,18 @@ export default function AcompanhamentoPage() {
         await enviarRegistroPHP({
           acao: "atualizar_status",
           id,
-          status: fase,
+          status: statusCode || fase,
           ...(needsBackendConfirm ? { confirmar: true } : {}),
         });
         await fetchRegistros();
       } catch (e: any) {
         enqueueOffline(
-          { acao: "atualizar_status", id, status: fase, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+          {
+            acao: "atualizar_status",
+            id,
+            status: statusCode || fase,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          },
           e?.message
         );
       } finally {
@@ -1145,16 +1207,6 @@ export default function AcompanhamentoPage() {
     },
     [infoIdxResolved]
   );
-
-  /* -------------------- Assinatura -------------------- */
-  const abrirAssinatura = useCallback((_idx: number, tipo: "recebimento" | "requisicao") => {
-    const idx = infoIdxResolved;
-    if (idx != null) {
-      setSignIdx(idx);
-      setSignTipo(tipo);
-      setSignOpen(true);
-    }
-  }, [infoIdxResolved]);
 
   /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
   const handleVeiculoRequired = useCallback(
@@ -1221,9 +1273,7 @@ export default function AcompanhamentoPage() {
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-          <p className="text-sm text-muted-foreground">
-            Cadastre, acompanhe e atualize o status dos atendimentos.
-          </p>
+          <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
         </div>
         <button
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -1233,11 +1283,7 @@ export default function AcompanhamentoPage() {
         </button>
       </header>
 
-      <TabelaAtendimentos
-        registros={registros}
-        onAcao={(id) => abrirPopupAcaoPorId(id)}
-        onInfo={(id) => abrirInfoPorId(id)}
-      />
+      <TabelaAtendimentos registros={registros} onAcao={(id) => abrirPopupAcaoPorId(id)} onInfo={(id) => abrirInfoPorId(id)} />
 
       <AvisosBox
         avisos={avisos}
@@ -1251,12 +1297,7 @@ export default function AcompanhamentoPage() {
       />
 
       {/* Modal: escolher tipo no novo registro */}
-      <Modal
-        open={chooseTipoOpen}
-        onClose={() => setChooseTipoOpen(false)}
-        ariaLabel="Escolher tipo"
-        maxWidth={420}
-      >
+      <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
         <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
         <div className="mt-4 grid gap-2">
           <button
@@ -1432,7 +1473,12 @@ export default function AcompanhamentoPage() {
       {/* ✅ mensagem do wizard (se quiser exibir aqui também) */}
       {wizardMsg ? (
         <div className="mt-4">
-          <div className={`rounded-lg border p-3 text-sm ${wizardMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>
+          <div
+            className={`rounded-lg border p-3 text-sm ${wizardMsg.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-red-800"
+              }`}
+          >
             {wizardMsg.text}
           </div>
         </div>
