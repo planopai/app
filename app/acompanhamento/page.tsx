@@ -155,7 +155,7 @@ function enqueueOffline(payload: any, errMsg?: string) {
   return items.length;
 }
 
-// ✅ tenta resolver nome do falecido (ajuste os campos conforme seu Registro real)
+// ✅ tenta resolver nome do falecido
 function resolveFalecidoNome(r: any): string {
   return String(
     r?.falecido ??
@@ -169,6 +169,7 @@ function resolveFalecidoNome(r: any): string {
 
 /* =========================
    ✅ helpers DOM (Wizard inputs)
+   (mantidos para campos comuns; URNA META não depende mais deles)
    ========================= */
 function readDomValue(id: string): string {
   if (typeof document === "undefined") return "";
@@ -180,23 +181,13 @@ function readDomValue(id: string): string {
   return (el?.value ?? "").toString();
 }
 
-function readDomInt(id: string): number {
-  const v = readDomValue(id).trim();
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.floor(n) : 0;
-}
-
 /* =========================================================
    ✅ NORMALIZAÇÃO FORTE DO STATUS (igual ao backend)
-   - garante que "Preparando" => "fase03"
-   - garante que "Aguardando Ornamentação" => "fase04"
-   - garante que fase03/fase04 sempre enviem confirmar:true
 ========================================================= */
 function normalizeStatusCode(v: any): string {
   const raw = String(v ?? "").trim();
   if (!raw) return "";
 
-  // se já veio "faseXX"
   const low = raw.toLowerCase();
   if (low.startsWith("fase")) {
     const num = low.replace(/\D+/g, "");
@@ -204,7 +195,6 @@ function normalizeStatusCode(v: any): string {
     return `fase${num.padStart(2, "0")}`;
   }
 
-  // remove acentos
   const noAcc = low.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const key = noAcc.trim();
 
@@ -224,10 +214,8 @@ function normalizeStatusCode(v: any): string {
     "material recolhido": "fase11",
   };
 
-  // tenta map local
   if (map[key]) return map[key];
 
-  // tenta helper do projeto (se existir mapeamento lá)
   const helper = normalizarStatus?.(raw);
   return helper ? String(helper) : raw;
 }
@@ -278,11 +266,10 @@ export default function AcompanhamentoPage() {
   const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
   const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
 
-  // contexto da conferência (para salvar no banco)
+  // contexto da conferência
   const [matCheckRegistroId, setMatCheckRegistroId] = useState<Registro["id"] | null>(null);
   const [matCheckFalecidoNome, setMatCheckFalecidoNome] = useState<string>("");
 
-  // overlay enquanto salva conferência
   const [matCheckSaving, setMatCheckSaving] = useState(false);
 
   // Info
@@ -304,11 +291,10 @@ export default function AcompanhamentoPage() {
   const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
   const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
 
-  // Controle de sessão ativa de telemetria
   const [teleActive, setTeleActive] = useState(false);
   const [teleStartFase, setTeleStartFase] = useState<string | null>(null);
 
-  /* -------------------- Config corrente por tipo -------------------- */
+  /* -------------------- Config por tipo -------------------- */
   const {
     wizardStepIndexes: wizardStepIndexesForTipo,
     wizardStepTitles: wizardStepTitlesForTipo,
@@ -344,11 +330,9 @@ export default function AcompanhamentoPage() {
           id: it?.id != null ? String(it.id) : it.id,
           status: normalizarStatus(it?.status) ?? it?.status,
 
-          // ✅ (opcional) garantir strings/ints coerentes
           urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
           urna_produto_id: Number(it?.urna_produto_id ?? 0) || 0,
           urna_codigo_barras: String(it?.urna_codigo_barras ?? ""),
-          urna_operador_usuario_id: Number(it?.urna_operador_usuario_id ?? 0) || 0,
         }))
         : [];
 
@@ -372,8 +356,7 @@ export default function AcompanhamentoPage() {
 
     flushingRef.current = true;
     try {
-      let queue = items;
-      queue = [...queue].sort((a, b) => a.createdAt - b.createdAt);
+      let queue = [...items].sort((a, b) => a.createdAt - b.createdAt);
 
       for (const item of queue) {
         try {
@@ -394,11 +377,7 @@ export default function AcompanhamentoPage() {
           } else {
             const after = safeReadQueue().map((x) =>
               x.qid === item.qid
-                ? {
-                  ...x,
-                  tries: (x.tries ?? 0) + 1,
-                  lastError: json?.erro || json?.msg || "Erro ao enviar (offline queue).",
-                }
+                ? { ...x, tries: (x.tries ?? 0) + 1, lastError: json?.erro || json?.msg || "Erro ao enviar (offline queue)." }
                 : x
             );
             safeWriteQueue(after);
@@ -407,11 +386,7 @@ export default function AcompanhamentoPage() {
         } catch (e: any) {
           const after = safeReadQueue().map((x) =>
             x.qid === item.qid
-              ? {
-                ...x,
-                tries: (x.tries ?? 0) + 1,
-                lastError: e?.message || "Falha ao enviar (offline queue).",
-              }
+              ? { ...x, tries: (x.tries ?? 0) + 1, lastError: e?.message || "Falha ao enviar (offline queue)." }
               : x
           );
           safeWriteQueue(after);
@@ -425,12 +400,10 @@ export default function AcompanhamentoPage() {
     }
   }, [fetchRegistrosSafe]);
 
-  /* -------------------- Fetch helpers (avisos) -------------------- */
+  /* -------------------- Avisos -------------------- */
   const fetchAvisos = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, {
-        credentials: "include",
-      });
+      const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, { credentials: "include" });
       if (r.status === 401) return;
       const data = await r.json().catch(() => null);
       if (data?.need_login) return;
@@ -465,72 +438,63 @@ export default function AcompanhamentoPage() {
     }
   }, [fetchAvisos]);
 
-  const editarAviso = useCallback(
-    async (id: number | string, mensagem: string) => {
-      try {
-        const res = await jsonWith401(`${API}/api/php/avisos.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ id, mensagem }),
-        });
-        if (res?.sucesso) {
-          setAvisoMsg({ text: "Aviso atualizado!", ok: true });
-          fetchAvisos();
-        } else {
-          setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao editar!", ok: false });
-        }
-      } catch (e: any) {
-        setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
+  const editarAviso = useCallback(async (id: number | string, mensagem: string) => {
+    try {
+      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id, mensagem }),
+      });
+      if (res?.sucesso) {
+        setAvisoMsg({ text: "Aviso atualizado!", ok: true });
+        fetchAvisos();
+      } else {
+        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao editar!", ok: false });
       }
-    },
-    [fetchAvisos]
-  );
+    } catch (e: any) {
+      setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
+    }
+  }, [fetchAvisos]);
 
-  const excluirAviso = useCallback(
-    async (id: number | string) => {
-      if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
-      try {
-        const res = await jsonWith401(`${API}/api/php/avisos.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ id, excluir: true }),
-        });
-        if (res?.sucesso) {
-          setAvisoMsg({ text: "Aviso excluído!", ok: true });
-          fetchAvisos();
-        } else {
-          setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao excluir!", ok: false });
-        }
-      } catch (e: any) {
-        setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
+  const excluirAviso = useCallback(async (id: number | string) => {
+    if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
+    try {
+      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id, excluir: true }),
+      });
+      if (res?.sucesso) {
+        setAvisoMsg({ text: "Aviso excluído!", ok: true });
+        fetchAvisos();
+      } else {
+        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao excluir!", ok: false });
       }
-    },
-    [fetchAvisos]
-  );
+    } catch (e: any) {
+      setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
+    }
+  }, [fetchAvisos]);
 
-  const finalizarAviso = useCallback(
-    async (id: number | string) => {
-      try {
-        const res = await jsonWith401(`${API}/api/php/avisos.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ id, finalizar: true }),
-        });
-        if (res?.sucesso) {
-          setAvisoMsg({ text: "Aviso finalizado!", ok: true });
-          fetchAvisos();
-        } else {
-          setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao finalizar!", ok: false });
-        }
-      } catch (e: any) {
-        setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
+  const finalizarAviso = useCallback(async (id: number | string) => {
+    try {
+      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id, finalizar: true }),
+      });
+      if (res?.sucesso) {
+        setAvisoMsg({ text: "Aviso finalizado!", ok: true });
+        fetchAvisos();
+      } else {
+        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao finalizar!", ok: false });
       }
-    },
-    [fetchAvisos]
-  );
+    } catch (e: any) {
+      setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
+    }
+  }, [fetchAvisos]);
 
   /* -------------------- Ciclos -------------------- */
   useEffect(() => {
@@ -542,9 +506,7 @@ export default function AcompanhamentoPage() {
   useEffect(() => {
     const intReg = setInterval(fetchRegistros, 10000);
     const intAv = setInterval(fetchAvisos, 3000);
-    const intFlush = setInterval(() => {
-      flushOfflineQueue();
-    }, 20000);
+    const intFlush = setInterval(() => flushOfflineQueue(), 20000);
 
     const onVis = () => {
       if (!document.hidden) {
@@ -554,9 +516,7 @@ export default function AcompanhamentoPage() {
     };
     document.addEventListener("visibilitychange", onVis);
 
-    const onOnline = () => {
-      flushOfflineQueue();
-    };
+    const onOnline = () => flushOfflineQueue();
     window.addEventListener("online", onOnline);
 
     return () => {
@@ -603,11 +563,7 @@ export default function AcompanhamentoPage() {
         if (qtd <= 0) continue;
 
         const nomeBase = k.replace(/^materiais_/, "").replace(/_qtd$/, "");
-        out[nomeBase] = {
-          checked: true,
-          qtd,
-          nome: nomeBase.replace(/_/g, " "),
-        } as any;
+        out[nomeBase] = { checked: true, qtd, nome: nomeBase.replace(/_/g, " ") } as any;
       }
     } catch { }
 
@@ -617,9 +573,9 @@ export default function AcompanhamentoPage() {
   const parseArrumacaoFromRegistro = (r: Registro): ArrumacaoState => {
     const base = defaultArrumacao();
 
-    if (r.arrumacao_json) {
+    if ((r as any).arrumacao_json) {
       try {
-        const parsed = JSON.parse(String(r.arrumacao_json));
+        const parsed = JSON.parse(String((r as any).arrumacao_json));
         Object.assign(base, parsed);
       } catch { }
     }
@@ -633,74 +589,45 @@ export default function AcompanhamentoPage() {
       else if (typeof col === "string") {
         const s = col.trim().toLowerCase();
         base[k] = s === "1" || s === "true" || s === "sim" || s === "s";
-      } else {
-        base[k] = !!col;
-      }
+      } else base[k] = !!col;
     });
 
     return base;
   };
 
   /* -------------------- salvar conferência no backend -------------------- */
-  const salvarConferenciaNoPHP = useCallback(
-    async (data: {
-      registro_id: string | number | null | undefined;
-      falecido_nome: string;
-      observacao: string;
-      itens: Array<{
-        key: string;
-        nome: string;
-        qtd: number;
-        ok: 0 | 1;
-        nao_conforme: 0 | 1;
-      }>;
-    }) => {
-      const registro_id = data.registro_id != null ? String(data.registro_id) : "";
-      if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+  const salvarConferenciaNoPHP = useCallback(async (data: {
+    registro_id: string | number | null | undefined;
+    falecido_nome: string;
+    observacao: string;
+    itens: Array<{ key: string; nome: string; qtd: number; ok: 0 | 1; nao_conforme: 0 | 1; }>;
+  }) => {
+    const registro_id = data.registro_id != null ? String(data.registro_id) : "";
+    if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-      const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          registro_id,
-          falecido_nome: String(data.falecido_nome || "").trim(),
-          observacao: String(data.observacao || "").trim(),
-          itens: Array.isArray(data.itens) ? data.itens : [],
-        }),
-      });
+    const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        registro_id,
+        falecido_nome: String(data.falecido_nome || "").trim(),
+        observacao: String(data.observacao || "").trim(),
+        itens: Array.isArray(data.itens) ? data.itens : [],
+      }),
+    });
 
-      if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
-      const json = await r.json().catch(() => null);
-      if (!json) throw new Error("Resposta inválida do servidor.");
-      if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-      if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
+    if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+    const json = await r.json().catch(() => null);
+    if (!json) throw new Error("Resposta inválida do servidor.");
+    if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+    if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
 
-      return json;
-    },
-    []
-  );
-
-  /* --------------------
-     ✅ URNA META (Wizard -> payload)
-     -------------------- */
-  const mergeUrnaMetaFromDom = useCallback((next: any) => {
-    const depNome = readDomValue("wizard-urna_deposito_nome").trim().toUpperCase();
-    const pid = readDomInt("wizard-urna_produto_id");
-    const cb = readDomValue("wizard-urna_codigo_barras").trim();
-
-    // ✅ Só salva meta se a urna foi realmente selecionada (pid > 0)
-    if (pid > 0) {
-      next.urna_deposito_nome = depNome === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
-      next.urna_produto_id = pid;
-      next.urna_codigo_barras = cb;
-    }
-
-    return next;
+    return json;
   }, []);
 
   /* --------------------
-     ✅ baixa automática da urna (fase05) via URNA_SAIDA_API
+     ✅ baixa automática da urna (fase05)
      -------------------- */
   const baixarUrnaFase05 = useCallback(async (registro_id: string) => {
     const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
@@ -720,98 +647,87 @@ export default function AcompanhamentoPage() {
   }, []);
 
   /* -------------------- Aberturas -------------------- */
-  const abrirNovoRegistro = useCallback(() => {
-    setChooseTipoOpen(true);
+  const abrirNovoRegistro = useCallback(() => setChooseTipoOpen(true), []);
+
+  const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
+    setChooseTipoOpen(false);
+    setTipoAtendimento(tipo);
+
+    setWizardSubmitting(false);
+    setWizardEditing(false);
+    setWizardIdx(null);
+    setWizardRestrictGroup(null);
+    setWizardStep(0);
+    setWizardMsg(null);
+    setWizardTitle("Novo Registro");
+
+    const empty: Registro = {};
+    (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+
+    if (tipo === "terceiro") {
+      (empty as any).assistencia = "Não";
+      (empty as any).tanato = "Não";
+      (empty as any).ornamentacao = "Não";
+      (empty as any).tipo_atendimento = "terceiro";
+    } else {
+      (empty as any).tipo_atendimento = "funerario";
+    }
+
+    // ✅ defaults de meta urna
+    (empty as any).urna_deposito_nome = "MEMORIAL";
+    (empty as any).urna_produto_id = 0;
+    (empty as any).urna_codigo_barras = "";
+
+    setWizardData(empty);
+    setMateriais(defaultMateriais());
+    setArrumacao(defaultArrumacao());
+    setAssistenciaVal(String((empty as any).assistencia || ""));
+    setTanatoVal(String((empty as any).tanato || ""));
+    setWizardOpen(true);
   }, []);
 
-  const iniciarNovoRegistro = useCallback(
-    (tipo: TipoAtendimento) => {
-      setChooseTipoOpen(false);
-      setTipoAtendimento(tipo);
+  const abrirWizard = useCallback((tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
+    setWizardSubmitting(false);
+    const editing = tipo === "editar";
+    setWizardEditing(editing);
+    setWizardIdx(idx);
+    setWizardRestrictGroup(grupoStep);
+    setWizardStep(grupoStep ?? 0);
+    setWizardMsg(null);
+    setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
 
-      setWizardSubmitting(false);
-      setWizardEditing(false);
-      setWizardIdx(null);
-      setWizardRestrictGroup(null);
-      setWizardStep(0);
-      setWizardMsg(null);
-      setWizardTitle("Novo Registro");
+    if (editing && idx !== null && registros[idx]) {
+      const r = registros[idx];
+      setTipoAtendimento(resolveTipoFromRegistro(r));
 
-      const empty: Registro = {};
-      (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+      const data: Registro = {};
+      (stepsPadrao as any).forEach((s: any) => {
+        (data as any)[s.id] = (r as any)[s.id] ?? "";
+      });
+      (data as any).id = (r as any).id;
 
-      if (tipo === "terceiro") {
-        empty.assistencia = "Não";
-        empty.tanato = "Não";
-        empty.ornamentacao = "Não";
-        (empty as any).tipo_atendimento = "terceiro";
-      } else {
-        (empty as any).tipo_atendimento = "funerario";
-      }
+      // ✅ metas da urna no wizardData
+      (data as any).urna_deposito_nome = String((r as any).urna_deposito_nome ?? "");
+      (data as any).urna_produto_id = Number((r as any).urna_produto_id ?? 0) || 0;
+      (data as any).urna_codigo_barras = String((r as any).urna_codigo_barras ?? "");
 
-      // ✅ defaults de meta urna (Wizard vai sobrescrever se usuário escolher)
-      (empty as any).urna_deposito_nome = "MEMORIAL";
-      (empty as any).urna_produto_id = 0;
-      (empty as any).urna_codigo_barras = "";
+      const mats = parseMateriaisFromRegistro(r);
+      setMateriais(mats);
+      (data as any).materiais = mats;
 
-      setWizardData(empty);
-      setMateriais(defaultMateriais());
-      setArrumacao(defaultArrumacao());
-      setAssistenciaVal(String(empty.assistencia || ""));
-      setTanatoVal(String(empty.tanato || ""));
+      const arr = parseArrumacaoFromRegistro(r);
+      setArrumacao(arr);
+      (data as any).arrumacao = arr;
+
+      setWizardData(data);
+      setAssistenciaVal(String((r as any).assistencia ?? ""));
+      setTanatoVal(String((r as any).tanato ?? ""));
       setWizardOpen(true);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [wizardStepIndexesForTipo, wizardStep, wizardData]
-  );
+      return;
+    }
 
-  const abrirWizard = useCallback(
-    (tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
-      setWizardSubmitting(false);
-      const editing = tipo === "editar";
-      setWizardEditing(editing);
-      setWizardIdx(idx);
-      setWizardRestrictGroup(grupoStep);
-      setWizardStep(grupoStep ?? 0);
-      setWizardMsg(null);
-      setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
-
-      if (editing && idx !== null && registros[idx]) {
-        const r = registros[idx];
-
-        setTipoAtendimento(resolveTipoFromRegistro(r));
-
-        const data: Registro = {};
-        (stepsPadrao as any).forEach((s: any) => {
-          (data as any)[s.id] = (r as any)[s.id] ?? "";
-        });
-        data.id = r.id;
-
-        // ✅ leva metas da urna pra dentro do wizardData (para manter no submit)
-        (data as any).urna_deposito_nome = String((r as any).urna_deposito_nome ?? "");
-        (data as any).urna_produto_id = Number((r as any).urna_produto_id ?? 0) || 0;
-        (data as any).urna_codigo_barras = String((r as any).urna_codigo_barras ?? "");
-
-        const mats = parseMateriaisFromRegistro(r);
-        setMateriais(mats);
-        (data as any).materiais = mats;
-
-        const arr = parseArrumacaoFromRegistro(r);
-        setArrumacao(arr);
-        (data as any).arrumacao = arr;
-
-        setWizardData(data);
-        setAssistenciaVal(String((r.assistencia ?? "") as string));
-        setTanatoVal(String((r.tanato ?? "") as string));
-      } else {
-        iniciarNovoRegistro(tipoAtendimento);
-        return;
-      }
-
-      setWizardOpen(true);
-    },
-    [registros, iniciarNovoRegistro, tipoAtendimento]
-  );
+    iniciarNovoRegistro(tipoAtendimento);
+  }, [registros, iniciarNovoRegistro, tipoAtendimento]);
 
   const salvarGrupoWizard = useCallback((): Registro | null => {
     const grupo = wizardStepIndexesForTipo[wizardStep];
@@ -819,42 +735,53 @@ export default function AcompanhamentoPage() {
 
     for (const idx of grupo) {
       const s = (stepsForTipo as any)[idx] as any;
-      const el = document.getElementById("wizard-" + s.id) as HTMLInputElement | HTMLTextAreaElement | null;
+      const el = document.getElementById("wizard-" + s.id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
       const v = (el?.value ?? "").trim();
 
       if (obrigatoriosForTipo.includes(s.id) && !v) {
-        el?.focus();
+        el?.focus?.();
         setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
         return null;
       }
       next[s.id] = v;
     }
 
-    if (wizardData.id != null) next.id = wizardData.id;
+    if ((wizardData as any).id != null) next.id = (wizardData as any).id;
 
     next.materiais = materiais;
     next.arrumacao = arrumacao;
     next.tipo_atendimento = tipoAtendimento;
 
-    // ✅ IMPORTANTE: anexar meta urna (deposito/produto_id/cb)
-    mergeUrnaMetaFromDom(next);
+    // ✅ URNA META: NÃO usa DOM. Mantém o que está no wizardData.
+    // (Wizard.tsx atualiza wizardData no momento da seleção da urna.)
+    const pid = Number(next?.urna_produto_id ?? 0) || 0;
+    if (pid > 0) {
+      const dep = String(next?.urna_deposito_nome ?? "MEMORIAL").trim().toUpperCase();
+      next.urna_deposito_nome = dep === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+      next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
+    } else {
+      // se digitou urna mas não selecionou produto => mantém pid 0 (wizard valida e PHP também)
+      next.urna_produto_id = 0;
+      next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
+      next.urna_deposito_nome = String(next?.urna_deposito_nome ?? "MEMORIAL").trim().toUpperCase() === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+    }
 
     setWizardData(next);
     return next as Registro;
   }, [
-    wizardData,
+    wizardStepIndexesForTipo,
     wizardStep,
+    wizardData,
     materiais,
     arrumacao,
-    wizardStepIndexesForTipo,
     stepsForTipo,
     obrigatoriosForTipo,
     tipoAtendimento,
-    mergeUrnaMetaFromDom,
   ]);
 
   const concluirWizard = useCallback(async () => {
     if (wizardSubmitting) return;
+
     const dataAtualizada: any = salvarGrupoWizard();
     if (!dataAtualizada) return;
 
@@ -872,6 +799,14 @@ export default function AcompanhamentoPage() {
         setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
         return;
       }
+    }
+
+    // ✅ validação extra (front): se urna tem texto, precisa ter produto_id
+    const urnaTxt = String(dataAtualizada?.urna ?? "").trim();
+    const urnaPid = Number(dataAtualizada?.urna_produto_id ?? 0) || 0;
+    if (urnaTxt !== "" && urnaPid <= 0) {
+      setWizardMsg({ text: "Selecione uma urna da lista (produto do estoque).", ok: false });
+      return;
     }
 
     if (!isOnlineNow()) {
@@ -896,12 +831,15 @@ export default function AcompanhamentoPage() {
       setWizardSubmitting(true);
       const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
       const json = await enviarRegistroPHP(payload);
+
       if (json?.sucesso) {
         setWizardMsg({ text: "Registro salvo!", ok: true });
+
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
-          const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? dataAtualizada.id ?? null;
+          const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? (dataAtualizada as any).id ?? null;
           addTerceiroIdToSession(novoId);
         }
+
         fetchRegistros();
         setTimeout(() => setWizardOpen(false), 950);
       } else {
@@ -920,14 +858,13 @@ export default function AcompanhamentoPage() {
     }
   }, [
     salvarGrupoWizard,
-    wizardRestrictGroup,
-    wizardEditing,
-    fetchRegistros,
     wizardSubmitting,
-    obrigatoriosForTipo,
+    wizardRestrictGroup,
     wizardStepIndexesForTipo,
     stepsForTipo,
-    tipoAtendimento,
+    obrigatoriosForTipo,
+    wizardEditing,
+    fetchRegistros,
     flushOfflineQueue,
   ]);
 
@@ -939,234 +876,162 @@ export default function AcompanhamentoPage() {
     setAcaoOpen(true);
   }, []);
 
-  /**
-   * Retorna:
-   * - true  => ação registrada/armazenada (online ou offline) e pode fechar modal
-   * - false => não registrou (cancelou confirm, abriu conferência fase11, etc.)
-   */
-  const registrarAcao = useCallback(
-    async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }): Promise<boolean> => {
-      if (acaoSubmitting) return false;
-      if (acaoId == null) return false;
+  const registrarAcao = useCallback(async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }): Promise<boolean> => {
+    if (acaoSubmitting) return false;
+    if (acaoId == null) return false;
 
-      // ✅ NORMALIZA status SEMPRE (isso resolve o erro de confirmação)
-      const statusCode = normalizeStatusCode(acao);
-      const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
+    const statusCode = normalizeStatusCode(acao);
+    const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
 
-      // ✅ trava fase05 sem urna vinculada
-      if (statusCode === "fase05") {
-        const reg = registros.find((x) => String(x.id) === String(acaoId));
-        const pid = Number((reg as any)?.urna_produto_id ?? 0) || 0;
+    // ✅ trava fase05 sem urna vinculada
+    if (statusCode === "fase05") {
+      const reg = registros.find((x) => String(x.id) === String(acaoId));
+      const pid = Number((reg as any)?.urna_produto_id ?? 0) || 0;
 
-        if (pid <= 0) {
-          setAcaoMsg({
-            ok: false,
-            text:
-              "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
-          });
-          return false;
-        }
-
-        // ✅ fase05 precisa estar ONLINE para dar baixa no estoque com segurança
-        if (!isOnlineNow()) {
-          setAcaoMsg({
-            ok: false,
-            text:
-              "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática da urna no estoque. Conecte-se e tente novamente.",
-          });
-          return false;
-        }
-      }
-
-      // Antes de "Material Recolhido" (fase11), exigir conferência
-      if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
-        const reg = registros.find((x) => String(x.id) === String(acaoId));
-        const mats = reg ? parseMateriaisFromRegistro(reg) : {};
-
-        const itens: MatCheckItem[] = Object.entries(mats || {})
-          .map(([k, it]: any) => ({
-            key: String(k),
-            nome: String(it?.nome || k),
-            qtd: Number(it?.qtd ?? 0),
-            checked: !!it?.checked,
-          }))
-          .filter((x) => x.checked && x.qtd > 0)
-          .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
-
-        setMatCheckItens(itens);
-
-        setMatCheckRegistroId(reg?.id != null ? String(reg.id) : String(acaoId));
-        setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
-
-        setMatCheckReturnToAcao(true);
-        setAcaoOpen(false);
-        setMatCheckOpen(true);
+      if (pid <= 0) {
+        setAcaoMsg({
+          ok: false,
+          text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
+        });
         return false;
       }
 
-      if (!opts?.skipConfirm) {
-        const ok = window.confirm("Deseja confirmar essa ação?");
-        if (!ok) return false;
-      }
-
-      // Offline: guarda ação (exceto fase05, já bloqueado acima)
       if (!isOnlineNow()) {
-        try {
-          setAcaoSubmitting(true);
-
-          enqueueOffline(
-            {
-              acao: "atualizar_status",
-              id: acaoId,
-              status: statusCode || acao,
-              ...(needsBackendConfirm ? { confirmar: true } : {}),
-            },
-            "offline"
-          );
-
-          setAcaoMsg({
-            text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
-            ok: true,
-          });
-          setAcaoOpen(false);
-          return true;
-        } finally {
-          setAcaoSubmitting(false);
-        }
-      }
-
-      // ✅ fase05: baixar urna ANTES de mudar status
-      if (statusCode === "fase05") {
-        try {
-          setAcaoSubmitting(true);
-          await baixarUrnaFase05(String(acaoId));
-        } catch (e: any) {
-          setAcaoSubmitting(false);
-          setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática da urna (fase05)." });
-          return false;
-        } finally {
-          // não fecha; segue para atualizar_status
-        }
-      }
-
-      setAcaoSubmitting(true);
-      try {
-        const json = await enviarRegistroPHP({
-          acao: "atualizar_status",
-          id: acaoId,
-          status: statusCode || acao,
-          ...(needsBackendConfirm ? { confirmar: true } : {}),
-        });
-
-        if (json?.sucesso) {
-          setAcaoMsg({
-            text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`,
-            ok: true,
-          });
-
-          // Para telemetria (compare com status normalizado)
-          if (
-            teleActive &&
-            teleStartFase &&
-            STOP_BY_START[teleStartFase] &&
-            STOP_BY_START[teleStartFase] === (statusCode || acao)
-          ) {
-            await teleRef.current?.stopAndSave();
-            setTeleActive(false);
-            setTeleStartFase(null);
-          }
-
-          await fetchRegistros();
-          setAcaoOpen(false);
-          return true;
-        } else {
-          setAcaoMsg({
-            text: String(json?.msg || json?.erro || "Erro ao atualizar status."),
-            ok: false,
-          });
-          return false;
-        }
-      } catch (e: any) {
-        // fallback: guarda offline e considera sucesso (fase05 não entra aqui pq já foi online)
-        enqueueOffline(
-          {
-            acao: "atualizar_status",
-            id: acaoId,
-            status: statusCode || acao,
-            ...(needsBackendConfirm ? { confirmar: true } : {}),
-          },
-          e?.message
-        );
-
         setAcaoMsg({
-          text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
-          ok: true,
+          ok: false,
+          text: "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática da urna no estoque. Conecte-se e tente novamente.",
         });
+        return false;
+      }
+    }
+
+    // conferência antes do fase11
+    if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
+      const reg = registros.find((x) => String(x.id) === String(acaoId));
+      const mats = reg ? parseMateriaisFromRegistro(reg) : {};
+
+      const itens: MatCheckItem[] = Object.entries(mats || {})
+        .map(([k, it]: any) => ({ key: String(k), nome: String(it?.nome || k), qtd: Number(it?.qtd ?? 0), checked: !!it?.checked }))
+        .filter((x) => x.checked && x.qtd > 0)
+        .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
+
+      setMatCheckItens(itens);
+      setMatCheckRegistroId(reg?.id != null ? String(reg.id) : String(acaoId));
+      setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
+
+      setMatCheckReturnToAcao(true);
+      setAcaoOpen(false);
+      setMatCheckOpen(true);
+      return false;
+    }
+
+    if (!opts?.skipConfirm) {
+      const ok = window.confirm("Deseja confirmar essa ação?");
+      if (!ok) return false;
+    }
+
+    // Offline (exceto fase05)
+    if (!isOnlineNow()) {
+      try {
+        setAcaoSubmitting(true);
+        enqueueOffline(
+          { acao: "atualizar_status", id: acaoId, status: statusCode || acao, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+          "offline"
+        );
+        setAcaoMsg({ text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.", ok: true });
         setAcaoOpen(false);
         return true;
       } finally {
         setAcaoSubmitting(false);
-        flushOfflineQueue();
       }
-    },
-    [
-      acaoSubmitting,
-      acaoId,
-      registros,
-      fetchRegistros,
-      teleActive,
-      teleStartFase,
-      flushOfflineQueue,
-      baixarUrnaFase05,
-    ]
-  );
+    }
 
-  /* ---- Confirmação silenciosa para a TelemetriaModal (start) ---- */
-  const confirmarAcaoSilenciosa = useCallback(
-    async (fase: string) => {
-      const id = teleRegistroId ?? acaoId;
-      if (id == null) return;
-
-      const statusCode = normalizeStatusCode(fase);
-      const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
-
-      if (!isOnlineNow()) {
-        enqueueOffline(
-          {
-            acao: "atualizar_status",
-            id,
-            status: statusCode || fase,
-            ...(needsBackendConfirm ? { confirmar: true } : {}),
-          },
-          "offline"
-        );
-        return;
-      }
-
+    // ✅ fase05: baixar urna antes
+    if (statusCode === "fase05") {
       try {
-        await enviarRegistroPHP({
-          acao: "atualizar_status",
-          id,
-          status: statusCode || fase,
-          ...(needsBackendConfirm ? { confirmar: true } : {}),
-        });
-        await fetchRegistros();
+        setAcaoSubmitting(true);
+        await baixarUrnaFase05(String(acaoId));
       } catch (e: any) {
-        enqueueOffline(
-          {
-            acao: "atualizar_status",
-            id,
-            status: statusCode || fase,
-            ...(needsBackendConfirm ? { confirmar: true } : {}),
-          },
-          e?.message
-        );
-      } finally {
-        flushOfflineQueue();
+        setAcaoSubmitting(false);
+        setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática da urna (fase05)." });
+        return false;
       }
-    },
-    [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue]
-  );
+    }
+
+    setAcaoSubmitting(true);
+    try {
+      const json = await enviarRegistroPHP({
+        acao: "atualizar_status",
+        id: acaoId,
+        status: statusCode || acao,
+        ...(needsBackendConfirm ? { confirmar: true } : {}),
+      });
+
+      if (json?.sucesso) {
+        setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`, ok: true });
+
+        if (
+          teleActive &&
+          teleStartFase &&
+          STOP_BY_START[teleStartFase] &&
+          STOP_BY_START[teleStartFase] === (statusCode || acao)
+        ) {
+          await teleRef.current?.stopAndSave();
+          setTeleActive(false);
+          setTeleStartFase(null);
+        }
+
+        await fetchRegistros();
+        setAcaoOpen(false);
+        return true;
+      }
+
+      setAcaoMsg({ text: String(json?.msg || json?.erro || "Erro ao atualizar status."), ok: false });
+      return false;
+    } catch (e: any) {
+      enqueueOffline(
+        { acao: "atualizar_status", id: acaoId, status: statusCode || acao, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+        e?.message
+      );
+      setAcaoMsg({ text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.", ok: true });
+      setAcaoOpen(false);
+      return true;
+    } finally {
+      setAcaoSubmitting(false);
+      flushOfflineQueue();
+    }
+  }, [
+    acaoSubmitting,
+    acaoId,
+    registros,
+    teleActive,
+    teleStartFase,
+    fetchRegistros,
+    flushOfflineQueue,
+    baixarUrnaFase05,
+  ]);
+
+  const confirmarAcaoSilenciosa = useCallback(async (fase: string) => {
+    const id = teleRegistroId ?? acaoId;
+    if (id == null) return;
+
+    const statusCode = normalizeStatusCode(fase);
+    const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
+
+    if (!isOnlineNow()) {
+      enqueueOffline({ acao: "atualizar_status", id, status: statusCode || fase, ...(needsBackendConfirm ? { confirmar: true } : {}) }, "offline");
+      return;
+    }
+
+    try {
+      await enviarRegistroPHP({ acao: "atualizar_status", id, status: statusCode || fase, ...(needsBackendConfirm ? { confirmar: true } : {}) });
+      await fetchRegistros();
+    } catch (e: any) {
+      enqueueOffline({ acao: "atualizar_status", id, status: statusCode || fase, ...(needsBackendConfirm ? { confirmar: true } : {}) }, e?.message);
+    } finally {
+      flushOfflineQueue();
+    }
+  }, [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue]);
 
   /* -------------------- Info por ID -------------------- */
   const registroInfo = useMemo(
@@ -1185,46 +1050,37 @@ export default function AcompanhamentoPage() {
     setInfoOpen(true);
   }, []);
 
-  const abrirWizardFromInfo = useCallback(
-    (tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
-      const idx = infoIdxResolved;
-      if (idx != null) {
-        setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
-        abrirWizard(tipo, idx, grupoStep);
-      }
-    },
-    [infoIdxResolved, abrirWizard, registros]
-  );
+  const abrirWizardFromInfo = useCallback((tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
+    const idx = infoIdxResolved;
+    if (idx != null) {
+      setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
+      abrirWizard(tipo, idx, grupoStep);
+    }
+  }, [infoIdxResolved, abrirWizard, registros]);
 
-  const abrirAssinaturaFromInfo = useCallback(
-    (_idx: number, tipo: "recebimento" | "requisicao") => {
-      const idx = infoIdxResolved;
-      if (idx != null) {
-        setSignIdx(idx);
-        setSignTipo(tipo);
-        setSignOpen(true);
-      }
-    },
-    [infoIdxResolved]
-  );
+  const abrirAssinaturaFromInfo = useCallback((_idx: number, tipo: "recebimento" | "requisicao") => {
+    const idx = infoIdxResolved;
+    if (idx != null) {
+      setSignIdx(idx);
+      setSignTipo(tipo);
+      setSignOpen(true);
+    }
+  }, [infoIdxResolved]);
 
-  /* -------------------- Telemetria: abrir via AcaoModal -------------------- */
-  const handleVeiculoRequired = useCallback(
-    (id: Registro["id"] | null | undefined, fase: string) => {
-      const tipo = mapFaseToTipo(fase);
-      if (!tipo) {
-        setAcaoId(id != null ? String(id) : null);
-        registrarAcao(fase);
-        return;
-      }
-      setTeleRegistroId(id != null ? String(id) : null);
-      setTeleFase(fase);
-      setTeleTipo(tipo);
-      setTeleOpen(true);
-      setAcaoOpen(false);
-    },
-    [registrarAcao]
-  );
+  /* -------------------- Telemetria -------------------- */
+  const handleVeiculoRequired = useCallback((id: Registro["id"] | null | undefined, fase: string) => {
+    const tipo = mapFaseToTipo(fase);
+    if (!tipo) {
+      setAcaoId(id != null ? String(id) : null);
+      registrarAcao(fase);
+      return;
+    }
+    setTeleRegistroId(id != null ? String(id) : null);
+    setTeleFase(fase);
+    setTeleTipo(tipo);
+    setTeleOpen(true);
+    setAcaoOpen(false);
+  }, [registrarAcao]);
 
   /* -------------------- Resumos -------------------- */
   const materiaisSelecionadosResumo = useMemo(() => {
@@ -1254,18 +1110,11 @@ export default function AcompanhamentoPage() {
       { key: "mascara", label: "Máscara" },
     ];
     const arr = (wizardData as any).arrumacao || arrumacao;
-    return mapa
-      .filter((o) => !!(arr as any)?.[o.key])
-      .map((o) => o.label)
-      .join(" • ");
+    return mapa.filter((o) => !!(arr as any)?.[o.key]).map((o) => o.label).join(" • ");
   }, [wizardData, arrumacao]);
 
-  /* -------------------- Helpers -------------------- */
-  const findRegistroById = useCallback(
-    (id: Registro["id"] | null): Registro | undefined =>
-      id == null ? undefined : registros.find((x) => String(x.id) === String(id)),
-    [registros]
-  );
+  const findRegistroById = useCallback((id: Registro["id"] | null): Registro | undefined =>
+    id == null ? undefined : registros.find((x) => String(x.id) === String(id)), [registros]);
 
   /* -------------------- Render -------------------- */
   return (
@@ -1296,20 +1145,13 @@ export default function AcompanhamentoPage() {
         avisoInputRef={avisoInputRef}
       />
 
-      {/* Modal: escolher tipo no novo registro */}
       <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
         <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
         <div className="mt-4 grid gap-2">
-          <button
-            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-            onClick={() => iniciarNovoRegistro("funerario")}
-          >
+          <button className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted" onClick={() => iniciarNovoRegistro("funerario")}>
             Atendimento Funerário
           </button>
-          <button
-            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-            onClick={() => iniciarNovoRegistro("terceiro")}
-          >
+          <button className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted" onClick={() => iniciarNovoRegistro("terceiro")}>
             Serviço de Outra Empresa
           </button>
         </div>
@@ -1341,21 +1183,8 @@ export default function AcompanhamentoPage() {
         wizardSubmitting={wizardSubmitting}
       />
 
-      <MateriaisModal
-        open={materiaisOpen}
-        setOpen={setMateriaisOpen}
-        materiais={materiais}
-        setMateriais={setMateriais}
-        setWizardData={setWizardData}
-      />
-
-      <ArrumacaoModal
-        open={arrumacaoOpen}
-        setOpen={setArrumacaoOpen}
-        arrumacao={arrumacao}
-        setArrumacao={setArrumacao}
-        setWizardData={setWizardData}
-      />
+      <MateriaisModal open={materiaisOpen} setOpen={setMateriaisOpen} materiais={materiais} setMateriais={setMateriais} setWizardData={setWizardData} />
+      <ArrumacaoModal open={arrumacaoOpen} setOpen={setArrumacaoOpen} arrumacao={arrumacao} setArrumacao={setArrumacao} setWizardData={setWizardData} />
 
       <AcaoModal
         open={acaoOpen}
@@ -1368,7 +1197,6 @@ export default function AcompanhamentoPage() {
         onVeiculoRequired={handleVeiculoRequired}
       />
 
-      {/* Conferência obrigatória antes de Material Recolhido */}
       <MateriaisConferenciaModal
         open={matCheckOpen}
         itens={matCheckItens}
@@ -1380,7 +1208,6 @@ export default function AcompanhamentoPage() {
         }}
         onConfirm={async (result?: MateriaisConferenciaResult) => {
           if (!result) return;
-
           try {
             setMatCheckSaving(true);
 
@@ -1432,12 +1259,9 @@ export default function AcompanhamentoPage() {
         onClose={() => setSignOpen(false)}
         registro={signIdx != null ? registros[signIdx] : undefined}
         tipo={signTipo}
-        onSaved={() => {
-          fetchRegistros();
-        }}
+        onSaved={() => fetchRegistros()}
       />
 
-      {/* Telemetria */}
       <TelemetriaModal
         ref={teleRef}
         open={teleOpen}
@@ -1460,7 +1284,6 @@ export default function AcompanhamentoPage() {
         }}
       />
 
-      {/* overlay enquanto salva conferência */}
       {matCheckSaving ? (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4">
           <div className="rounded-xl bg-background p-4 shadow-xl border">
@@ -1470,13 +1293,12 @@ export default function AcompanhamentoPage() {
         </div>
       ) : null}
 
-      {/* ✅ mensagem do wizard (se quiser exibir aqui também) */}
       {wizardMsg ? (
         <div className="mt-4">
           <div
             className={`rounded-lg border p-3 text-sm ${wizardMsg.ok
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-red-200 bg-red-50 text-red-800"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
               }`}
           >
             {wizardMsg.text}

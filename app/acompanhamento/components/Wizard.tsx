@@ -18,7 +18,6 @@ type UrnaRow = {
     id?: number;
     produto_id?: number;
     est_produto_id?: number;
-
     nome: string;
     codigo_barras?: string;
     saldo_total?: number;
@@ -26,19 +25,6 @@ type UrnaRow = {
 
 const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
 
-/* =========================
-   ✅ COMBOBOX URNA (async) + DEPÓSITO
-   ✅ Grava meta da urna em inputs hidden:
-      - wizard-urna_deposito_nome
-      - wizard-urna_produto_id
-      - wizard-urna_codigo_barras
-
-   ✅ Robustez:
-   - seleciona no onPointerDown
-   - Enter seleciona
-   - blur com match exato auto-seleciona
-   - 🔥 atualiza TODOS inputs com mesmo id (protege contra ID duplicado)
-========================= */
 function UrnaCombobox({
     required,
     placeholder,
@@ -49,6 +35,9 @@ function UrnaCombobox({
     initialCodigoBarras,
     errorText,
     onBlurValidate,
+
+    // ✅ NOVO: salva meta no estado do wizard
+    onSelectMeta,
 }: {
     required: boolean;
     placeholder?: string;
@@ -61,6 +50,13 @@ function UrnaCombobox({
 
     errorText?: string;
     onBlurValidate?: () => void;
+
+    onSelectMeta?: (m: {
+        nome: string;
+        deposito_nome: "MEMORIAL" | "FUNERARIA";
+        produto_id: number;
+        codigo_barras: string;
+    }) => void;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -77,80 +73,37 @@ function UrnaCombobox({
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<UrnaRow[]>([]);
 
-    // hidden refs
-    const depHiddenRef = useRef<HTMLInputElement>(null);
-    const pidHiddenRef = useRef<HTMLInputElement>(null);
-    const cbHiddenRef = useRef<HTMLInputElement>(null);
-
-    const didMountDepRef = useRef(false);
-
     const getPidFromRow = (it: UrnaRow): number =>
         Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
-
-    // 🔥 atualiza todos os inputs que tiverem o mesmo id (protege duplicidade)
-    const setAllById = (id: string, value: string) => {
-        try {
-            document.querySelectorAll(`input[id="${id}"]`).forEach((el) => {
-                (el as HTMLInputElement).value = value;
-            });
-        } catch {
-            // ignore
-        }
-    };
-
-    function setHiddenMeta(next: { deposito_nome?: string; produto_id?: number; codigo_barras?: string }) {
-        const depNome = normalizeDep(next.deposito_nome || dep);
-        const pid = Number(next.produto_id || 0) || 0;
-        const cb = String(next.codigo_barras || "").trim();
-
-        // refs
-        if (depHiddenRef.current) depHiddenRef.current.value = depNome;
-        if (pidHiddenRef.current) pidHiddenRef.current.value = pid > 0 ? String(pid) : "0";
-        if (cbHiddenRef.current) cbHiddenRef.current.value = cb;
-
-        // 🔥 DOM (todos)
-        setAllById("wizard-urna_deposito_nome", depNome);
-        setAllById("wizard-urna_produto_id", pid > 0 ? String(pid) : "0");
-        setAllById("wizard-urna_codigo_barras", cb);
-    }
-
-    function clearProdutoMetaOnly() {
-        // refs
-        if (pidHiddenRef.current) pidHiddenRef.current.value = "0";
-        if (cbHiddenRef.current) cbHiddenRef.current.value = "";
-
-        // 🔥 DOM (todos)
-        setAllById("wizard-urna_produto_id", "0");
-        setAllById("wizard-urna_codigo_barras", "");
-    }
 
     const applySelection = (it: UrnaRow) => {
         const pid = getPidFromRow(it);
         if (!pid || pid <= 0) {
             setErr("Esta urna veio sem produto_id. Contate o suporte.");
-            clearProdutoMetaOnly();
+            onSelectMeta?.({ nome: q, deposito_nome: dep, produto_id: 0, codigo_barras: "" });
             onBlurValidate?.();
             return;
         }
 
-        setQ(it.nome);
+        const cb = String((it as any).codigo_barras || "").trim();
 
-        setHiddenMeta({
-            deposito_nome: dep,
-            produto_id: pid,
-            codigo_barras: (it as any).codigo_barras || "",
-        });
-
+        setQ(String(it.nome || ""));
         setErr("");
         setOpen(false);
 
-        // valida de novo já com pid preenchido
-        onBlurValidate?.();
+        // ✅ grava no estado do wizard (isso é o que garante o salvamento)
+        onSelectMeta?.({
+            nome: String(it.nome || "").trim(),
+            deposito_nome: dep,
+            produto_id: pid,
+            codigo_barras: cb,
+        });
 
+        onBlurValidate?.();
         requestAnimationFrame(() => inputRef.current?.blur());
     };
 
-    // sincroniza quando abre/edita registro
+    // sincroniza ao abrir/editar
     useEffect(() => {
         const depInit = normalizeDep(initialDepositoNome);
         const pidInit = Number(initialProdutoId || 0) || 0;
@@ -158,29 +111,20 @@ function UrnaCombobox({
 
         setDep(depInit);
         setQ(initialValue || "");
-
         setRows([]);
         setErr("");
         setOpen(false);
 
-        setHiddenMeta({ deposito_nome: depInit, produto_id: pidInit, codigo_barras: cbInit });
+        // garante que o wizardData reflita o que veio do registro (edição)
+        onSelectMeta?.({
+            nome: String(initialValue || "").trim(),
+            deposito_nome: depInit,
+            produto_id: pidInit,
+            codigo_barras: cbInit,
+        });
 
-        didMountDepRef.current = false;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialValue, initialDepositoNome, initialProdutoId, initialCodigoBarras]);
-
-    // ao mudar depósito
-    useEffect(() => {
-        setHiddenMeta({ deposito_nome: dep });
-
-        if (!didMountDepRef.current) {
-            didMountDepRef.current = true;
-            return;
-        }
-
-        clearProdutoMetaOnly();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dep]);
 
     // fecha ao clicar fora
     useEffect(() => {
@@ -224,7 +168,6 @@ function UrnaCombobox({
 
                 const j = await r.json().catch(() => null);
                 if (!j?.ok) throw new Error(j?.msg || "Falha ao buscar urnas");
-
                 setRows((j.rows || []) as UrnaRow[]);
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
@@ -242,9 +185,6 @@ function UrnaCombobox({
     }, [q, open, dep]);
 
     const autoPickIfExactMatch = () => {
-        const pidNow = Number((document.getElementById("wizard-urna_produto_id") as HTMLInputElement | null)?.value || 0) || 0;
-        if (pidNow > 0) return;
-
         const txt = q.trim().toLowerCase();
         if (txt.length < 2) return;
         if (!rows?.length) return;
@@ -255,11 +195,6 @@ function UrnaCombobox({
 
     return (
         <div ref={wrapRef}>
-            {/* hidden metas */}
-            <input ref={depHiddenRef} id="wizard-urna_deposito_nome" type="hidden" defaultValue={dep} />
-            <input ref={pidHiddenRef} id="wizard-urna_produto_id" type="hidden" defaultValue={String(Number(initialProdutoId || 0) || 0)} />
-            <input ref={cbHiddenRef} id="wizard-urna_codigo_barras" type="hidden" defaultValue={String(initialCodigoBarras || "")} />
-
             <div className="relative">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr] sm:gap-2">
                     <div>
@@ -273,6 +208,10 @@ function UrnaCombobox({
                                 setRows([]);
                                 setErr("");
                                 setOpen(true);
+
+                                // troca depósito invalida o produto
+                                onSelectMeta?.({ nome: q, deposito_nome: next, produto_id: 0, codigo_barras: "" });
+                                onBlurValidate?.();
                             }}
                             disabled={disabled}
                             title="Local da Urna"
@@ -294,10 +233,12 @@ function UrnaCombobox({
                             placeholder={placeholder || "Digite para buscar..."}
                             value={q}
                             onChange={(e) => {
-                                setQ(e.target.value);
+                                const v = e.target.value;
+                                setQ(v);
                                 setOpen(true);
-                                clearProdutoMetaOnly();
-                                setHiddenMeta({ deposito_nome: dep });
+                                setErr("");
+                                // digitou => invalida pid até selecionar da lista
+                                onSelectMeta?.({ nome: v, deposito_nome: dep, produto_id: 0, codigo_barras: "" });
                             }}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter") {
@@ -437,7 +378,6 @@ export default function Wizard({
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
 
-    // ✅ erro específico da urna
     const [urnaErro, setUrnaErro] = useState<string>("");
 
     useEffect(() => {
@@ -467,7 +407,6 @@ export default function Wizard({
         return wizardRestrictGroup === assistenciaGroupIndex;
     }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup]);
 
-    // grupoSteps
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
 
@@ -485,16 +424,13 @@ export default function Wizard({
 
     const bloqueiaPorAssistencia = requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
 
-    // ✅ valida urna: se campo preenchido (ou obrigatório) precisa ter produto_id > 0
+    // ✅ valida urna pelo wizardData (não depende DOM)
     const validarUrnaSeNecessario = () => {
         const urnaStepNoGrupo = grupoSteps.some((s) => s.id === "urna" && s.type === "async_urna");
         if (!urnaStepNoGrupo) return true;
 
-        const urnaTxt = (document.getElementById("wizard-urna") as HTMLInputElement | null)?.value?.trim() ?? "";
-        const pidStr =
-            (document.getElementById("wizard-urna_produto_id") as HTMLInputElement | null)?.value?.trim() ?? "0";
-        const pid = Number(pidStr) || 0;
-
+        const urnaTxt = String((wizardData as any).urna ?? "").trim();
+        const pid = Number((wizardData as any).urna_produto_id ?? 0) || 0;
         const isRequired = obrigatorios.includes("urna");
 
         if ((isRequired || urnaTxt !== "") && pid <= 0) {
@@ -526,7 +462,6 @@ export default function Wizard({
             (pos) => {
                 const lat = pos.coords.latitude;
                 const lng = pos.coords.longitude;
-
                 const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
 
                 const el = localVelorioRef.current;
@@ -578,7 +513,6 @@ export default function Wizard({
     };
 
     const isRequired = (id: string) => obrigatorios.includes(id);
-
     if (!open) return null;
 
     return (
@@ -586,10 +520,7 @@ export default function Wizard({
             <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
-                    <span
-                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
-                        aria-live="polite"
-                    >
+                    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700" aria-live="polite">
                         <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
@@ -603,8 +534,7 @@ export default function Wizard({
                 {wizardStepTitles.map((t, i) => (
                     <span
                         key={t}
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
-                            }`}
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
                     >
                         {t}
                     </span>
@@ -617,7 +547,7 @@ export default function Wizard({
 
                     if (step.id === "urna" && step.type === "async_urna") {
                         return (
-                            <div key={step.id}>
+                            <div key={step.id} className="sm:col-span-2">
                                 <UrnaCombobox
                                     required={isRequired(step.id)}
                                     placeholder={step.placeholder}
@@ -628,11 +558,21 @@ export default function Wizard({
                                     initialCodigoBarras={String((wizardData as any).urna_codigo_barras ?? "")}
                                     errorText={urnaErro}
                                     onBlurValidate={validarUrnaSeNecessario}
+                                    onSelectMeta={(m) => {
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            urna: m.nome,
+                                            urna_deposito_nome: m.deposito_nome,
+                                            urna_produto_id: m.produto_id,
+                                            urna_codigo_barras: m.codigo_barras,
+                                        }));
+                                    }}
                                 />
                             </div>
                         );
                     }
 
+                    // local_velorio com GPS
                     if (step.id === "local_velorio" && step.type === "datalist") {
                         const listId = `dl-${step.id}`;
                         const currentText = String((wizardData as any)[step.id] ?? "");
@@ -695,6 +635,7 @@ export default function Wizard({
                         );
                     }
 
+                    // custom arrumacao
                     if (step.type === "custom" && step.id === "arrumacao") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
@@ -715,6 +656,7 @@ export default function Wizard({
                         );
                     }
 
+                    // assistencia
                     if (step.id === "assistencia" && step.type === "select") {
                         const showRequiredStar = isRequired(step.id) || requireAssistencia;
 
@@ -740,13 +682,9 @@ export default function Wizard({
                                     }}
                                     disabled={wizardSubmitting}
                                 >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
+                                    <option value="" disabled>Selecione…</option>
                                     {(step.options || ["Sim", "Não"]).filter(Boolean).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
 
@@ -769,6 +707,7 @@ export default function Wizard({
                         );
                     }
 
+                    // tanato select controlado
                     if (step.id === "tanato" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -784,15 +723,14 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
                             </div>
                         );
                     }
 
+                    // ornamentacao select controlado
                     if (step.id === "ornamentacao" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -812,15 +750,14 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
                             </div>
                         );
                     }
 
+                    // ornamentacao_tipo (default)
                     if (step.id === "ornamentacao_tipo" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -832,9 +769,7 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Natural", "Artificial"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
                             </div>
@@ -890,9 +825,7 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || [""]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
                             </div>
