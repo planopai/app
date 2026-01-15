@@ -15,10 +15,13 @@ type Step = {
 };
 
 type UrnaRow = {
-    id: number;
+    id?: number;
+    produto_id?: number;
+    est_produto_id?: number;
+
     nome: string;
-    codigo_barras: string;
-    saldo_total: number;
+    codigo_barras?: string;
+    saldo_total?: number;
 };
 
 const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
@@ -280,38 +283,52 @@ function UrnaCombobox({
                         ) : rows.length === 0 ? (
                             <div className="p-3 text-sm text-slate-600">Nenhuma urna encontrada no estoque ({dep}).</div>
                         ) : (
-                            <ul className="max-h-64 overflow-auto py-1">
-                                {rows.map((it) => (
-                                    <li key={it.id}>
-                                        <button
-                                            type="button"
-                                            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                                            onMouseDown={(e) => e.preventDefault()}
-                                            onClick={() => {
-                                                setQ(it.nome);
-                                                setHiddenMeta({
-                                                    deposito_nome: dep,
-                                                    produto_id: Number(it.id) || 0,
-                                                    codigo_barras: it.codigo_barras || "",
-                                                });
+                                            <ul className="max-h-64 overflow-auto py-1">
+                                                {rows.map((it) => {
+                                                    // ✅ chave estável: pega o ID real mesmo que venha com outro nome
+                                                    const pidKey =
+                                                        Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
 
-                                                setOpen(false);
-                                                requestAnimationFrame(() => inputRef.current?.blur());
-                                            }}
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span className="truncate font-medium text-slate-900">{it.nome}</span>
-                                                <span className="shrink-0 text-xs text-slate-600">
-                                                    estoque: <b>{Number(it.saldo_total) || 0}</b>
-                                                </span>
-                                            </div>
-                                            <div className="mt-0.5 truncate text-xs text-slate-600">
-                                                CB: <b>{it.codigo_barras}</b>
-                                            </div>
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
+                                                    return (
+                                                        <li key={pidKey || it.nome}>
+                                                            <button
+                                                                type="button"
+                                                                className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                                                                onMouseDown={(e) => e.preventDefault()}
+                                                                onClick={() => {
+                                                                    // ✅ usa o mesmo PID (sem risco)
+                                                                    const pid = pidKey;
+
+                                                                    setQ(it.nome);
+
+                                                                    setHiddenMeta({
+                                                                        deposito_nome: dep,
+                                                                        produto_id: pid,
+                                                                        codigo_barras: (it as any).codigo_barras || "",
+                                                                    });
+
+                                                                    // ✅ limpa o erro assim que selecionar corretamente
+                                                                    onBlurValidate?.();
+
+                                                                    setOpen(false);
+                                                                    requestAnimationFrame(() => inputRef.current?.blur());
+                                                                }}
+                                                            >
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="truncate font-medium text-slate-900">{it.nome}</span>
+                                                                    <span className="shrink-0 text-xs text-slate-600">
+                                                                        estoque: <b>{Number(it.saldo_total) || 0}</b>
+                                                                    </span>
+                                                                </div>
+                                                                <div className="mt-0.5 truncate text-xs text-slate-600">
+                                                                    CB: <b>{(it as any).codigo_barras || ""}</b>
+                                                                </div>
+                                                            </button>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+
                         )}
                     </div>
                 ) : null}
