@@ -37,6 +37,10 @@ const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
    1) NÃO limpar produto_id/cb no mount (useEffect(dep) roda no mount!)
       -> só limpa quando usuário troca depósito de verdade
    2) Validação externa (Wizard) vai bloquear salvar se urna preenchida e produto_id=0
+   3) ✅ Seleção robusta:
+      - seleciona no onPointerDown (melhor que onClick)
+      - Enter seleciona primeira/exata
+      - blur com match exato auto-seleciona
 ========================= */
 function UrnaCombobox({
     required,
@@ -86,6 +90,12 @@ function UrnaCombobox({
     // ✅ evita limpar produto no mount
     const didMountDepRef = useRef(false);
 
+    const getPidFromRow = (it: UrnaRow): number => {
+        const pid =
+            Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
+        return pid;
+    };
+
     function setHiddenMeta(next: { deposito_nome?: string; produto_id?: number; codigo_barras?: string }) {
         const depNome = normalizeDep(next.deposito_nome || dep);
         const pid = Number(next.produto_id || 0) || 0;
@@ -100,6 +110,34 @@ function UrnaCombobox({
         if (pidHiddenRef.current) pidHiddenRef.current.value = "0";
         if (cbHiddenRef.current) cbHiddenRef.current.value = "";
     }
+
+    const applySelection = (it: UrnaRow) => {
+        const pid = getPidFromRow(it);
+
+        // se por algum motivo veio sem id, não seleciona
+        if (!pid || pid <= 0) {
+            setErr("Esta urna veio sem produto_id. Atualize a busca ou contate o suporte.");
+            clearProdutoMetaOnly();
+            onBlurValidate?.();
+            return;
+        }
+
+        setQ(it.nome);
+
+        setHiddenMeta({
+            deposito_nome: dep,
+            produto_id: pid,
+            codigo_barras: (it as any).codigo_barras || "",
+        });
+
+        // limpa o erro assim que selecionar corretamente
+        onBlurValidate?.();
+        setErr("");
+        setOpen(false);
+
+        // tira foco do input (opcional)
+        requestAnimationFrame(() => inputRef.current?.blur());
+    };
 
     // ✅ sincroniza quando abre/edita registro (carrega meta inicial!)
     useEffect(() => {
@@ -129,7 +167,6 @@ function UrnaCombobox({
         setHiddenMeta({ deposito_nome: dep });
 
         if (!didMountDepRef.current) {
-            // primeira execução (mount) -> NÃO limpar
             didMountDepRef.current = true;
             return;
         }
@@ -139,14 +176,14 @@ function UrnaCombobox({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dep]);
 
-    // fecha ao clicar fora
+    // ✅ fecha ao clicar fora (use capture + pointerdown para ser mais estável)
     useEffect(() => {
-        const onDoc = (e: MouseEvent) => {
+        const onDoc = (e: PointerEvent) => {
             if (!wrapRef.current) return;
             if (!wrapRef.current.contains(e.target as any)) setOpen(false);
         };
-        document.addEventListener("mousedown", onDoc);
-        return () => document.removeEventListener("mousedown", onDoc);
+        document.addEventListener("pointerdown", onDoc, true);
+        return () => document.removeEventListener("pointerdown", onDoc, true);
     }, []);
 
     // debounce + abort
@@ -197,6 +234,23 @@ function UrnaCombobox({
             ac.abort();
         };
     }, [q, open, dep]);
+
+    // ✅ se sair do campo com texto igual a uma opção, auto-seleciona
+    const autoPickIfExactMatch = () => {
+        const pidStr = pidHiddenRef.current?.value?.trim() ?? "0";
+        const pidNow = Number(pidStr) || 0;
+        const txt = q.trim();
+
+        // se já tem pid válido, ok
+        if (pidNow > 0) return;
+
+        if (txt.length < 2) return;
+        if (!rows || rows.length === 0) return;
+
+        const norm = (s: string) => s.trim().toLowerCase();
+        const match = rows.find((it) => norm(it.nome) === norm(txt));
+        if (match) applySelection(match);
+    };
 
     return (
         <div ref={wrapRef}>
@@ -256,8 +310,24 @@ function UrnaCombobox({
                                 clearProdutoMetaOnly();
                                 setHiddenMeta({ deposito_nome: dep });
                             }}
+                            onKeyDown={(e) => {
+                                // ✅ Enter seleciona a melhor opção (match exato > primeira)
+                                if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    if (!rows || rows.length === 0) return;
+
+                                    const norm = (s: string) => s.trim().toLowerCase();
+                                    const txt = norm(q);
+
+                                    const exact = rows.find((it) => norm(it.nome) === txt);
+                                    applySelection(exact || rows[0]);
+                                }
+                            }}
                             onFocus={() => setOpen(true)}
                             onBlur={() => {
+                                // tenta auto-match
+                                autoPickIfExactMatch();
+
                                 // validação (Wizard)
                                 onBlurValidate?.();
                             }}
@@ -283,52 +353,36 @@ function UrnaCombobox({
                         ) : rows.length === 0 ? (
                             <div className="p-3 text-sm text-slate-600">Nenhuma urna encontrada no estoque ({dep}).</div>
                         ) : (
-                                            <ul className="max-h-64 overflow-auto py-1">
-                                                {rows.map((it) => {
-                                                    // ✅ chave estável: pega o ID real mesmo que venha com outro nome
-                                                    const pidKey =
-                                                        Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
+                            <ul className="max-h-64 overflow-auto py-1">
+                                {rows.map((it) => {
+                                    const pidKey = getPidFromRow(it);
 
-                                                    return (
-                                                        <li key={pidKey || it.nome}>
-                                                            <button
-                                                                type="button"
-                                                                className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                                                                onMouseDown={(e) => e.preventDefault()}
-                                                                onClick={() => {
-                                                                    // ✅ usa o mesmo PID (sem risco)
-                                                                    const pid = pidKey;
-
-                                                                    setQ(it.nome);
-
-                                                                    setHiddenMeta({
-                                                                        deposito_nome: dep,
-                                                                        produto_id: pid,
-                                                                        codigo_barras: (it as any).codigo_barras || "",
-                                                                    });
-
-                                                                    // ✅ limpa o erro assim que selecionar corretamente
-                                                                    onBlurValidate?.();
-
-                                                                    setOpen(false);
-                                                                    requestAnimationFrame(() => inputRef.current?.blur());
-                                                                }}
-                                                            >
-                                                                <div className="flex items-center justify-between gap-2">
-                                                                    <span className="truncate font-medium text-slate-900">{it.nome}</span>
-                                                                    <span className="shrink-0 text-xs text-slate-600">
-                                                                        estoque: <b>{Number(it.saldo_total) || 0}</b>
-                                                                    </span>
-                                                                </div>
-                                                                <div className="mt-0.5 truncate text-xs text-slate-600">
-                                                                    CB: <b>{(it as any).codigo_barras || ""}</b>
-                                                                </div>
-                                                            </button>
-                                                        </li>
-                                                    );
-                                                })}
-                                            </ul>
-
+                                    return (
+                                        <li key={pidKey || it.nome}>
+                                            <button
+                                                type="button"
+                                                className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                                                // ✅ mais robusto que click (captura antes de blur/outside)
+                                                onPointerDown={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    applySelection(it);
+                                                }}
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="truncate font-medium text-slate-900">{it.nome}</span>
+                                                    <span className="shrink-0 text-xs text-slate-600">
+                                                        estoque: <b>{Number(it.saldo_total) || 0}</b>
+                                                    </span>
+                                                </div>
+                                                <div className="mt-0.5 truncate text-xs text-slate-600">
+                                                    CB: <b>{(it as any).codigo_barras || ""}</b>
+                                                </div>
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         )}
                     </div>
                 ) : null}
@@ -398,7 +452,7 @@ export default function Wizard({
     setArrumacaoOpen: (b: boolean) => void;
 
     salvarGrupoWizard: () => Registro | null;
-    concluirWizard: () => Promise<void>; // ✅ CORREÇÃO: era void, mas no page.tsx é async
+    concluirWizard: () => Promise<void>;
 
     wizardSubmitting: boolean;
 }) {
@@ -454,17 +508,16 @@ export default function Wizard({
 
     // ✅ valida urna: se campo preenchido (ou obrigatório) precisa ter produto_id > 0
     const validarUrnaSeNecessario = () => {
-        // só valida se a urna está visível neste grupo (senão nem tem hidden no DOM)
         const urnaStepNoGrupo = grupoSteps.some((s) => s.id === "urna" && s.type === "async_urna");
         if (!urnaStepNoGrupo) return true;
 
         const urnaTxt = (document.getElementById("wizard-urna") as HTMLInputElement | null)?.value?.trim() ?? "";
-        const pidStr = (document.getElementById("wizard-urna_produto_id") as HTMLInputElement | null)?.value?.trim() ?? "0";
+        const pidStr =
+            (document.getElementById("wizard-urna_produto_id") as HTMLInputElement | null)?.value?.trim() ?? "0";
         const pid = Number(pidStr) || 0;
 
         const isRequired = obrigatorios.includes("urna");
 
-        // se obrigatório OU digitou algo, exige seleção válida
         if ((isRequired || urnaTxt !== "") && pid <= 0) {
             setUrnaErro("Selecione uma urna da lista (produto do estoque).");
             return false;
@@ -540,7 +593,6 @@ export default function Wizard({
         try {
             await concluirWizard();
         } catch (e: any) {
-            // evita "Uncaught (in promise)"
             console.error("Falha ao concluir wizard:", e);
             alert(e?.message || "Erro ao salvar. Veja o console/Network.");
         }
@@ -696,8 +748,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
-                                        }`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
