@@ -35,8 +35,6 @@ function UrnaCombobox({
     initialCodigoBarras,
     errorText,
     onBlurValidate,
-
-    // ✅ NOVO: salva meta no estado do wizard
     onSelectMeta,
 }: {
     required: boolean;
@@ -73,6 +71,8 @@ function UrnaCombobox({
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<UrnaRow[]>([]);
 
+    const lastInitSigRef = useRef<string>("");
+
     const getPidFromRow = (it: UrnaRow): number =>
         Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
 
@@ -103,11 +103,21 @@ function UrnaCombobox({
         requestAnimationFrame(() => inputRef.current?.blur());
     };
 
-    // sincroniza ao abrir/editar
+    // ✅ sincroniza ao abrir/editar SEM fechar a lista durante a digitação/busca
     useEffect(() => {
         const depInit = normalizeDep(initialDepositoNome);
         const pidInit = Number(initialProdutoId || 0) || 0;
         const cbInit = String(initialCodigoBarras || "").trim();
+
+        // se usuário está digitando (input focado) OU dropdown aberto, não reinicializa
+        const isFocused =
+            typeof document !== "undefined" && document.activeElement === inputRef.current;
+        if (isFocused || open) return;
+
+        // evita rodar sem necessidade (loop/efeito em cada render)
+        const sig = `${String(initialValue || "")}||${depInit}||${pidInit}||${cbInit}`;
+        if (lastInitSigRef.current === sig) return;
+        lastInitSigRef.current = sig;
 
         setDep(depInit);
         setQ(initialValue || "");
@@ -124,7 +134,7 @@ function UrnaCombobox({
         });
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialValue, initialDepositoNome, initialProdutoId, initialCodigoBarras]);
+    }, [initialValue, initialDepositoNome, initialProdutoId, initialCodigoBarras, open]);
 
     // fecha ao clicar fora
     useEffect(() => {
@@ -245,7 +255,9 @@ function UrnaCombobox({
                                     e.preventDefault();
                                     if (!rows?.length) return;
                                     const txt = q.trim().toLowerCase();
-                                    const exact = rows.find((it) => String(it.nome || "").trim().toLowerCase() === txt);
+                                    const exact = rows.find(
+                                        (it) => String(it.nome || "").trim().toLowerCase() === txt
+                                    );
                                     applySelection(exact || rows[0]);
                                 }
                             }}
@@ -254,7 +266,8 @@ function UrnaCombobox({
                                 autoPickIfExactMatch();
                                 onBlurValidate?.();
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
+                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""
+                                }`}
                             disabled={disabled}
                             autoComplete="off"
                             title="Urna"
@@ -273,7 +286,9 @@ function UrnaCombobox({
                         ) : q.trim().length < 2 ? (
                             <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
                         ) : rows.length === 0 ? (
-                            <div className="p-3 text-sm text-slate-600">Nenhuma urna encontrada no estoque ({dep}).</div>
+                            <div className="p-3 text-sm text-slate-600">
+                                Nenhuma urna encontrada no estoque ({dep}).
+                            </div>
                         ) : (
                             <ul className="max-h-64 overflow-auto py-1">
                                 {rows.map((it) => {
@@ -520,7 +535,10 @@ export default function Wizard({
             <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
-                    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700" aria-live="polite">
+                    <span
+                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                        aria-live="polite"
+                    >
                         <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
@@ -534,7 +552,8 @@ export default function Wizard({
                 {wizardStepTitles.map((t, i) => (
                     <span
                         key={t}
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
+                            }`}
                     >
                         {t}
                     </span>
@@ -669,7 +688,8 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
+                                        }`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -682,9 +702,13 @@ export default function Wizard({
                                     }}
                                     disabled={wizardSubmitting}
                                 >
-                                    <option value="" disabled>Selecione…</option>
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
                                     {(step.options || ["Sim", "Não"]).filter(Boolean).map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
                                 </select>
 
@@ -700,7 +724,9 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -723,7 +749,9 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -750,7 +778,9 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -769,7 +799,9 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Natural", "Artificial"]).map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -825,7 +857,9 @@ export default function Wizard({
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || [""]).map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
