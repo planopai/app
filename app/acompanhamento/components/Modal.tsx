@@ -26,7 +26,7 @@ export default function Modal({
                 if (e.target === e.currentTarget) onClose();
             }}
         >
-            {/* ✅ container com altura limitada e rolagem interna */}
+            {/* ✅ container com altura limitada */}
             <div
                 className="w-full rounded-xl bg-white p-5 shadow-xl outline-none max-h-[90vh] overflow-y-auto overscroll-contain"
                 style={{ maxWidth: maxWidth ?? 720 }}
