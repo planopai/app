@@ -1197,7 +1197,7 @@ export default function Page() {
 
     const [entradaBarcode, setEntradaBarcode] = useState("");
     const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
-    const [entradaQtd, setEntradaQtd] = useState<number>(1);
+    const [entradaQtd, setEntradaQtd] = useState<string>("1");
     const [entradaObs, setEntradaObs] = useState("");
 
     // NOVO: filtro fabricante + barra de pesquisa/lista de produtos filtrados (Entrada)
@@ -1322,7 +1322,7 @@ export default function Page() {
         setEntradaProdutoId(0);
         setEntradaProdQuery("");
         setEntradaFabFiltroId("Todos");
-        setEntradaQtd(1);
+        setEntradaQtd("1");
         setEntradaObs("");
         setNovoNome("");
         setNovoValor(0);
@@ -1338,7 +1338,7 @@ export default function Page() {
             return null;
         }
         const deposito_id = Number(entradaDepositoId);
-        const quantidade = clampInt(entradaQtd);
+        const quantidade = clampInt(entradaQtd || "0");
         const codigo_barras = entradaBarcode.trim();
 
         if (!deposito_id) {
@@ -1577,7 +1577,7 @@ export default function Page() {
     const [saidaProdutoId, setSaidaProdutoId] = useState<ID>(0);
     const [saidaProdQuery, setSaidaProdQuery] = useState("");
 
-    const [saidaQtd, setSaidaQtd] = useState<number>(1);
+    const [saidaQtd, setSaidaQtd] = useState<string>("1");
     const [saidaObs, setSaidaObs] = useState("");
 
     // NOVO: popup de quantidade após SCAN (Saída)
@@ -1653,7 +1653,7 @@ export default function Page() {
         setSaidaCategoriaId("Todas");
         setSaidaProdutoId(0);
         setSaidaProdQuery("");
-        setSaidaQtd(1);
+        setSaidaQtd("1");
         setSaidaObs("");
     }
 
@@ -1670,7 +1670,7 @@ export default function Page() {
 
         const produto_id = Number(saidaProdutoId);
         const deposito_id = Number(saidaDepositoId);
-        const quantidade = clampInt(saidaQtd);
+        const quantidade = clampInt(saidaQtd || "0");
         const solicitante_usuario_id = Number(saidaSolicitanteId);
         const destinoNome = depositos.find((d) => d.id === Number(saidaDestinoDepositoId))?.nome || "";
         const destino_texto = (destinoNome || "").trim();
@@ -1776,7 +1776,7 @@ export default function Page() {
         setSaidaBarcode("");
         setSaidaProdutoId(0);
         setSaidaProdQuery("");
-        setSaidaQtd(1);
+        setSaidaQtd("1");
         // mantém obs e filtros se o usuário quiser repetir
     }
 
@@ -1832,7 +1832,7 @@ export default function Page() {
     const [trfProdutoId, setTrfProdutoId] = useState<ID>(0);
     const [trfProdQuery, setTrfProdQuery] = useState("");
 
-    const [trfQtd, setTrfQtd] = useState<number>(1);
+    const [trfQtd, setTrfQtd] = useState<string>("1");
     const [trfObs, setTrfObs] = useState("");
 
     // NOVO: popup de quantidade após SCAN (Transferência)
@@ -1908,7 +1908,7 @@ export default function Page() {
         setTrfCategoriaId("Todas");
         setTrfProdutoId(0);
         setTrfProdQuery("");
-        setTrfQtd(1);
+        setTrfQtd("1");
         setTrfObs("");
     }
 
@@ -1926,7 +1926,7 @@ export default function Page() {
         const produto_id = Number(trfProdutoId);
         const deposito_origem_id = Number(trfOrigemId);
         const deposito_destino_id = Number(trfDestinoId);
-        const quantidade = clampInt(trfQtd);
+        const quantidade = clampInt(trfQtd || "0");
         const solicitante_usuario_id = Number(trfSolicitanteId);
 
         if (!solicitante_usuario_id) {
@@ -2031,7 +2031,7 @@ export default function Page() {
         setTrfBarcode("");
         setTrfProdutoId(0);
         setTrfProdQuery("");
-        setTrfQtd(1);
+        setTrfQtd("1");
         // mantém obs e filtros se o usuário quiser repetir
     }
 
@@ -3151,7 +3151,14 @@ export default function Page() {
 
                         <div className="sm:col-span-1">
                             <Field label="Qtd">
-                                <TextInput type="number" min={1} value={entradaQtd} onChange={(e) => setEntradaQtd(clampInt(e.target.value) || 1)} />
+                                <TextInput
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={entradaQtd}
+                                    onChange={(e) => setEntradaQtd(e.target.value.replace(/\D/g, ""))}
+                                    placeholder="1"
+                                />
                             </Field>
                         </div>
 
@@ -3463,7 +3470,14 @@ export default function Page() {
 
                         <div className="sm:col-span-2">
                             <Field label="Qtd">
-                                <TextInput type="number" min={1} value={saidaQtd} onChange={(e) => setSaidaQtd(clampInt(e.target.value) || 1)} />
+                                <TextInput
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={saidaQtd}
+                                    onChange={(e) => setSaidaQtd(e.target.value.replace(/\D/g, ""))}
+                                    placeholder="1"
+                                />
                             </Field>
                         </div>
 
@@ -3626,7 +3640,14 @@ export default function Page() {
 
                         <div className="sm:col-span-2">
                             <Field label="Qtd">
-                                <TextInput type="number" min={1} value={trfQtd} onChange={(e) => setTrfQtd(clampInt(e.target.value) || 1)} />
+                                <TextInput
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={trfQtd}
+                                    onChange={(e) => setTrfQtd(e.target.value.replace(/\D/g, ""))}
+                                    placeholder="1"
+                                />
                             </Field>
                         </div>
 
