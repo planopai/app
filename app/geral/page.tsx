@@ -1585,18 +1585,6 @@ export default function Page() {
     const [saidaScanProduto, setSaidaScanProduto] = useState<Produto | null>(null);
     const [saidaScanDisponivel, setSaidaScanDisponivel] = useState<number>(0);
 
-    useEffect(() => {
-        if (depositos.length && !saidaDepositoId) setSaidaDepositoId(depositos[0].id);
-    }, [depositos, saidaDepositoId]);
-
-    useEffect(() => {
-        if (depositos.length && !saidaDestinoDepositoId) setSaidaDestinoDepositoId(depositos[0].id);
-    }, [depositos, saidaDestinoDepositoId]);
-
-    useEffect(() => {
-        if (!saidaSolicitanteId && usuarios[0]?.id) setSaidaSolicitanteId(usuarios[0].id);
-    }, [usuarios, saidaSolicitanteId]);
-
     const saidaSaldoByProd = useMemo(() => {
         const m = new Map<ID, number>();
         const depId = Number(saidaDepositoId);
@@ -1852,17 +1840,7 @@ export default function Page() {
     const [trfScanProduto, setTrfScanProduto] = useState<Produto | null>(null);
     const [trfScanDisponivel, setTrfScanDisponivel] = useState<number>(0);
 
-    useEffect(() => {
-        if (depositos.length) {
-            if (!trfOrigemId) setTrfOrigemId(depositos[0].id);
-            if (!trfDestinoId) setTrfDestinoId(depositos[1]?.id ?? depositos[0].id);
-        }
-    }, [depositos, trfOrigemId, trfDestinoId]);
-
-    useEffect(() => {
-        if (!trfSolicitanteId && usuarios[0]?.id) setTrfSolicitanteId(usuarios[0].id);
-    }, [usuarios, trfSolicitanteId]);
-
+    
     const trfSaldoByProd = useMemo(() => {
         const m = new Map<ID, number>();
         const depId = Number(trfOrigemId);
@@ -3375,6 +3353,10 @@ export default function Page() {
                         <div className="sm:col-span-2">
                             <Field label="Solicitante">
                                 <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
+                                    <option value={0} disabled>
+                                        Selecionar...
+                                    </option>
+
                                     {usuarios.map((u) => (
                                         <option key={u.id} value={u.id}>
                                             {u.nome} ({u.usuario})
@@ -3387,6 +3369,10 @@ export default function Page() {
                         <div className="sm:col-span-2">
                             <Field label="Depósito (origem)">
                                 <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
+                                    <option value={0} disabled>
+                                        Selecionar...
+                                    </option>
+
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
@@ -3399,6 +3385,10 @@ export default function Page() {
                         <div className="sm:col-span-2">
                             <Field label="Destino">
                                 <Select value={saidaDestinoDepositoId} onChange={(e) => setSaidaDestinoDepositoId(Number(e.target.value))}>
+                                    <option value={0} disabled>
+                                        Selecionar...
+                                    </option>
+
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
@@ -3526,6 +3516,10 @@ export default function Page() {
                         <div className="sm:col-span-2">
                             <Field label="Solicitante">
                                 <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
+                                    <option value={0} disabled>
+                                        Selecionar...
+                                    </option>
+
                                     {usuarios.map((u) => (
                                         <option key={u.id} value={u.id}>
                                             {u.nome} ({u.usuario})
@@ -3538,6 +3532,10 @@ export default function Page() {
                         <div className="sm:col-span-2">
                             <Field label="Origem">
                                 <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
+                                    <option value={0} disabled>
+                                        Selecionar...
+                                    </option>
+
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
@@ -3550,6 +3548,10 @@ export default function Page() {
                         <div className="sm:col-span-2">
                             <Field label="Destino">
                                 <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
+                                    <option value={0} disabled>
+                                        Selecionar...
+                                    </option>
+
                                     {depositos.map((d) => (
                                         <option key={d.id} value={d.id}>
                                             {d.nome}
