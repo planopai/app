@@ -10,6 +10,8 @@ type Deposito = { id: ID; nome: string };
 
 type Categoria = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: string };
 type Fabricante = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: string };
+// ✅ NOVO
+type Classificacao = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: string };
 
 type Produto = {
     id: ID;
@@ -24,6 +26,11 @@ type Produto = {
 
     categoria_id?: ID | null;
     fabricante_id?: ID | null;
+
+    // ✅ NOVO
+    classificacao_id?: ID | null;
+    classificacao_nome?: string | null;
+
     categoria_nome?: string | null;
     fabricante_nome?: string | null;
 };
@@ -45,6 +52,7 @@ type InitResp = {
     depositos: Deposito[];
     categorias: Categoria[];
     fabricantes: Fabricante[];
+    classificacoes: Classificacao[];
     produtos: Produto[];
     saldos: Saldo[];
     msg?: string;
@@ -868,6 +876,8 @@ export default function Page() {
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
     const [depositos, setDepositos] = useState<Deposito[]>([]);
     const [categorias, setCategorias] = useState<Categoria[]>([]);
+    const [classificacoes, setClassificacoes] = useState<Classificacao[]>([]);
+
     const [fabricantes, setFabricantes] = useState<Fabricante[]>([]);
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [saldos, setSaldos] = useState<Saldo[]>([]);
@@ -889,6 +899,7 @@ export default function Page() {
     const [editMax, setEditMax] = useState<number>(0); // ✅ NOVO
     const [editCatId, setEditCatId] = useState<ID>(0);
     const [editFabId, setEditFabId] = useState<ID>(0);
+    const [editClassId, setEditClassId] = useState<ID>(0);
 
     // foto: “nova foto”
     const [editFotoNova, setEditFotoNova] = useState<string>("");
@@ -901,6 +912,7 @@ export default function Page() {
     const userById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
     const catById = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias]);
     const fabById = useMemo(() => new Map(fabricantes.map((f) => [f.id, f])), [fabricantes]);
+    const classById = useMemo(() => new Map(classificacoes.map((c) => [c.id, c])), [classificacoes]);
 
     const saldosMap = useMemo(() => {
         const m = new Map<string, Saldo>();
@@ -922,6 +934,7 @@ export default function Page() {
             setCategorias((j.categorias || []).filter((c) => Number(c.ativo) === 1));
             setFabricantes((j.fabricantes || []).filter((f) => Number(f.ativo) === 1));
             setProdutos((j.produtos || []).filter((p) => Number(p.ativo) === 1));
+            setClassificacoes((j.classificacoes || []).filter((c) => Number(c.ativo) === 1));
 
             setSaldos(j.saldos || []);
         } catch (e: any) {
@@ -1011,7 +1024,8 @@ export default function Page() {
             if (qq) {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
                 const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-                const blob = `${p.nome} ${p.codigo_barras} ${d.nome} ${cat} ${fab}`.toLowerCase();
+                const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
+                const blob = `${p.nome} ${p.codigo_barras} ${d.nome} ${cat} ${fab} ${cls}`.toLowerCase();
                 if (!blob.includes(qq)) continue;
             }
 
@@ -1214,6 +1228,7 @@ export default function Page() {
 
     const [novoCategoriaId, setNovoCategoriaId] = useState<ID>(0);
     const [novoFabricanteId, setNovoFabricanteId] = useState<ID>(0);
+    const [novoClassificacaoId, setNovoClassificacaoId] = useState<ID>(0);
 
     const [catQuickOpen, setCatQuickOpen] = useState(false);
     const [catQuickNome, setCatQuickNome] = useState("");
@@ -1330,6 +1345,7 @@ export default function Page() {
         setNovoFoto("");
         setNovoCategoriaId(0);
         setNovoFabricanteId(0);
+        setNovoClassificacaoId(0);
     }
 
     function buildEntradaPayloadFromForm(): { payload: any; resumo: string } | null {
@@ -1378,6 +1394,7 @@ export default function Page() {
 
             payload.categoria_id = novoCategoriaId ? Number(novoCategoriaId) : 0;
             payload.fabricante_id = novoFabricanteId ? Number(novoFabricanteId) : 0;
+            payload.classificacao_id = novoClassificacaoId ? Number(novoClassificacaoId) : 0;
         }
 
         const resumo = `${nomeProduto || "(sem nome)"} — CB ${codigo_barras} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id
@@ -1482,6 +1499,7 @@ export default function Page() {
         setEditMax(clampInt((p as any).maximo ?? 0)); // ✅ NOVO
         setEditCatId(Number(p.categoria_id || 0));
         setEditFabId(Number(p.fabricante_id || 0));
+        setEditClassId(Number(p.classificacao_id || 0));
         setEditFotoNova("");
 
         const m: Record<number, number> = {};
@@ -1515,6 +1533,7 @@ export default function Page() {
                 maximo: clampInt(editMax), // ✅ NOVO
                 categoria_id: editCatId ? Number(editCatId) : 0,
                 fabricante_id: editFabId ? Number(editFabId) : 0,
+                classificacao_id: editClassId ? Number(editClassId) : 0,
             };
 
             if (editFotoNova) payload.foto_url = editFotoNova;
@@ -2502,8 +2521,12 @@ export default function Page() {
                                                 const valorNum = Number(p.valor) || 0;
 
                                                 const foto = normalizeImgUrl(p.foto_url);
+
                                                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
                                                 const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
+
+                                                // ✅ NOVO: Classificação (fallback)
+                                                const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : null);
 
                                                 return (
                                                     <li key={`${p.id}_${d.id}`}>
@@ -2540,10 +2563,20 @@ export default function Page() {
                                                                                 Categoria: <b>{cat}</b>
                                                                             </>
                                                                         ) : null}
+
                                                                         {cat && fab ? " • " : null}
+
                                                                         {fab ? (
                                                                             <>
                                                                                 Fabricante: <b>{fab}</b>
+                                                                            </>
+                                                                        ) : null}
+
+                                                                        {/* ✅ NOVO: Classificação */}
+                                                                        {cls ? (
+                                                                            <>
+                                                                                {(cat || fab) ? " • " : null}
+                                                                                Classificação: <b>{cls}</b>
                                                                             </>
                                                                         ) : null}
                                                                     </p>
@@ -2587,6 +2620,7 @@ export default function Page() {
                                                             const valorNum = Number(p.valor) || 0;
                                                             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "");
                                                             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "");
+                                                            const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "");
                                                             return (
                                                                 <tr key={`${p.id}_${d.id}`} className={low ? "bg-rose-50/40" : "bg-white"}>
                                                                     <td className="border-b border-slate-200 px-3 py-2">
@@ -2601,14 +2635,23 @@ export default function Page() {
                                                                                     setImgOpen(true);
                                                                                 }}
                                                                             />
+
                                                                             <div className="min-w-0">
-                                                                                <button type="button" onClick={() => openProdutoEditor(p.id)} className="truncate text-sm font-semibold text-slate-900 hover:underline">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openProdutoEditor(p.id)}
+                                                                                    className="truncate text-sm font-semibold text-slate-900 hover:underline"
+                                                                                >
                                                                                     {p.nome}
                                                                                 </button>
+
+                                                                                {cls ? <div className="text-xs text-slate-500">Classificação: {cls}</div> : null}
+
                                                                                 {low ? <div className="text-xs text-red-600">alerta</div> : <div className="text-xs text-slate-500">—</div>}
                                                                             </div>
                                                                         </div>
                                                                     </td>
+
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
                                                                         <span className="font-mono text-xs">{p.codigo_barras}</span>
                                                                     </td>
@@ -3037,6 +3080,17 @@ export default function Page() {
                                         </Select>
                                     </Field>
 
+                                    <Field label="Classificação">
+                                        <Select value={editClassId} onChange={(e) => setEditClassId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {classificacoes.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+
                                     <div className="sm:col-span-2">
                                         <Field label="Nova foto (opcional)" hint="Envie uma imagem para substituir a atual.">
                                             <input type="file" accept="image/*" onChange={(e) => onProdutoFotoNova(e.target.files?.[0])} className="block w-full text-sm text-slate-700" />
@@ -3302,6 +3356,19 @@ export default function Page() {
                                         </div>
                                     </Field>
                                 </div>
+
+                                    <div className="sm:col-span-3">
+                                        <Field label="Classificação (opcional)">
+                                            <Select value={novoClassificacaoId} onChange={(e) => setNovoClassificacaoId(Number(e.target.value))}>
+                                                <option value={0}>—</option>
+                                                {classificacoes.map((c) => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.nome}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </Field>
+                                    </div>
 
                                 <div className="sm:col-span-6">
                                     <Field label="Foto (opcional)" hint="Você pode enviar uma imagem (fica em base64) ou colar uma URL no campo abaixo.">
