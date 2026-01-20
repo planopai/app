@@ -1036,6 +1036,22 @@ export default function Page() {
         return rows;
     }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, catFiltroEstoque, fabFiltroEstoque, onlyLow, catById, fabById]);
 
+    const estoqueResumo = useMemo(() => {
+        let totalUnidades = 0;
+        let totalValor = 0;
+
+        for (const { p, qtd } of estoqueRows) {
+            const q = clampInt(qtd);
+            totalUnidades += q;
+
+            const v = Number(p.valor) || 0;
+            totalValor += q * v;
+        }
+
+        return { totalUnidades, totalValor };
+    }, [estoqueRows]);
+
+
     function getFiltroResumo() {
         const depTxt = depFiltroEstoque === "Todos" ? "Todos" : depById.get(Number(depFiltroEstoque))?.nome || String(depFiltroEstoque);
         const catTxt = catFiltroEstoque === "Todos" ? "Todas" : catById.get(Number(catFiltroEstoque))?.nome || String(catFiltroEstoque);
@@ -2675,6 +2691,19 @@ export default function Page() {
                                     </>
                                 )}
                             </div>
+
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                <div className="text-sm text-slate-700">
+                                    Itens (unidades): <b>{estoqueResumo.totalUnidades}</b>
+                                </div>
+
+                                <div className="text-sm text-slate-700">
+                                    Valor total (mercadoria): <b>{moneyBRL(estoqueResumo.totalValor)}</b>
+                                </div>
+                            </div>
+
+
+
                         </Card>
                     ) : null}
 
