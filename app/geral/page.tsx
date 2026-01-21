@@ -1282,35 +1282,33 @@ export default function Page() {
         const f = getFiltroResumo();
         const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
 
+        const esc = (x: any) =>
+            String(x ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+
         const rowsHtml = estoqueRows
-            .map(({ p, d, qtd, s, min, rep }) => {
+            .map(({ p, d, qtd, min, rep }) => {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
                 const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
                 const valorNum = Number(p.valor) || 0;
-
-                const esc = (x: any) =>
-                    String(x ?? "")
-                        .replace(/&/g, "&amp;")
-                        .replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;")
-                        .replace(/"/g, "&quot;");
-
                 const low = qtd <= min;
 
                 return `
-          <tr class="${low ? "low" : ""}">
-            <td>${esc(p.nome)}</td>
-            <td class="mono">${esc(p.codigo_barras)}</td>
-            <td>${esc(d.nome)}</td>
-            <td>${esc(cat)}</td>
-            <td>${esc(fab)}</td>
-            <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
-            <td class="num">${esc(min)}</td>
-            <td class="num green"><b>${esc(rep)}</b></td>
-            <td class="num">${esc(moneyBRL(valorNum))}</td>
-            
-          </tr>
-        `;
+        <tr class="${low ? "low" : ""}">
+          <td>${esc(p.nome)}</td>
+          <td class="mono">${esc(p.codigo_barras)}</td>
+          <td>${esc(d.nome)}</td>
+          <td>${esc(cat)}</td>
+          <td>${esc(fab)}</td>
+          <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
+          <td class="num">${esc(min)}</td>
+          <td class="num green"><b>${esc(rep)}</b></td>
+          <td class="num">${esc(moneyBRL(valorNum))}</td>
+        </tr>
+      `;
             })
             .join("");
 
@@ -1337,24 +1335,22 @@ export default function Page() {
     @media print{
       body{ margin: 14mm; }
       .filters{ break-inside: avoid; }
-      table{ page-break-inside:auto; }
-      tr{ page-break-inside:avoidavoid; page-break-after:auto; }
+      tr{ page-break-inside: avoid; }
       thead{ display: table-header-group; }
     }
   </style>
 </head>
 <body>
   <h1>Relatório de Estoque</h1>
-  <div class="meta">Gerado em: <b>${geradoEm}</b> • Itens: <b>${estoqueRows.length}</b></div>
+  <div class="meta">Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(estoqueRows.length)}</b></div>
 
   <div class="filters">
-    <div><b>Busca:</b> ${String(f.busca).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-    <div><b>Depósito:</b> ${String(f.deposito).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-    <div><b>Categoria:</b> ${String(f.categoria).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-    <div><b>Fabricante:</b> ${String(f.fabricante).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-    <div><b>Classificação:</b> ${String((f as any).classificacao).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-
-    <div><b>Somente alerta (≤ mínimo):</b> ${String(f.somenteAlerta)}</div>
+    <div><b>Busca:</b> ${esc(f.busca)}</div>
+    <div><b>Depósito:</b> ${esc(f.deposito)}</div>
+    <div><b>Categoria:</b> ${esc(f.categoria)}</div>
+    <div><b>Fabricante:</b> ${esc(f.fabricante)}</div>
+    <div><b>Classificação:</b> ${esc((f as any).classificacao)}</div>
+    <div><b>Somente alerta (≤ mínimo):</b> ${esc(f.somenteAlerta)}</div>
   </div>
 
   <table>
@@ -1369,29 +1365,46 @@ export default function Page() {
         <th class="num">Min</th>
         <th class="num">Rep</th>
         <th class="num">Valor</th>
-        
       </tr>
     </thead>
-    <tbody>
-      ${rowsHtml}
-    </tbody>
+    <tbody>${rowsHtml}</tbody>
   </table>
-
-  <script>
-    setTimeout(() => window.print(), 250);
-  </script>
 </body>
 </html>`;
 
-        const w = window.open("", "_blank", "noopener,noreferrer");
-        if (!w) {
-            alert("Pop-up bloqueado. Permita pop-ups para exportar PDF.");
+        // ✅ imprime sem popup
+        const iframe = document.createElement("iframe");
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0";
+        iframe.style.height = "0";
+        iframe.style.border = "0";
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow?.document;
+        if (!doc || !iframe.contentWindow) {
+            iframe.remove();
+            alert("Não foi possível gerar o PDF.");
             return;
         }
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
+
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        // dá um “respiro” pro layout montar antes do print
+        setTimeout(() => {
+            try {
+                iframe.contentWindow!.focus();
+                iframe.contentWindow!.print();
+            } finally {
+                // remove depois de um tempo (após abrir diálogo de impressão)
+                setTimeout(() => iframe.remove(), 1000);
+            }
+        }, 200);
     }
+
 
     // ENTRADA
     const [entradaOpen, setEntradaOpen] = useState(false);
