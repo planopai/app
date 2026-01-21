@@ -1331,15 +1331,9 @@ export default function Page() {
 
         // =========================================================
         // 2) REGRAS DE COLUNAS DINÂMICAS
-        //    - remove coluna se estiver 100% vazia
-        //    - Valor some se todos forem R$ 0,00 (numérico 0)
-        //    - Reposição some se todos forem 0 OU vazia
         // =========================================================
-
-        // helpers para detectar "vazio"
         const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
 
-        // colunas sempre candidatas (Produto e Quantidade não faz sentido remover)
         const hasCodigo = sortedRows.some((r) => !isEmpty(r.p?.codigo_barras));
         const hasDeposito = sortedRows.some((r) => !isEmpty(r.d?.nome));
         const hasCategoria = sortedRows.some((r) => !isEmpty(r.p?.categoria_nome));
@@ -1347,16 +1341,12 @@ export default function Page() {
 
         const showValorCol = sortedRows.some((r) => (Number(r.p?.valor) || 0) !== 0);
 
-        // reposição:
-        // - só faz sentido se a linha for do depósito "DEPOSITO" (com/sem acento)
-        // - e deve sumir se for tudo 0
         const repCandidates = sortedRows.filter((r) => norm(r.d?.nome || "") === "DEPOSITO");
         const showRepCol =
-            repCandidates.length > 0 &&
-            repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
+            repCandidates.length > 0 && repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
 
         // =========================================================
-        // 3) TOTAIS (mantém como antes)
+        // 3) TOTAIS
         // =========================================================
         const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
         let totalQuantidade = 0;
@@ -1370,11 +1360,12 @@ export default function Page() {
         }
 
         // =========================================================
-        // 4) HTML DAS LINHAS (sem "mínimo" na tabela)
-        //    - Reposição aparece somente se showRepCol
-        //    - Valor aparece somente se showValorCol
-        //    - Destaca alerta usando qtd <= min (sem exibir min)
+        // 4) HTML DAS LINHAS
+        //    ✅ alterna a cor POR "conjunto" (Depósito+Categoria+Fabricante)
         // =========================================================
+        let lastGroupKey = "";
+        let groupFlip = 0; // 0/1 alternando a cada mudança de grupo
+
         const rowsHtml = sortedRows
             .map(({ p, d, qtd, min, rep }) => {
                 const cat =
@@ -1385,17 +1376,23 @@ export default function Page() {
 
                 const low = clampInt(qtd) <= clampInt(min); // só para estilo
 
-                // rep só faz sentido no depósito DEPOSITO
-                const repCell =
-                    showRepCol
-                        ? `<td class="num green"><b>${esc(norm(d?.nome || "") === "DEPOSITO" ? rep : "")}</b></td>`
-                        : "";
+                const groupKey = `${norm(d?.nome || "")}||${norm(cat)}||${norm(fab)}`;
+                if (groupKey !== lastGroupKey) {
+                    groupFlip = 1 - groupFlip;
+                    lastGroupKey = groupKey;
+                }
 
-                const valorCell =
-                    showValorCol ? `<td class="num">${esc(moneyBRL(valorNum))}</td>` : "";
+                // rep só faz sentido no depósito DEPOSITO
+                const repCell = showRepCol
+                    ? `<td class="num green"><b>${esc(norm(d?.nome || "") === "DEPOSITO" ? rep : "")}</b></td>`
+                    : "";
+
+                const valorCell = showValorCol ? `<td class="num">${esc(moneyBRL(valorNum))}</td>` : "";
+
+                const groupClass = groupFlip ? "g1" : "g0";
 
                 return `
-        <tr class="${low ? "low" : ""}">
+        <tr class="${groupClass} ${low ? "low" : ""}">
           <td class="prod">${esc(p.nome)}</td>
           ${hasCodigo ? `<td class="mono">${esc(p.codigo_barras)}</td>` : ""}
           ${hasDeposito ? `<td>${esc(d.nome)}</td>` : ""}
@@ -1411,19 +1408,24 @@ export default function Page() {
 
         // =========================================================
         // 5) HTML DO PDF
-        //    - remove "Busca"
-        //    - mantém filtros relevantes
-        //    - header e totais organizados
+        //    ✅ fonte Nunito (via Google Fonts)
+        //    ✅ alternância de cor por grupo (g0/g1)
         // =========================================================
         const html = `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <title>Relatório de Estoque</title>
+
+  <!-- ✅ Nunito -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+
   <style>
     * { box-sizing: border-box; }
     body {
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      font-family: "Nunito", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
       margin: 16px;
       color: #0f172a;
     }
@@ -1481,6 +1483,12 @@ export default function Page() {
       white-space: nowrap;
     }
 
+    /* ✅ alternância por grupo (conjunto) */
+    tr.g0 td { background: #ffffff; }
+    tr.g1 td { background: #f8fafc; } /* mais clara */
+    /* mantém o alerta por cima */
+    .low td { background: #fff7f7 !important; }
+
     .num { text-align: right; white-space: nowrap; }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -1488,7 +1496,6 @@ export default function Page() {
     }
     .green { color: #16a34a; }
     .red { color: #b91c1c; }
-    .low td { background: #fff7f7; }
 
     td.prod { max-width: 420px; }
 
@@ -1597,15 +1604,26 @@ export default function Page() {
             }
         };
 
-        // ✅ espera logo carregar antes do print
+        // ✅ espera logo + fonte carregar antes do print (melhora a chance de aplicar Nunito)
+        const waitFonts = () => {
+            const anyDoc: any = doc as any;
+            const fontsReady: Promise<any> | null = anyDoc?.fonts?.ready || null;
+            if (fontsReady) {
+                fontsReady.then(() => setTimeout(tryPrint, 100)).catch(() => setTimeout(tryPrint, 100));
+            } else {
+                setTimeout(tryPrint, 150);
+            }
+        };
+
         const logo = doc.getElementById("logo") as HTMLImageElement | null;
         if (logo && !logo.complete) {
-            logo.onload = () => setTimeout(tryPrint, 150);
-            logo.onerror = () => setTimeout(tryPrint, 150);
+            logo.onload = () => waitFonts();
+            logo.onerror = () => waitFonts();
         } else {
-            setTimeout(tryPrint, 200);
+            waitFonts();
         }
     }
+
 
 
 
