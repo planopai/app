@@ -364,9 +364,7 @@ function MultiSelectDropdown({
                                 >
                                     Limpar
                                 </Button>
-                                <Button variant="ghost" type="button" onClick={() => setOpen(false)}>
-                                    Fechar
-                                </Button>
+                                
                             </div>
                         </div>
 
