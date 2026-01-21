@@ -1295,6 +1295,20 @@ export default function Page() {
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;");
 
+        // ---- helper: compara "DEPÓSITO" / "DEPOSITO" ignorando acento
+        const norm = (s: string) =>
+            (s || "")
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .trim()
+                .toUpperCase();
+
+        const isDeposito = (nome: string) => norm(nome) === "DEPOSITO";
+
+        // ✅ coluna "Reposição" só aparece se o relatório for do depósito "DEPÓSITO"
+        // (ou seja: todas as linhas pertencem ao depósito DEPÓSITO)
+        const showRepCol = estoqueRows.length > 0 && estoqueRows.every((r) => isDeposito(r.d.nome));
+
         // ===== TOTAIS =====
         const totalLinhas = new Set(estoqueRows.map((r) => r.p.id)).size;
         let totalQuantidade = 0;
@@ -1310,16 +1324,11 @@ export default function Page() {
         // ===== TABELA =====
         const rowsHtml = estoqueRows
             .map(({ p, d, qtd, min, rep }) => {
-                const cat =
-                    p.categoria_nome ||
-                    (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
-                    "";
-                const fab =
-                    p.fabricante_nome ||
-                    (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
-                    "";
+                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
                 const valorNum = Number(p.valor) || 0;
-                const low = qtd <= min;
+
+                const low = qtd <= min; // continua valendo para destacar alerta
 
                 return `
         <tr class="${low ? "low" : ""}">
@@ -1329,8 +1338,10 @@ export default function Page() {
           <td>${esc(cat)}</td>
           <td>${esc(fab)}</td>
           <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
-          <td class="num">${esc(min)}</td>
-          <td class="num green"><b>${esc(rep)}</b></td>
+          ${showRepCol
+                        ? `<td class="num green"><b>${esc(rep)}</b></td>`
+                        : ``
+                    }
           <td class="num">${esc(moneyBRL(valorNum))}</td>
         </tr>
       `;
@@ -1405,7 +1416,10 @@ export default function Page() {
     }
 
     .num { text-align: right; white-space: nowrap; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; white-space: nowrap; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      white-space: nowrap;
+    }
     .green { color: #16a34a; }
     .red { color: #b91c1c; }
     .low td { background: #fff7f7; }
@@ -1452,7 +1466,7 @@ export default function Page() {
   </div>
 
   <div class="filters">
-    <div><b>Busca:</b> ${esc(f.busca)}</div>
+    <!-- ✅ removido: Busca -->
     <div><b>Depósito:</b> ${esc(f.deposito)}</div>
     <div><b>Categoria:</b> ${esc(f.categoria)}</div>
     <div><b>Fabricante:</b> ${esc(f.fabricante)}</div>
@@ -1469,7 +1483,7 @@ export default function Page() {
         <th>Categoria</th>
         <th>Fabricante</th>
         <th class="num">Quantidade</th>
-        <th class="num">Reposição</th>
+        ${showRepCol ? `<th class="num">Reposição</th>` : ``}
         <th class="num">Valor</th>
       </tr>
     </thead>
@@ -1508,7 +1522,6 @@ export default function Page() {
         doc.write(html);
         doc.close();
 
-        // ✅ espera logo carregar antes do print
         const tryPrint = () => {
             try {
                 win.focus();
@@ -1518,6 +1531,7 @@ export default function Page() {
             }
         };
 
+        // ✅ espera logo carregar antes do print
         const logo = doc.getElementById("logo") as HTMLImageElement | null;
         if (logo && !logo.complete) {
             logo.onload = () => setTimeout(tryPrint, 150);
@@ -1526,6 +1540,7 @@ export default function Page() {
             setTimeout(tryPrint, 200);
         }
     }
+
 
 
 
