@@ -1296,7 +1296,7 @@ export default function Page() {
                 .replace(/"/g, "&quot;");
 
         // ===== TOTAIS =====
-        const totalLinhas = new Set(estoqueRows.map(r => r.p.id)).size; // "itens" = linhas do relatório
+        const totalLinhas = new Set(estoqueRows.map((r) => r.p.id)).size;
         let totalQuantidade = 0;
         let totalValor = 0;
 
@@ -1424,9 +1424,13 @@ export default function Page() {
       flex-wrap: wrap;
       justify-content: flex-end;
       font-size: 12px;
+      width: 100%;
     }
     .totals div { color: #334155; }
     .totals b { color: #0f172a; }
+
+    /* ✅ deixa o 1º item colado à esquerda */
+    .totals .left { margin-right: auto; }
 
     @media print {
       thead { display: table-header-group; }
@@ -1464,9 +1468,8 @@ export default function Page() {
         <th>Depósito</th>
         <th>Categoria</th>
         <th>Fabricante</th>
-        <th class="num">Qtd</th>
-        <th class="num">Min</th>
-        <th class="num">Rep</th>
+        <th class="num">Quantidade</th>
+        <th class="num">Reposição</th>
         <th class="num">Valor</th>
       </tr>
     </thead>
@@ -1474,9 +1477,9 @@ export default function Page() {
   </table>
 
   <div class="totals">
-    <div>Total de itens: <b>${esc(totalLinhas)}</b></div>
-    <div>Total de quantidade: <b>${esc(totalQuantidade)}</b></div>
-    <div>Total em valor: <b>${esc(moneyBRL(totalValor))}</b></div>
+    <div class="left">Modelos: <b>${esc(totalLinhas)}</b></div>
+    <div>Total: <b>${esc(totalQuantidade)}</b></div>
+    <div>Valor Total: <b>${esc(moneyBRL(totalValor))}</b></div>
   </div>
 
 </body>
@@ -1518,11 +1521,12 @@ export default function Page() {
         const logo = doc.getElementById("logo") as HTMLImageElement | null;
         if (logo && !logo.complete) {
             logo.onload = () => setTimeout(tryPrint, 150);
-            logo.onerror = () => setTimeout(tryPrint, 150); // imprime mesmo se falhar
+            logo.onerror = () => setTimeout(tryPrint, 150);
         } else {
             setTimeout(tryPrint, 200);
         }
     }
+
 
 
 
