@@ -273,6 +273,137 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     );
 }
 
+type Opt = { id: ID; nome: string };
+
+function MultiSelectDropdown({
+    label,
+    options,
+    selectedIds,
+    onChangeIds,
+    allLabel = "Todos",
+    placeholder = "Selecionar...",
+}: {
+    label: string;
+    options: Opt[];
+    selectedIds: ID[];
+    onChangeIds: (ids: ID[]) => void;
+    allLabel?: string;
+    placeholder?: string;
+}) {
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    const [q, setQ] = useState("");
+
+    const optMap = useMemo(() => new Map(options.map((o) => [o.id, o.nome])), [options]);
+
+    const displayText = useMemo(() => {
+        if (!selectedIds.length) return allLabel;
+
+        const names = selectedIds.map((id) => optMap.get(id) || `#${id}`);
+        if (names.length <= 2) return names.join(", ");
+        return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+    }, [selectedIds, optMap, allLabel]);
+
+    const filtered = useMemo(() => {
+        const qq = q.trim().toLowerCase();
+        if (!qq) return options;
+        return options.filter((o) => o.nome.toLowerCase().includes(qq));
+    }, [options, q]);
+
+    useEffect(() => {
+        const onDoc = (e: MouseEvent) => {
+            if (!wrapRef.current) return;
+            if (!wrapRef.current.contains(e.target as any)) setOpen(false);
+        };
+        document.addEventListener("mousedown", onDoc);
+        return () => document.removeEventListener("mousedown", onDoc);
+    }, []);
+
+    function toggle(id: ID) {
+        const has = selectedIds.includes(id);
+        const next = has ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
+        onChangeIds(next);
+    }
+
+    return (
+        <Field label={label}>
+            <div ref={wrapRef} className="relative">
+                <button
+                    type="button"
+                    onClick={() => setOpen((v) => !v)}
+                    className={[
+                        "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none",
+                        "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                        "flex items-center justify-between gap-2",
+                    ].join(" ")}
+                >
+                    <span className={["truncate", !selectedIds.length ? "text-slate-600" : "text-slate-900"].join(" ")}>
+                        {displayText || placeholder}
+                    </span>
+                    <span className="text-slate-500">▾</span>
+                </button>
+
+                {open ? (
+                    <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                        <div className="p-2 border-b border-slate-100">
+                            <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar..." />
+                            <div className="mt-2 flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={() => {
+                                        onChangeIds([]);
+                                        setQ("");
+                                    }}
+                                >
+                                    Limpar
+                                </Button>
+                                <Button variant="ghost" type="button" onClick={() => setOpen(false)}>
+                                    Fechar
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="max-h-64 overflow-auto p-2">
+                            <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50">
+                                <input
+                                    type="checkbox"
+                                    checked={!selectedIds.length}
+                                    onChange={() => onChangeIds([])}
+                                    className="h-4 w-4"
+                                />
+                                <span className="text-sm text-slate-700">{allLabel}</span>
+                            </label>
+
+                            <div className="my-2 border-t border-slate-100" />
+
+                            {filtered.length === 0 ? (
+                                <div className="p-2 text-sm text-slate-600">Nenhum encontrado.</div>
+                            ) : (
+                                filtered.map((o) => (
+                                    <label
+                                        key={o.id}
+                                        className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.includes(o.id)}
+                                            onChange={() => toggle(o.id)}
+                                            className="h-4 w-4"
+                                        />
+                                        <span className="text-sm text-slate-900">{o.nome}</span>
+                                    </label>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                ) : null}
+            </div>
+        </Field>
+    );
+}
+
+
 function Button({
     children,
     variant = "solid",
@@ -988,31 +1119,47 @@ export default function Page() {
 
     // ESTOQUE
     const [qEstoque, setQEstoque] = useState("");
-    const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID | "Todos">("Todos");
-    const [catFiltroEstoque, setCatFiltroEstoque] = useState<ID | "Todos">("Todos");
-    const [fabFiltroEstoque, setFabFiltroEstoque] = useState<ID | "Todos">("Todos");
+
+    // ✅ multi-select: array vazio = "Todos"
+    const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID[]>([]);
+    const [catFiltroEstoque, setCatFiltroEstoque] = useState<ID[]>([]);
+    const [fabFiltroEstoque, setFabFiltroEstoque] = useState<ID[]>([]);
+    const [classFiltroEstoque, setClassFiltroEstoque] = useState<ID[]>([]);
+
     const [onlyLow, setOnlyLow] = useState(false);
+
 
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
         const rows: Array<{ p: Produto; d: Deposito; qtd: number; s?: Saldo; min: number; rep: number }> = [];
+        const depSet = depFiltroEstoque.length ? new Set(depFiltroEstoque.map(Number)) : null;
+        const catSet = catFiltroEstoque.length ? new Set(catFiltroEstoque.map(Number)) : null;
+        const fabSet = fabFiltroEstoque.length ? new Set(fabFiltroEstoque.map(Number)) : null;
+        const clsSet = classFiltroEstoque.length ? new Set(classFiltroEstoque.map(Number)) : null;
+
 
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
 
-            if (depFiltroEstoque !== "Todos" && d.id !== depFiltroEstoque) continue;
+            if (depSet && !depSet.has(d.id)) continue;
 
-            if (catFiltroEstoque !== "Todos") {
+            if (catSet) {
                 const pid = Number(p.categoria_id || 0);
-                if (pid !== Number(catFiltroEstoque)) continue;
+                if (!catSet.has(pid)) continue;
             }
 
-            if (fabFiltroEstoque !== "Todos") {
+            if (fabSet) {
                 const fid = Number(p.fabricante_id || 0);
-                if (fid !== Number(fabFiltroEstoque)) continue;
+                if (!fabSet.has(fid)) continue;
             }
+
+            if (clsSet) {
+                const cid = Number(p.classificacao_id || 0);
+                if (!clsSet.has(cid)) continue;
+            }
+
 
             const qtd = clampInt(s.quantidade);
             const min = clampInt(p.minimo);
@@ -1034,7 +1181,20 @@ export default function Page() {
 
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR") || a.d.nome.localeCompare(b.d.nome, "pt-BR"));
         return rows;
-    }, [saldos, prodById, depById, qEstoque, depFiltroEstoque, catFiltroEstoque, fabFiltroEstoque, onlyLow, catById, fabById]);
+    }, [
+        saldos,
+        prodById,
+        depById,
+        qEstoque,
+        depFiltroEstoque,
+        catFiltroEstoque,
+        fabFiltroEstoque,
+        classFiltroEstoque,
+        onlyLow,
+        catById,
+        fabById,
+        classById,
+    ]);
 
     const estoqueResumo = useMemo(() => {
         let totalUnidades = 0;
@@ -1053,18 +1213,22 @@ export default function Page() {
 
 
     function getFiltroResumo() {
-        const depTxt = depFiltroEstoque === "Todos" ? "Todos" : depById.get(Number(depFiltroEstoque))?.nome || String(depFiltroEstoque);
-        const catTxt = catFiltroEstoque === "Todos" ? "Todas" : catById.get(Number(catFiltroEstoque))?.nome || String(catFiltroEstoque);
-        const fabTxt = fabFiltroEstoque === "Todos" ? "Todos" : fabById.get(Number(fabFiltroEstoque))?.nome || String(fabFiltroEstoque);
+        const joinNames = (opts: Array<{ id: ID; nome: string }>, sel: ID[], allTxt: string) => {
+            if (!sel.length) return allTxt;
+            const m = new Map(opts.map((o) => [o.id, o.nome]));
+            return sel.map((id) => m.get(id) || `#${id}`).join(", ");
+        };
 
         return {
             busca: qEstoque.trim() || "—",
-            deposito: depTxt,
-            categoria: catTxt,
-            fabricante: fabTxt,
+            deposito: joinNames(depositos, depFiltroEstoque, "Todos"),
+            categoria: joinNames(categorias, catFiltroEstoque, "Todas"),
+            fabricante: joinNames(fabricantes, fabFiltroEstoque, "Todos"),
+            classificacao: joinNames(classificacoes, classFiltroEstoque, "Todas"),
             somenteAlerta: onlyLow ? "Sim" : "Não",
         };
     }
+
 
     function exportarEstoqueCSV() {
         if (!estoqueRows.length) {
@@ -1182,6 +1346,8 @@ export default function Page() {
     <div><b>Depósito:</b> ${String(f.deposito).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
     <div><b>Categoria:</b> ${String(f.categoria).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
     <div><b>Fabricante:</b> ${String(f.fabricante).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    <div><b>Classificação:</b> ${String((f as any).classificacao).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+
     <div><b>Somente alerta (≤ mínimo):</b> ${String(f.somenteAlerta)}</div>
   </div>
 
@@ -2458,47 +2624,56 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-7">
                                 <Field label="Pesquisar">
-                                    <TextInput value={qEstoque} onChange={(e) => setQEstoque(e.target.value)} placeholder="Nome, código, depósito, categoria, fabricante..." />
+                                    <TextInput
+                                        value={qEstoque}
+                                        onChange={(e) => setQEstoque(e.target.value)}
+                                        placeholder="Nome, código, depósito, categoria, fabricante, classificação..."
+                                    />
                                 </Field>
 
-                                <Field label="Depósito">
-                                    <Select value={depFiltroEstoque as any} onChange={(e) => setDepFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}>
-                                        <option value="Todos">Todos</option>
-                                        {depositos.map((d) => (
-                                            <option key={d.id} value={d.id}>
-                                                {d.nome}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                </Field>
+                                <MultiSelectDropdown
+                                    label="Depósito"
+                                    options={depositos}
+                                    selectedIds={depFiltroEstoque}
+                                    onChangeIds={setDepFiltroEstoque}
+                                    allLabel="Todos"
+                                />
 
-                                <Field label="Categoria">
-                                    <Select value={catFiltroEstoque as any} onChange={(e) => setCatFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}>
-                                        <option value="Todos">Todas</option>
-                                        {categorias.map((c) => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.nome}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                </Field>
+                                <MultiSelectDropdown
+                                    label="Categoria"
+                                    options={categorias}
+                                    selectedIds={catFiltroEstoque}
+                                    onChangeIds={setCatFiltroEstoque}
+                                    allLabel="Todas"
+                                />
 
-                                <Field label="Fabricante">
-                                    <Select value={fabFiltroEstoque as any} onChange={(e) => setFabFiltroEstoque(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}>
-                                        <option value="Todos">Todos</option>
-                                        {fabricantes.map((f) => (
-                                            <option key={f.id} value={f.id}>
-                                                {f.nome}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                </Field>
+                                <MultiSelectDropdown
+                                    label="Fabricante"
+                                    options={fabricantes}
+                                    selectedIds={fabFiltroEstoque}
+                                    onChangeIds={setFabFiltroEstoque}
+                                    allLabel="Todos"
+                                />
+
+                                <MultiSelectDropdown
+                                    label="Classificação"
+                                    options={classificacoes}
+                                    selectedIds={classFiltroEstoque}
+                                    onChangeIds={setClassFiltroEstoque}
+                                    allLabel="Todas"
+                                />
 
                                 <Field label="Somente alerta (≤ mín)">
                                     <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-                                        <input id="onlyLow" type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} className="h-4 w-4" />
+                                        <input
+                                            id="onlyLow"
+                                            type="checkbox"
+                                            checked={onlyLow}
+                                            onChange={(e) => setOnlyLow(e.target.checked)}
+                                            className="h-4 w-4"
+                                        />
                                         <label htmlFor="onlyLow" className="text-sm text-slate-700">
                                             Mostrar
                                         </label>
@@ -2507,17 +2682,24 @@ export default function Page() {
 
                                 <Field label="Ações">
                                     <div className="flex gap-2">
+                                        <Button variant="ghost" onClick={() => setOnlyLow(true)} type="button">
+                                            Alertas ({alertCount})
+                                        </Button>
+
                                         <Button
                                             variant="ghost"
                                             onClick={() => {
-                                                setOnlyLow(true);
+                                                // opcional: limpar todos os filtros rápido
+                                                setDepFiltroEstoque([]);
+                                                setCatFiltroEstoque([]);
+                                                setFabFiltroEstoque([]);
+                                                setClassFiltroEstoque([]);
+                                                setOnlyLow(false);
+                                                setQEstoque("");
                                             }}
                                             type="button"
                                         >
-                                            Alertas ({alertCount})
-                                        </Button>
-                                        <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
-                                            Histórico
+                                            Limpar filtros
                                         </Button>
                                     </div>
                                 </Field>
