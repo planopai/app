@@ -1234,45 +1234,6 @@ export default function Page() {
     }
 
 
-    function exportarEstoqueCSV() {
-        if (!estoqueRows.length) {
-            alert("Nenhum item para exportar com os filtros atuais.");
-            return;
-        }
-
-        const sep = ";";
-        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)"];
-
-
-        const lines: string[] = [];
-        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
-
-        for (const { p, d, qtd, s, min, rep } of estoqueRows) {
-            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-            const valorNum = Number(p.valor) || 0;
-
-            lines.push(
-                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum)]
-
-                    .map((x) => escapeCsvCell(x, sep))
-                    .join(sep)
-            );
-        }
-
-        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-
-        const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${safeName}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-    }
-
     function exportarEstoquePDF() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
@@ -1318,28 +1279,20 @@ export default function Page() {
             const fabB = norm(b.p?.fabricante_nome || "");
             if (fabA !== fabB) return fabA.localeCompare(fabB, "pt-BR");
 
-            // valor (maior -> menor)
             const vA = Number(a.p?.valor) || 0;
             const vB = Number(b.p?.valor) || 0;
             if (vA !== vB) return vB - vA;
 
-            // fallback: nome produto
             const nA = (a.p?.nome || "").toString();
             const nB = (b.p?.nome || "").toString();
             return nA.localeCompare(nB, "pt-BR");
         });
 
         // =========================================================
-        // 2) REGRAS DE COLUNAS DINÂMICAS
-        //    - remove coluna se estiver 100% vazia
-        //    - Valor some se todos forem R$ 0,00 (numérico 0)
-        //    - Reposição some se todos forem 0 OU vazia
+        // 2) REGRAS DE COLUNAS DINÂMICAS (globais)
         // =========================================================
-
-        // helpers para detectar "vazio"
         const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
 
-        // colunas sempre candidatas (Produto e Quantidade não faz sentido remover)
         const hasCodigo = sortedRows.some((r) => !isEmpty(r.p?.codigo_barras));
         const hasDeposito = sortedRows.some((r) => !isEmpty(r.d?.nome));
         const hasCategoria = sortedRows.some((r) => !isEmpty(r.p?.categoria_nome));
@@ -1347,73 +1300,137 @@ export default function Page() {
 
         const showValorCol = sortedRows.some((r) => (Number(r.p?.valor) || 0) !== 0);
 
-        // reposição:
-        // - só faz sentido se a linha for do depósito "DEPOSITO" (com/sem acento)
-        // - e deve sumir se for tudo 0
+        // Reposição: só aparece se houver pelo menos 1 depósito "DEPOSITO" com rep != 0
         const repCandidates = sortedRows.filter((r) => norm(r.d?.nome || "") === "DEPOSITO");
         const showRepCol =
-            repCandidates.length > 0 &&
-            repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
+            repCandidates.length > 0 && repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
 
         // =========================================================
-        // 3) TOTAIS (mantém como antes)
+        // 3) FUNÇÃO: montar a tabela (thead + tbody) para um conjunto de linhas
         // =========================================================
-        const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
-        let totalQuantidade = 0;
-        let totalValor = 0;
+        function buildTableHtml(rows: typeof sortedRows) {
+            const body = rows
+                .map(({ p, d, qtd, min, rep }) => {
+                    const cat =
+                        p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+                    const fab =
+                        p.fabricante_nome ||
+                        (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                        "";
+                    const valorNum = Number(p.valor) || 0;
 
-        for (const { p, qtd } of sortedRows) {
-            const q = clampInt(qtd);
-            totalQuantidade += q;
-            const v = Number(p.valor) || 0;
-            totalValor += q * v;
-        }
+                    const low = clampInt(qtd) <= clampInt(min); // só estilo (min não aparece)
 
-        // =========================================================
-        // 4) HTML DAS LINHAS (sem "mínimo" na tabela)
-        //    - Reposição aparece somente se showRepCol
-        //    - Valor aparece somente se showValorCol
-        //    - Destaca alerta usando qtd <= min (sem exibir min)
-        // =========================================================
-        const rowsHtml = sortedRows
-            .map(({ p, d, qtd, min, rep }) => {
-                const cat =
-                    p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-                const fab =
-                    p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-                const valorNum = Number(p.valor) || 0;
-
-                const low = clampInt(qtd) <= clampInt(min); // só para estilo
-
-                // rep só faz sentido no depósito DEPOSITO
-                const repCell =
-                    showRepCol
+                    const repCell = showRepCol
                         ? `<td class="num green"><b>${esc(norm(d?.nome || "") === "DEPOSITO" ? rep : "")}</b></td>`
                         : "";
 
-                const valorCell =
-                    showValorCol ? `<td class="num">${esc(moneyBRL(valorNum))}</td>` : "";
+                    const valorCell = showValorCol ? `<td class="num">${esc(moneyBRL(valorNum))}</td>` : "";
+
+                    return `
+          <tr class="${low ? "low" : ""}">
+            <td class="prod">${esc(p.nome)}</td>
+            ${hasCodigo ? `<td class="mono">${esc(p.codigo_barras)}</td>` : ""}
+            ${hasDeposito ? `<td>${esc(d.nome)}</td>` : ""}
+            ${hasCategoria ? `<td>${esc(cat)}</td>` : ""}
+            ${hasFabricante ? `<td>${esc(fab)}</td>` : ""}
+            <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
+            ${repCell}
+            ${valorCell}
+          </tr>
+        `;
+                })
+                .join("");
+
+            const head = `
+      <thead>
+        <tr>
+          <th>Produto</th>
+          ${hasCodigo ? `<th>Código</th>` : ``}
+          ${hasDeposito ? `<th>Depósito</th>` : ``}
+          ${hasCategoria ? `<th>Categoria</th>` : ``}
+          ${hasFabricante ? `<th>Fabricante</th>` : ``}
+          <th class="num">Quantidade</th>
+          ${showRepCol ? `<th class="num">Reposição</th>` : ``}
+          ${showValorCol ? `<th class="num">Valor</th>` : ``}
+        </tr>
+      </thead>
+    `;
+
+            return `
+      <table>
+        ${head}
+        <tbody>${body}</tbody>
+      </table>
+    `;
+        }
+
+        // =========================================================
+        // 4) TOTAIS GERAIS
+        // =========================================================
+        const totalLinhasGeral = new Set(sortedRows.map((r) => r.p.id)).size;
+        let totalQtdGeral = 0;
+        let totalValorGeral = 0;
+
+        for (const { p, qtd } of sortedRows) {
+            const q = clampInt(qtd);
+            totalQtdGeral += q;
+            const v = Number(p.valor) || 0;
+            totalValorGeral += q * v;
+        }
+
+        // =========================================================
+        // 5) BLOCOS POR DEPÓSITO (com totais por depósito)
+        // =========================================================
+        const byDep = new Map<string, typeof sortedRows>();
+        for (const r of sortedRows) {
+            const key = (r.d?.nome || "").toString().trim() || "—";
+            if (!byDep.has(key)) byDep.set(key, []);
+            byDep.get(key)!.push(r);
+        }
+
+        // mantém a ordem do sort (dep já vem agrupado), mas garantimos ordem estável:
+        const depositoKeys = Array.from(byDep.keys()).sort((a, b) => norm(a).localeCompare(norm(b), "pt-BR"));
+
+        const blocksHtml = depositoKeys
+            .map((depName) => {
+                const rows = byDep.get(depName)!;
+
+                const modelos = new Set(rows.map((r) => r.p.id)).size;
+                let totalQtd = 0;
+                let totalVal = 0;
+
+                for (const { p, qtd } of rows) {
+                    const q = clampInt(qtd);
+                    totalQtd += q;
+                    const v = Number(p.valor) || 0;
+                    totalVal += q * v;
+                }
 
                 return `
-        <tr class="${low ? "low" : ""}">
-          <td class="prod">${esc(p.nome)}</td>
-          ${hasCodigo ? `<td class="mono">${esc(p.codigo_barras)}</td>` : ""}
-          ${hasDeposito ? `<td>${esc(d.nome)}</td>` : ""}
-          ${hasCategoria ? `<td>${esc(cat)}</td>` : ""}
-          ${hasFabricante ? `<td>${esc(fab)}</td>` : ""}
-          <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
-          ${repCell}
-          ${valorCell}
-        </tr>
+        <section class="dep-block">
+          <div class="dep-title">
+            <div class="dep-name">Depósito: <b>${esc(depName)}</b></div>
+            <div class="dep-mini">
+              Modelos: <b>${esc(modelos)}</b> • Total: <b>${esc(totalQtd)}</b>
+              ${showValorCol ? ` • Valor: <b>${esc(moneyBRL(totalVal))}</b>` : ``}
+            </div>
+          </div>
+
+          ${buildTableHtml(rows)}
+
+          <div class="dep-totals">
+            <div class="left">Modelos: <b>${esc(modelos)}</b></div>
+            <div>Total: <b>${esc(totalQtd)}</b></div>
+            ${showValorCol ? `<div>Valor Total: <b>${esc(moneyBRL(totalVal))}</b></div>` : ``}
+          </div>
+        </section>
       `;
             })
             .join("");
 
         // =========================================================
-        // 5) HTML DO PDF
-        //    - remove "Busca"
-        //    - mantém filtros relevantes
-        //    - header e totais organizados
+        // 6) HTML FINAL
         // =========================================================
         const html = `<!doctype html>
 <html lang="pt-BR">
@@ -1428,7 +1445,6 @@ export default function Page() {
       color: #0f172a;
     }
 
-    /* ✅ horizontal */
     @page { size: A4 landscape; margin: 12mm; }
 
     .header {
@@ -1438,20 +1454,13 @@ export default function Page() {
       gap: 12px;
       margin-bottom: 10px;
     }
-
     .brand {
       display: flex;
       align-items: center;
       gap: 12px;
       min-width: 320px;
     }
-
-    .brand img {
-      height: 28px;
-      width: auto;
-      display: block;
-    }
-
+    .brand img { height: 28px; width: auto; display: block; }
     h1 { margin: 0; font-size: 16px; }
     .meta { font-size: 11px; color: #475569; margin-top: 2px; }
 
@@ -1460,9 +1469,27 @@ export default function Page() {
       background: #f8fafc;
       padding: 8px 10px;
       border-radius: 10px;
-      margin: 8px 0 10px 0;
+      margin: 8px 0 12px 0;
     }
     .filters div { font-size: 11px; color: #334155; margin: 2px 0; }
+
+    /* blocos por depósito */
+    .dep-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 10px;
+      margin: 0 0 12px 0;
+      background: #fff;
+    }
+    .dep-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .dep-name { font-size: 12px; color: #0f172a; }
+    .dep-mini { font-size: 11px; color: #475569; text-align: right; }
 
     table {
       width: 100%;
@@ -1489,10 +1516,9 @@ export default function Page() {
     .green { color: #16a34a; }
     .red { color: #b91c1c; }
     .low td { background: #fff7f7; }
-
     td.prod { max-width: 420px; }
 
-    .totals {
+    .dep-totals, .totals {
       margin-top: 10px;
       border: 1px solid #e2e8f0;
       background: #ffffff;
@@ -1505,14 +1531,14 @@ export default function Page() {
       font-size: 12px;
       width: 100%;
     }
-    .totals div { color: #334155; }
-    .totals b { color: #0f172a; }
-    .totals .left { margin-right: auto; }
+    .dep-totals div, .totals div { color: #334155; }
+    .dep-totals b, .totals b { color: #0f172a; }
+    .dep-totals .left, .totals .left { margin-right: auto; }
 
     @media print {
       thead { display: table-header-group; }
       tr { page-break-inside: avoid; }
-      .filters, .totals { break-inside: avoid; }
+      .filters, .totals, .dep-block, .dep-totals { break-inside: avoid; }
     }
   </style>
 </head>
@@ -1523,7 +1549,7 @@ export default function Page() {
       <img id="logo" src="${esc(LOGO_URL)}" alt="Logo" />
       <div>
         <h1>Relatório de Estoque</h1>
-        <div class="meta">Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(totalLinhas)}</b></div>
+        <div class="meta">Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(totalLinhasGeral)}</b></div>
       </div>
     </div>
   </div>
@@ -1537,29 +1563,13 @@ export default function Page() {
     <div><b>Somente alerta (≤ mínimo):</b> ${esc(f.somenteAlerta)}</div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Produto</th>
-        ${hasCodigo ? `<th>Código</th>` : ``}
-        ${hasDeposito ? `<th>Depósito</th>` : ``}
-        ${hasCategoria ? `<th>Categoria</th>` : ``}
-        ${hasFabricante ? `<th>Fabricante</th>` : ``}
-        <th class="num">Quantidade</th>
-        ${showRepCol ? `<th class="num">Reposição</th>` : ``}
-        ${showValorCol ? `<th class="num">Valor</th>` : ``}
-      </tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
+  ${blocksHtml}
 
+  <!-- ✅ TOTAL GERAL (sempre no final) -->
   <div class="totals">
-    <div class="left">Modelos: <b>${esc(totalLinhas)}</b></div>
-    <div>Total: <b>${esc(totalQuantidade)}</b></div>
-    ${showValorCol
-                ? `<div>Valor Total: <b>${esc(moneyBRL(totalValor))}</b></div>`
-                : ``
-            }
+    <div class="left">Modelos: <b>${esc(totalLinhasGeral)}</b></div>
+    <div>Total: <b>${esc(totalQtdGeral)}</b></div>
+    ${showValorCol ? `<div>Valor Total: <b>${esc(moneyBRL(totalValorGeral))}</b></div>` : ``}
   </div>
 
 </body>
@@ -1606,6 +1616,7 @@ export default function Page() {
             setTimeout(tryPrint, 200);
         }
     }
+
 
 
 
