@@ -1241,7 +1241,8 @@ export default function Page() {
         }
 
         const sep = ";";
-        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)", "Atualizado"];
+        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)"];
+
 
         const lines: string[] = [];
         lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
@@ -1252,7 +1253,8 @@ export default function Page() {
             const valorNum = Number(p.valor) || 0;
 
             lines.push(
-                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), s?.atualizado_em ? fmtDateTime(s.atualizado_em) : ""]
+                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum)]
+
                     .map((x) => escapeCsvCell(x, sep))
                     .join(sep)
             );
@@ -1306,7 +1308,7 @@ export default function Page() {
             <td class="num">${esc(min)}</td>
             <td class="num green"><b>${esc(rep)}</b></td>
             <td class="num">${esc(moneyBRL(valorNum))}</td>
-            <td>${esc(s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "")}</td>
+            
           </tr>
         `;
             })
@@ -1367,7 +1369,7 @@ export default function Page() {
         <th class="num">Min</th>
         <th class="num">Rep</th>
         <th class="num">Valor</th>
-        <th>Atualizado</th>
+        
       </tr>
     </thead>
     <tbody>
@@ -2609,15 +2611,7 @@ export default function Page() {
                                     <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
                                 </div>
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
-                                    <Button variant="ghost" onClick={() => setEntradaOpen(true)} type="button">
-                                        Entrada
-                                    </Button>
-                                    <Button variant="ghost" onClick={() => setSaidaOpen(true)} type="button">
-                                        Saída
-                                    </Button>
-                                    <Button variant="ghost" onClick={() => setTrfOpen(true)} type="button">
-                                        Transferência
-                                    </Button>
+                                    
 
                                     <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
                                         ⬇️ CSV
@@ -2782,7 +2776,7 @@ export default function Page() {
                                                                             </>
                                                                         ) : null}
                                                                     </p>
-                                                                    <p className="mt-0.5 text-[11px] text-slate-500">Atualizado: {s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}</p>
+                                                                    
                                                                 </div>
                                                             </div>
 
@@ -2813,7 +2807,7 @@ export default function Page() {
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Min</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Atualizado</th>
+                                                            
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -2866,7 +2860,7 @@ export default function Page() {
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{min}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-emerald-700">{rep}</td>
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">{moneyBRL(valorNum)}</td>
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-xs text-slate-600">{s?.atualizado_em ? fmtDateTime(s.atualizado_em) : "—"}</td>
+                                                                    
                                                                 </tr>
                                                             );
                                                         })}
