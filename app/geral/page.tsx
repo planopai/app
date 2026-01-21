@@ -344,7 +344,13 @@ function MultiSelectDropdown({
                 </button>
 
                 {open ? (
-                    <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                    <div
+                        className={[
+                            "absolute z-30 mt-2 left-0",
+                            "w-full min-w-[340px] max-w-[calc(100vw-2rem)]",
+                            "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg",
+                        ].join(" ")}
+                    >
                         <div className="p-2 border-b border-slate-100">
                             <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar..." />
                             <div className="mt-2 flex gap-2">
@@ -391,7 +397,7 @@ function MultiSelectDropdown({
                                             onChange={() => toggle(o.id)}
                                             className="h-4 w-4"
                                         />
-                                        <span className="text-sm text-slate-900">{o.nome}</span>
+                                        <span className="text-sm text-slate-900 whitespace-nowrap">{o.nome}</span>
                                     </label>
                                 ))
                             )}
