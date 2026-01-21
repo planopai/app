@@ -1279,8 +1279,14 @@ export default function Page() {
             return;
         }
 
+        const LOGO_URL =
+            "https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1";
+
         const f = getFiltroResumo();
-        const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+        const geradoEm = new Intl.DateTimeFormat("pt-BR", {
+            dateStyle: "short",
+            timeStyle: "short",
+        }).format(new Date());
 
         const esc = (x: any) =>
             String(x ?? "")
@@ -1289,16 +1295,35 @@ export default function Page() {
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;");
 
+        // ===== TOTAIS =====
+        const totalLinhas = new Set(estoqueRows.map(r => r.p.id)).size; // "itens" = linhas do relatório
+        let totalQuantidade = 0;
+        let totalValor = 0;
+
+        for (const { p, qtd } of estoqueRows) {
+            const q = clampInt(qtd);
+            totalQuantidade += q;
+            const v = Number(p.valor) || 0;
+            totalValor += q * v;
+        }
+
+        // ===== TABELA =====
         const rowsHtml = estoqueRows
             .map(({ p, d, qtd, min, rep }) => {
-                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+                const cat =
+                    p.categoria_nome ||
+                    (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
+                    "";
+                const fab =
+                    p.fabricante_nome ||
+                    (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                    "";
                 const valorNum = Number(p.valor) || 0;
                 const low = qtd <= min;
 
                 return `
         <tr class="${low ? "low" : ""}">
-          <td>${esc(p.nome)}</td>
+          <td class="prod">${esc(p.nome)}</td>
           <td class="mono">${esc(p.codigo_barras)}</td>
           <td>${esc(d.nome)}</td>
           <td>${esc(cat)}</td>
@@ -1312,37 +1337,115 @@ export default function Page() {
             })
             .join("");
 
+        // ===== HTML DO PDF =====
         const html = `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <title>Relatório de Estoque</title>
   <style>
-    *{ box-sizing:border-box; }
-    body{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; color:#0f172a; }
-    h1{ margin:0 0 6px 0; font-size:18px; }
-    .meta{ font-size:12px; color:#475569; margin-bottom:12px; }
-    .filters{ border:1px solid #e2e8f0; background:#f8fafc; padding:10px 12px; border-radius:12px; margin-bottom:14px; }
-    .filters div{ font-size:12px; color:#334155; margin:2px 0; }
-    table{ width:100%; border-collapse:collapse; font-size:11px; }
-    th, td{ border:1px solid #e2e8f0; padding:8px; vertical-align:top; }
-    th{ background:#f1f5f9; text-align:left; font-weight:700; }
-    .num{ text-align:right; white-space:nowrap; }
-    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-    .green{ color:#16a34a; }
-    .red{ color:#b91c1c; }
-    .low td{ background:#fff7f7; }
-    @media print{
-      body{ margin: 14mm; }
-      .filters{ break-inside: avoid; }
-      tr{ page-break-inside: avoid; }
-      thead{ display: table-header-group; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      margin: 16px;
+      color: #0f172a;
+    }
+
+    /* ✅ Força modo horizontal */
+    @page { size: A4 landscape; margin: 12mm; }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 320px;
+    }
+
+    .brand img {
+      height: 28px;
+      width: auto;
+      display: block;
+    }
+
+    h1 { margin: 0; font-size: 16px; }
+    .meta { font-size: 11px; color: #475569; margin-top: 2px; }
+
+    .filters {
+      border: 1px solid #e2e8f0;
+      background: #f8fafc;
+      padding: 8px 10px;
+      border-radius: 10px;
+      margin: 8px 0 10px 0;
+    }
+    .filters div { font-size: 11px; color: #334155; margin: 2px 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10.5px;
+    }
+    th, td {
+      border: 1px solid #e2e8f0;
+      padding: 6px 7px;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      text-align: left;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .num { text-align: right; white-space: nowrap; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; white-space: nowrap; }
+    .green { color: #16a34a; }
+    .red { color: #b91c1c; }
+    .low td { background: #fff7f7; }
+
+    /* Para o nome do produto não “estourar” */
+    td.prod { max-width: 420px; }
+
+    .totals {
+      margin-top: 10px;
+      border: 1px solid #e2e8f0;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      font-size: 12px;
+    }
+    .totals div { color: #334155; }
+    .totals b { color: #0f172a; }
+
+    @media print {
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+      .filters, .totals { break-inside: avoid; }
     }
   </style>
 </head>
 <body>
-  <h1>Relatório de Estoque</h1>
-  <div class="meta">Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(estoqueRows.length)}</b></div>
+
+  <div class="header">
+    <div class="brand">
+      <img id="logo" src="${esc(LOGO_URL)}" alt="Logo" />
+      <div>
+        <h1>Relatório de Estoque</h1>
+        <div class="meta">Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(totalLinhas)}</b></div>
+      </div>
+    </div>
+  </div>
 
   <div class="filters">
     <div><b>Busca:</b> ${esc(f.busca)}</div>
@@ -1369,10 +1472,17 @@ export default function Page() {
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
+
+  <div class="totals">
+    <div>Total de itens: <b>${esc(totalLinhas)}</b></div>
+    <div>Total de quantidade: <b>${esc(totalQuantidade)}</b></div>
+    <div>Total em valor: <b>${esc(moneyBRL(totalValor))}</b></div>
+  </div>
+
 </body>
 </html>`;
 
-        // ✅ imprime sem popup
+        // ✅ imprime sem popup (iframe invisível)
         const iframe = document.createElement("iframe");
         iframe.style.position = "fixed";
         iframe.style.right = "0";
@@ -1382,8 +1492,10 @@ export default function Page() {
         iframe.style.border = "0";
         document.body.appendChild(iframe);
 
-        const doc = iframe.contentWindow?.document;
-        if (!doc || !iframe.contentWindow) {
+        const win = iframe.contentWindow;
+        const doc = win?.document;
+
+        if (!win || !doc) {
             iframe.remove();
             alert("Não foi possível gerar o PDF.");
             return;
@@ -1393,17 +1505,25 @@ export default function Page() {
         doc.write(html);
         doc.close();
 
-        // dá um “respiro” pro layout montar antes do print
-        setTimeout(() => {
+        // ✅ espera logo carregar antes do print
+        const tryPrint = () => {
             try {
-                iframe.contentWindow!.focus();
-                iframe.contentWindow!.print();
+                win.focus();
+                win.print();
             } finally {
-                // remove depois de um tempo (após abrir diálogo de impressão)
                 setTimeout(() => iframe.remove(), 1000);
             }
-        }, 200);
+        };
+
+        const logo = doc.getElementById("logo") as HTMLImageElement | null;
+        if (logo && !logo.complete) {
+            logo.onload = () => setTimeout(tryPrint, 150);
+            logo.onerror = () => setTimeout(tryPrint, 150); // imprime mesmo se falhar
+        } else {
+            setTimeout(tryPrint, 200);
+        }
     }
+
 
 
     // ENTRADA
