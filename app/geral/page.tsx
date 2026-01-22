@@ -3654,58 +3654,116 @@ export default function Page() {
                                         </ul>
 
                                         {/* PC */}
-                                        <div className="hidden sm:block">
-                                            <div className="overflow-auto">
-                                                <table className="min-w-full border-separate border-spacing-0">
+                                                {/* PC (ESTOQUE - correto, independente do PDF) */}
+                                                <div className="hidden sm:block">
+                                                    <div className="overflow-auto">
+                                                        <table className="min-w-full border-separate border-spacing-0">
                                                             <thead>
                                                                 <tr className="bg-slate-50 text-left text-xs text-slate-700">
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd Sistema</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Qtd Física</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif.</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Ajuste</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-center">Status</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Mín</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor (un)</th>
                                                                 </tr>
                                                             </thead>
+
                                                             <tbody>
                                                                 {estoqueRows.map(({ p, d, qtd, min, rep }) => {
-                                                                    const low = qtd <= min;
+                                                                    const low = clampInt(qtd) <= clampInt(min);
 
-                                                                    const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-                                                                    const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-                                                                    const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
+                                                                    const cat =
+                                                                        p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "—";
+                                                                    const fab =
+                                                                        p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "—";
+                                                                    const cls =
+                                                                        p.classificacao_nome ||
+                                                                        (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") ||
+                                                                        "—";
+
+                                                                    const valorNum = Number(p.valor) || 0;
+                                                                    const foto = normalizeImgUrl(p.foto_url);
 
                                                                     return (
-                                                                        <tr key={`${p.id}_${d.id}`} className="bg-white">
+                                                                        <tr key={`${p.id}_${d.id}`} className="bg-white hover:bg-slate-50">
+                                                                            {/* Produto (com editar) */}
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
-                                                                                <div className="font-semibold">{p.nome}</div>
-                                                                                <div className="text-xs text-slate-500 font-mono">CB: {p.codigo_barras}</div>
+                                                                                <div className="flex items-center gap-3 min-w-0">
+                                                                                    <PhotoThumb
+                                                                                        url={foto}
+                                                                                        onClick={() => {
+                                                                                            if (!foto) return;
+                                                                                            setImgUrl(foto);
+                                                                                            setImgTitle(p.nome);
+                                                                                            setImgOpen(true);
+                                                                                        }}
+                                                                                    />
+
+                                                                                    <div className="min-w-0">
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => openProdutoEditor(p.id)}
+                                                                                            className="block truncate text-left font-semibold text-slate-900 hover:underline"
+                                                                                            title="Clique para editar"
+                                                                                        >
+                                                                                            {p.nome}
+                                                                                        </button>
+                                                                                        <div className="text-xs text-slate-500 font-mono">CB: {p.codigo_barras}</div>
+                                                                                    </div>
+                                                                                </div>
                                                                             </td>
 
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab || "—"}</td>
+                                                                            {/* Depósito */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                                {d.nome}
+                                                                            </td>
 
+                                                                            {/* Categoria */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                                {cat}
+                                                                            </td>
+
+                                                                            {/* Fabricante */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                                {fab}
+                                                                            </td>
+
+                                                                            {/* Classificação */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                                {cls}
+                                                                            </td>
+
+                                                                            {/* Qtd */}
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
-                                                                                <span className={low ? "text-rose-700" : "text-slate-900"}>{qtd}</span>
+                                                                                <span className={low ? "text-rose-700" : "text-slate-900"}>{clampInt(qtd)}</span>
                                                                             </td>
 
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
+                                                                            {/* Mín */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
+                                                                                {clampInt(min)}
+                                                                            </td>
 
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat || "—"}</td>
-
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls || "—"}</td>
-
+                                                                            {/* Rep */}
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
-                                                                                <span className="font-semibold text-emerald-700">{rep}</span>
+                                                                                <span className="font-semibold text-emerald-700">{clampInt(rep)}</span>
+                                                                            </td>
+
+                                                                            {/* Valor */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
+                                                                                {valorNum ? moneyBRL(valorNum) : "—"}
                                                                             </td>
                                                                         </tr>
                                                                     );
                                                                 })}
                                                             </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
 
-                                                </table>
-                                            </div>
-                                        </div>
                                     </>
                                 )}
                             </div>
