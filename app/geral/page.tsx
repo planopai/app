@@ -1636,9 +1636,21 @@ export default function Page() {
     const [entradaOpen, setEntradaOpen] = useState(false);
     const [entradaScanOpen, setEntradaScanOpen] = useState(false);
 
+    // ✅ NOVO: popup "Concluir" + sucesso
+    const [entradaConcluirOpen, setEntradaConcluirOpen] = useState(false);
+    const [entradaConcluirBusy, setEntradaConcluirBusy] = useState(false);
+    const [entradaSucessoOpen, setEntradaSucessoOpen] = useState(false);
+
+    // itens que serão confirmados no popup (snapshot)
+    const [entradaConcluirItens, setEntradaConcluirItens] = useState<
+        Array<{ payload: any; resumo: string; nome: string; qtd: number }>
+    >([]);
+
     const [entradaBarcode, setEntradaBarcode] = useState("");
     const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
     const [entradaQtd, setEntradaQtd] = useState<string>("1");
+
+    // ✅ agora a observação fica visualmente abaixo da fila (mas continua sendo usada)
     const [entradaObs, setEntradaObs] = useState("");
 
     // NOVO: filtro fabricante + barra de pesquisa/lista de produtos filtrados (Entrada)
@@ -1707,6 +1719,7 @@ export default function Page() {
             setNovoFoto("");
             setNovoCategoriaId(0);
             setNovoFabricanteId(0);
+            setNovoClassificacaoId(0); // ✅ faltava
         }
     }, [entradaProdutoExistente]);
 
@@ -1764,6 +1777,7 @@ export default function Page() {
         setEntradaProdutoId(0);
         setEntradaProdQuery("");
         setEntradaFabFiltroId("Todos");
+        setEntradaCatFiltroId("Todas");
         setEntradaQtd("1");
         setEntradaObs("");
         setNovoNome("");
@@ -1773,6 +1787,28 @@ export default function Page() {
         setNovoCategoriaId(0);
         setNovoFabricanteId(0);
         setNovoClassificacaoId(0);
+    }
+
+    // ✅ NOVO: reset só do item (mantém depósito/filtros/observação para montar lote)
+    function resetEntradaItemFieldsOnly() {
+        setEntradaBarcode("");
+        setEntradaProdutoId(0);
+        setEntradaProdQuery("");
+        setEntradaQtd("1");
+        setNovoNome("");
+        setNovoValor(0);
+        setNovoMin(0);
+        setNovoFoto("");
+        setNovoCategoriaId(0);
+        setNovoFabricanteId(0);
+        setNovoClassificacaoId(0);
+    }
+
+    // ✅ NOVO: cancelar fecha e limpa tudo
+    function cancelarEntrada() {
+        setEntradaItens([]);
+        resetEntradaForm();
+        setEntradaOpen(false);
     }
 
     function buildEntradaPayloadFromForm(): { payload: any; resumo: string } | null {
@@ -1848,7 +1884,9 @@ export default function Page() {
         if (!built) return;
         const id = entradaSeqRef.current++;
         setEntradaItens((prev) => [...prev, { id, ...built }]);
-        resetEntradaForm();
+
+        // ✅ mantém depósito/filtros/observação para continuar montando o lote
+        resetEntradaItemFieldsOnly();
     }
 
     async function applyEntradaLote() {
@@ -1880,6 +1918,83 @@ export default function Page() {
         await refreshInit();
         setTab("ESTOQUE");
     }
+
+    function montarSnapshotConcluirEntrada() {
+        const obs = entradaObs.trim();
+
+        // começa com os itens já na fila
+        const base = entradaItens.map((it) => {
+            const cb = String(it.payload?.codigo_barras || "").trim();
+            const prod = cb ? produtos.find((p) => p.codigo_barras === cb) : null;
+
+            const nome = String(it.payload?.nome || prod?.nome || "(sem nome)");
+            const qtd = clampInt(it.payload?.quantidade);
+
+            // ✅ aplica observação do lote no momento da conclusão
+            const payload = obs ? { ...it.payload, observacao: obs } : { ...it.payload };
+
+            return { payload, resumo: it.resumo, nome, qtd };
+        });
+
+        // se o usuário deixou um item “no formulário” (barcode preenchido), inclui no snapshot também
+        if (entradaBarcode.trim()) {
+            const built = buildEntradaPayloadFromForm();
+            if (!built) return null;
+
+            const cb = String(built.payload?.codigo_barras || "").trim();
+            const prod = cb ? produtos.find((p) => p.codigo_barras === cb) : null;
+
+            const nome = String(built.payload?.nome || prod?.nome || "(sem nome)");
+            const qtd = clampInt(built.payload?.quantidade);
+
+            const payload = obs ? { ...built.payload, observacao: obs } : { ...built.payload };
+
+            base.push({ payload, resumo: built.resumo, nome, qtd });
+        }
+
+        return base;
+    }
+
+    function abrirConcluirEntrada() {
+        const snap = montarSnapshotConcluirEntrada();
+        if (!snap) return; // buildEntradaPayloadFromForm já alerta se inválido
+        if (!snap.length) {
+            alert("Adicione pelo menos um item para entrada.");
+            return;
+        }
+
+        setEntradaConcluirItens(snap);
+        setEntradaConcluirOpen(true);
+    }
+
+    async function confirmarEntradaDoSnapshot() {
+        if (!entradaConcluirItens.length) return;
+
+        setEntradaConcluirBusy(true);
+        try {
+            for (const it of entradaConcluirItens) {
+                const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
+                if (!r.ok) {
+                    alert(`Erro na entrada de "${it.nome}": ${r.msg || "Falha."}`);
+                    return;
+                }
+            }
+
+            // ✅ sucesso
+            setEntradaConcluirOpen(false);
+            setEntradaItens([]);
+            resetEntradaForm();
+            setEntradaOpen(false);
+
+            await refreshInit();
+            setTab("ESTOQUE");
+
+            setEntradaSucessoOpen(true);
+        } finally {
+            setEntradaConcluirBusy(false);
+        }
+    }
+
 
     async function criarCategoriaQuick() {
         const nome = catQuickNome.trim();
@@ -3618,96 +3733,73 @@ export default function Page() {
             </Modal>
 
             {/* MODAL: ENTRADA */}
-            <Modal open={entradaOpen} title="Entrada" subtitle="Leia/digite o código e confirme. Se o produto não existir, cadastre na hora." onClose={() => setEntradaOpen(false)}>
+            <Modal
+                open={entradaOpen}
+                title="Entrada"
+                subtitle="Monte a lista e conclua. Se o produto não existir, cadastre na hora."
+                onClose={cancelarEntrada}
+            >
                 <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
-                        <div className="sm:col-span-3">
-                            <Field label="Código de barras" hint="Você pode usar a câmera (Scan).">
-                                <div className="flex gap-2">
-                                    <TextInput value={entradaBarcode} onChange={(e) => setEntradaBarcode(e.target.value)} placeholder="Ex: 789..." inputMode="numeric" />
-                                    <Button variant="soft" onClick={() => setEntradaScanOpen(true)} type="button">
-                                        📷 Scan
-                                    </Button>
-                                </div>
-                            </Field>
-                        </div>
+                    {/* ✅ 2 colunas por linha + ordem solicitada */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {/* 1ª linha: Depósito (entrada) + Fabricante */}
+                        <Field label="Depósito (entrada)">
+                            <Select
+                                value={entradaDepositoId}
+                                onChange={(e) => {
+                                    setEntradaDepositoId(Number(e.target.value));
+                                    setEntradaProdutoId(0);
+                                    setEntradaProdQuery("");
+                                }}
+                            >
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                        <div className="sm:col-span-2">
-                            <Field label="Depósito (entrada)">
-                                <Select
-                                    value={entradaDepositoId}
-                                    onChange={(e) => {
-                                        setEntradaDepositoId(Number(e.target.value));
-                                        setEntradaProdutoId(0);
-                                        setEntradaProdQuery("");
-                                    }}
-                                >
-                                    {depositos.map((d) => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
+                        <Field label="Fabricante (filtro)">
+                            <Select
+                                value={entradaFabFiltroId as any}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setEntradaFabFiltroId(v === "Todos" ? "Todos" : Number(v));
+                                    setEntradaProdutoId(0);
+                                    setEntradaProdQuery("");
+                                }}
+                            >
+                                <option value="Todos">Todos</option>
+                                {fabricantes.map((f) => (
+                                    <option key={f.id} value={f.id}>
+                                        {f.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                        <div className="sm:col-span-1">
-                            <Field label="Qtd">
-                                <TextInput
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={entradaQtd}
-                                    onChange={(e) => setEntradaQtd(e.target.value.replace(/\D/g, ""))}
-                                    placeholder="1"
-                                />
-                            </Field>
-                        </div>
+                        {/* 2ª linha: Categoria + Buscar Produto */}
+                        <Field label="Categoria (filtro)">
+                            <Select
+                                value={entradaCatFiltroId as any}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setEntradaCatFiltroId(v === "Todas" ? "Todas" : Number(v));
+                                    setEntradaProdutoId(0);
+                                    setEntradaProdQuery("");
+                                }}
+                            >
+                                <option value="Todas">Todas</option>
+                                {categorias.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                        <div className="sm:col-span-2">
-                            <Field label="Categoria (filtro)">
-                                <Select
-                                    value={entradaCatFiltroId as any}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
-                                        setEntradaCatFiltroId(v === "Todas" ? "Todas" : Number(v));
-                                        setEntradaProdutoId(0);
-                                        setEntradaProdQuery("");
-                                    }}
-                                >
-                                    <option value="Todas">Todas</option>
-                                    {categorias.map((c) => (
-                                        <option key={c.id} value={c.id}>
-                                            {c.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-
-                        <div className="sm:col-span-2">
-                            <Field label="Fabricante (filtro)">
-                                <Select
-                                    value={entradaFabFiltroId as any}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
-                                        setEntradaFabFiltroId(v === "Todos" ? "Todos" : Number(v));
-                                        setEntradaProdutoId(0);
-                                        setEntradaProdQuery("");
-                                    }}
-                                >
-                                    <option value="Todos">Todos</option>
-                                    {fabricantes.map((f) => (
-                                        <option key={f.id} value={f.id}>
-                                            {f.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-4">
+                        <div>
                             <ProductCombobox
                                 label="Buscar produto (no depósito, filtrado)"
                                 placeholder="Digite nome ou código..."
@@ -3726,6 +3818,7 @@ export default function Page() {
                                 setQuery={setEntradaProdQuery}
                                 disabled={!entradaDepositoId}
                             />
+
                             {entradaProdutoId ? (
                                 <p className="mt-2 text-xs text-slate-600">
                                     Estoque atual neste depósito: <b>{entradaSaldoByProd.get(entradaProdutoId) ?? 0}</b>
@@ -3733,13 +3826,53 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        <div className="sm:col-span-6">
-                            <Field label="Observação (opcional)">
-                                <TextArea value={entradaObs} onChange={(e) => setEntradaObs(e.target.value)} placeholder="Ex: NF 123 / Compra / Ajuste..." />
-                            </Field>
-                        </div>
+                        {/* 3ª linha: Código de barras + Scan */}
+                        <Field label="Código de barras">
+                            <TextInput
+                                value={entradaBarcode}
+                                onChange={(e) => setEntradaBarcode(e.target.value)}
+                                placeholder="Ex: 789..."
+                                inputMode="numeric"
+                            />
+                        </Field>
+
+                        <Field label="Scan" hint="Use a câmera para preencher o código.">
+                            <Button
+                                variant="soft"
+                                onClick={() => setEntradaScanOpen(true)}
+                                type="button"
+                                className="w-full"
+                            >
+                                📷 Ler código
+                            </Button>
+                        </Field>
+
+                        {/* 4ª linha: Quantidade + Adicionar à lista */}
+                        <Field label="Quantidade">
+                            <TextInput
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={entradaQtd}
+                                onChange={(e) => setEntradaQtd(e.target.value.replace(/\D/g, ""))}
+                                placeholder="1"
+                            />
+                        </Field>
+
+                        <Field label="Adicionar à lista" hint="Adiciona o item atual na fila.">
+                            <Button
+                                variant="soft"
+                                onClick={addEntradaItemToList}
+                                type="button"
+                                className="w-full"
+                                disabled={!entradaBarcode.trim()}
+                            >
+                                + Adicionar
+                            </Button>
+                        </Field>
                     </div>
 
+                    {/* status produto */}
                     {entradaProdutoExistente ? (
                         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                             Produto encontrado: <b>{entradaProdutoExistente.nome}</b>{" "}
@@ -3759,7 +3892,13 @@ export default function Page() {
 
                                 <div className="sm:col-span-2">
                                     <Field label="Valor (R$)">
-                                        <TextInput type="number" min={0} step="0.01" value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"} onChange={(e) => setNovoValor(Number(e.target.value || 0))} />
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            step="0.01"
+                                            value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"}
+                                            onChange={(e) => setNovoValor(Number(e.target.value || 0))}
+                                        />
                                     </Field>
                                 </div>
 
@@ -3805,23 +3944,28 @@ export default function Page() {
                                     </Field>
                                 </div>
 
-                                    <div className="sm:col-span-3">
-                                        <Field label="Classificação (opcional)">
-                                            <Select value={novoClassificacaoId} onChange={(e) => setNovoClassificacaoId(Number(e.target.value))}>
-                                                <option value={0}>—</option>
-                                                {classificacoes.map((c) => (
-                                                    <option key={c.id} value={c.id}>
-                                                        {c.nome}
-                                                    </option>
-                                                ))}
-                                            </Select>
-                                        </Field>
-                                    </div>
+                                <div className="sm:col-span-3">
+                                    <Field label="Classificação (opcional)">
+                                        <Select value={novoClassificacaoId} onChange={(e) => setNovoClassificacaoId(Number(e.target.value))}>
+                                            <option value={0}>—</option>
+                                            {classificacoes.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </Field>
+                                </div>
 
                                 <div className="sm:col-span-6">
-                                    <Field label="Foto (opcional)" hint="Você pode enviar uma imagem (fica em base64) ou colar uma URL no campo abaixo.">
+                                    <Field label="Foto (opcional)" hint="Você pode enviar uma imagem (base64) ou colar uma URL no campo abaixo.">
                                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                            <input type="file" accept="image/*" onChange={(e) => onEntradaFoto(e.target.files?.[0])} className="block w-full text-sm" />
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => onEntradaFoto(e.target.files?.[0])}
+                                                className="block w-full text-sm"
+                                            />
                                             <TextInput value={novoFoto} onChange={(e) => setNovoFoto(e.target.value)} placeholder="...ou cole URL / base64 (data:)" />
                                         </div>
                                     </Field>
@@ -3829,9 +3973,12 @@ export default function Page() {
                             </div>
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">Informe o código de barras para continuar.</div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                            Informe o código de barras para continuar.
+                        </div>
                     )}
 
+                    {/* ✅ Itens na fila */}
                     {entradaItens.length ? (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
                             <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
@@ -3848,25 +3995,87 @@ export default function Page() {
                         </div>
                     ) : null}
 
+                    {/* ✅ Observação abaixo da fila */}
+                    <Field label="Observação (opcional)" hint="Aplica na conclusão (para todos os itens do lote).">
+                        <TextArea
+                            value={entradaObs}
+                            onChange={(e) => setEntradaObs(e.target.value)}
+                            placeholder="Ex: NF 123 / Compra / Ajuste..."
+                        />
+                    </Field>
+
+                    {/* ✅ Só 2 botões: Concluir e Cancelar */}
                     <div className="flex flex-wrap gap-2">
-                        <Button variant="soft" onClick={addEntradaItemToList} type="button" disabled={!entradaBarcode.trim()}>
-                            + Adicionar à lista
+                        <Button onClick={abrirConcluirEntrada} type="button" disabled={!entradaItens.length && !entradaBarcode.trim()}>
+                            Concluir
                         </Button>
 
-                        <Button onClick={applyEntradaSingle} type="button" disabled={!entradaBarcode.trim()}>
-                            Confirmar 1 item
-                        </Button>
-
-                        <Button variant="ghost" onClick={applyEntradaLote} type="button" disabled={!entradaItens.length && !entradaBarcode.trim()}>
-                            Confirmar lote
-                        </Button>
-
-                        <Button variant="ghost" onClick={() => setEntradaOpen(false)} type="button">
-                            Fechar
+                        <Button variant="ghost" onClick={cancelarEntrada} type="button">
+                            Cancelar
                         </Button>
                     </div>
                 </div>
             </Modal>
+
+            {/* ✅ POPUP: CONCLUIR ENTRADA */}
+            <Modal
+                open={entradaConcluirOpen}
+                title="Concluir entrada"
+                subtitle="Confira os itens antes de confirmar."
+                onClose={() => {
+                    if (entradaConcluirBusy) return;
+                    setEntradaConcluirOpen(false);
+                }}
+            >
+                <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-sm font-semibold text-slate-900">Itens</p>
+
+                        <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
+                            {entradaConcluirItens.map((it, idx) => (
+                                <li key={idx} className="flex items-center justify-between gap-3 p-3">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-slate-900">{it.nome}</p>
+                                        <p className="text-xs text-slate-500">Quantidade: <b>{it.qtd}</b></p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button onClick={confirmarEntradaDoSnapshot} type="button" disabled={entradaConcluirBusy}>
+                            {entradaConcluirBusy ? "Confirmando..." : "Confirmar"}
+                        </Button>
+
+                        <Button variant="ghost" onClick={() => setEntradaConcluirOpen(false)} type="button" disabled={entradaConcluirBusy}>
+                            Voltar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* ✅ POPUP: SUCESSO */}
+            <Modal
+                open={entradaSucessoOpen}
+                title="Sucesso"
+                subtitle="A entrada foi realizada com sucesso."
+                onClose={() => setEntradaSucessoOpen(false)}
+            >
+                <div className="space-y-3">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                        ✅ Entrada registrada com sucesso.
+                    </div>
+
+                    <div className="flex gap-2">
+                        <Button onClick={() => setEntradaSucessoOpen(false)} type="button">
+                            OK
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
 
             {/* MODAL: SAÍDA */}
             <Modal open={saidaOpen} title="Saída" subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível." onClose={cancelarSaida}>
