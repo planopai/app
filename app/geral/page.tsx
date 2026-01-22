@@ -1018,6 +1018,25 @@ export default function Page() {
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [saldos, setSaldos] = useState<Saldo[]>([]);
 
+    // =========================
+    // AVANÇADO (POPUPS)
+    // =========================
+    const [advNovoProdutoOpen, setAdvNovoProdutoOpen] = useState(false);
+    const [advAjusteOpen, setAdvAjusteOpen] = useState(false);
+
+    const [advDepAddOpen, setAdvDepAddOpen] = useState(false);
+    const [advDepRenameOpen, setAdvDepRenameOpen] = useState(false);
+
+    const [advCatAddOpen, setAdvCatAddOpen] = useState(false);
+    const [advCatRenameOpen, setAdvCatRenameOpen] = useState(false);
+
+    const [advFabAddOpen, setAdvFabAddOpen] = useState(false);
+    const [advFabRenameOpen, setAdvFabRenameOpen] = useState(false);
+
+    const [advExportOpen, setAdvExportOpen] = useState(false);
+    const [advImportOpen, setAdvImportOpen] = useState(false);
+
+
     // imagem popup
     const [imgOpen, setImgOpen] = useState(false);
     const [imgUrl, setImgUrl] = useState<string | null>(null);
@@ -3588,378 +3607,126 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Depósitos, Categorias e Fabricantes: criar, renomear + exportação/importação CSV.</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Ações administrativas em popups (mais organizado).
+                                    </p>
                                 </div>
+
                                 <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
                                     Voltar
                                 </Button>
                             </div>
 
-                            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                {/* Depósitos */}
-                                
-                                {/* ✅ NOVO: Cadastro de Produto (Avançado) */}
-                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
+                            {/* GRID DE AÇÕES */}
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {/* Produtos */}
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
                                     <p className="text-sm font-semibold text-slate-900">Cadastrar novo produto</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Use apenas quando autorizado. A Entrada não cadastra novos produtos.
-                                    </p>
-
-                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-6">
-                                        <div className="sm:col-span-2">
-                                            <Field label="Código de barras">
-                                                <TextInput
-                                                    value={novoCodigoBarras}
-                                                    onChange={(e) => setNovoCodigoBarras(e.target.value)}
-                                                    inputMode="numeric"
-                                                    placeholder="789..."
-                                                />
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-4">
-                                            <Field label="Nome do produto">
-                                                <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: Luva nitrílica M" />
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <Field label="Valor (R$)">
-                                                <TextInput
-                                                    type="number"
-                                                    min={0}
-                                                    step="0.01"
-                                                    value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"}
-                                                    onChange={(e) => setNovoValor(Number(e.target.value || 0))}
-                                                />
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <Field label="Mínimo">
-                                                <TextInput type="number" min={0} value={novoMin} onChange={(e) => setNovoMin(clampInt(e.target.value))} />
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <Field label="Máximo">
-                                                <TextInput type="number" min={0} value={novoMax} onChange={(e) => setNovoMax(clampInt(e.target.value))} />
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <Field label="Categoria (opcional)">
-                                                <div className="flex gap-2">
-                                                    <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
-                                                        <option value={0}>—</option>
-                                                        {categorias.map((c) => (
-                                                            <option key={c.id} value={c.id}>
-                                                                {c.nome}
-                                                            </option>
-                                                        ))}
-                                                    </Select>
-                                                    <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)}>
-                                                        + Nova
-                                                    </Button>
-                                                </div>
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <Field label="Fabricante (opcional)">
-                                                <div className="flex gap-2">
-                                                    <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
-                                                        <option value={0}>—</option>
-                                                        {fabricantes.map((f) => (
-                                                            <option key={f.id} value={f.id}>
-                                                                {f.nome}
-                                                            </option>
-                                                        ))}
-                                                    </Select>
-                                                    <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)}>
-                                                        + Novo
-                                                    </Button>
-                                                </div>
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <Field label="Classificação (opcional)">
-                                                <Select value={novoClassificacaoId} onChange={(e) => setNovoClassificacaoId(Number(e.target.value))}>
-                                                    <option value={0}>—</option>
-                                                    {classificacoes.map((c) => (
-                                                        <option key={c.id} value={c.id}>
-                                                            {c.nome}
-                                                        </option>
-                                                    ))}
-                                                </Select>
-                                            </Field>
-                                        </div>
-
-                                        <div className="sm:col-span-6">
-                                            <Field label="Foto (opcional)" hint="Envie uma imagem ou cole uma URL/base64 (data:).">
-                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                                    <input type="file" accept="image/*" onChange={(e) => onNovoProdutoFoto(e.target.files?.[0])} className="block w-full text-sm" />
-                                                    <TextInput value={novoFoto} onChange={(e) => setNovoFoto(e.target.value)} placeholder="...ou cole URL / base64 (data:)" />
-                                                </div>
-                                            </Field>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-3 flex flex-wrap gap-2">
-                                        <Button onClick={criarNovoProdutoAvancado} type="button" disabled={!novoCodigoBarras.trim() || !novoNome.trim()}>
-                                            Criar produto
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {/* ✅ Ajuste manual de saldos (AVANÇADO) */}
-                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Ajuste manual de saldos por depósito</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Gera <b>AJUSTE</b>. Use com cuidado. (Removido do Estoque)
-                                    </p>
-
+                                    <p className="mt-1 text-xs text-slate-600">Use apenas quando autorizado.</p>
                                     <div className="mt-3">
-                                        <ProductCombobox
-                                            label="Produto"
-                                            placeholder="Digite para buscar..."
-                                            produtos={produtos}
-                                            valueId={ajusteProdId}
-                                            onChangeId={(id) => setAjusteProdId(id)}
-                                            query={ajusteProdQuery}
-                                            setQuery={(v) => {
-                                                setAjusteProdQuery(v);
-                                                if (ajusteProdId) setAjusteProdId(0);
-                                            }}
-                                        />
-                                    </div>
-
-                                    {!ajusteProdId ? (
-                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                                            Selecione um produto para editar os saldos por depósito.
-                                        </div>
-                                    ) : (
-                                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                            {depositos.map((d) => (
-                                                <div
-                                                    key={d.id}
-                                                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3"
-                                                >
-                                                    <div className="min-w-0">
-                                                        <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
-                                                        <p className="text-[11px] text-slate-500">
-                                                            Qtd atual: {clampInt(saldosMap.get(`${ajusteProdId}::${d.id}`)?.quantidade ?? 0)}
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="w-[120px]">
-                                                        <TextInput
-                                                            type="number"
-                                                            min={0}
-                                                            value={clampInt(ajusteSaldos[d.id] ?? 0)}
-                                                            onChange={(e) =>
-                                                                setAjusteSaldos((prev) => ({
-                                                                    ...prev,
-                                                                    [d.id]: clampInt(e.target.value),
-                                                                }))
-                                                            }
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    <div className="mt-3 flex flex-wrap gap-2">
-                                        <Button onClick={salvarAjusteSaldosAvancado} disabled={ajusteBusy || !ajusteProdId} type="button">
-                                            {ajusteBusy ? "Salvando..." : "Salvar saldos"}
-                                        </Button>
-
-                                        <Button
-                                            variant="ghost"
-                                            type="button"
-                                            onClick={() => {
-                                                setAjusteProdId(0);
-                                                setAjusteProdQuery("");
-                                                setAjusteSaldos({});
-                                            }}
-                                            disabled={ajusteBusy}
-                                        >
-                                            Limpar
+                                        <Button variant="soft" onClick={() => setAdvNovoProdutoOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
                                     </div>
                                 </div>
 
-
-                                
-                                <div className="rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Adicionar Depósito</p>
-                                    <div className="mt-3 grid grid-cols-1 gap-3">
-                                        <Field label="Nome do novo depósito">
-                                            <TextInput value={novoDepNome} onChange={(e) => setNovoDepNome(e.target.value)} placeholder="Ex: Almox C" />
-                                        </Field>
-                                        <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()} type="button">
-                                            Criar depósito
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Ajuste manual de saldos</p>
+                                    <p className="mt-1 text-xs text-slate-600">Gera AJUSTE. Use com cuidado.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvAjusteOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
                                     </div>
                                 </div>
 
-                                <div className="rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Renomear Depósito</p>
-                                    <div className="mt-3 grid grid-cols-1 gap-3">
-                                        <Field label="Depósito">
-                                            <Select value={renomearDepId} onChange={(e) => setRenomearDepId(Number(e.target.value))}>
-                                                {depositos.map((d) => (
-                                                    <option key={d.id} value={d.id}>
-                                                        {d.nome}
-                                                    </option>
-                                                ))}
-                                            </Select>
-                                        </Field>
-                                        <Field label="Novo nome">
-                                            <TextInput value={renomearDepNome} onChange={(e) => setRenomearDepNome(e.target.value)} />
-                                        </Field>
-                                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()} type="button">
-                                            Renomear
+                                {/* Depósitos */}
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar depósito</p>
+                                    <p className="mt-1 text-xs text-slate-600">Cria um novo depósito.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvDepAddOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
+                                    </div>
+                                </div>
 
-                                        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Observação: não há opção de excluir depósito (por segurança).</div>
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear depósito</p>
+                                    <p className="mt-1 text-xs text-slate-600">Altera o nome de um depósito.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvDepRenameOpen(true)} type="button" className="w-full">
+                                            Abrir
+                                        </Button>
                                     </div>
                                 </div>
 
                                 {/* Categorias */}
-                                <div className="rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Adicionar Categoria</p>
-                                    <div className="mt-3 grid grid-cols-1 gap-3">
-                                        <Field label="Nome da categoria">
-                                            <TextInput value={novoCatNome} onChange={(e) => setNovoCatNome(e.target.value)} placeholder="Ex: EPIs" />
-                                        </Field>
-                                        <Button onClick={criarCategoria} disabled={busyCat || !novoCatNome.trim()} type="button">
-                                            Criar categoria
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar categoria</p>
+                                    <p className="mt-1 text-xs text-slate-600">Cria uma nova categoria.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvCatAddOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
                                     </div>
                                 </div>
 
-                                <div className="rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Renomear Categoria</p>
-                                    <div className="mt-3 grid grid-cols-1 gap-3">
-                                        <Field label="Categoria">
-                                            <Select value={renomearCatId} onChange={(e) => setRenomearCatId(Number(e.target.value))}>
-                                                {categorias.map((c) => (
-                                                    <option key={c.id} value={c.id}>
-                                                        {c.nome}
-                                                    </option>
-                                                ))}
-                                            </Select>
-                                        </Field>
-                                        <Field label="Novo nome">
-                                            <TextInput value={renomearCatNome} onChange={(e) => setRenomearCatNome(e.target.value)} />
-                                        </Field>
-                                        <Button onClick={renomearCategoria} disabled={busyCat || !renomearCatId || !renomearCatNome.trim()} type="button">
-                                            Renomear
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear categoria</p>
+                                    <p className="mt-1 text-xs text-slate-600">Altera o nome de uma categoria.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvCatRenameOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
                                     </div>
                                 </div>
 
                                 {/* Fabricantes */}
-                                <div className="rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Adicionar Fabricante</p>
-                                    <div className="mt-3 grid grid-cols-1 gap-3">
-                                        <Field label="Nome do fabricante">
-                                            <TextInput value={novoFabNome} onChange={(e) => setNovoFabNome(e.target.value)} placeholder="Ex: 3M" />
-                                        </Field>
-                                        <Button onClick={criarFabricante} disabled={busyFab || !novoFabNome.trim()} type="button">
-                                            Criar fabricante
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Adicionar fabricante</p>
+                                    <p className="mt-1 text-xs text-slate-600">Cria um novo fabricante.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvFabAddOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
                                     </div>
                                 </div>
 
-                                <div className="rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Renomear Fabricante</p>
-                                    <div className="mt-3 grid grid-cols-1 gap-3">
-                                        <Field label="Fabricante">
-                                            <Select value={renomearFabId} onChange={(e) => setRenomearFabId(Number(e.target.value))}>
-                                                {fabricantes.map((f) => (
-                                                    <option key={f.id} value={f.id}>
-                                                        {f.nome}
-                                                    </option>
-                                                ))}
-                                            </Select>
-                                        </Field>
-                                        <Field label="Novo nome">
-                                            <TextInput value={renomearFabNome} onChange={(e) => setRenomearFabNome(e.target.value)} />
-                                        </Field>
-                                        <Button onClick={renomearFabricante} disabled={busyFab || !renomearFabId || !renomearFabNome.trim()} type="button">
-                                            Renomear
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Renomear fabricante</p>
+                                    <p className="mt-1 text-xs text-slate-600">Altera o nome de um fabricante.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvFabRenameOpen(true)} type="button" className="w-full">
+                                            Abrir
                                         </Button>
                                     </div>
                                 </div>
 
-                                {/* Exportação */}
-                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Exportação para Conferência (CSV)</p>
-                                    <p className="mt-1 text-xs text-slate-600">Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0).</p>
-
-                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                        {depositos.map((d) => (
-                                            <div key={d.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
-                                                <div className="min-w-0">
-                                                    <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
-                                                    <p className="text-[11px] text-slate-500">CSV para conferência</p>
-                                                </div>
-                                                <Button variant="ghost" onClick={() => exportarDeposito(d.id)} type="button">
-                                                    Exportar
-                                                </Button>
-                                            </div>
-                                        ))}
+                                {/* Export / Import */}
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Exportação (CSV)</p>
+                                    <p className="mt-1 text-xs text-slate-600">Exporta CSV por depósito (conferência).</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvExportOpen(true)} type="button" className="w-full">
+                                            Abrir
+                                        </Button>
                                     </div>
                                 </div>
 
-                                {/* Importação CSV */}
-                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Importar produtos e saldos via CSV</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE, PREÇO VENDA...
-                                    </p>
-
-                                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                                        <input
-                                            type="file"
-                                            accept=".csv,text/csv"
-                                            onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-
-                                                const fd = new FormData();
-                                                fd.append("action", "import_csv");
-                                                fd.append("arquivo", file);
-
-                                                fetch(API_BASE, {
-                                                    method: "POST",
-                                                    body: fd,
-                                                    credentials: "include",
-                                                })
-                                                    .then((r) => r.json())
-                                                    .then((j) => {
-                                                        if (!j.ok) {
-                                                            alert(j.msg || "Falha na importação.");
-                                                            return;
-                                                        }
-                                                        alert(j.msg || "Importação concluída.");
-                                                        refreshInit();
-                                                    })
-                                                    .catch((err) => {
-                                                        console.error(err);
-                                                        alert("Erro na importação.");
-                                                    });
-                                            }}
-                                        />
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Importar via CSV</p>
+                                    <p className="mt-1 text-xs text-slate-600">Importa produtos e saldos.</p>
+                                    <div className="mt-3">
+                                        <Button variant="soft" onClick={() => setAdvImportOpen(true)} type="button" className="w-full">
+                                            Abrir
+                                        </Button>
                                     </div>
                                 </div>
                             </div>
                         </Card>
                     ) : null}
+
                 </div>
             </div>
 
@@ -4988,6 +4755,467 @@ export default function Page() {
                     setTrfScanDisponivel(0);
                 }}
             />
+
+            {/* =========================
+    AVANÇADO: MODAIS
+========================= */}
+
+
+            {/* 1) CADASTRAR NOVO PRODUTO */}
+            <Modal
+                open={advNovoProdutoOpen}
+                title="Cadastrar novo produto"
+                subtitle="Use apenas quando autorizado. A Entrada não cadastra novos produtos."
+                onClose={() => setAdvNovoProdutoOpen(false)}
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+                        <div className="sm:col-span-2">
+                            <Field label="Código de barras">
+                                <TextInput
+                                    value={novoCodigoBarras}
+                                    onChange={(e) => setNovoCodigoBarras(e.target.value)}
+                                    inputMode="numeric"
+                                    placeholder="789..."
+                                />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-4">
+                            <Field label="Nome do produto">
+                                <TextInput value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Ex: Luva nitrílica M" />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Valor (R$)">
+                                <TextInput
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={Number.isFinite(Number(novoValor)) ? String(novoValor) : "0"}
+                                    onChange={(e) => setNovoValor(Number(e.target.value || 0))}
+                                />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Mínimo">
+                                <TextInput type="number" min={0} value={novoMin} onChange={(e) => setNovoMin(clampInt(e.target.value))} />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Máximo">
+                                <TextInput type="number" min={0} value={novoMax} onChange={(e) => setNovoMax(clampInt(e.target.value))} />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Categoria (opcional)">
+                                <div className="flex gap-2">
+                                    <Select value={novoCategoriaId} onChange={(e) => setNovoCategoriaId(Number(e.target.value))}>
+                                        <option value={0}>—</option>
+                                        {categorias.map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                    <Button variant="ghost" type="button" onClick={() => setCatQuickOpen(true)}>
+                                        + Nova
+                                    </Button>
+                                </div>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Fabricante (opcional)">
+                                <div className="flex gap-2">
+                                    <Select value={novoFabricanteId} onChange={(e) => setNovoFabricanteId(Number(e.target.value))}>
+                                        <option value={0}>—</option>
+                                        {fabricantes.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.nome}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                    <Button variant="ghost" type="button" onClick={() => setFabQuickOpen(true)}>
+                                        + Novo
+                                    </Button>
+                                </div>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                            <Field label="Classificação (opcional)">
+                                <Select value={novoClassificacaoId} onChange={(e) => setNovoClassificacaoId(Number(e.target.value))}>
+                                    <option value={0}>—</option>
+                                    {classificacoes.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.nome}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-6">
+                            <Field label="Foto (opcional)" hint="Envie uma imagem ou cole uma URL/base64 (data:).">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <input type="file" accept="image/*" onChange={(e) => onNovoProdutoFoto(e.target.files?.[0])} className="block w-full text-sm" />
+                                    <TextInput value={novoFoto} onChange={(e) => setNovoFoto(e.target.value)} placeholder="...ou cole URL / base64 (data:)" />
+                                </div>
+                            </Field>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button onClick={criarNovoProdutoAvancado} type="button" disabled={!novoCodigoBarras.trim() || !novoNome.trim()}>
+                            Criar produto
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvNovoProdutoOpen(false)} type="button">
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 2) AJUSTE MANUAL */}
+            <Modal
+                open={advAjusteOpen}
+                title="Ajuste manual de saldos por depósito"
+                subtitle="Gera AJUSTE. Use com cuidado."
+                onClose={() => setAdvAjusteOpen(false)}
+            >
+                <div className="space-y-4">
+                    <ProductCombobox
+                        label="Produto"
+                        placeholder="Digite para buscar..."
+                        produtos={produtos}
+                        valueId={ajusteProdId}
+                        onChangeId={(id) => setAjusteProdId(id)}
+                        query={ajusteProdQuery}
+                        setQuery={(v) => {
+                            setAjusteProdQuery(v);
+                            if (ajusteProdId) setAjusteProdId(0);
+                        }}
+                    />
+
+                    {!ajusteProdId ? (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                            Selecione um produto para editar os saldos por depósito.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {depositos.map((d) => (
+                                <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                        <p className="text-[11px] text-slate-500">
+                                            Qtd atual: {clampInt(saldosMap.get(`${ajusteProdId}::${d.id}`)?.quantidade ?? 0)}
+                                        </p>
+                                    </div>
+                                    <div className="w-[120px]">
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            value={clampInt(ajusteSaldos[d.id] ?? 0)}
+                                            onChange={(e) =>
+                                                setAjusteSaldos((prev) => ({
+                                                    ...prev,
+                                                    [d.id]: clampInt(e.target.value),
+                                                }))
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button onClick={salvarAjusteSaldosAvancado} disabled={ajusteBusy || !ajusteProdId} type="button">
+                            {ajusteBusy ? "Salvando..." : "Salvar saldos"}
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            type="button"
+                            onClick={() => {
+                                setAjusteProdId(0);
+                                setAjusteProdQuery("");
+                                setAjusteSaldos({});
+                            }}
+                            disabled={ajusteBusy}
+                        >
+                            Limpar
+                        </Button>
+
+                        <Button variant="ghost" onClick={() => setAdvAjusteOpen(false)} type="button" disabled={ajusteBusy}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 3) ADICIONAR DEPÓSITO */}
+            <Modal
+                open={advDepAddOpen}
+                title="Adicionar depósito"
+                subtitle="Crie um novo depósito."
+                onClose={() => setAdvDepAddOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Field label="Nome do novo depósito">
+                        <TextInput value={novoDepNome} onChange={(e) => setNovoDepNome(e.target.value)} placeholder="Ex: Almox C" />
+                    </Field>
+
+                    <div className="flex gap-2">
+                        <Button onClick={criarDeposito} disabled={busyDep || !novoDepNome.trim()} type="button">
+                            Criar depósito
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvDepAddOpen(false)} type="button" disabled={busyDep}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 4) RENOMEAR DEPÓSITO */}
+            <Modal
+                open={advDepRenameOpen}
+                title="Renomear depósito"
+                subtitle="Altere o nome de um depósito."
+                onClose={() => setAdvDepRenameOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Field label="Depósito">
+                        <Select value={renomearDepId} onChange={(e) => setRenomearDepId(Number(e.target.value))}>
+                            {depositos.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Novo nome">
+                        <TextInput value={renomearDepNome} onChange={(e) => setRenomearDepNome(e.target.value)} />
+                    </Field>
+
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        Observação: não há opção de excluir depósito (por segurança).
+                    </div>
+
+                    <div className="flex gap-2">
+                        <Button onClick={renomearDeposito} disabled={busyDep || !renomearDepId || !renomearDepNome.trim()} type="button">
+                            Renomear
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvDepRenameOpen(false)} type="button" disabled={busyDep}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 5) ADICIONAR CATEGORIA */}
+            <Modal
+                open={advCatAddOpen}
+                title="Adicionar categoria"
+                subtitle="Crie uma nova categoria."
+                onClose={() => setAdvCatAddOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Field label="Nome da categoria">
+                        <TextInput value={novoCatNome} onChange={(e) => setNovoCatNome(e.target.value)} placeholder="Ex: EPIs" />
+                    </Field>
+
+                    <div className="flex gap-2">
+                        <Button onClick={criarCategoria} disabled={busyCat || !novoCatNome.trim()} type="button">
+                            Criar categoria
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvCatAddOpen(false)} type="button" disabled={busyCat}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 6) RENOMEAR CATEGORIA */}
+            <Modal
+                open={advCatRenameOpen}
+                title="Renomear categoria"
+                subtitle="Altere o nome de uma categoria."
+                onClose={() => setAdvCatRenameOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Field label="Categoria">
+                        <Select value={renomearCatId} onChange={(e) => setRenomearCatId(Number(e.target.value))}>
+                            {categorias.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    {c.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Novo nome">
+                        <TextInput value={renomearCatNome} onChange={(e) => setRenomearCatNome(e.target.value)} />
+                    </Field>
+
+                    <div className="flex gap-2">
+                        <Button onClick={renomearCategoria} disabled={busyCat || !renomearCatId || !renomearCatNome.trim()} type="button">
+                            Renomear
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvCatRenameOpen(false)} type="button" disabled={busyCat}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 7) ADICIONAR FABRICANTE */}
+            <Modal
+                open={advFabAddOpen}
+                title="Adicionar fabricante"
+                subtitle="Crie um novo fabricante."
+                onClose={() => setAdvFabAddOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Field label="Nome do fabricante">
+                        <TextInput value={novoFabNome} onChange={(e) => setNovoFabNome(e.target.value)} placeholder="Ex: 3M" />
+                    </Field>
+
+                    <div className="flex gap-2">
+                        <Button onClick={criarFabricante} disabled={busyFab || !novoFabNome.trim()} type="button">
+                            Criar fabricante
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvFabAddOpen(false)} type="button" disabled={busyFab}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 8) RENOMEAR FABRICANTE */}
+            <Modal
+                open={advFabRenameOpen}
+                title="Renomear fabricante"
+                subtitle="Altere o nome de um fabricante."
+                onClose={() => setAdvFabRenameOpen(false)}
+            >
+                <div className="space-y-3">
+                    <Field label="Fabricante">
+                        <Select value={renomearFabId} onChange={(e) => setRenomearFabId(Number(e.target.value))}>
+                            {fabricantes.map((f) => (
+                                <option key={f.id} value={f.id}>
+                                    {f.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Novo nome">
+                        <TextInput value={renomearFabNome} onChange={(e) => setRenomearFabNome(e.target.value)} />
+                    </Field>
+
+                    <div className="flex gap-2">
+                        <Button onClick={renomearFabricante} disabled={busyFab || !renomearFabId || !renomearFabNome.trim()} type="button">
+                            Renomear
+                        </Button>
+                        <Button variant="ghost" onClick={() => setAdvFabRenameOpen(false)} type="button" disabled={busyFab}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* 9) EXPORTAÇÃO CSV */}
+            <Modal
+                open={advExportOpen}
+                title="Exportação para Conferência (CSV)"
+                subtitle="Exporta a lista do depósito com quantidade (inclui itens sem saldo como 0)."
+                onClose={() => setAdvExportOpen(false)}
+            >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {depositos.map((d) => (
+                        <div key={d.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                <p className="text-[11px] text-slate-500">CSV para conferência</p>
+                            </div>
+                            <Button variant="soft" onClick={() => exportarDeposito(d.id)} type="button">
+                                Exportar
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="mt-3">
+                    <Button variant="ghost" onClick={() => setAdvExportOpen(false)} type="button">
+                        Fechar
+                    </Button>
+                </div>
+            </Modal>
+
+
+            {/* 10) IMPORTAR CSV */}
+            <Modal
+                open={advImportOpen}
+                title="Importar produtos e saldos via CSV"
+                subtitle="Formato esperado: CODIGO, ETIQUETA, DESCRIÇÃO, CATEGORIA, FABRICANTE, DEPÓSITO, EST. MINIMO, EST. MAXIMO, ESTOQUE, PREÇO VENDA..."
+                onClose={() => setAdvImportOpen(false)}
+            >
+                <div className="space-y-3">
+                    <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+
+                            const fd = new FormData();
+                            fd.append("action", "import_csv");
+                            fd.append("arquivo", file);
+
+                            fetch(API_BASE, {
+                                method: "POST",
+                                body: fd,
+                                credentials: "include",
+                            })
+                                .then((r) => r.json())
+                                .then((j) => {
+                                    if (!j.ok) {
+                                        alert(j.msg || "Falha na importação.");
+                                        return;
+                                    }
+                                    alert(j.msg || "Importação concluída.");
+                                    refreshInit();
+                                })
+                                .catch((err) => {
+                                    console.error(err);
+                                    alert("Erro na importação.");
+                                });
+                        }}
+                    />
+
+                    <div className="flex gap-2">
+                        <Button variant="ghost" onClick={() => setAdvImportOpen(false)} type="button">
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
 
             {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
