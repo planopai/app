@@ -4152,96 +4152,72 @@ export default function Page() {
 
 
             {/* MODAL: SAÍDA */}
-            <Modal open={saidaOpen} title="Saída" subtitle="Selecione solicitante, depósito, destino e itens. Valida saldo disponível." onClose={cancelarSaida}>
+            <Modal
+                open={saidaOpen}
+                title="Saída"
+                subtitle="Selecione depósito (origem), destino, solicitante e itens. Valida saldo disponível."
+                onClose={cancelarSaida}
+            >
                 <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
-                        <div className="sm:col-span-2">
-                            <Field label="Solicitante">
-                                <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
-                                    <option value={0} disabled>
-                                        Selecionar...
+                    {/* ✅ Mesmo padrão da Entrada: 2 colunas por linha + sequência solicitada */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {/* 1ª linha: Depósito (origem) + Destino */}
+                        <Field label="Depósito (origem)">
+                            <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
+                                <option value={0} disabled>
+                                    Selecionar...
+                                </option>
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
                                     </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                                    {usuarios.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.nome} ({u.usuario})
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-2">
-                            <Field label="Depósito (origem)">
-                                <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
-                                    <option value={0} disabled>
-                                        Selecionar...
+                        <Field label="Destino">
+                            <Select value={saidaDestinoDepositoId} onChange={(e) => setSaidaDestinoDepositoId(Number(e.target.value))}>
+                                <option value={0} disabled>
+                                    Selecionar...
+                                </option>
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
                                     </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                                    {depositos.map((d) => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-2">
-                            <Field label="Destino">
-                                <Select value={saidaDestinoDepositoId} onChange={(e) => setSaidaDestinoDepositoId(Number(e.target.value))}>
-                                    <option value={0} disabled>
-                                        Selecionar...
+                        {/* 2ª linha: Solicitante + Categoria */}
+                        <Field label="Solicitante">
+                            <Select value={saidaSolicitanteId} onChange={(e) => setSaidaSolicitanteId(Number(e.target.value))}>
+                                <option value={0} disabled>
+                                    Selecionar...
+                                </option>
+                                {usuarios.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.nome} ({u.usuario})
                                     </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                                    {depositos.map((d) => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
+                        <Field label="Categoria (filtro)">
+                            <Select
+                                value={saidaCategoriaId as any}
+                                onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                            >
+                                <option value="Todas">Todas</option>
+                                {categorias.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                        <div className="sm:col-span-3">
-                            <Field label="Código de barras (opcional)">
-                                <div className="flex gap-2">
-                                    <TextInput
-                                        value={saidaBarcode}
-                                        onChange={(e) => {
-                                            const v = e.target.value;
-                                            setSaidaBarcode(v);
-                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
-                                            if (p) {
-                                                setSaidaProdutoId(p.id);
-                                                setSaidaProdQuery(p.nome);
-                                            }
-                                        }}
-                                        placeholder="Digite ou use Scan"
-                                        inputMode="numeric"
-                                    />
-                                    <Button variant="soft" onClick={() => setSaidaScanOpen(true)} type="button">
-                                        📷 Scan
-                                    </Button>
-                                </div>
-                            </Field>
-                            <p className="mt-1 text-[11px] text-slate-500">NOVO: via Scan abre popup para selecionar quantidade e adicionar direto na lista.</p>
-                        </div>
-
-                        <div className="sm:col-span-3">
-                            <Field label="Categoria (filtro)">
-                                <Select value={saidaCategoriaId as any} onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
-                                    <option value="Todas">Todas</option>
-                                    {categorias.map((c) => (
-                                        <option key={c.id} value={c.id}>
-                                            {c.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-6">
+                        {/* 3ª linha: Produto (full) */}
+                        <div className="sm:col-span-2">
                             <ProductCombobox
                                 label="Produto"
                                 produtos={saidaProdutosNoDeposito}
@@ -4259,6 +4235,7 @@ export default function Page() {
                                 setQuery={setSaidaProdQuery}
                                 disabled={!saidaDepositoId}
                             />
+
                             {saidaProdutoId ? (
                                 <p className="mt-2 text-xs text-slate-600">
                                     Disponível no depósito: <b>{saidaSaldoByProd.get(saidaProdutoId) ?? 0}</b>
@@ -4266,26 +4243,50 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        <div className="sm:col-span-2">
-                            <Field label="Qtd">
-                                <TextInput
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={saidaQtd}
-                                    onChange={(e) => setSaidaQtd(e.target.value.replace(/\D/g, ""))}
-                                    placeholder="1"
-                                />
-                            </Field>
-                        </div>
+                        {/* 4ª linha: Código de barras + Scan */}
+                        <Field label="Código de barras (opcional)">
+                            <TextInput
+                                value={saidaBarcode}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setSaidaBarcode(v);
+                                    const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                    if (p) {
+                                        setSaidaProdutoId(p.id);
+                                        setSaidaProdQuery(p.nome);
+                                    }
+                                }}
+                                placeholder="Digite ou use Scan"
+                                inputMode="numeric"
+                            />
+                        </Field>
 
-                        <div className="sm:col-span-4">
-                            <Field label="Observação (opcional)">
-                                <TextInput value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} placeholder="Ex: Obra X / Setor Y..." />
-                            </Field>
-                        </div>
+                        <Field label="Scan" hint="Via Scan abre popup para escolher a quantidade e adicionar direto na lista.">
+                            <Button variant="soft" onClick={() => setSaidaScanOpen(true)} type="button" className="w-full">
+                                📷 Scan
+                            </Button>
+                        </Field>
+
+                        {/* 5ª linha: Quantidade + Adicionar à lista */}
+                        <Field label="Qtd">
+                            <TextInput
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={saidaQtd}
+                                onChange={(e) => setSaidaQtd(e.target.value.replace(/\D/g, ""))}
+                                placeholder="1"
+                            />
+                        </Field>
+
+                        <Field label="Adicionar à lista" hint="Adiciona o item atual na fila.">
+                            <Button variant="soft" onClick={addSaidaItemToList} type="button" className="w-full" disabled={!saidaProdutoId}>
+                                + Adicionar
+                            </Button>
+                        </Field>
                     </div>
 
+                    {/* Itens na fila */}
                     {saidaItens.length ? (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
                             <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
@@ -4302,116 +4303,92 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex flex-wrap gap-2">
-                            <Button variant="soft" onClick={addSaidaItemToList} type="button" disabled={!saidaProdutoId}>
-                                + Adicionar à lista
-                            </Button>
-                            <Button variant="ghost" onClick={cancelarSaida} type="button">
-                                Cancelar
-                            </Button>
-                        </div>
+                    {/* Observação abaixo da fila (mesmo padrão da Entrada) */}
+                    <Field label="Observação (opcional)">
+                        <TextInput value={saidaObs} onChange={(e) => setSaidaObs(e.target.value)} placeholder="Ex: Obra X / Setor Y..." />
+                    </Field>
 
-                        <div className="sm:ml-auto">
-                            <Button onClick={() => setSaidaConfirmOpen(true)} type="button">
-                                Confirmar
-                            </Button>
-                        </div>
+                    {/* ✅ Botões finais: Confirmar (abre ConfirmDialog) e Cancelar */}
+                    <div className="flex items-center justify-between gap-2">
+                        <Button onClick={() => setSaidaConfirmOpen(true)} type="button">
+                            Confirmar
+                        </Button>
+
+                        <Button variant="ghost" onClick={cancelarSaida} type="button">
+                            Cancelar
+                        </Button>
                     </div>
                 </div>
             </Modal>
 
+
             {/* MODAL: TRANSFERÊNCIA */}
-            <Modal open={trfOpen} title="Transferência" subtitle="Move quantidade de um depósito para outro (com validação de saldo)." onClose={cancelarTransferencia}>
+            <Modal
+                open={trfOpen}
+                title="Transferência"
+                subtitle="Selecione depósito (origem), destino, solicitante e itens. Valida saldo disponível."
+                onClose={cancelarTransferencia}
+            >
                 <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
-                        <div className="sm:col-span-2">
-                            <Field label="Solicitante">
-                                <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
-                                    <option value={0} disabled>
-                                        Selecionar...
+                    {/* ✅ Mesmo padrão da Entrada: 2 colunas por linha + sequência solicitada */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {/* 1ª linha: Depósito (origem) + Destino */}
+                        <Field label="Depósito (origem)">
+                            <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
+                                <option value={0} disabled>
+                                    Selecionar...
+                                </option>
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
                                     </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                                    {usuarios.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.nome} ({u.usuario})
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-2">
-                            <Field label="Origem">
-                                <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
-                                    <option value={0} disabled>
-                                        Selecionar...
+                        <Field label="Depósito (destino)">
+                            <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
+                                <option value={0} disabled>
+                                    Selecionar...
+                                </option>
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
                                     </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                                    {depositos.map((d) => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-2">
-                            <Field label="Destino">
-                                <Select value={trfDestinoId} onChange={(e) => setTrfDestinoId(Number(e.target.value))}>
-                                    <option value={0} disabled>
-                                        Selecionar...
+                        {/* 2ª linha: Solicitante + Categoria */}
+                        <Field label="Solicitante">
+                            <Select value={trfSolicitanteId} onChange={(e) => setTrfSolicitanteId(Number(e.target.value))}>
+                                <option value={0} disabled>
+                                    Selecionar...
+                                </option>
+                                {usuarios.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.nome} ({u.usuario})
                                     </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                                    {depositos.map((d) => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
+                        <Field label="Categoria (filtro)">
+                            <Select
+                                value={trfCategoriaId as any}
+                                onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                            >
+                                <option value="Todas">Todas</option>
+                                {categorias.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                        <div className="sm:col-span-3">
-                            <Field label="Código de barras (opcional)">
-                                <div className="flex gap-2">
-                                    <TextInput
-                                        value={trfBarcode}
-                                        onChange={(e) => {
-                                            const v = e.target.value;
-                                            setTrfBarcode(v);
-                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
-                                            if (p) {
-                                                setTrfProdutoId(p.id);
-                                                setTrfProdQuery(p.nome);
-                                            }
-                                        }}
-                                        placeholder="Digite ou use Scan"
-                                        inputMode="numeric"
-                                    />
-                                    <Button variant="soft" onClick={() => setTrfScanOpen(true)} type="button">
-                                        📷 Scan
-                                    </Button>
-                                </div>
-                            </Field>
-                            <p className="mt-1 text-[11px] text-slate-500">NOVO: via Scan abre popup para selecionar quantidade e adicionar direto na lista.</p>
-                        </div>
-
-                        <div className="sm:col-span-3">
-                            <Field label="Categoria (filtro)">
-                                <Select value={trfCategoriaId as any} onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}>
-                                    <option value="Todas">Todas</option>
-                                    {categorias.map((c) => (
-                                        <option key={c.id} value={c.id}>
-                                            {c.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
-                        </div>
-
-                        <div className="sm:col-span-6">
+                        {/* 3ª linha: Produto (full) */}
+                        <div className="sm:col-span-2">
                             <ProductCombobox
                                 label="Produto (na origem)"
                                 produtos={trfProdutosNaOrigem}
@@ -4429,6 +4406,7 @@ export default function Page() {
                                 setQuery={setTrfProdQuery}
                                 disabled={!trfOrigemId}
                             />
+
                             {trfProdutoId ? (
                                 <p className="mt-2 text-xs text-slate-600">
                                     Disponível na origem: <b>{trfSaldoByProd.get(trfProdutoId) ?? 0}</b>
@@ -4436,26 +4414,50 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        <div className="sm:col-span-2">
-                            <Field label="Qtd">
-                                <TextInput
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={trfQtd}
-                                    onChange={(e) => setTrfQtd(e.target.value.replace(/\D/g, ""))}
-                                    placeholder="1"
-                                />
-                            </Field>
-                        </div>
+                        {/* 4ª linha: Código de barras + Scan */}
+                        <Field label="Código de barras (opcional)">
+                            <TextInput
+                                value={trfBarcode}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setTrfBarcode(v);
+                                    const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                    if (p) {
+                                        setTrfProdutoId(p.id);
+                                        setTrfProdQuery(p.nome);
+                                    }
+                                }}
+                                placeholder="Digite ou use Scan"
+                                inputMode="numeric"
+                            />
+                        </Field>
 
-                        <div className="sm:col-span-4">
-                            <Field label="Observação (opcional)">
-                                <TextInput value={trfObs} onChange={(e) => setTrfObs(e.target.value)} placeholder="Ex: remanejamento / conferência..." />
-                            </Field>
-                        </div>
+                        <Field label="Scan" hint="Via Scan abre popup para escolher a quantidade e adicionar direto na lista.">
+                            <Button variant="soft" onClick={() => setTrfScanOpen(true)} type="button" className="w-full">
+                                📷 Scan
+                            </Button>
+                        </Field>
+
+                        {/* 5ª linha: Quantidade + Adicionar à lista */}
+                        <Field label="Qtd">
+                            <TextInput
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={trfQtd}
+                                onChange={(e) => setTrfQtd(e.target.value.replace(/\D/g, ""))}
+                                placeholder="1"
+                            />
+                        </Field>
+
+                        <Field label="Adicionar à lista" hint="Adiciona o item atual na fila.">
+                            <Button variant="soft" onClick={addTrfItemToList} type="button" className="w-full" disabled={!trfProdutoId}>
+                                + Adicionar
+                            </Button>
+                        </Field>
                     </div>
 
+                    {/* Transferências na fila */}
                     {trfItens.length ? (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
                             <p className="text-sm font-semibold text-slate-900">Transferências na fila</p>
@@ -4472,24 +4474,24 @@ export default function Page() {
                         </div>
                     ) : null}
 
-                    <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex flex-wrap gap-2">
-                            <Button variant="soft" onClick={addTrfItemToList} type="button" disabled={!trfProdutoId}>
-                                + Adicionar à lista
-                            </Button>
-                            <Button variant="ghost" onClick={cancelarTransferencia} type="button">
-                                Cancelar
-                            </Button>
-                        </div>
+                    {/* Observação abaixo da fila (mesmo padrão da Entrada) */}
+                    <Field label="Observação (opcional)">
+                        <TextInput value={trfObs} onChange={(e) => setTrfObs(e.target.value)} placeholder="Ex: remanejamento / conferência..." />
+                    </Field>
 
-                        <div className="sm:ml-auto">
-                            <Button onClick={() => setTrfConfirmOpen(true)} type="button">
-                                Confirmar
-                            </Button>
-                        </div>
+                    {/* ✅ Botões finais: Confirmar (abre ConfirmDialog) e Cancelar */}
+                    <div className="flex items-center justify-between gap-2">
+                        <Button onClick={() => setTrfConfirmOpen(true)} type="button">
+                            Confirmar
+                        </Button>
+
+                        <Button variant="ghost" onClick={cancelarTransferencia} type="button">
+                            Cancelar
+                        </Button>
                     </div>
                 </div>
             </Modal>
+
 
             {/* MODAL: CRIAR CATEGORIA (QUICK) */}
             <Modal open={catQuickOpen} title="Nova categoria" subtitle="Crie e selecione automaticamente." onClose={() => setCatQuickOpen(false)}>
