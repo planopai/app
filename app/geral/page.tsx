@@ -87,7 +87,7 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
-type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "HISTORICO" | "AVANCADO";
+type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
 type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number };
 type SaidaItem = { id: number; payload: any; resumo: string };
@@ -1152,6 +1152,18 @@ export default function Page() {
 
     const [onlyLow, setOnlyLow] = useState(false);
 
+    // =========================
+    // CONFERÊNCIA (não altera saldo)
+    // =========================
+    const [confDepositoId, setConfDepositoId] = useState<ID>(0);
+    const [confFabId, setConfFabId] = useState<ID | "Todos">("Todos");
+    const [confCatId, setConfCatId] = useState<ID | "Todas">("Todas");
+    const [confClassId, setConfClassId] = useState<ID | "Todas">("Todas");
+    const [confQ, setConfQ] = useState("");
+
+    // qtd física por produto (como string para permitir vazio)
+    const [confFisicoByProd, setConfFisicoByProd] = useState<Record<number, string>>({});
+
 
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
@@ -1644,6 +1656,255 @@ export default function Page() {
         }
     }
 
+    // =========================
+    // CONFERÊNCIA: linhas (1 depósito) + filtros
+    // =========================
+    const conferenciaRows = useMemo(() => {
+        const depId = Number(confDepositoId);
+        if (!depId) return [];
+
+        const qq = confQ.trim().toLowerCase();
+
+        const rows: Array<{
+            p: Produto;
+            qtdSistema: number;
+            fabricante: string;
+            categoria: string;
+            classificacao: string;
+        }> = [];
+
+        for (const s of saldos) {
+            if (Number(s.deposito_id) !== depId) continue;
+
+            const p = prodById.get(s.produto_id);
+            if (!p) continue;
+
+            if (confCatId !== "Todas") {
+                if (Number(p.categoria_id || 0) !== Number(confCatId)) continue;
+            }
+
+            if (confFabId !== "Todos") {
+                if (Number(p.fabricante_id || 0) !== Number(confFabId)) continue;
+            }
+
+            if (confClassId !== "Todas") {
+                if (Number(p.classificacao_id || 0) !== Number(confClassId)) continue;
+            }
+
+            const fabricante = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+            const categoria = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+            const classificacao =
+                p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
+
+            if (qq) {
+                const blob = `${p.nome} ${p.codigo_barras} ${fabricante} ${categoria} ${classificacao}`.toLowerCase();
+                if (!blob.includes(qq)) continue;
+            }
+
+            rows.push({
+                p,
+                qtdSistema: clampInt(s.quantidade),
+                fabricante,
+                categoria,
+                classificacao,
+            });
+        }
+
+        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR"));
+        return rows;
+    }, [
+        confDepositoId,
+        confFabId,
+        confCatId,
+        confClassId,
+        confQ,
+        saldos,
+        prodById,
+        fabById,
+        catById,
+        classById,
+    ]);
+
+    function parseFisico(v: string): number | null {
+        const t = (v || "").replace(/\D/g, "").trim();
+        if (!t) return null;
+        return clampInt(t);
+    }
+
+    function exportarConferenciaCSV() {
+        if (!confDepositoId) return alert("Selecione o depósito.");
+        if (!conferenciaRows.length) return alert("Nenhum item para exportar com os filtros atuais.");
+
+        const sep = ";";
+        const depNome = depById.get(Number(confDepositoId))?.nome || String(confDepositoId);
+
+        const header = ["Depósito", "Produto", "Fabricante", "Categoria", "Classificação", "Qtd Sistema", "Qtd Física", "Diferença", "Status"];
+
+        const lines: string[] = [];
+        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
+
+        for (const r of conferenciaRows) {
+            const fisTxt = confFisicoByProd[r.p.id] ?? "";
+            const fis = parseFisico(fisTxt);
+            const diff = fis === null ? "" : String(fis - r.qtdSistema);
+            const status = fis === null ? "NAO_INFORMADO" : (fis === r.qtdSistema ? "OK" : "DIVERGENTE");
+
+            lines.push(
+                [
+                    depNome,
+                    r.p.nome,
+                    r.fabricante,
+                    r.categoria,
+                    r.classificacao,
+                    r.qtdSistema,
+                    fis === null ? "" : fis,
+                    diff,
+                    status,
+                ]
+                    .map((x) => escapeCsvCell(x, sep))
+                    .join(sep)
+            );
+        }
+
+        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+
+        const safeName = `conferencia_${depNome}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${safeName}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    // PDF via print (usuário salva como PDF)
+    function exportarConferenciaPDF() {
+        if (!confDepositoId) return alert("Selecione o depósito.");
+        if (!conferenciaRows.length) return alert("Nenhum item para exportar com os filtros atuais.");
+
+        const depNome = depById.get(Number(confDepositoId))?.nome || String(confDepositoId);
+
+        const geradoEm = new Intl.DateTimeFormat("pt-BR", {
+            dateStyle: "short",
+            timeStyle: "short",
+        }).format(new Date());
+
+        const esc = (x: any) =>
+            String(x ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+
+        const rowsHtml = conferenciaRows
+            .map((r) => {
+                const fisTxt = confFisicoByProd[r.p.id] ?? "";
+                const fis = parseFisico(fisTxt);
+                const ok = fis !== null && fis === r.qtdSistema;
+                const diff = fis === null ? "" : String(fis - r.qtdSistema);
+                const status = fis === null ? "—" : (ok ? "OK" : "DIVERGENTE");
+
+                return `
+<tr>
+  <td>${esc(r.p.nome)}</td>
+  <td>${esc(r.fabricante || "—")}</td>
+  <td class="num"><b>${esc(r.qtdSistema)}</b></td>
+  <td class="num">${esc(fis === null ? "" : fis)}</td>
+  <td class="num">${esc(diff)}</td>
+  <td class="status ${fis === null ? "na" : (ok ? "ok" : "bad")}">${esc(status)}</td>
+</tr>`;
+            })
+            .join("");
+
+        const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Conferência de Estoque</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; color: #0f172a; }
+    @page { size: A4 portrait; margin: 12mm; }
+    h1 { margin: 0; font-size: 16px; }
+    .meta { margin-top: 4px; font-size: 11px; color: #475569; }
+    .filters { margin: 10px 0; padding: 10px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th, td { border: 1px solid #e2e8f0; padding: 6px 7px; vertical-align: top; }
+    th { background: #f1f5f9; text-align: left; font-weight: 700; white-space: nowrap; }
+    .num { text-align: right; white-space: nowrap; }
+    .status { text-align: center; font-weight: 700; }
+    .status.ok { color: #16a34a; }
+    .status.bad { color: #b91c1c; }
+    .status.na { color: #64748b; }
+    @media print {
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+      .filters { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Conferência de Estoque</h1>
+  <div class="meta">Depósito: <b>${esc(depNome)}</b> • Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(conferenciaRows.length)}</b></div>
+
+  <div class="filters">
+    <div><b>Fabricante:</b> ${esc(confFabId === "Todos" ? "Todos" : (fabById.get(Number(confFabId))?.nome || confFabId))}</div>
+    <div><b>Categoria:</b> ${esc(confCatId === "Todas" ? "Todas" : (catById.get(Number(confCatId))?.nome || confCatId))}</div>
+    <div><b>Classificação:</b> ${esc(confClassId === "Todas" ? "Todas" : (classById.get(Number(confClassId))?.nome || confClassId))}</div>
+    <div><b>Busca:</b> ${esc(confQ.trim() || "—")}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Produto</th>
+        <th>Fabricante</th>
+        <th class="num">Qtd Sistema</th>
+        <th class="num">Qtd Física</th>
+        <th class="num">Dif.</th>
+        <th class="status">Status</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+</body>
+</html>`;
+
+        // imprime via iframe invisível (usuário salva como PDF)
+        const iframe = document.createElement("iframe");
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0";
+        iframe.style.height = "0";
+        iframe.style.border = "0";
+        document.body.appendChild(iframe);
+
+        const win = iframe.contentWindow;
+        const doc = win?.document;
+        if (!win || !doc) {
+            iframe.remove();
+            alert("Não foi possível gerar o PDF.");
+            return;
+        }
+
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        try {
+            win.focus();
+            win.print();
+        } finally {
+            setTimeout(() => iframe.remove(), 1000);
+        }
+    }
+
+
+    
+
 
 
 
@@ -1699,6 +1960,11 @@ export default function Page() {
     useEffect(() => {
         if (depositos.length && !entradaDepositoId) setEntradaDepositoId(depositos[0].id);
     }, [depositos, entradaDepositoId]);
+
+    useEffect(() => {
+        if (depositos.length && !confDepositoId) setConfDepositoId(depositos[0].id);
+    }, [depositos, confDepositoId]);
+
 
     const entradaProdutoExistente = useMemo(() => {
         const cb = entradaBarcode.trim();
@@ -3054,6 +3320,7 @@ export default function Page() {
                 ["HOME", "Movimentação"],
                 ["ENTRADA", "Entrada"],
                 ["ESTOQUE", "Estoque"],
+                ["CONFERENCIA", "Conferência"],
                 ["HISTORICO", "Histórico"],
                 ["AVANCADO", "Avançado"],
             ] as const,
@@ -3101,7 +3368,7 @@ export default function Page() {
                     </div>
 
                     <Card className="hidden p-2 sm:block">
-                        <div className="grid grid-cols-5 gap-2">
+                        <div className="grid grid-cols-6 gap-2">
                             {tabs.map(([k, label]) => (
                                 <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
                             ))}
@@ -3456,6 +3723,257 @@ export default function Page() {
 
                         </Card>
                     ) : null}
+
+                    {/* CONFERÊNCIA */}
+                    {tab === "CONFERENCIA" ? (
+                        <Card className="p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                                <div>
+                                    <h2 className="text-base font-semibold text-slate-900">Conferência</h2>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Preencha a <b>Qtd física</b> e compare com a <b>Qtd do sistema</b>. Não altera saldo.
+                                    </p>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2 sm:justify-end">
+                                    <Button
+                                        variant="ghost"
+                                        type="button"
+                                        onClick={() => setConfFisicoByProd({})}
+                                        disabled={!conferenciaRows.length}
+                                    >
+                                        Limpar físicos
+                                    </Button>
+
+                                    <Button
+                                        variant="soft"
+                                        type="button"
+                                        onClick={exportarConferenciaCSV}
+                                        disabled={!conferenciaRows.length || !confDepositoId}
+                                    >
+                                        ⬇️ CSV
+                                    </Button>
+
+                                    <Button
+                                        variant="soft"
+                                        type="button"
+                                        onClick={exportarConferenciaPDF}
+                                        disabled={!conferenciaRows.length || !confDepositoId}
+                                    >
+                                        🧾 PDF
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+                                <Field label="Depósito (estoque)">
+                                    <Select
+                                        value={confDepositoId}
+                                        onChange={(e) => {
+                                            const id = Number(e.target.value);
+                                            setConfDepositoId(id);
+                                            setConfFisicoByProd({});
+                                        }}
+                                    >
+                                        <option value={0} disabled>Selecionar...</option>
+                                        {depositos.map((d) => (
+                                            <option key={d.id} value={d.id}>{d.nome}</option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Fabricante">
+                                    <Select
+                                        value={confFabId as any}
+                                        onChange={(e) => setConfFabId(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
+                                    >
+                                        <option value="Todos">Todos</option>
+                                        {fabricantes.map((f) => (
+                                            <option key={f.id} value={f.id}>{f.nome}</option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Categoria">
+                                    <Select
+                                        value={confCatId as any}
+                                        onChange={(e) => setConfCatId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                                    >
+                                        <option value="Todas">Todas</option>
+                                        {categorias.map((c) => (
+                                            <option key={c.id} value={c.id}>{c.nome}</option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Classificação">
+                                    <Select
+                                        value={confClassId as any}
+                                        onChange={(e) => setConfClassId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                                    >
+                                        <option value="Todas">Todas</option>
+                                        {classificacoes.map((c) => (
+                                            <option key={c.id} value={c.id}>{c.nome}</option>
+                                        ))}
+                                    </Select>
+                                </Field>
+
+                                <Field label="Buscar">
+                                    <TextInput
+                                        value={confQ}
+                                        onChange={(e) => setConfQ(e.target.value)}
+                                        placeholder="Produto, CB, fabricante..."
+                                    />
+                                </Field>
+
+                                <Field label="Resumo">
+                                    <div className="flex h-[42px] items-center rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm">
+                                        Itens: <b className="ml-2">{conferenciaRows.length}</b>
+                                    </div>
+                                </Field>
+                            </div>
+
+                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                                {loading ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
+                                ) : conferenciaRows.length === 0 ? (
+                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
+                                ) : (
+                                    <>
+                                        {/* MOBILE */}
+                                        <ul className="divide-y divide-slate-200 sm:hidden">
+                                            {conferenciaRows.map((r) => {
+                                                const fisTxt = confFisicoByProd[r.p.id] ?? "";
+                                                const fis = parseFisico(fisTxt);
+                                                const ok = fis !== null && fis === r.qtdSistema;
+
+                                                return (
+                                                    <li key={r.p.id} className="px-4 py-3">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-semibold text-slate-900">{r.p.nome}</p>
+                                                                <p className="mt-0.5 text-xs text-slate-600">
+                                                                    Fabricante: <b>{r.fabricante || "—"}</b>
+                                                                </p>
+                                                                <p className="mt-0.5 text-xs text-slate-600">
+                                                                    Sistema: <b>{r.qtdSistema}</b>
+                                                                </p>
+                                                            </div>
+
+                                                            <div className="shrink-0 text-right">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <span className={fis === null ? "text-slate-500" : ok ? "text-emerald-700" : "text-rose-700"}>
+                                                                        {fis === null ? "—" : ok ? "✅" : "❌"}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-3 grid grid-cols-2 gap-2">
+                                                            <Field label="Qtd física">
+                                                                <TextInput
+                                                                    inputMode="numeric"
+                                                                    value={fisTxt}
+                                                                    onChange={(e) =>
+                                                                        setConfFisicoByProd((prev) => ({
+                                                                            ...prev,
+                                                                            [r.p.id]: e.target.value.replace(/\D/g, ""),
+                                                                        }))
+                                                                    }
+                                                                    placeholder="Digite..."
+                                                                />
+                                                            </Field>
+
+                                                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                                                Dif.:{" "}
+                                                                <b className={fis === null ? "text-slate-600" : ok ? "text-emerald-700" : "text-rose-700"}>
+                                                                    {fis === null ? "—" : fis - r.qtdSistema}
+                                                                </b>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+
+                                        {/* PC */}
+                                        <div className="hidden sm:block">
+                                            <div className="overflow-auto">
+                                                <table className="min-w-full border-separate border-spacing-0">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd Sistema</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Qtd Física</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif.</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-center">Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {conferenciaRows.map((r) => {
+                                                            const fisTxt = confFisicoByProd[r.p.id] ?? "";
+                                                            const fis = parseFisico(fisTxt);
+                                                            const ok = fis !== null && fis === r.qtdSistema;
+                                                            const diff = fis === null ? null : fis - r.qtdSistema;
+
+                                                            return (
+                                                                <tr key={r.p.id} className="bg-white">
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
+                                                                        <div className="font-semibold">{r.p.nome}</div>
+                                                                        <div className="text-xs text-slate-500 font-mono">CB: {r.p.codigo_barras}</div>
+                                                                    </td>
+
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                                        {r.fabricante || "—"}
+                                                                    </td>
+
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-slate-900">
+                                                                        {r.qtdSistema}
+                                                                    </td>
+
+                                                                    <td className="border-b border-slate-200 px-3 py-2">
+                                                                        <TextInput
+                                                                            inputMode="numeric"
+                                                                            value={fisTxt}
+                                                                            onChange={(e) =>
+                                                                                setConfFisicoByProd((prev) => ({
+                                                                                    ...prev,
+                                                                                    [r.p.id]: e.target.value.replace(/\D/g, ""),
+                                                                                }))
+                                                                            }
+                                                                            placeholder="Qtd física..."
+                                                                        />
+                                                                    </td>
+
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
+                                                                        <span className={diff === null ? "text-slate-500" : ok ? "text-emerald-700 font-semibold" : "text-rose-700 font-semibold"}>
+                                                                            {diff === null ? "—" : diff}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-center">
+                                                                        <span className={fis === null ? "text-slate-500" : ok ? "text-emerald-700" : "text-rose-700"}>
+                                                                            {fis === null ? "—" : ok ? "✅" : "❌"}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
+                                Dica: o botão <b>PDF</b> abre a impressão — no celular/PC você pode escolher <b>Salvar como PDF</b>.
+                            </div>
+                        </Card>
+                    ) : null}
+
 
                     {/* HISTÓRICO */}
                     {tab === "HISTORICO" ? (
