@@ -1785,10 +1785,17 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
-    // PDF via print (usuário salva como PDF)
-    function exportarConferenciaPDF() {
+    // ✅ PDF REAL (download direto) - Conferência no padrão do Estoque (logo + horizontal)
+    async function exportarConferenciaPDF() {
         if (!confDepositoId) return alert("Selecione o depósito.");
         if (!conferenciaRows.length) return alert("Nenhum item para exportar com os filtros atuais.");
+
+        // libs (lazy import para não pesar no bundle inicial)
+        const { default: jsPDF } = await import("jspdf");
+        const autoTable = (await import("jspdf-autotable")).default;
+
+        const LOGO_URL =
+            "https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1";
 
         const depNome = depById.get(Number(confDepositoId))?.nome || String(confDepositoId);
 
@@ -1797,123 +1804,144 @@ export default function Page() {
             timeStyle: "short",
         }).format(new Date());
 
-        const esc = (x: any) =>
-            String(x ?? "")
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;");
+        // filtros (igual você já exibe)
+        const fabTxt =
+            confFabId === "Todos" ? "Todos" : (fabById.get(Number(confFabId))?.nome || String(confFabId));
+        const catTxt =
+            confCatId === "Todas" ? "Todas" : (catById.get(Number(confCatId))?.nome || String(confCatId));
+        const clsTxt =
+            confClassId === "Todas" ? "Todas" : (classById.get(Number(confClassId))?.nome || String(confClassId));
+        const buscaTxt = confQ.trim() || "—";
 
-        const rowsHtml = conferenciaRows
-            .map((r) => {
-                const fisTxt = confFisicoByProd[r.p.id] ?? "";
-                const fis = parseFisico(fisTxt);
-                const ok = fis !== null && fis === r.qtdSistema;
-                const diffN = fis === null ? null : (fis - r.qtdSistema);
-                const diff = diffN === null ? "" : String(diffN);
-
-                // ✅ Ajuste com sinal
-                const ajuste = diffN === null ? "" : (diffN > 0 ? `+${diffN}` : `${diffN}`);
-
-                const status = fis === null ? "—" : (ok ? "OK" : "DIVERGENTE");
-
-                return `
-<tr>
-  <td>${esc(r.p.nome)}</td>
-  <td>${esc(r.fabricante || "—")}</td>
-  <td class="num"><b>${esc(r.qtdSistema)}</b></td>
-  <td class="num">${esc(fis === null ? "" : fis)}</td>
-  <td class="num">${esc(diff)}</td>
-  <td class="num"><b>${esc(ajuste)}</b></td>
-  <td class="status ${fis === null ? "na" : (ok ? "ok" : "bad")}">${esc(status)}</td>
-</tr>`;
-            })
-            .join("");
-
-        const html = `<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <title>Conferência de Estoque</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; color: #0f172a; }
-    @page { size: A4 portrait; margin: 12mm; }
-    h1 { margin: 0; font-size: 16px; }
-    .meta { margin-top: 4px; font-size: 11px; color: #475569; }
-    .filters { margin: 10px 0; padding: 10px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; font-size: 11px; }
-    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-    th, td { border: 1px solid #e2e8f0; padding: 6px 7px; vertical-align: top; }
-    th { background: #f1f5f9; text-align: left; font-weight: 700; white-space: nowrap; }
-    .num { text-align: right; white-space: nowrap; }
-    .status { text-align: center; font-weight: 700; }
-    .status.ok { color: #16a34a; }
-    .status.bad { color: #b91c1c; }
-    .status.na { color: #64748b; }
-    @media print {
-      thead { display: table-header-group; }
-      tr { page-break-inside: avoid; }
-      .filters { break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-  <h1>Conferência de Estoque</h1>
-  <div class="meta">Depósito: <b>${esc(depNome)}</b> • Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(conferenciaRows.length)}</b></div>
-
-  <div class="filters">
-    <div><b>Fabricante:</b> ${esc(confFabId === "Todos" ? "Todos" : (fabById.get(Number(confFabId))?.nome || confFabId))}</div>
-    <div><b>Categoria:</b> ${esc(confCatId === "Todas" ? "Todas" : (catById.get(Number(confCatId))?.nome || confCatId))}</div>
-    <div><b>Classificação:</b> ${esc(confClassId === "Todas" ? "Todas" : (classById.get(Number(confClassId))?.nome || confClassId))}</div>
-    <div><b>Busca:</b> ${esc(confQ.trim() || "—")}</div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Produto</th>
-        <th>Fabricante</th>
-        <th class="num">Qtd Sistema</th>
-        <th class="num">Qtd Física</th>
-        <th class="num">Dif.</th>
-        <th class="num">Ajuste</th>
-        <th class="status">Status</th>
-      </tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-</body>
-</html>`;
-
-        // imprime via iframe invisível (usuário salva como PDF)
-        const iframe = document.createElement("iframe");
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "0";
-        iframe.style.height = "0";
-        iframe.style.border = "0";
-        document.body.appendChild(iframe);
-
-        const win = iframe.contentWindow;
-        const doc = win?.document;
-        if (!win || !doc) {
-            iframe.remove();
-            alert("Não foi possível gerar o PDF.");
-            return;
+        // helper: busca imagem e converte para dataURL (precisa CORS liberado)
+        async function toDataUrl(url: string): Promise<string | null> {
+            try {
+                const r = await fetch(url, { mode: "cors", cache: "no-store" });
+                const b = await r.blob();
+                const reader = await new Promise<string>((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onerror = () => reject(new Error("Falha ao ler logo"));
+                    fr.onload = () => resolve(String(fr.result || ""));
+                    fr.readAsDataURL(b);
+                });
+                return reader;
+            } catch {
+                return null; // se falhar, segue sem logo
+            }
         }
 
-        doc.open();
-        doc.write(html);
-        doc.close();
+        const logoDataUrl = await toDataUrl(LOGO_URL);
 
-        try {
-            win.focus();
-            win.print();
-        } finally {
-            setTimeout(() => iframe.remove(), 1000);
+        // ✅ A4 landscape
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+        const pageW = doc.internal.pageSize.getWidth();
+        const marginX = 12;
+        let y = 12;
+
+        // ===== HEADER (logo + título + meta)
+        if (logoDataUrl) {
+            // logo na esquerda (ajuste tamanho se quiser)
+            doc.addImage(logoDataUrl, "PNG", marginX, y, 55, 14);
         }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("Conferência de Estoque", marginX + 62, y + 8);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(
+            `Depósito: ${depNome}   •   Gerado em: ${geradoEm}   •   Itens: ${conferenciaRows.length}`,
+            marginX + 62,
+            y + 14
+        );
+
+        y += 22;
+
+        // ===== FILTROS (caixa leve como no Estoque)
+        doc.setDrawColor(226, 232, 240); // #e2e8f0
+        doc.setFillColor(248, 250, 252); // #f8fafc
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 18, 2, 2, "FD");
+
+        doc.setFontSize(9);
+        doc.setTextColor(51, 65, 85); // slate-ish
+        doc.text(`Fabricante: ${fabTxt}`, marginX + 3, y + 6);
+        doc.text(`Categoria: ${catTxt}`, marginX + 3, y + 11);
+        doc.text(`Classificação: ${clsTxt}`, marginX + 3, y + 16);
+        doc.text(`Busca: ${buscaTxt}`, pageW / 2, y + 6);
+
+        y += 24;
+
+        // ===== TABELA
+        const head = [["Produto", "Fabricante", "Qtd Sistema", "Qtd Física", "Dif.", "Ajuste", "Status"]];
+
+        const body = conferenciaRows.map((r) => {
+            const fisTxt = confFisicoByProd[r.p.id] ?? "";
+            const fis = parseFisico(fisTxt);
+            const diffN = fis === null ? null : (fis - r.qtdSistema);
+            const diff = diffN === null ? "—" : String(diffN);
+            const ajuste = diffN === null ? "—" : (diffN > 0 ? `+${diffN}` : `${diffN}`);
+            const status = fis === null ? "—" : (diffN === 0 ? "OK" : "DIVERGENTE");
+
+            return [
+                r.p.nome,
+                r.fabricante || "—",
+                String(r.qtdSistema),
+                fis === null ? "—" : String(fis),
+                diff,
+                ajuste,
+                status,
+            ];
+        });
+
+        autoTable(doc, {
+            startY: y,
+            head,
+            body,
+            margin: { left: marginX, right: marginX },
+            styles: {
+                font: "helvetica",
+                fontSize: 9,
+                cellPadding: 2.2,
+                valign: "top",
+                lineColor: [226, 232, 240],
+                lineWidth: 0.2,
+            },
+            headStyles: {
+                fillColor: [241, 245, 249],
+                textColor: [15, 23, 42],
+                fontStyle: "bold",
+            },
+            columnStyles: {
+                0: { cellWidth: 95 }, // Produto
+                1: { cellWidth: 55 }, // Fabricante
+                2: { halign: "right", cellWidth: 22 },
+                3: { halign: "right", cellWidth: 22 },
+                4: { halign: "right", cellWidth: 18 },
+                5: { halign: "right", cellWidth: 18 },
+                6: { halign: "center", cellWidth: 26 },
+            },
+            didParseCell: (data) => {
+                // pinta status
+                if (data.section === "body" && data.column.index === 6) {
+                    const txt = String(data.cell.raw || "");
+                    if (txt === "OK") data.cell.styles.textColor = [22, 163, 74];
+                    if (txt === "DIVERGENTE") data.cell.styles.textColor = [185, 28, 28];
+                }
+                // pinta ajuste
+                if (data.section === "body" && data.column.index === 5) {
+                    const txt = String(data.cell.raw || "");
+                    if (txt.startsWith("+")) data.cell.styles.textColor = [22, 163, 74];
+                    if (txt.startsWith("-")) data.cell.styles.textColor = [185, 28, 28];
+                }
+            },
+        });
+
+        // ===== DOWNLOAD DIRETO
+        const safeName = `conferencia_${depNome}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        doc.save(`${safeName}.pdf`);
     }
+
 
 
     
