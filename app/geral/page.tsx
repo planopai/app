@@ -2127,7 +2127,13 @@ export default function Page() {
 
     const [saidaOpen, setSaidaOpen] = useState(false);
     const [saidaScanOpen, setSaidaScanOpen] = useState(false);
+
+    // ✅ agora "saidaConfirmOpen" vira o popup de CONCLUIR (com lista + botão confirmar)
     const [saidaConfirmOpen, setSaidaConfirmOpen] = useState(false);
+    const [saidaConfirmBusy, setSaidaConfirmBusy] = useState(false);
+    const [saidaConfirmItens, setSaidaConfirmItens] = useState<
+        Array<{ payload: any; nome: string; qtd: number }>
+    >([]);
 
     const [saidaSolicitanteId, setSaidaSolicitanteId] = useState<ID>(0);
     const [saidaDepositoId, setSaidaDepositoId] = useState<ID>(0);
@@ -2140,7 +2146,76 @@ export default function Page() {
     const [saidaProdQuery, setSaidaProdQuery] = useState("");
 
     const [saidaQtd, setSaidaQtd] = useState<string>("1");
+
+    // ✅ observação fica abaixo e pode valer para o lote (como Entrada)
     const [saidaObs, setSaidaObs] = useState("");
+
+    // ✅ monta snapshot (fila + item do formulário se existir) e abre popup "Concluir"
+    function montarSnapshotConcluirSaida() {
+        const obs = saidaObs.trim();
+
+        const base = saidaItens.map((it) => {
+            const pid = Number(it.payload?.produto_id || 0);
+            const qtd = clampInt(it.payload?.quantidade);
+            const nome = prodById.get(pid)?.nome || `Produto ${pid || "—"}`;
+            const payload = obs ? { ...it.payload, observacao: obs } : { ...it.payload };
+            return { payload, nome, qtd };
+        });
+
+        // se existe um item “no formulário”, inclui no snapshot também
+        if (saidaProdutoId) {
+            const built = buildSaidaPayloadFromForm();
+            if (!built) return null;
+
+            const pid = Number(built.payload?.produto_id || 0);
+            const qtd = clampInt(built.payload?.quantidade);
+            const nome = prodById.get(pid)?.nome || `Produto ${pid || "—"}`;
+            const payload = obs ? { ...built.payload, observacao: obs } : { ...built.payload };
+
+            base.push({ payload, nome, qtd });
+        }
+
+        return base;
+    }
+
+    function abrirConcluirSaida() {
+        const snap = montarSnapshotConcluirSaida();
+        if (!snap) return;
+        if (!snap.length) {
+            alert("Adicione pelo menos um item para saída.");
+            return;
+        }
+        setSaidaConfirmItens(snap);
+        setSaidaConfirmOpen(true);
+    }
+
+    async function confirmarSaidaDoSnapshot() {
+        if (!saidaConfirmItens.length) return;
+
+        setSaidaConfirmBusy(true);
+        try {
+            for (const it of saidaConfirmItens) {
+                const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
+                if (!r.ok) {
+                    alert(`Erro na saída de "${it.nome}": ${r.msg || "Falha."}`);
+                    return;
+                }
+            }
+
+            // ✅ sucesso
+            setSaidaConfirmOpen(false);
+            setSaidaConfirmItens([]);
+
+            resetSaidaAll();
+            setSaidaOpen(false);
+
+            await refreshInit();
+            setTab("ESTOQUE");
+        } finally {
+            setSaidaConfirmBusy(false);
+        }
+    }
+
 
     // NOVO: popup de quantidade após SCAN (Saída)
     const [saidaScanQtyOpen, setSaidaScanQtyOpen] = useState(false);
@@ -2216,13 +2291,16 @@ export default function Page() {
         setSaidaProdutoId(0);
         setSaidaProdQuery("");
         setSaidaQtd("1");
-        setSaidaObs("");
+        // ✅ NÃO limpar observação aqui
+        // setSaidaObs("");
     }
 
     function resetSaidaAll() {
         setSaidaItens([]);
         resetSaidaItemFields();
+        setSaidaObs(""); // ✅ aqui sim, ao limpar tudo
     }
+
 
     function buildSaidaPayloadFromForm(): { payload: any; resumo: string } | null {
         if (!me) {
@@ -2382,7 +2460,80 @@ export default function Page() {
 
     const [trfOpen, setTrfOpen] = useState(false);
     const [trfScanOpen, setTrfScanOpen] = useState(false);
+
+    // ✅ agora "trfConfirmOpen" vira o popup de CONCLUIR (com lista + botão confirmar)
     const [trfConfirmOpen, setTrfConfirmOpen] = useState(false);
+    const [trfConfirmBusy, setTrfConfirmBusy] = useState(false);
+    const [trfConfirmItens, setTrfConfirmItens] = useState<
+        Array<{ payload: any; nome: string; qtd: number }>
+    >([]);
+
+    // ✅ monta snapshot (fila + item do formulário se existir) e abre popup "Concluir"
+    function montarSnapshotConcluirTrf() {
+        const obs = trfObs.trim();
+
+        const base = trfItens.map((it) => {
+            const pid = Number(it.payload?.produto_id || 0);
+            const qtd = clampInt(it.payload?.quantidade);
+            const nome = prodById.get(pid)?.nome || `Produto ${pid || "—"}`;
+            const payload = obs ? { ...it.payload, observacao: obs } : { ...it.payload };
+            return { payload, nome, qtd };
+        });
+
+        // se existe um item “no formulário”, inclui no snapshot também
+        if (trfProdutoId) {
+            const built = buildTrfPayloadFromForm();
+            if (!built) return null;
+
+            const pid = Number(built.payload?.produto_id || 0);
+            const qtd = clampInt(built.payload?.quantidade);
+            const nome = prodById.get(pid)?.nome || `Produto ${pid || "—"}`;
+            const payload = obs ? { ...built.payload, observacao: obs } : { ...built.payload };
+
+            base.push({ payload, nome, qtd });
+        }
+
+        return base;
+    }
+
+    function abrirConcluirTransferencia() {
+        const snap = montarSnapshotConcluirTrf();
+        if (!snap) return;
+        if (!snap.length) {
+            alert("Adicione pelo menos uma transferência.");
+            return;
+        }
+        setTrfConfirmItens(snap);
+        setTrfConfirmOpen(true);
+    }
+
+    async function confirmarTransferenciaDoSnapshot() {
+        if (!trfConfirmItens.length) return;
+
+        setTrfConfirmBusy(true);
+        try {
+            for (const it of trfConfirmItens) {
+                const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
+                if (!r.ok) {
+                    alert(`Erro na transferência de "${it.nome}": ${r.msg || "Falha."}`);
+                    return;
+                }
+            }
+
+            // ✅ sucesso
+            setTrfConfirmOpen(false);
+            setTrfConfirmItens([]);
+
+            resetTrfAll();
+            setTrfOpen(false);
+
+            await refreshInit();
+            setTab("ESTOQUE");
+        } finally {
+            setTrfConfirmBusy(false);
+        }
+    }
+
 
     const [trfSolicitanteId, setTrfSolicitanteId] = useState<ID>(0);
     const [trfOrigemId, setTrfOrigemId] = useState<ID>(0);
@@ -2471,12 +2622,14 @@ export default function Page() {
         setTrfProdutoId(0);
         setTrfProdQuery("");
         setTrfQtd("1");
-        setTrfObs("");
+        // ✅ NÃO limpar observação aqui
+        // setTrfObs("");
     }
 
     function resetTrfAll() {
         setTrfItens([]);
         resetTrfItemFields();
+        setTrfObs(""); // ✅ aqui sim, ao limpar tudo
     }
 
     function buildTrfPayloadFromForm(): { payload: any; resumo: string } | null {
@@ -4290,18 +4443,49 @@ export default function Page() {
                     {saidaItens.length ? (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
                             <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
+
                             <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
-                                {saidaItens.map((it) => (
-                                    <li key={it.id} className="flex items-center justify-between gap-2 p-3">
-                                        <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
-                                        <Button variant="ghost" type="button" onClick={() => setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))}>
-                                            Remover
-                                        </Button>
-                                    </li>
-                                ))}
+                                {saidaItens.map((it) => {
+                                    const pid = Number(it.payload?.produto_id || 0);
+                                    const nome = prodById.get(pid)?.nome || it.resumo;
+                                    const qtd = clampInt(it.payload?.quantidade);
+
+                                    return (
+                                        <li key={it.id} className="flex items-start justify-between gap-3 p-3">
+                                            <div className="min-w-0 flex-1">
+                                                <p
+                                                    className="text-sm font-semibold text-slate-900 leading-snug"
+                                                    style={{
+                                                        display: "-webkit-box",
+                                                        WebkitLineClamp: 2,
+                                                        WebkitBoxOrient: "vertical",
+                                                        overflow: "hidden",
+                                                    }}
+                                                >
+                                                    {nome}
+                                                </p>
+
+                                                <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Qtd</span>
+                                                    <span className="text-lg font-bold leading-none text-slate-900">{qtd}</span>
+                                                </div>
+                                            </div>
+
+                                            <Button
+                                                variant="ghost"
+                                                type="button"
+                                                className="w-auto px-3 py-2 text-sm"
+                                                onClick={() => setSaidaItens((prev) => prev.filter((x) => x.id !== it.id))}
+                                            >
+                                                Remover
+                                            </Button>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         </div>
                     ) : null}
+
 
                     {/* Observação abaixo da fila (mesmo padrão da Entrada) */}
                     <Field label="Observação (opcional)">
@@ -4310,12 +4494,12 @@ export default function Page() {
 
                     {/* ✅ Botões finais: Confirmar (abre ConfirmDialog) e Cancelar */}
                     <div className="flex items-center justify-between gap-2">
-                        <Button onClick={() => setSaidaConfirmOpen(true)} type="button">
-                            Confirmar
-                        </Button>
-
-                        <Button variant="ghost" onClick={cancelarSaida} type="button">
-                            Cancelar
+                        <Button
+                            onClick={abrirConcluirSaida}
+                            type="button"
+                            disabled={!saidaItens.length && !saidaProdutoId}
+                        >
+                            Concluir
                         </Button>
                     </div>
                 </div>
@@ -4461,18 +4645,49 @@ export default function Page() {
                     {trfItens.length ? (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
                             <p className="text-sm font-semibold text-slate-900">Transferências na fila</p>
+
                             <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
-                                {trfItens.map((it) => (
-                                    <li key={it.id} className="flex items-center justify-between gap-2 p-3">
-                                        <p className="min-w-0 truncate text-sm text-slate-700">{it.resumo}</p>
-                                        <Button variant="ghost" type="button" onClick={() => setTrfItens((prev) => prev.filter((x) => x.id !== it.id))}>
-                                            Remover
-                                        </Button>
-                                    </li>
-                                ))}
+                                {trfItens.map((it) => {
+                                    const pid = Number(it.payload?.produto_id || 0);
+                                    const nome = prodById.get(pid)?.nome || it.resumo;
+                                    const qtd = clampInt(it.payload?.quantidade);
+
+                                    return (
+                                        <li key={it.id} className="flex items-start justify-between gap-3 p-3">
+                                            <div className="min-w-0 flex-1">
+                                                <p
+                                                    className="text-sm font-semibold text-slate-900 leading-snug"
+                                                    style={{
+                                                        display: "-webkit-box",
+                                                        WebkitLineClamp: 2,
+                                                        WebkitBoxOrient: "vertical",
+                                                        overflow: "hidden",
+                                                    }}
+                                                >
+                                                    {nome}
+                                                </p>
+
+                                                <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Qtd</span>
+                                                    <span className="text-lg font-bold leading-none text-slate-900">{qtd}</span>
+                                                </div>
+                                            </div>
+
+                                            <Button
+                                                variant="ghost"
+                                                type="button"
+                                                className="w-auto px-3 py-2 text-sm"
+                                                onClick={() => setTrfItens((prev) => prev.filter((x) => x.id !== it.id))}
+                                            >
+                                                Remover
+                                            </Button>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         </div>
                     ) : null}
+
 
                     {/* Observação abaixo da fila (mesmo padrão da Entrada) */}
                     <Field label="Observação (opcional)">
@@ -4481,14 +4696,15 @@ export default function Page() {
 
                     {/* ✅ Botões finais: Confirmar (abre ConfirmDialog) e Cancelar */}
                     <div className="flex items-center justify-between gap-2">
-                        <Button onClick={() => setTrfConfirmOpen(true)} type="button">
-                            Confirmar
-                        </Button>
-
-                        <Button variant="ghost" onClick={cancelarTransferencia} type="button">
-                            Cancelar
+                        <Button
+                            onClick={abrirConcluirTransferencia}
+                            type="button"
+                            disabled={!trfItens.length && !trfProdutoId}
+                        >
+                            Concluir
                         </Button>
                     </div>
+
                 </div>
             </Modal>
 
@@ -4530,27 +4746,123 @@ export default function Page() {
             </Modal>
 
             {/* CONFIRMAÇÕES (Saída / Transferência) */}
-            <ConfirmDialog
+            <Modal
                 open={saidaConfirmOpen}
                 title="Confirmar saída"
-                message="Tem certeza que deseja confirmar a SAÍDA?"
-                onCancel={() => setSaidaConfirmOpen(false)}
-                onConfirm={async () => {
+                subtitle="Confira os itens antes de confirmar."
+                onClose={() => {
+                    if (saidaConfirmBusy) return;
                     setSaidaConfirmOpen(false);
-                    await confirmarSaida();
                 }}
-            />
+            >
+                <div className="mt-2 flex flex-col gap-3">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Atenção: após confirmar, a movimentação será registrada no sistema.
+                    </div>
 
-            <ConfirmDialog
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-sm font-semibold text-slate-900">Itens</p>
+
+                        <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
+                            {saidaConfirmItens.map((it, idx) => (
+                                <li key={idx} className="flex items-start justify-between gap-3 p-3">
+                                    <div className="min-w-0">
+                                        <p
+                                            className="text-sm font-semibold text-slate-900 leading-snug"
+                                            style={{
+                                                display: "-webkit-box",
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: "vertical",
+                                                overflow: "hidden",
+                                            }}
+                                        >
+                                            {it.nome}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-600">
+                                            Quantidade: <b>{it.qtd}</b>
+                                        </p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        <Button onClick={confirmarSaidaDoSnapshot} type="button" disabled={saidaConfirmBusy}>
+                            {saidaConfirmBusy ? "Confirmando..." : "Sim, confirmar"}
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            onClick={() => setSaidaConfirmOpen(false)}
+                            type="button"
+                            disabled={saidaConfirmBusy}
+                        >
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            <Modal
                 open={trfConfirmOpen}
                 title="Confirmar transferência"
-                message="Tem certeza que deseja confirmar a TRANSFERÊNCIA?"
-                onCancel={() => setTrfConfirmOpen(false)}
-                onConfirm={async () => {
+                subtitle="Confira os itens antes de confirmar."
+                onClose={() => {
+                    if (trfConfirmBusy) return;
                     setTrfConfirmOpen(false);
-                    await confirmarTransferencia();
                 }}
-            />
+            >
+                <div className="mt-2 flex flex-col gap-3">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Atenção: após confirmar, a movimentação será registrada no sistema.
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-sm font-semibold text-slate-900">Itens</p>
+
+                        <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
+                            {trfConfirmItens.map((it, idx) => (
+                                <li key={idx} className="flex items-start justify-between gap-3 p-3">
+                                    <div className="min-w-0">
+                                        <p
+                                            className="text-sm font-semibold text-slate-900 leading-snug"
+                                            style={{
+                                                display: "-webkit-box",
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: "vertical",
+                                                overflow: "hidden",
+                                            }}
+                                        >
+                                            {it.nome}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-600">
+                                            Quantidade: <b>{it.qtd}</b>
+                                        </p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        <Button onClick={confirmarTransferenciaDoSnapshot} type="button" disabled={trfConfirmBusy}>
+                            {trfConfirmBusy ? "Confirmando..." : "Sim, confirmar"}
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            onClick={() => setTrfConfirmOpen(false)}
+                            type="button"
+                            disabled={trfConfirmBusy}
+                        >
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
 
             {/* POPUP PÓS-SCAN (Saída) */}
             <ScanQtyModal
