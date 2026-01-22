@@ -1811,7 +1811,7 @@ export default function Page() {
             confCatId === "Todas" ? "Todas" : (catById.get(Number(confCatId))?.nome || String(confCatId));
         const clsTxt =
             confClassId === "Todas" ? "Todas" : (classById.get(Number(confClassId))?.nome || String(confClassId));
-        const buscaTxt = confQ.trim() || "—";
+        
 
         // helper: busca imagem e converte para dataURL (precisa CORS liberado)
         async function toDataUrl(url: string): Promise<string | null> {
@@ -1868,7 +1868,7 @@ export default function Page() {
         doc.text(`Fabricante: ${fabTxt}`, marginX + 3, y + 6);
         doc.text(`Categoria: ${catTxt}`, marginX + 3, y + 11);
         doc.text(`Classificação: ${clsTxt}`, marginX + 3, y + 16);
-        doc.text(`Busca: ${buscaTxt}`, pageW / 2, y + 6);
+        
 
         y += 24;
 
