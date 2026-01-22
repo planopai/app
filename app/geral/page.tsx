@@ -3660,87 +3660,40 @@ export default function Page() {
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
-                                                                {conferenciaRows.map((r) => {
-                                                                    const fisTxt = confFisicoByProd[r.p.id] ?? "";
-                                                                    const fis = parseFisico(fisTxt);
-                                                                    const ok = fis !== null && fis === r.qtdSistema;
+                                                                {estoqueRows.map(({ p, d, qtd, min, rep }) => {
+                                                                    const low = qtd <= min;
 
-                                                                    const diff = fis === null ? null : fis - r.qtdSistema;
-
-                                                                    // ✅ Ajuste “com sinal” (o que aplicar no sistema)
-                                                                    const ajuste = diff; // mesma conta; só muda a apresentação
-
-                                                                    const fmtSigned = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+                                                                    const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+                                                                    const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+                                                                    const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
 
                                                                     return (
-                                                                        <tr key={r.p.id} className="bg-white">
+                                                                        <tr key={`${p.id}_${d.id}`} className="bg-white">
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
-                                                                                <div className="font-semibold">{r.p.nome}</div>
-                                                                                <div className="text-xs text-slate-500 font-mono">CB: {r.p.codigo_barras}</div>
+                                                                                <div className="font-semibold">{p.nome}</div>
+                                                                                <div className="text-xs text-slate-500 font-mono">CB: {p.codigo_barras}</div>
                                                                             </td>
 
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                                                {r.fabricante || "—"}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab || "—"}</td>
+
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
+                                                                                <span className={low ? "text-rose-700" : "text-slate-900"}>{qtd}</span>
                                                                             </td>
 
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-slate-900">
-                                                                                {r.qtdSistema}
-                                                                            </td>
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
 
-                                                                            <td className="border-b border-slate-200 px-3 py-2">
-                                                                                <TextInput
-                                                                                    inputMode="numeric"
-                                                                                    value={fisTxt}
-                                                                                    onChange={(e) =>
-                                                                                        setConfFisicoByProd((prev) => ({
-                                                                                            ...prev,
-                                                                                            [r.p.id]: e.target.value.replace(/\D/g, ""),
-                                                                                        }))
-                                                                                    }
-                                                                                    placeholder="Qtd física..."
-                                                                                />
-                                                                            </td>
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat || "—"}</td>
+
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls || "—"}</td>
 
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
-                                                                                <span
-                                                                                    className={
-                                                                                        diff === null
-                                                                                            ? "text-slate-500"
-                                                                                            : ok
-                                                                                                ? "text-emerald-700 font-semibold"
-                                                                                                : "text-rose-700 font-semibold"
-                                                                                    }
-                                                                                >
-                                                                                    {diff === null ? "—" : diff}
-                                                                                </span>
-                                                                            </td>
-
-                                                                            {/* ✅ NOVA COLUNA: Ajuste */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
-                                                                                <span
-                                                                                    className={
-                                                                                        ajuste === null
-                                                                                            ? "text-slate-500"
-                                                                                            : ajuste === 0
-                                                                                                ? "text-emerald-700 font-semibold"
-                                                                                                : ajuste > 0
-                                                                                                    ? "text-emerald-700 font-semibold"
-                                                                                                    : "text-rose-700 font-semibold"
-                                                                                    }
-                                                                                >
-                                                                                    {ajuste === null ? "—" : fmtSigned(ajuste)}
-                                                                                </span>
-                                                                            </td>
-
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-center">
-                                                                                <span className={fis === null ? "text-slate-500" : ok ? "text-emerald-700" : "text-rose-700"}>
-                                                                                    {fis === null ? "—" : ok ? "✅" : "❌"}
-                                                                                </span>
+                                                                                <span className="font-semibold text-emerald-700">{rep}</span>
                                                                             </td>
                                                                         </tr>
                                                                     );
                                                                 })}
                                                             </tbody>
+
                                                 </table>
                                             </div>
                                         </div>
