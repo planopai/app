@@ -4074,12 +4074,15 @@ export default function Page() {
                         />
                     </Field>
 
-                    {/* ✅ Só 2 botões: Concluir e Cancelar */}
-                    <div className="flex flex-wrap gap-2">
-                        <Button onClick={abrirConcluirEntrada} type="button" disabled={!entradaItens.length && !entradaProdutoExistente}>
+                    {/* ✅ Só 2 botões: Concluir (esquerda) e Cancelar (direita) */}
+                    <div className="flex items-center justify-between gap-2">
+                        <Button
+                            onClick={abrirConcluirEntrada}
+                            type="button"
+                            disabled={!entradaItens.length && !entradaProdutoExistente}
+                        >
                             Concluir
                         </Button>
-
 
                         <Button variant="ghost" onClick={cancelarEntrada} type="button">
                             Cancelar
