@@ -1358,7 +1358,7 @@ export default function Page() {
         });
 
         // =========================================================
-        // 2) REGRAS DE COLUNAS DINÂMICAS (iguais ao seu HTML)
+        // 2) REGRAS DE COLUNAS DINÂMICAS
         // =========================================================
         const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
 
@@ -1403,19 +1403,18 @@ export default function Page() {
         }
 
         const logoDataUrl = await toDataUrl(LOGO_URL);
+        const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
         // ✅ A4 landscape
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
         const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
         const marginX = 12;
         let y = 12;
 
         // ===== HEADER (logo + título + meta)
         if (logoDataUrl) {
-            // pode ser PNG ou JPEG; jsPDF aceita mesmo se o dataURL for png/jpg
-            doc.addImage(logoDataUrl, "PNG", marginX, y, 55, 14);
+            doc.addImage(logoDataUrl, logoFormat as any, marginX, y, 55, 14);
         }
 
         doc.setFont("helvetica", "bold");
@@ -1424,7 +1423,7 @@ export default function Page() {
 
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        doc.text(`Gerado em: ${geradoEm}   •   Modelos: ${totalLinhas}`, marginX + 62, y + 14);
+        doc.text(`Gerado em: ${geradoEm}`, marginX + 62, y + 14);
 
         y += 22;
 
@@ -1436,19 +1435,19 @@ export default function Page() {
         doc.setFontSize(9);
         doc.setTextColor(51, 65, 85);
 
-        // ✅ (igual seu PDF) sem "Busca"
+        // sem "Busca"
         doc.text(`Depósito: ${f.deposito}`, marginX + 3, y + 6);
         doc.text(`Categoria: ${f.categoria}`, marginX + 3, y + 11);
         doc.text(`Fabricante: ${f.fabricante}`, marginX + 3, y + 16);
         doc.text(`Classificação: ${(f as any).classificacao}`, marginX + 3, y + 21);
 
         // direita
-        doc.text(`Somente alerta (≤ mínimo): ${f.somenteAlerta}`, pageW / 2, y + 6);
+        doc.text(`Somente alerta (do mínimo): ${f.somenteAlerta}`, pageW / 2, y + 6);
 
         y += 28;
 
         // =========================================================
-        // 4) TABELA (autoTable) com colunas dinâmicas
+        // 4) TABELA (autoTable) com colunas dinâmicas + RODAPÉ
         // =========================================================
         const head: string[] = [
             "Produto",
@@ -1461,7 +1460,7 @@ export default function Page() {
             ...(showValorCol ? ["Valor"] : []),
         ];
 
-        const body = sortedRows.map(({ p, d, qtd, min, rep }) => {
+        const body = sortedRows.map(({ p, d, qtd, rep }) => {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
             const valorNum = Number(p.valor) || 0;
@@ -1483,12 +1482,31 @@ export default function Page() {
             return row;
         });
 
-        // ✅ estilos
+        // ✅ RODAPÉ (totais alinhados por coluna) — precisa vir ANTES do autoTable
+        const footRow = new Array(head.length).fill("");
+
+        // "Modelos:" na 1ª coluna (Produto)
+        footRow[0] = `Modelos: ${totalLinhas}`;
+
+        // Total embaixo de Quantidade
+        const idxQtd = head.indexOf("Quantidade");
+        if (idxQtd >= 0) footRow[idxQtd] = String(totalQuantidade);
+
+        // Valor total embaixo de Valor (se existir)
+        const idxValor = head.indexOf("Valor");
+        if (idxValor >= 0) footRow[idxValor] = moneyBRL(totalValor);
+
         autoTable(doc, {
             startY: y,
             head: [head],
             body,
+
+            // ✅ rodapé na tabela
+            foot: [footRow],
+            showFoot: "lastPage",
+
             margin: { left: marginX, right: marginX },
+
             styles: {
                 font: "helvetica",
                 fontSize: 9.2,
@@ -1497,30 +1515,43 @@ export default function Page() {
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
+
             headStyles: {
                 fillColor: [241, 245, 249],
                 textColor: [15, 23, 42],
                 fontStyle: "bold",
                 valign: "middle",
             },
-            didParseCell: (data) => {
-                if (data.section !== "body") return;
 
+            // ✅ estilo do rodapé
+            footStyles: {
+                fillColor: [248, 250, 252],
+                textColor: [15, 23, 42],
+                fontStyle: "bold",
+                lineColor: [226, 232, 240],
+                lineWidth: 0.2,
+            },
+
+            didParseCell: (data) => {
                 const colName = head[data.column.index];
 
-                // ✅ colunas numéricas alinhadas à direita
+                // ✅ alinha numéricos à direita (inclusive no rodapé)
                 if (["Quantidade", "Reposição", "Valor"].includes(colName)) {
                     data.cell.styles.halign = "right";
                 }
 
+                // ✅ rodapé: 1ª coluna à esquerda
+                if (data.section === "foot" && data.column.index === 0) {
+                    data.cell.styles.halign = "left";
+                }
+
+                // daqui pra baixo: só body
+                if (data.section !== "body") return;
+
                 // ✅ alerta (≤ mínimo): pinta Quantidade em vermelho
                 if (colName === "Quantidade") {
-                    const idxQtd = head.indexOf("Quantidade");
-                    const idxProd = 0; // produto sempre é 0 no nosso build
-                    const prodNome = String((data.row.raw as any[])[idxProd] || "");
                     const r = sortedRows[data.row.index];
                     const low = clampInt(r.qtd) <= clampInt(r.min);
-
                     if (low) data.cell.styles.textColor = [185, 28, 28];
                 }
 
@@ -1530,40 +1561,18 @@ export default function Page() {
                     if (txt && txt !== "0") data.cell.styles.textColor = [22, 163, 74];
                 }
             },
-            // ✅ deixa Produto quebrar linha quando precisar; resto tenta manter em 1 linha
+
+            // ✅ deixa Produto quebrar linha quando precisar
             columnStyles: {
                 0: { cellWidth: 85, overflow: "linebreak" }, // Produto
             },
         });
 
-        // ===== TOTAIS (caixa no final)
-        let yAfter = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 6;
-
-        if (yAfter + 18 > pageH - 10) {
-            doc.addPage();
-            yAfter = 12;
-        }
-
-        doc.setDrawColor(226, 232, 240);
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(marginX, yAfter, pageW - marginX * 2, 14, 2, 2, "FD");
-
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.setTextColor(51, 65, 85);
-
-        doc.text(`Total (unidades): ${totalQuantidade}`, marginX + 4, yAfter + 9);
-
-        if (showValorCol) {
-            doc.text(`Valor Total: ${moneyBRL(totalValor)}`, marginX + 70, yAfter + 9);
-        }
-
-        doc.setTextColor(0, 0, 0);
-
         // ===== DOWNLOAD DIRETO
         const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }
+
 
 
     // =========================
