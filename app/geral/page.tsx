@@ -1305,11 +1305,16 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
-    function exportarEstoquePDF() {
+    // ✅ PDF REAL (download direto) - Estoque (logo + horizontal)
+    async function exportarEstoquePDF() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
             return;
         }
+
+        // libs (lazy import)
+        const { default: jsPDF } = await import("jspdf");
+        const autoTable = (await import("jspdf-autotable")).default;
 
         const LOGO_URL =
             "https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1";
@@ -1319,13 +1324,6 @@ export default function Page() {
             dateStyle: "short",
             timeStyle: "short",
         }).format(new Date());
-
-        const esc = (x: any) =>
-            String(x ?? "")
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;");
 
         const norm = (s: string) =>
             (s || "")
@@ -1350,19 +1348,17 @@ export default function Page() {
             const fabB = norm(b.p?.fabricante_nome || "");
             if (fabA !== fabB) return fabA.localeCompare(fabB, "pt-BR");
 
-            // valor (maior -> menor)
             const vA = Number(a.p?.valor) || 0;
             const vB = Number(b.p?.valor) || 0;
             if (vA !== vB) return vB - vA;
 
-            // fallback: nome produto
             const nA = (a.p?.nome || "").toString();
             const nB = (b.p?.nome || "").toString();
             return nA.localeCompare(nB, "pt-BR");
         });
 
         // =========================================================
-        // 2) REGRAS DE COLUNAS DINÂMICAS
+        // 2) REGRAS DE COLUNAS DINÂMICAS (iguais ao seu HTML)
         // =========================================================
         const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
 
@@ -1374,287 +1370,201 @@ export default function Page() {
         const showValorCol = sortedRows.some((r) => (Number(r.p?.valor) || 0) !== 0);
 
         const repCandidates = sortedRows.filter((r) => norm(r.d?.nome || "") === "DEPOSITO");
-        const showRepCol =
-            repCandidates.length > 0 && repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
+        const showRepCol = repCandidates.length > 0 && repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
 
         // =========================================================
         // 3) TOTAIS
         // =========================================================
         const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
+
         let totalQuantidade = 0;
         let totalValor = 0;
-
         for (const { p, qtd } of sortedRows) {
             const q = clampInt(qtd);
             totalQuantidade += q;
-            const v = Number(p.valor) || 0;
-            totalValor += q * v;
+            totalValor += q * (Number(p.valor) || 0);
         }
 
+        // helper: busca imagem e converte para dataURL
+        async function toDataUrl(url: string): Promise<string | null> {
+            try {
+                const r = await fetch(url, { mode: "cors", cache: "no-store" });
+                const b = await r.blob();
+                const reader = await new Promise<string>((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onerror = () => reject(new Error("Falha ao ler logo"));
+                    fr.onload = () => resolve(String(fr.result || ""));
+                    fr.readAsDataURL(b);
+                });
+                return reader;
+            } catch {
+                return null;
+            }
+        }
+
+        const logoDataUrl = await toDataUrl(LOGO_URL);
+
+        // ✅ A4 landscape
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const marginX = 12;
+        let y = 12;
+
+        // ===== HEADER (logo + título + meta)
+        if (logoDataUrl) {
+            // pode ser PNG ou JPEG; jsPDF aceita mesmo se o dataURL for png/jpg
+            doc.addImage(logoDataUrl, "PNG", marginX, y, 55, 14);
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("Relatório de Estoque", marginX + 62, y + 8);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`Gerado em: ${geradoEm}   •   Modelos: ${totalLinhas}`, marginX + 62, y + 14);
+
+        y += 22;
+
+        // ===== FILTROS (caixa leve)
+        doc.setDrawColor(226, 232, 240); // #e2e8f0
+        doc.setFillColor(248, 250, 252); // #f8fafc
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 22, 2, 2, "FD");
+
+        doc.setFontSize(9);
+        doc.setTextColor(51, 65, 85);
+
+        // ✅ (igual seu PDF) sem "Busca"
+        doc.text(`Depósito: ${f.deposito}`, marginX + 3, y + 6);
+        doc.text(`Categoria: ${f.categoria}`, marginX + 3, y + 11);
+        doc.text(`Fabricante: ${f.fabricante}`, marginX + 3, y + 16);
+        doc.text(`Classificação: ${(f as any).classificacao}`, marginX + 3, y + 21);
+
+        // direita
+        doc.text(`Somente alerta (≤ mínimo): ${f.somenteAlerta}`, pageW / 2, y + 6);
+
+        y += 28;
+
         // =========================================================
-        // 4) HTML DAS LINHAS
-        //    ✅ alterna a cor POR "conjunto" (Depósito+Categoria+Fabricante)
+        // 4) TABELA (autoTable) com colunas dinâmicas
         // =========================================================
-        let lastGroupKey = "";
-        let groupFlip = 0; // 0/1 alternando a cada mudança de grupo
+        const head: string[] = [
+            "Produto",
+            ...(hasCodigo ? ["Código"] : []),
+            ...(hasDeposito ? ["Depósito"] : []),
+            ...(hasCategoria ? ["Categoria"] : []),
+            ...(hasFabricante ? ["Fabricante"] : []),
+            "Quantidade",
+            ...(showRepCol ? ["Reposição"] : []),
+            ...(showValorCol ? ["Valor"] : []),
+        ];
 
-        const rowsHtml = sortedRows
-            .map(({ p, d, qtd, min, rep }) => {
-                const cat =
-                    p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-                const fab =
-                    p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-                const valorNum = Number(p.valor) || 0;
+        const body = sortedRows.map(({ p, d, qtd, min, rep }) => {
+            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+            const valorNum = Number(p.valor) || 0;
 
-                const low = clampInt(qtd) <= clampInt(min); // só para estilo
+            const row: any[] = [];
+            row.push(p.nome);
 
-                const groupKey = `${norm(d?.nome || "")}||${norm(cat)}||${norm(fab)}`;
-                if (groupKey !== lastGroupKey) {
-                    groupFlip = 1 - groupFlip;
-                    lastGroupKey = groupKey;
+            if (hasCodigo) row.push(p.codigo_barras || "");
+            if (hasDeposito) row.push(d.nome || "");
+            if (hasCategoria) row.push(cat);
+            if (hasFabricante) row.push(fab);
+
+            row.push(String(clampInt(qtd)));
+
+            if (showRepCol) row.push(norm(d?.nome || "") === "DEPOSITO" ? String(clampInt(rep)) : "");
+
+            if (showValorCol) row.push(moneyBRL(valorNum));
+
+            return row;
+        });
+
+        // ✅ estilos
+        autoTable(doc, {
+            startY: y,
+            head: [head],
+            body,
+            margin: { left: marginX, right: marginX },
+            styles: {
+                font: "helvetica",
+                fontSize: 9.2,
+                cellPadding: 2.2,
+                valign: "top",
+                lineColor: [226, 232, 240],
+                lineWidth: 0.2,
+            },
+            headStyles: {
+                fillColor: [241, 245, 249],
+                textColor: [15, 23, 42],
+                fontStyle: "bold",
+                valign: "middle",
+            },
+            didParseCell: (data) => {
+                if (data.section !== "body") return;
+
+                const colName = head[data.column.index];
+
+                // ✅ colunas numéricas alinhadas à direita
+                if (["Quantidade", "Reposição", "Valor"].includes(colName)) {
+                    data.cell.styles.halign = "right";
                 }
 
-                // rep só faz sentido no depósito DEPOSITO
-                const repCell = showRepCol
-                    ? `<td class="num green"><b>${esc(norm(d?.nome || "") === "DEPOSITO" ? rep : "")}</b></td>`
-                    : "";
+                // ✅ alerta (≤ mínimo): pinta Quantidade em vermelho
+                if (colName === "Quantidade") {
+                    const idxQtd = head.indexOf("Quantidade");
+                    const idxProd = 0; // produto sempre é 0 no nosso build
+                    const prodNome = String((data.row.raw as any[])[idxProd] || "");
+                    const r = sortedRows[data.row.index];
+                    const low = clampInt(r.qtd) <= clampInt(r.min);
 
-                const valorCell = showValorCol ? `<td class="num">${esc(moneyBRL(valorNum))}</td>` : "";
+                    if (low) data.cell.styles.textColor = [185, 28, 28];
+                }
 
-                const groupClass = groupFlip ? "g1" : "g0";
+                // ✅ reposição verde
+                if (colName === "Reposição") {
+                    const txt = String(data.cell.raw || "");
+                    if (txt && txt !== "0") data.cell.styles.textColor = [22, 163, 74];
+                }
+            },
+            // ✅ deixa Produto quebrar linha quando precisar; resto tenta manter em 1 linha
+            columnStyles: {
+                0: { cellWidth: 85, overflow: "linebreak" }, // Produto
+            },
+        });
 
-                return `
-        <tr class="${groupClass} ${low ? "low" : ""}">
-          <td class="prod">${esc(p.nome)}</td>
-          ${hasCodigo ? `<td class="mono">${esc(p.codigo_barras)}</td>` : ""}
-          ${hasDeposito ? `<td>${esc(d.nome)}</td>` : ""}
-          ${hasCategoria ? `<td>${esc(cat)}</td>` : ""}
-          ${hasFabricante ? `<td>${esc(fab)}</td>` : ""}
-          <td class="num ${low ? "red" : ""}"><b>${esc(qtd)}</b></td>
-          ${repCell}
-          ${valorCell}
-        </tr>
-      `;
-            })
-            .join("");
+        // ===== TOTAIS (caixa no final)
+        let yAfter = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 6;
 
-        // =========================================================
-        // 5) HTML DO PDF
-        //    ✅ fonte Nunito (via Google Fonts)
-        //    ✅ alternância de cor por grupo (g0/g1)
-        // =========================================================
-        const html = `<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <title>Relatório de Estoque</title>
-
-  <!-- ✅ Nunito -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
-
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: "Nunito", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      margin: 16px;
-      color: #0f172a;
-    }
-
-    /* ✅ horizontal */
-    @page { size: A4 landscape; margin: 12mm; }
-
-    .header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 10px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-width: 320px;
-    }
-
-    .brand img {
-      height: 28px;
-      width: auto;
-      display: block;
-    }
-
-    h1 { margin: 0; font-size: 16px; }
-    .meta { font-size: 11px; color: #475569; margin-top: 2px; }
-
-    .filters {
-      border: 1px solid #e2e8f0;
-      background: #f8fafc;
-      padding: 8px 10px;
-      border-radius: 10px;
-      margin: 8px 0 10px 0;
-    }
-    .filters div { font-size: 11px; color: #334155; margin: 2px 0; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 10.5px;
-    }
-    th, td {
-      border: 1px solid #e2e8f0;
-      padding: 6px 7px;
-      vertical-align: top;
-    }
-    th {
-      background: #f1f5f9;
-      text-align: left;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    /* ✅ alternância por grupo (conjunto) */
-    tr.g0 td { background: #ffffff; }
-    tr.g1 td { background: #f8fafc; } /* mais clara */
-    /* mantém o alerta por cima */
-    .low td { background: #fff7f7 !important; }
-
-    .num { text-align: right; white-space: nowrap; }
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      white-space: nowrap;
-    }
-    .green { color: #16a34a; }
-    .red { color: #b91c1c; }
-
-    td.prod { max-width: 420px; }
-
-    .totals {
-      margin-top: 10px;
-      border: 1px solid #e2e8f0;
-      background: #ffffff;
-      border-radius: 10px;
-      padding: 10px;
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      font-size: 12px;
-      width: 100%;
-    }
-    .totals div { color: #334155; }
-    .totals b { color: #0f172a; }
-    .totals .left { margin-right: auto; }
-
-    @media print {
-      thead { display: table-header-group; }
-      tr { page-break-inside: avoid; }
-      .filters, .totals { break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-
-  <div class="header">
-    <div class="brand">
-      <img id="logo" src="${esc(LOGO_URL)}" alt="Logo" />
-      <div>
-        <h1>Relatório de Estoque</h1>
-        <div class="meta">Gerado em: <b>${esc(geradoEm)}</b> • Itens: <b>${esc(totalLinhas)}</b></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="filters">
-    <!-- ✅ removido: Busca -->
-    <div><b>Depósito:</b> ${esc(f.deposito)}</div>
-    <div><b>Categoria:</b> ${esc(f.categoria)}</div>
-    <div><b>Fabricante:</b> ${esc(f.fabricante)}</div>
-    <div><b>Classificação:</b> ${esc((f as any).classificacao)}</div>
-    <div><b>Somente alerta (≤ mínimo):</b> ${esc(f.somenteAlerta)}</div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Produto</th>
-        ${hasCodigo ? `<th>Código</th>` : ``}
-        ${hasDeposito ? `<th>Depósito</th>` : ``}
-        ${hasCategoria ? `<th>Categoria</th>` : ``}
-        ${hasFabricante ? `<th>Fabricante</th>` : ``}
-        <th class="num">Quantidade</th>
-        ${showRepCol ? `<th class="num">Reposição</th>` : ``}
-        ${showValorCol ? `<th class="num">Valor</th>` : ``}
-      </tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-
-  <div class="totals">
-    <div class="left">Modelos: <b>${esc(totalLinhas)}</b></div>
-    <div>Total: <b>${esc(totalQuantidade)}</b></div>
-    ${showValorCol
-                ? `<div>Valor Total: <b>${esc(moneyBRL(totalValor))}</b></div>`
-                : ``
-            }
-  </div>
-
-</body>
-</html>`;
-
-        // ✅ imprime sem popup (iframe invisível)
-        const iframe = document.createElement("iframe");
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "0";
-        iframe.style.height = "0";
-        iframe.style.border = "0";
-        document.body.appendChild(iframe);
-
-        const win = iframe.contentWindow;
-        const doc = win?.document;
-
-        if (!win || !doc) {
-            iframe.remove();
-            alert("Não foi possível gerar o PDF.");
-            return;
+        if (yAfter + 18 > pageH - 10) {
+            doc.addPage();
+            yAfter = 12;
         }
 
-        doc.open();
-        doc.write(html);
-        doc.close();
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(marginX, yAfter, pageW - marginX * 2, 14, 2, 2, "FD");
 
-        const tryPrint = () => {
-            try {
-                win.focus();
-                win.print();
-            } finally {
-                setTimeout(() => iframe.remove(), 1000);
-            }
-        };
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
 
-        // ✅ espera logo + fonte carregar antes do print (melhora a chance de aplicar Nunito)
-        const waitFonts = () => {
-            const anyDoc: any = doc as any;
-            const fontsReady: Promise<any> | null = anyDoc?.fonts?.ready || null;
-            if (fontsReady) {
-                fontsReady.then(() => setTimeout(tryPrint, 100)).catch(() => setTimeout(tryPrint, 100));
-            } else {
-                setTimeout(tryPrint, 150);
-            }
-        };
+        doc.text(`Total (unidades): ${totalQuantidade}`, marginX + 4, yAfter + 9);
 
-        const logo = doc.getElementById("logo") as HTMLImageElement | null;
-        if (logo && !logo.complete) {
-            logo.onload = () => waitFonts();
-            logo.onerror = () => waitFonts();
-        } else {
-            waitFonts();
+        if (showValorCol) {
+            doc.text(`Valor Total: ${moneyBRL(totalValor)}`, marginX + 70, yAfter + 9);
         }
+
+        doc.setTextColor(0, 0, 0);
+
+        // ===== DOWNLOAD DIRETO
+        const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        doc.save(`${safeName}.pdf`);
     }
+
 
     // =========================
     // CONFERÊNCIA: linhas (1 depósito) + filtros
@@ -1872,12 +1782,34 @@ export default function Page() {
 
         y += 24;
 
+        // ===== TOTAIS
+        const totalSistema = conferenciaRows.reduce((acc, r) => acc + clampInt(r.qtdSistema), 0);
+
+        const totalFisico = conferenciaRows.reduce((acc, r) => {
+            const fisTxt = confFisicoByProd[r.p.id] ?? "";
+            const fis = parseFisico(fisTxt);
+            return acc + (fis === null ? 0 : clampInt(fis));
+        }, 0);
+
+        const totalDif = totalFisico - totalSistema;
+        const fmtSigned = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
         // ===== TABELA
-        const head = [["Produto", "Fabricante", "Qtd Sistema", "Qtd Física", "Dif.", "Ajuste", "Status"]];
+        // ✅ NBSP para NÃO quebrar: "Qtd Sistema" / "Qtd Física"
+        const head = [[
+            "Produto",
+            "Fabricante",
+            "Qtd\u00A0Sistema",
+            "Qtd\u00A0Física",
+            "Dif.",
+            "Ajuste",
+            "Status",
+        ]];
 
         const body = conferenciaRows.map((r) => {
             const fisTxt = confFisicoByProd[r.p.id] ?? "";
             const fis = parseFisico(fisTxt);
+
             const diffN = fis === null ? null : (fis - r.qtdSistema);
             const diff = diffN === null ? "—" : String(diffN);
             const ajuste = diffN === null ? "—" : (diffN > 0 ? `+${diffN}` : `${diffN}`);
@@ -1899,35 +1831,50 @@ export default function Page() {
             head,
             body,
             margin: { left: marginX, right: marginX },
+
+            // ✅ geral: evita quebra nas colunas (só o produto pode quebrar)
             styles: {
                 font: "helvetica",
-                fontSize: 9,
-                cellPadding: 2.2,
-                valign: "top",
+                fontSize: 9.3,
+                cellPadding: 2.4,
+                valign: "middle",
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
+                overflow: "ellipsize", // ✅ padrão: NÃO quebra, corta com "..."
             },
+
             headStyles: {
                 fillColor: [241, 245, 249],
                 textColor: [15, 23, 42],
                 fontStyle: "bold",
+                valign: "middle",
             },
+
+            // ✅ Larguras calculadas pra A4 landscape com margem 12mm (soma = 273mm)
             columnStyles: {
-                0: { cellWidth: 95 }, // Produto
-                1: { cellWidth: 55 }, // Fabricante
-                2: { halign: "right", cellWidth: 22 },
-                3: { halign: "right", cellWidth: 22 },
-                4: { halign: "right", cellWidth: 18 },
-                5: { halign: "right", cellWidth: 18 },
-                6: { halign: "center", cellWidth: 26 },
+                0: { cellWidth: 110, overflow: "linebreak" }, // ✅ Produto: pode quebrar
+                1: { cellWidth: 55, overflow: "ellipsize" },  // Fabricante: não quebra
+                2: { cellWidth: 25, halign: "right" },        // Qtd Sistema (não quebra)
+                3: { cellWidth: 25, halign: "right" },        // Qtd Física (não quebra)
+                4: { cellWidth: 14, halign: "right" },        // Dif.
+                5: { cellWidth: 16, halign: "right" },        // Ajuste
+                6: { cellWidth: 28, halign: "center" },       // Status (sem quebra)
             },
+
             didParseCell: (data) => {
+                // ✅ Cabeçalho sem quebra (reforço)
+                if (data.section === "head") {
+                    data.cell.styles.overflow = "ellipsize";
+                    data.cell.styles.minCellHeight = 8;
+                }
+
                 // pinta status
                 if (data.section === "body" && data.column.index === 6) {
                     const txt = String(data.cell.raw || "");
                     if (txt === "OK") data.cell.styles.textColor = [22, 163, 74];
                     if (txt === "DIVERGENTE") data.cell.styles.textColor = [185, 28, 28];
                 }
+
                 // pinta ajuste
                 if (data.section === "body" && data.column.index === 5) {
                     const txt = String(data.cell.raw || "");
@@ -1936,6 +1883,33 @@ export default function Page() {
                 }
             },
         });
+
+        // ===== TOTAIS (caixa no final, igual “rodapé”)
+        let yAfter = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 6;
+
+        // se estiver muito embaixo, quebra página
+        const pageH = doc.internal.pageSize.getHeight();
+        if (yAfter + 18 > pageH - 10) {
+            doc.addPage();
+            yAfter = 12;
+        }
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(marginX, yAfter, doc.internal.pageSize.getWidth() - marginX * 2, 14, 2, 2, "FD");
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+
+        doc.text(`Total Sistema: ${totalSistema}`, marginX + 4, yAfter + 9);
+        doc.text(`Total Físico: ${totalFisico}`, marginX + 70, yAfter + 9);
+
+        // (opcional, mas ajuda muito) Dif total
+        doc.text(`Dif Total: ${fmtSigned(totalDif)}`, marginX + 132, yAfter + 9);
+
+        doc.setTextColor(0, 0, 0);
+
 
         // ===== DOWNLOAD DIRETO
         const safeName = `conferencia_${depNome}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
