@@ -411,28 +411,27 @@ function MultiSelectDropdown({
 function Button({
     children,
     variant = "solid",
+    className = "",
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" | "soft" }) {
+    const base =
+        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[16px] sm:text-sm font-medium shadow-sm outline-none " +
+        "focus:ring-2 focus:ring-slate-200 disabled:opacity-50 disabled:cursor-not-allowed";
+
     const cls =
         variant === "solid"
-            ? "bg-slate-900 text-white hover:bg-slate-800"
+            ? "bg-slate-900 text-white hover:bg-slate-800 border border-slate-900"
             : variant === "soft"
-                ? "bg-slate-100 text-slate-900 hover:bg-slate-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200";
+                ? "bg-slate-100 text-slate-900 hover:bg-slate-200 border border-slate-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-200";
 
     return (
-        <button
-            {...props}
-            className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] sm:text-sm text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
-                "flex items-center justify-between gap-2",
-            ].join(" ")}
-        >
+        <button {...props} className={[base, cls, className].join(" ")}>
             {children}
         </button>
     );
 }
+
 
 function Badge({ children }: { children: React.ReactNode }) {
     return (
@@ -4028,17 +4027,33 @@ export default function Page() {
                             <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
                             <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
                                 {entradaItens.map((it) => (
-                                    <li key={it.id} className="flex items-center justify-between gap-3 p-3">
-                                        <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-slate-900">{it.nome}</p>
-                                            <p className="mt-0.5 text-xs text-slate-500">
-                                                Quantidade: <b>{it.qtd}</b>
+                                    <li key={it.id} className="flex items-start justify-between gap-3 p-3">
+                                        <div className="min-w-0 flex-1">
+                                            {/* ✅ Nome em 2 linhas (sem plugin) */}
+                                            <p
+                                                className="text-sm font-semibold text-slate-900 leading-snug"
+                                                style={{
+                                                    display: "-webkit-box",
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient: "vertical",
+                                                    overflow: "hidden",
+                                                }}
+                                            >
+                                                {it.nome}
                                             </p>
+
+                                            {/* ✅ Quantidade maior e mais visível */}
+                                            <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                <span className="text-xs text-slate-600">Qtd</span>
+                                                <span className="text-lg font-bold leading-none text-slate-900">{it.qtd}</span>
+                                            </div>
                                         </div>
 
+                                        {/* ✅ Botão pequeno (não ocupa tudo) */}
                                         <Button
                                             variant="ghost"
                                             type="button"
+                                            className="w-auto px-3 py-2 text-sm"
                                             onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}
                                         >
                                             Remover
