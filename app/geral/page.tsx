@@ -1041,7 +1041,7 @@ export default function Page() {
     const [editFotoNova, setEditFotoNova] = useState<string>("");
 
     // saldos editáveis por depósito
-    const [editSaldos, setEditSaldos] = useState<Record<number, number>>({});
+    
 
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
@@ -2045,12 +2045,7 @@ export default function Page() {
         setEditClassId(Number(p.classificacao_id || 0));
         setEditFotoNova("");
 
-        const m: Record<number, number> = {};
-        for (const d of depositos) {
-            const s = saldosMap.get(`${produtoId}::${d.id}`);
-            m[d.id] = clampInt(s?.quantidade ?? 0);
-        }
-        setEditSaldos(m);
+        
 
         setProdEditOpen(true);
     }
@@ -2091,19 +2086,48 @@ export default function Page() {
         }
     }
 
-    async function salvarSaldosProduto() {
-        if (!prodEditId) return;
+    // =========================
+    // AJUSTE MANUAL (AVANÇADO) - SALDOS POR DEPÓSITO
+    // =========================
+    const [ajusteProdId, setAjusteProdId] = useState<ID>(0);
+    const [ajusteProdQuery, setAjusteProdQuery] = useState("");
+    const [ajusteSaldos, setAjusteSaldos] = useState<Record<number, number>>({});
+    const [ajusteBusy, setAjusteBusy] = useState(false);
 
-        setProdBusy(true);
+    // quando escolher o produto, carrega os saldos atuais para edição
+    useEffect(() => {
+        if (!ajusteProdId) {
+            setAjusteSaldos({});
+            return;
+        }
+
+        const m: Record<number, number> = {};
+        for (const d of depositos) {
+            const s = saldosMap.get(`${ajusteProdId}::${d.id}`);
+            m[d.id] = clampInt(s?.quantidade ?? 0);
+        }
+        setAjusteSaldos(m);
+
+        const p = prodById.get(ajusteProdId);
+        if (p && (!ajusteProdQuery.trim() || ajusteProdQuery.trim() !== p.nome)) {
+            setAjusteProdQuery(p.nome);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ajusteProdId, depositos, saldosMap, prodById]);
+
+    async function salvarAjusteSaldosAvancado() {
+        if (!ajusteProdId) return alert("Selecione um produto.");
+
+        setAjusteBusy(true);
         try {
             for (const d of depositos) {
-                const novo = clampInt(editSaldos[d.id] ?? 0);
-                const atual = clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0);
+                const novo = clampInt(ajusteSaldos[d.id] ?? 0);
+                const atual = clampInt(saldosMap.get(`${ajusteProdId}::${d.id}`)?.quantidade ?? 0);
                 if (novo === atual) continue;
 
                 const r = await apiPost<{ ok: boolean; msg?: string }>({
                     action: "saldo_setar",
-                    produto_id: prodEditId,
+                    produto_id: ajusteProdId,
                     deposito_id: d.id,
                     quantidade: novo,
                 });
@@ -2117,9 +2141,12 @@ export default function Page() {
             await refreshInit();
             alert("Saldos atualizados.");
         } finally {
-            setProdBusy(false);
+            setAjusteBusy(false);
         }
     }
+
+
+    
 
     /* =========================
        SAÍDA
@@ -2858,6 +2885,9 @@ export default function Page() {
         const url = `${API_BASE}?export_deposito_id=${deposito_id}`;
         window.open(url, "_blank", "noopener,noreferrer");
     }
+
+    
+
 
     // Categorias
     const [novoCatNome, setNovoCatNome] = useState("");
@@ -3683,6 +3713,85 @@ export default function Page() {
                                     </div>
                                 </div>
 
+                                {/* ✅ Ajuste manual de saldos (AVANÇADO) */}
+                                <div className="sm:col-span-2 rounded-2xl border border-slate-200 p-4">
+                                    <p className="text-sm font-semibold text-slate-900">Ajuste manual de saldos por depósito</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                        Gera <b>AJUSTE</b>. Use com cuidado. (Removido do Estoque)
+                                    </p>
+
+                                    <div className="mt-3">
+                                        <ProductCombobox
+                                            label="Produto"
+                                            placeholder="Digite para buscar..."
+                                            produtos={produtos}
+                                            valueId={ajusteProdId}
+                                            onChangeId={(id) => setAjusteProdId(id)}
+                                            query={ajusteProdQuery}
+                                            setQuery={(v) => {
+                                                setAjusteProdQuery(v);
+                                                if (ajusteProdId) setAjusteProdId(0);
+                                            }}
+                                        />
+                                    </div>
+
+                                    {!ajusteProdId ? (
+                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                            Selecione um produto para editar os saldos por depósito.
+                                        </div>
+                                    ) : (
+                                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            {depositos.map((d) => (
+                                                <div
+                                                    key={d.id}
+                                                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
+                                                        <p className="text-[11px] text-slate-500">
+                                                            Qtd atual: {clampInt(saldosMap.get(`${ajusteProdId}::${d.id}`)?.quantidade ?? 0)}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="w-[120px]">
+                                                        <TextInput
+                                                            type="number"
+                                                            min={0}
+                                                            value={clampInt(ajusteSaldos[d.id] ?? 0)}
+                                                            onChange={(e) =>
+                                                                setAjusteSaldos((prev) => ({
+                                                                    ...prev,
+                                                                    [d.id]: clampInt(e.target.value),
+                                                                }))
+                                                            }
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <Button onClick={salvarAjusteSaldosAvancado} disabled={ajusteBusy || !ajusteProdId} type="button">
+                                            {ajusteBusy ? "Salvando..." : "Salvar saldos"}
+                                        </Button>
+
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            onClick={() => {
+                                                setAjusteProdId(0);
+                                                setAjusteProdQuery("");
+                                                setAjusteSaldos({});
+                                            }}
+                                            disabled={ajusteBusy}
+                                        >
+                                            Limpar
+                                        </Button>
+                                    </div>
+                                </div>
+
+
                                 
                                 <div className="rounded-2xl border border-slate-200 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Adicionar Depósito</p>
@@ -3858,7 +3967,12 @@ export default function Page() {
             <ImagePreviewModal open={imgOpen} onClose={() => setImgOpen(false)} url={imgUrl} title={imgTitle} />
 
             {/* MODAL: EDITAR PRODUTO */}
-            <Modal open={prodEditOpen} title="Editar produto" subtitle="Edite o cadastro e/ou ajuste os saldos por depósito." onClose={() => setProdEditOpen(false)}>
+            <Modal
+                open={prodEditOpen}
+                title="Editar produto"
+                subtitle="Edite o cadastro do produto."
+                onClose={() => setProdEditOpen(false)}
+            >
                 {(() => {
                     const p = prodEditId ? prodById.get(prodEditId) : null;
                     const fotoAtual = p?.foto_url ? normalizeImgUrl(p.foto_url) : null;
@@ -3977,40 +4091,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200 p-3">
-                                <p className="text-sm font-semibold text-slate-900">Saldos por depósito</p>
-                                <p className="mt-1 text-xs text-slate-600">Ajuste manual (gera AJUSTE). Use com cuidado.</p>
-
-                                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    {depositos.map((d) => (
-                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-                                            <div className="min-w-0">
-                                                <p className="truncate text-sm font-medium text-slate-900">{d.nome}</p>
-                                                <p className="text-[11px] text-slate-500">Qtd atual: {clampInt(saldosMap.get(`${prodEditId}::${d.id}`)?.quantidade ?? 0)}</p>
-                                            </div>
-                                            <div className="w-[120px]">
-                                                <TextInput
-                                                    type="number"
-                                                    min={0}
-                                                    value={clampInt(editSaldos[d.id] ?? 0)}
-                                                    onChange={(e) =>
-                                                        setEditSaldos((prev) => ({
-                                                            ...prev,
-                                                            [d.id]: clampInt(e.target.value),
-                                                        }))
-                                                    }
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    <Button onClick={salvarSaldosProduto} disabled={prodBusy || !prodEditId} type="button">
-                                        Salvar saldos
-                                    </Button>
-                                </div>
-                            </div>
+                            
                         </div>
                     );
                 })()}
