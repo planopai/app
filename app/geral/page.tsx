@@ -1126,9 +1126,9 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ALERTAS
+    // ALERTAS (só se Min e Max definidos)
     const alertRows = useMemo(() => {
-        const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; s?: Saldo; rep: number }> = [];
+        const rows: Array<{ p: Produto; d: Deposito; qtd: number; min: number; max: number; rep: number }> = [];
 
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
@@ -1139,15 +1139,17 @@ export default function Page() {
             const max = clampInt((s as any).maximo ?? 0);
             const qtd = clampInt(s.quantidade);
 
-            // ✅ alerta quando atingir o mínimo OU abaixo (<=)
+            // ✅ só considera alerta se Min e Max estiverem definidos
+            const hasMinMax = min > 0 && max > 0;
+            if (!hasMinMax) continue;
+
             if (qtd <= min) {
                 rows.push({
                     p,
                     d,
                     qtd,
                     min,
-                    s,
-                    // ✅ REP = MAX - QTD
+                    max,
                     rep: Math.max(0, max - qtd),
                 });
             }
@@ -1156,6 +1158,7 @@ export default function Page() {
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR"));
         return rows;
     }, [saldos, prodById, depById]);
+
 
     const alertCount = alertRows.length;
 
@@ -1182,15 +1185,42 @@ export default function Page() {
     // qtd física por produto (como string para permitir vazio)
     const [confFisicoByProd, setConfFisicoByProd] = useState<Record<number, string>>({});
 
+    // ✅ MOSTRA Min/Rep apenas se existir pelo menos 1 item (no(s) depósito(s) filtrado(s))
+    // com minimo>0 OU maximo>0. Se todos forem 0, some as colunas.
+    const showMinRepColumns = useMemo(() => {
+        const depSet = depFiltroEstoque.length ? new Set(depFiltroEstoque.map(Number)) : null;
+
+        for (const s of saldos) {
+            if (depSet && !depSet.has(Number(s.deposito_id))) continue;
+
+            const min = clampInt((s as any).minimo ?? 0);
+            const max = clampInt((s as any).maximo ?? 0);
+
+            if (min > 0 || max > 0) return true;
+        }
+        return false;
+    }, [saldos, depFiltroEstoque]);
+
+
 
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
-        const rows: Array<{ p: Produto; d: Deposito; qtd: number; s?: Saldo; min: number; rep: number }> = [];
+
+        const rows: Array<{
+            p: Produto;
+            d: Deposito;
+            qtd: number;
+            s?: Saldo;
+            min: number;
+            max: number;
+            rep: number;
+            hasMinMax: boolean;
+        }> = [];
+
         const depSet = depFiltroEstoque.length ? new Set(depFiltroEstoque.map(Number)) : null;
         const catSet = catFiltroEstoque.length ? new Set(catFiltroEstoque.map(Number)) : null;
         const fabSet = fabFiltroEstoque.length ? new Set(fabFiltroEstoque.map(Number)) : null;
         const clsSet = classFiltroEstoque.length ? new Set(classFiltroEstoque.map(Number)) : null;
-
 
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
@@ -1214,14 +1244,18 @@ export default function Page() {
                 if (!clsSet.has(cid)) continue;
             }
 
-
             const qtd = clampInt(s.quantidade);
             const min = clampInt((s as any).minimo ?? 0);
             const max = clampInt((s as any).maximo ?? 0);
 
-            const rep = Math.max(0, max - qtd); // ✅ REP = MAX - QTD
+            // ✅ definido = tem Min e Max > 0
+            const hasMinMax = min > 0 && max > 0;
 
-            if (onlyLow && !(qtd <= min)) continue; // ✅ mantém alerta ao chegar no mínimo
+            // ✅ REP só faz sentido quando tem Min+Max definido
+            const rep = hasMinMax ? Math.max(0, max - qtd) : 0;
+
+            // ✅ "Somente alerta" só entra se tiver Min/Max definido e qtd <= min
+            if (onlyLow && !(hasMinMax && qtd <= min)) continue;
 
             if (qq) {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
@@ -1231,7 +1265,7 @@ export default function Page() {
                 if (!blob.includes(qq)) continue;
             }
 
-            rows.push({ p, d, qtd, s, min, rep });
+            rows.push({ p, d, qtd, s, min, max, rep, hasMinMax });
         }
 
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR") || a.d.nome.localeCompare(b.d.nome, "pt-BR"));
@@ -1250,6 +1284,7 @@ export default function Page() {
         fabById,
         classById,
     ]);
+
 
     const estoqueResumo = useMemo(() => {
         let totalUnidades = 0;
@@ -1397,8 +1432,10 @@ export default function Page() {
 
         const showValorCol = sortedRows.some((r) => (Number(r.p?.valor) || 0) !== 0);
 
-        const repCandidates = sortedRows.filter((r) => norm(r.d?.nome || "") === "DEPOSITO");
-        const showRepCol = repCandidates.length > 0 && repCandidates.some((r) => (Number(r.rep) || 0) !== 0);
+        // ✅ segue a regra do sistema: se no(s) depósito(s) exportado(s) ninguém tem min/max, não mostra
+        const showMinCol = showMinRepColumns;
+        const showRepCol = showMinRepColumns;
+
 
         // =========================================================
         // 3) TOTAIS
@@ -1484,11 +1521,13 @@ export default function Page() {
             ...(hasCategoria ? ["Categoria"] : []),
             ...(hasFabricante ? ["Fabricante"] : []),
             "Quantidade",
+            ...(showMinCol ? ["Mín"] : []),
             ...(showRepCol ? ["Reposição"] : []),
             ...(showValorCol ? ["Valor"] : []),
         ];
 
-        const body = sortedRows.map(({ p, d, qtd, rep }) => {
+
+        const body = sortedRows.map(({ p, d, qtd, rep, min, hasMinMax }) => {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
             const valorNum = Number(p.valor) || 0;
@@ -1503,12 +1542,14 @@ export default function Page() {
 
             row.push(String(clampInt(qtd)));
 
-            if (showRepCol) row.push(norm(d?.nome || "") === "DEPOSITO" ? String(clampInt(rep)) : "");
+            if (showMinCol) row.push(hasMinMax ? String(clampInt(min)) : "");
+            if (showRepCol) row.push(hasMinMax ? String(clampInt(rep)) : "");
 
             if (showValorCol) row.push(moneyBRL(valorNum));
 
             return row;
         });
+
 
         // ✅ RODAPÉ (totais alinhados por coluna) — precisa vir ANTES do autoTable
         const footRow = new Array(head.length).fill("");
@@ -1579,9 +1620,10 @@ export default function Page() {
                 // ✅ alerta (≤ mínimo): pinta Quantidade em vermelho
                 if (colName === "Quantidade") {
                     const r = sortedRows[data.row.index];
-                    const low = clampInt(r.qtd) <= clampInt(r.min);
+                    const low = !!r.hasMinMax && clampInt(r.qtd) <= clampInt(r.min);
                     if (low) data.cell.styles.textColor = [185, 28, 28];
                 }
+
 
                 // ✅ reposição verde
                 if (colName === "Reposição") {
@@ -3635,8 +3677,8 @@ export default function Page() {
                                     <>
                                         {/* MOBILE */}
                                         <ul className="divide-y divide-slate-200 sm:hidden">
-                                            {estoqueRows.map(({ p, d, qtd, s, min, rep }) => {
-                                                const low = qtd <= min;
+                                            {estoqueRows.map(({ p, d, qtd, min, max, rep, hasMinMax }) => {
+                                                const low = hasMinMax && qtd <= min;
                                                 const valorNum = Number(p.valor) || 0;
 
                                                 const foto = normalizeImgUrl(p.foto_url);
@@ -3704,11 +3746,20 @@ export default function Page() {
                                                             </div>
 
                                                             <div className="shrink-0 text-right">
-                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>{qtd}</p>
-                                                                <p className="text-xs text-slate-500">
-                                                                    Min {min} • Rep <span className="font-semibold text-emerald-700">{rep}</span>
+                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
+                                                                    {qtd}
                                                                 </p>
+
+                                                                {showMinRepColumns ? (
+                                                                    <p className="text-xs text-slate-500">
+                                                                        Min {hasMinMax ? min : "—"} • Rep{" "}
+                                                                        <span className={hasMinMax ? "font-semibold text-emerald-700" : "text-slate-500"}>
+                                                                            {hasMinMax ? rep : "—"}
+                                                                        </span>
+                                                                    </p>
+                                                                ) : null}
                                                             </div>
+
                                                         </div>
                                                     </li>
                                                 );
@@ -3727,16 +3778,24 @@ export default function Page() {
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
+
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Mín</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
+
+                                                                    {showMinRepColumns ? (
+                                                                        <>
+                                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Mín</th>
+                                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
+                                                                        </>
+                                                                    ) : null}
+
                                                                     <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor (un)</th>
                                                                 </tr>
                                                             </thead>
 
+
                                                             <tbody>
-                                                                {estoqueRows.map(({ p, d, qtd, min, rep }) => {
-                                                                    const low = clampInt(qtd) <= clampInt(min);
+                                                                {estoqueRows.map(({ p, d, qtd, min, max, rep, hasMinMax }) => {
+                                                                    const low = hasMinMax && clampInt(qtd) <= clampInt(min);
 
                                                                     const cat =
                                                                         p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "—";
@@ -3780,39 +3839,39 @@ export default function Page() {
                                                                             </td>
 
                                                                             {/* Depósito */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                                                {d.nome}
-                                                                            </td>
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
 
                                                                             {/* Categoria */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                                                {cat}
-                                                                            </td>
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat}</td>
 
                                                                             {/* Fabricante */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                                                {fab}
-                                                                            </td>
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab}</td>
 
                                                                             {/* Classificação */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                                                {cls}
-                                                                            </td>
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls}</td>
 
                                                                             {/* Qtd */}
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
                                                                                 <span className={low ? "text-rose-700" : "text-slate-900"}>{clampInt(qtd)}</span>
                                                                             </td>
 
-                                                                            {/* Mín */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
-                                                                                {clampInt(min)}
-                                                                            </td>
+                                                                            {showMinRepColumns ? (
+                                                                                <>
+                                                                                    {/* Mín */}
+                                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
+                                                                                        {hasMinMax ? clampInt(min) : "—"}
+                                                                                    </td>
 
-                                                                            {/* Rep */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
-                                                                                <span className="font-semibold text-emerald-700">{clampInt(rep)}</span>
-                                                                            </td>
+                                                                                    {/* Rep */}
+                                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
+                                                                                        {hasMinMax ? (
+                                                                                            <span className="font-semibold text-emerald-700">{clampInt(rep)}</span>
+                                                                                        ) : (
+                                                                                            <span className="text-slate-500">—</span>
+                                                                                        )}
+                                                                                    </td>
+                                                                                </>
+                                                                            ) : null}
 
                                                                             {/* Valor */}
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
@@ -3823,30 +3882,32 @@ export default function Page() {
                                                                 })}
                                                             </tbody>
 
+
                                                             <tfoot>
                                                                 <tr className="bg-slate-50 text-xs text-slate-700">
-                                                                    {/* esquerda: total de modelos */}
                                                                     <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={5}>
                                                                         Total de modelos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
                                                                     </td>
 
-                                                                    {/* embaixo de Qtd */}
+                                                                    {/* Total Qtd */}
                                                                     <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
                                                                         {estoqueResumo.totalUnidades}
                                                                     </td>
 
-                                                                    {/* Mín (vazio) */}
-                                                                    <td className="border-t border-slate-200 px-3 py-3" />
+                                                                    {showMinRepColumns ? (
+                                                                        <>
+                                                                            <td className="border-t border-slate-200 px-3 py-3" />
+                                                                            <td className="border-t border-slate-200 px-3 py-3" />
+                                                                        </>
+                                                                    ) : null}
 
-                                                                    {/* Rep (vazio) */}
-                                                                    <td className="border-t border-slate-200 px-3 py-3" />
-
-                                                                    {/* embaixo de Valor */}
+                                                                    {/* Total Valor */}
                                                                     <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
                                                                         {moneyBRL(estoqueResumo.totalValor)}
                                                                     </td>
                                                                 </tr>
                                                             </tfoot>
+
                                                         </table>
                                                     </div>
                                                 </div>
