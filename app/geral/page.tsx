@@ -1236,7 +1236,11 @@ export default function Page() {
         let totalUnidades = 0;
         let totalValor = 0;
 
+        const modelosSet = new Set<number>();
+
         for (const { p, qtd } of estoqueRows) {
+            modelosSet.add(Number(p.id));
+
             const q = clampInt(qtd);
             totalUnidades += q;
 
@@ -1244,8 +1248,13 @@ export default function Page() {
             totalValor += q * v;
         }
 
-        return { totalUnidades, totalValor };
+        return {
+            totalUnidades,
+            totalValor,
+            totalModelos: modelosSet.size,
+        };
     }, [estoqueRows]);
+
 
 
     function getFiltroResumo() {
@@ -3760,6 +3769,31 @@ export default function Page() {
                                                                     );
                                                                 })}
                                                             </tbody>
+
+                                                            <tfoot>
+                                                                <tr className="bg-slate-50 text-xs text-slate-700">
+                                                                    {/* esquerda: total de modelos */}
+                                                                    <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={5}>
+                                                                        Total de modelos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
+                                                                    </td>
+
+                                                                    {/* embaixo de Qtd */}
+                                                                    <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
+                                                                        {estoqueResumo.totalUnidades}
+                                                                    </td>
+
+                                                                    {/* Mín (vazio) */}
+                                                                    <td className="border-t border-slate-200 px-3 py-3" />
+
+                                                                    {/* Rep (vazio) */}
+                                                                    <td className="border-t border-slate-200 px-3 py-3" />
+
+                                                                    {/* embaixo de Valor */}
+                                                                    <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
+                                                                        {moneyBRL(estoqueResumo.totalValor)}
+                                                                    </td>
+                                                                </tr>
+                                                            </tfoot>
                                                         </table>
                                                     </div>
                                                 </div>
