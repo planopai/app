@@ -40,6 +40,8 @@ type Saldo = {
     produto_id: ID;
     deposito_id: ID;
     quantidade: number;
+    minimo: number;
+    maximo: number;
     atualizado_em: string;
 };
 
@@ -1046,12 +1048,19 @@ export default function Page() {
     const [prodEditOpen, setProdEditOpen] = useState(false);
     const [prodEditId, setProdEditId] = useState<ID | 0>(0);
     const [prodBusy, setProdBusy] = useState(false);
+    // ✅ NOVO: busy do salvamento min/max por depósito
+    const [minMaxBusy, setMinMaxBusy] = useState(false);
 
     // campos do cadastro
     const [editNome, setEditNome] = useState("");
     const [editValor, setEditValor] = useState<string>("R$ 0,00");
     const [editMin, setEditMin] = useState<number>(0);
-    const [editMax, setEditMax] = useState<number>(0); // ✅ NOVO
+    const [editMax, setEditMax] = useState<number>(0); // (produto / padrão)
+
+    // ✅ NOVO: min/max por depósito (est_saldo)
+    const [editMinMaxDepId, setEditMinMaxDepId] = useState<ID>(0);
+    const [editMinDep, setEditMinDep] = useState<number>(0);
+    const [editMaxDep, setEditMaxDep] = useState<number>(0);
     const [editCatId, setEditCatId] = useState<ID>(0);
     const [editFabId, setEditFabId] = useState<ID>(0);
     const [editClassId, setEditClassId] = useState<ID>(0);
@@ -1074,6 +1083,15 @@ export default function Page() {
         for (const s of saldos) m.set(`${s.produto_id}::${s.deposito_id}`, s);
         return m;
     }, [saldos]);
+
+    useEffect(() => {
+        if (!prodEditId || !editMinMaxDepId) return;
+
+        const s = saldosMap.get(`${prodEditId}::${editMinMaxDepId}`);
+        setEditMinDep(clampInt(s?.minimo ?? 0));
+        setEditMaxDep(clampInt(s?.maximo ?? 0));
+    }, [prodEditId, editMinMaxDepId, saldosMap]);
+
 
     async function refreshInit() {
         setLoading(true);
@@ -1117,8 +1135,8 @@ export default function Page() {
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
 
-            const min = clampInt(p.minimo);
-            const max = clampInt((p as any).maximo ?? 0);
+            const min = clampInt((s as any).minimo ?? 0);
+            const max = clampInt((s as any).maximo ?? 0);
             const qtd = clampInt(s.quantidade);
 
             // ✅ alerta quando atingir o mínimo OU abaixo (<=)
@@ -1198,8 +1216,9 @@ export default function Page() {
 
 
             const qtd = clampInt(s.quantidade);
-            const min = clampInt(p.minimo);
-            const max = clampInt((p as any).maximo ?? 0);
+            const min = clampInt((s as any).minimo ?? 0);
+            const max = clampInt((s as any).maximo ?? 0);
+
             const rep = Math.max(0, max - qtd); // ✅ REP = MAX - QTD
 
             if (onlyLow && !(qtd <= min)) continue; // ✅ mantém alerta ao chegar no mínimo
@@ -2345,25 +2364,35 @@ export default function Page() {
 
     // ======= PRODUTO EDITOR =======
 
-    function openProdutoEditor(produtoId: ID) {
+    function openProdutoEditor(produtoId: ID, depositoId?: ID) {
         const p = prodById.get(produtoId);
         if (!p) return;
 
         setProdEditId(produtoId);
+
         setEditNome(p.nome || "");
 
         const valorNum = Number(p.valor) || 0;
         const valorDigits = String(Math.round(Math.max(0, valorNum) * 100));
         setEditValor(maskBRLFromDigits(valorDigits));
 
+        // mantém padrão do produto (não quebra legado)
         setEditMin(clampInt(p.minimo));
-        setEditMax(clampInt((p as any).maximo ?? 0)); // ✅ NOVO
+        setEditMax(clampInt((p as any).maximo ?? 0));
+
         setEditCatId(Number(p.categoria_id || 0));
         setEditFabId(Number(p.fabricante_id || 0));
         setEditClassId(Number(p.classificacao_id || 0));
         setEditFotoNova("");
 
-        
+        // ✅ seleciona depósito vindo da linha do estoque (ou fallback)
+        const depId = Number(depositoId || 0) || Number(depositos[0]?.id || 0);
+        setEditMinMaxDepId(depId);
+
+        // ✅ carrega min/max do est_saldo daquele depósito
+        const s = depId ? saldosMap.get(`${produtoId}::${depId}`) : undefined;
+        setEditMinDep(clampInt(s?.minimo ?? 0));
+        setEditMaxDep(clampInt(s?.maximo ?? 0));
 
         setProdEditOpen(true);
     }
@@ -2403,6 +2432,30 @@ export default function Page() {
             setProdBusy(false);
         }
     }
+
+    async function salvarMinMaxDoDeposito() {
+        if (!prodEditId) return alert("Produto inválido.");
+        if (!editMinMaxDepId) return alert("Selecione o depósito.");
+
+        setMinMaxBusy(true);
+        try {
+            const r = await apiPost<{ ok: boolean; msg?: string }>({
+                action: "saldo_minmax_setar", // ✅ backend precisa aceitar isso
+                produto_id: Number(prodEditId),
+                deposito_id: Number(editMinMaxDepId),
+                minimo: clampInt(editMinDep),
+                maximo: clampInt(editMaxDep),
+            });
+
+            if (!r.ok) return alert(r.msg || "Falha ao salvar mín/máx do depósito.");
+
+            await refreshInit();
+            alert("Mín/Máx do depósito atualizado.");
+        } finally {
+            setMinMaxBusy(false);
+        }
+    }
+
 
     // =========================
     // AJUSTE MANUAL (AVANÇADO) - SALDOS POR DEPÓSITO
@@ -3611,7 +3664,7 @@ export default function Page() {
                                                                     <div className="flex items-center gap-2 min-w-0">
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => openProdutoEditor(p.id)}
+                                                                            onClick={() => openProdutoEditor(p.id, d.id)}
                                                                             className="truncate text-left text-sm font-semibold text-slate-900 hover:underline"
                                                                             title="Clique para editar"
                                                                         >
@@ -3715,7 +3768,7 @@ export default function Page() {
                                                                                     <div className="min-w-0">
                                                                                         <button
                                                                                             type="button"
-                                                                                            onClick={() => openProdutoEditor(p.id)}
+                                                                                            onClick={() => openProdutoEditor(p.id, d.id)}
                                                                                             className="block truncate text-left font-semibold text-slate-900 hover:underline"
                                                                                             title="Clique para editar"
                                                                                         >
@@ -4389,13 +4442,90 @@ export default function Page() {
                                         <TextInput type="text" inputMode="numeric" value={editValor} onChange={(e) => setEditValor(maskBRLInput(e.target.value))} placeholder="R$ 0,00" />
                                     </Field>
 
-                                    <Field label="Mínimo">
-                                        <TextInput type="number" min={0} value={editMin} onChange={(e) => setEditMin(clampInt(e.target.value))} />
+                                    <Field label="Mínimo (padrão do produto)">
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            value={editMin}
+                                            onChange={(e) => setEditMin(clampInt(e.target.value))}
+                                        />
                                     </Field>
 
-                                    <Field label="Máximo">
-                                        <TextInput type="number" min={0} value={editMax} onChange={(e) => setEditMax(clampInt(e.target.value))} />
+                                    <Field label="Máximo (padrão do produto)">
+                                        <TextInput
+                                            type="number"
+                                            min={0}
+                                            value={editMax}
+                                            onChange={(e) => setEditMax(clampInt(e.target.value))}
+                                        />
                                     </Field>
+
+                                    {/* ✅ NOVO: Min/Max por depósito */}
+                                    <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                        <p className="text-sm font-semibold text-slate-900">Mín/Máx por depósito</p>
+                                        <p className="mt-1 text-xs text-slate-600">
+                                            Escolha o depósito e ajuste o mínimo/máximo daquele estoque.
+                                        </p>
+
+                                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                            <Field label="Depósito">
+                                                <Select
+                                                    value={editMinMaxDepId}
+                                                    onChange={(e) => setEditMinMaxDepId(Number(e.target.value))}
+                                                >
+                                                    <option value={0} disabled>Selecionar...</option>
+                                                    {depositos.map((d) => (
+                                                        <option key={d.id} value={d.id}>
+                                                            {d.nome}
+                                                        </option>
+                                                    ))}
+                                                </Select>
+                                            </Field>
+
+                                            <Field label="Mínimo (depósito)">
+                                                <TextInput
+                                                    type="number"
+                                                    min={0}
+                                                    value={editMinDep}
+                                                    onChange={(e) => setEditMinDep(clampInt(e.target.value))}
+                                                    disabled={!editMinMaxDepId}
+                                                />
+                                            </Field>
+
+                                            <Field label="Máximo (depósito)">
+                                                <TextInput
+                                                    type="number"
+                                                    min={0}
+                                                    value={editMaxDep}
+                                                    onChange={(e) => setEditMaxDep(clampInt(e.target.value))}
+                                                    disabled={!editMinMaxDepId}
+                                                />
+                                            </Field>
+                                        </div>
+
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            <Button
+                                                variant="soft"
+                                                type="button"
+                                                onClick={salvarMinMaxDoDeposito}
+                                                disabled={!prodEditId || !editMinMaxDepId || minMaxBusy}
+                                            >
+                                                {minMaxBusy ? "Salvando..." : "Salvar mín/máx deste depósito"}
+                                            </Button>
+
+                                            <Button
+                                                variant="ghost"
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditMinMaxDepId(0);
+                                                    setEditMinDep(0);
+                                                    setEditMaxDep(0);
+                                                }}
+                                            >
+                                                Limpar
+                                            </Button>
+                                        </div>
+                                    </div>
 
                                     <Field label="Categoria">
                                         <Select value={editCatId} onChange={(e) => setEditCatId(Number(e.target.value))}>
@@ -5411,15 +5541,25 @@ export default function Page() {
                         </div>
 
                         <div className="sm:col-span-2">
-                            <Field label="Mínimo">
-                                <TextInput type="number" min={0} value={novoMin} onChange={(e) => setNovoMin(clampInt(e.target.value))} />
+                            <Field label="Mínimo (padrão do produto)">
+                                <TextInput
+                                    type="number"
+                                    min={0}
+                                    value={novoMin}
+                                    onChange={(e) => setNovoMin(clampInt(e.target.value))}
+                                />
                             </Field>
-                        </div>
 
-                        <div className="sm:col-span-2">
-                            <Field label="Máximo">
-                                <TextInput type="number" min={0} value={novoMax} onChange={(e) => setNovoMax(clampInt(e.target.value))} />
+                            <Field label="Máximo (padrão do produto)">
+                                <TextInput
+                                    type="number"
+                                    min={0}
+                                    value={novoMax}
+                                    onChange={(e) => setNovoMax(clampInt(e.target.value))}
+                                />
                             </Field>
+
+                            
                         </div>
 
                         <div className="sm:col-span-2">
