@@ -4066,10 +4066,16 @@ export default function Page() {
                                                         return (
                                                             <li key={r.p.id} className="px-3 py-2">
                                                                 <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                                                    {/* Produto (trunca) */}
+                                                                    {/* Produto (nome completo, menor, pode quebrar até 2 linhas) */}
                                                                     <div className="min-w-0 flex-1">
                                                                         <p
-                                                                            className="truncate text-sm font-semibold text-slate-900"
+                                                                            className="text-[13px] font-semibold text-slate-900 leading-snug"
+                                                                            style={{
+                                                                                display: "-webkit-box",
+                                                                                WebkitLineClamp: 2,
+                                                                                WebkitBoxOrient: "vertical",
+                                                                                overflow: "hidden",
+                                                                            }}
                                                                             title={`${r.p.nome}${r.fabricante ? ` • Fab: ${r.fabricante}` : ""}`}
                                                                         >
                                                                             {r.p.nome}
