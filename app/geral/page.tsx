@@ -4064,64 +4064,49 @@ export default function Page() {
                                                                     : "text-rose-600";
 
                                                         return (
-                                                            <li key={r.p.id} className="px-3 py-2">
-                                                                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                                                    {/* Produto (nome completo, menor, pode quebrar até 2 linhas) */}
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <p
-                                                                            className="text-[13px] font-semibold text-slate-900 leading-snug"
-                                                                            style={{
-                                                                                display: "-webkit-box",
-                                                                                WebkitLineClamp: 2,
-                                                                                WebkitBoxOrient: "vertical",
-                                                                                overflow: "hidden",
-                                                                            }}
-                                                                            title={`${r.p.nome}${r.fabricante ? ` • Fab: ${r.fabricante}` : ""}`}
-                                                                        >
-                                                                            {r.p.nome}
-                                                                        </p>
-                                                                    </div>
+                                                            <li key={r.p.id} className="px-4 py-2">
+                                                                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                                                                    <div className="flex items-center gap-3">
+                                                                        {/* NOME: sempre completo (pode quebrar linha) */}
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <p className="text-[13px] font-semibold text-slate-900 leading-snug whitespace-normal break-words">
+                                                                                {r.p.nome}
+                                                                            </p>
+                                                                        </div>
 
-                                                                    {/* Qtd do sistema */}
-                                                                    <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                                                                        Sist: <b className="text-slate-900">{r.qtdSistema}</b>
-                                                                    </div>
+                                                                        {/* SISTEMA: label curto em cima do número */}
+                                                                        <div className="shrink-0 flex flex-col items-center">
+                                                                            <span className="text-[10px] leading-none text-slate-500">Sist</span>
+                                                                            <span className="mt-1 inline-flex min-w-[44px] justify-center rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-900">
+                                                                                {r.qtdSistema}
+                                                                            </span>
+                                                                        </div>
 
-                                                                    {/* Input físico */}
-                                                                    <div className="shrink-0 w-[92px]">
-                                                                        <TextInput
-                                                                            inputMode="numeric"
-                                                                            value={fisTxt}
-                                                                            onChange={(e) =>
-                                                                                setConfFisicoByProd((prev) => ({
-                                                                                    ...prev,
-                                                                                    [r.p.id]: e.target.value.replace(/\D/g, ""),
-                                                                                }))
-                                                                            }
-                                                                            placeholder="Físico"
-                                                                        />
-                                                                    </div>
+                                                                        {/* FÍSICO: menor (metade) e mais à direita */}
+                                                                        <div className="shrink-0 w-[72px]">
+                                                                            <TextInput
+                                                                                inputMode="numeric"
+                                                                                value={fisTxt}
+                                                                                onChange={(e) =>
+                                                                                    setConfFisicoByProd((prev) => ({
+                                                                                        ...prev,
+                                                                                        [r.p.id]: e.target.value.replace(/\D/g, ""),
+                                                                                    }))
+                                                                                }
+                                                                                placeholder="Fís."
+                                                                            />
+                                                                        </div>
 
-                                                                    {/* Ícone status */}
-                                                                    <div
-                                                                        className="shrink-0 w-7 text-center text-lg leading-none"
-                                                                        title={
-                                                                            diff === null
-                                                                                ? "Sem físico informado"
-                                                                                : `Diferença (Físico - Sistema): ${diff}`
-                                                                        }
-                                                                        aria-label={
-                                                                            diff === null
-                                                                                ? "Sem físico informado"
-                                                                                : ok
-                                                                                    ? "Conferência OK"
-                                                                                    : "Conferência divergente"
-                                                                        }
-                                                                    >
-                                                                        <span className={iconCls}>{icon}</span>
+                                                                        {/* STATUS */}
+                                                                        <div className="shrink-0 w-7 flex justify-end">
+                                                                            <span className={fis === null ? "text-slate-400" : ok ? "text-emerald-600" : "text-rose-600"}>
+                                                                                {fis === null ? "—" : ok ? "✅" : "❌"}
+                                                                            </span>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </li>
+
                                                         );
                                                     })}
                                                 </ul>
