@@ -4913,6 +4913,28 @@ export default function Page() {
                     setEntradaConcluirOpen(false);
                 }}
             >
+                {/* ✅ RESUMO (Operador / Destino) */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] text-slate-500">Operador</div>
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                                {me?.nome ? `${me.nome} (${me.usuario})` : "—"}
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] text-slate-500">Destino</div>
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                                {entradaDepositoId
+                                    ? (depById.get(Number(entradaDepositoId))?.nome || `#${entradaDepositoId}`)
+                                    : "—"}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                
                 <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">Itens</p>
@@ -5419,6 +5441,38 @@ export default function Page() {
                         Atenção: após confirmar, a movimentação será registrada no sistema.
                     </div>
 
+                    {/* ✅ RESUMO (Solicitante / Origem / Destino) */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] text-slate-500">Solicitante</div>
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                    {saidaSolicitanteId
+                                        ? (userById.get(Number(saidaSolicitanteId))?.nome || `#${saidaSolicitanteId}`)
+                                        : "—"}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] text-slate-500">Origem</div>
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                    {saidaDepositoId
+                                        ? (depById.get(Number(saidaDepositoId))?.nome || `#${saidaDepositoId}`)
+                                        : "—"}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] text-slate-500">Destino</div>
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                    {saidaDestinoDepositoId
+                                        ? (depById.get(Number(saidaDestinoDepositoId))?.nome || `#${saidaDestinoDepositoId}`)
+                                        : "—"}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">Itens</p>
 
@@ -5451,17 +5505,13 @@ export default function Page() {
                             {saidaConfirmBusy ? "Confirmando..." : "Sim, confirmar"}
                         </Button>
 
-                        <Button
-                            variant="ghost"
-                            onClick={() => setSaidaConfirmOpen(false)}
-                            type="button"
-                            disabled={saidaConfirmBusy}
-                        >
+                        <Button variant="ghost" onClick={() => setSaidaConfirmOpen(false)} type="button" disabled={saidaConfirmBusy}>
                             Cancelar
                         </Button>
                     </div>
                 </div>
             </Modal>
+
 
 
             <Modal
@@ -5477,6 +5527,39 @@ export default function Page() {
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                         Atenção: após confirmar, a movimentação será registrada no sistema.
                     </div>
+
+                    {/* ✅ RESUMO (Solicitante / Origem / Destino) */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] text-slate-500">Solicitante</div>
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                    {trfSolicitanteId
+                                        ? (userById.get(Number(trfSolicitanteId))?.nome || `#${trfSolicitanteId}`)
+                                        : "—"}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] text-slate-500">Origem</div>
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                    {trfOrigemId
+                                        ? (depById.get(Number(trfOrigemId))?.nome || `#${trfOrigemId}`)
+                                        : "—"}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] text-slate-500">Destino</div>
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                    {trfDestinoId
+                                        ? (depById.get(Number(trfDestinoId))?.nome || `#${trfDestinoId}`)
+                                        : "—"}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">Itens</p>
