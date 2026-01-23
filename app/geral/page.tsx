@@ -4769,15 +4769,33 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        {/* 3ª linha: Código de barras + Scan */}
-                        <Field label="Código de barras">
-                            <TextInput
-                                value={entradaBarcode}
-                                onChange={(e) => setEntradaBarcode(e.target.value)}
-                                placeholder="Ex: 789..."
-                                inputMode="numeric"
-                            />
-                        </Field>
+                        {/* ✅ Código + Scan (sempre na mesma linha) */}
+                        <div className="sm:col-span-2 flex items-end gap-2">
+                            <div className="flex-1">
+                                <Field label="Código de barras">
+                                    <TextInput
+                                        value={entradaBarcode}
+                                        onChange={(e) => setEntradaBarcode(e.target.value)}
+                                        placeholder="Ex: 789..."
+                                        inputMode="numeric"
+                                    />
+                                </Field>
+                            </div>
+
+                            <div className="w-[120px]">
+                                <Field label="Scan">
+                                    <Button
+                                        variant="soft"
+                                        onClick={() => setEntradaScanOpen(true)}
+                                        type="button"
+                                        className="w-full"
+                                    >
+                                        📷 Ler
+                                    </Button>
+                                </Field>
+                            </div>
+                        </div>
+
 
                         <Field label="Scan" hint="Use a câmera para preencher o código.">
                             <Button
@@ -4913,29 +4931,28 @@ export default function Page() {
                     setEntradaConcluirOpen(false);
                 }}
             >
-                {/* ✅ RESUMO (Operador / Destino) */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <div className="text-[11px] text-slate-500">Operador</div>
-                            <div className="truncate text-sm font-semibold text-slate-900">
-                                {me?.nome ? `${me.nome} (${me.usuario})` : "—"}
-                            </div>
-                        </div>
+                <div className="space-y-3">
 
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                            <div className="text-[11px] text-slate-500">Destino</div>
-                            <div className="truncate text-sm font-semibold text-slate-900">
-                                {entradaDepositoId
-                                    ? (depById.get(Number(entradaDepositoId))?.nome || `#${entradaDepositoId}`)
-                                    : "—"}
-                            </div>
+                    {/* ✅ RESUMO PEQUENO */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-700">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Operador:</span>{" "}
+                                <b>{me?.nome ? `${me.nome} (${me.usuario})` : "—"}</b>
+                            </span>
+
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Destino:</span>{" "}
+                                <b>
+                                    {entradaDepositoId
+                                        ? (depById.get(Number(entradaDepositoId))?.nome || `#${entradaDepositoId}`)
+                                        : "—"}
+                                </b>
+                            </span>
                         </div>
                     </div>
-                </div>
 
-                
-                <div className="space-y-4">
+                    {/* Itens */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">Itens</p>
 
@@ -4944,20 +4961,28 @@ export default function Page() {
                                 <li key={idx} className="flex items-center justify-between gap-3 p-3">
                                     <div className="min-w-0">
                                         <p className="truncate text-sm font-semibold text-slate-900">{it.nome}</p>
-                                        <p className="text-xs text-slate-500">Quantidade: <b>{it.qtd}</b></p>
+                                        <p className="text-xs text-slate-500">
+                                            Quantidade: <b>{it.qtd}</b>
+                                        </p>
                                     </div>
                                 </li>
                             ))}
                         </ul>
                     </div>
 
+                    {/* ✅ AVISO EMBAIXO */}
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Atenção: após confirmar, a movimentação será registrada no sistema.
+                    </div>
+
+                    {/* Botões */}
                     <div className="flex flex-wrap gap-2">
                         <Button onClick={confirmarEntradaDoSnapshot} type="button" disabled={entradaConcluirBusy}>
                             {entradaConcluirBusy ? "Confirmando..." : "Confirmar"}
                         </Button>
 
                         <Button variant="ghost" onClick={() => setEntradaConcluirOpen(false)} type="button" disabled={entradaConcluirBusy}>
-                            Voltar
+                            Cancelar
                         </Button>
                     </div>
                 </div>
@@ -5077,23 +5102,41 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        {/* 4ª linha: Código de barras + Scan */}
-                        <Field label="Código de barras (opcional)">
-                            <TextInput
-                                value={saidaBarcode}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    setSaidaBarcode(v);
-                                    const p = produtos.find((x) => x.codigo_barras === v.trim());
-                                    if (p) {
-                                        setSaidaProdutoId(p.id);
-                                        setSaidaProdQuery(p.nome);
-                                    }
-                                }}
-                                placeholder="Digite ou use Scan"
-                                inputMode="numeric"
-                            />
-                        </Field>
+                        {/* ✅ Código + Scan (sempre na mesma linha) */}
+                        <div className="sm:col-span-2 flex items-end gap-2">
+                            <div className="flex-1">
+                                <Field label="Código de barras (opcional)">
+                                    <TextInput
+                                        value={saidaBarcode}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            setSaidaBarcode(v);
+                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                            if (p) {
+                                                setSaidaProdutoId(p.id);
+                                                setSaidaProdQuery(p.nome);
+                                            }
+                                        }}
+                                        placeholder="Digite ou use Scan"
+                                        inputMode="numeric"
+                                    />
+                                </Field>
+                            </div>
+
+                            <div className="w-[120px]">
+                                <Field label="Scan">
+                                    <Button
+                                        variant="soft"
+                                        onClick={() => setSaidaScanOpen(true)}
+                                        type="button"
+                                        className="w-full"
+                                    >
+                                        📷 Scan
+                                    </Button>
+                                </Field>
+                            </div>
+                        </div>
+
 
                         <Field label="Scan" hint="Via Scan abre popup para escolher a quantidade e adicionar direto na lista.">
                             <Button variant="soft" onClick={() => setSaidaScanOpen(true)} type="button" className="w-full">
@@ -5279,23 +5322,41 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        {/* 4ª linha: Código de barras + Scan */}
-                        <Field label="Código de barras (opcional)">
-                            <TextInput
-                                value={trfBarcode}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    setTrfBarcode(v);
-                                    const p = produtos.find((x) => x.codigo_barras === v.trim());
-                                    if (p) {
-                                        setTrfProdutoId(p.id);
-                                        setTrfProdQuery(p.nome);
-                                    }
-                                }}
-                                placeholder="Digite ou use Scan"
-                                inputMode="numeric"
-                            />
-                        </Field>
+                        {/* ✅ Código + Scan (sempre na mesma linha) */}
+                        <div className="sm:col-span-2 flex items-end gap-2">
+                            <div className="flex-1">
+                                <Field label="Código de barras (opcional)">
+                                    <TextInput
+                                        value={trfBarcode}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            setTrfBarcode(v);
+                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                            if (p) {
+                                                setTrfProdutoId(p.id);
+                                                setTrfProdQuery(p.nome);
+                                            }
+                                        }}
+                                        placeholder="Digite ou use Scan"
+                                        inputMode="numeric"
+                                    />
+                                </Field>
+                            </div>
+
+                            <div className="w-[120px]">
+                                <Field label="Scan">
+                                    <Button
+                                        variant="soft"
+                                        onClick={() => setTrfScanOpen(true)}
+                                        type="button"
+                                        className="w-full"
+                                    >
+                                        📷 Scan
+                                    </Button>
+                                </Field>
+                            </div>
+                        </div>
+
 
                         <Field label="Scan" hint="Via Scan abre popup para escolher a quantidade e adicionar direto na lista.">
                             <Button variant="soft" onClick={() => setTrfScanOpen(true)} type="button" className="w-full">
@@ -5437,42 +5498,40 @@ export default function Page() {
                 }}
             >
                 <div className="mt-2 flex flex-col gap-3">
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                        Atenção: após confirmar, a movimentação será registrada no sistema.
-                    </div>
 
-                    {/* ✅ RESUMO (Solicitante / Origem / Destino) */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] text-slate-500">Solicitante</div>
-                                <div className="truncate text-sm font-semibold text-slate-900">
+                    {/* ✅ RESUMO PEQUENO (1 linha, pode quebrar se faltar espaço) */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-700">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Solicitante:</span>{" "}
+                                <b>
                                     {saidaSolicitanteId
                                         ? (userById.get(Number(saidaSolicitanteId))?.nome || `#${saidaSolicitanteId}`)
                                         : "—"}
-                                </div>
-                            </div>
+                                </b>
+                            </span>
 
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] text-slate-500">Origem</div>
-                                <div className="truncate text-sm font-semibold text-slate-900">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Origem:</span>{" "}
+                                <b>
                                     {saidaDepositoId
                                         ? (depById.get(Number(saidaDepositoId))?.nome || `#${saidaDepositoId}`)
                                         : "—"}
-                                </div>
-                            </div>
+                                </b>
+                            </span>
 
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] text-slate-500">Destino</div>
-                                <div className="truncate text-sm font-semibold text-slate-900">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Destino:</span>{" "}
+                                <b>
                                     {saidaDestinoDepositoId
                                         ? (depById.get(Number(saidaDestinoDepositoId))?.nome || `#${saidaDestinoDepositoId}`)
                                         : "—"}
-                                </div>
-                            </div>
+                                </b>
+                            </span>
                         </div>
                     </div>
 
+                    {/* Itens */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">Itens</p>
 
@@ -5500,7 +5559,13 @@ export default function Page() {
                         </ul>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    {/* ✅ AVISO VAI PRA BAIXO (acima dos botões) */}
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Atenção: após confirmar, a movimentação será registrada no sistema.
+                    </div>
+
+                    {/* Botões */}
+                    <div className="mt-1 flex flex-wrap gap-2">
                         <Button onClick={confirmarSaidaDoSnapshot} type="button" disabled={saidaConfirmBusy}>
                             {saidaConfirmBusy ? "Confirmando..." : "Sim, confirmar"}
                         </Button>
@@ -5514,6 +5579,7 @@ export default function Page() {
 
 
 
+
             <Modal
                 open={trfConfirmOpen}
                 title="Confirmar transferência"
@@ -5524,43 +5590,40 @@ export default function Page() {
                 }}
             >
                 <div className="mt-2 flex flex-col gap-3">
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                        Atenção: após confirmar, a movimentação será registrada no sistema.
-                    </div>
 
-                    {/* ✅ RESUMO (Solicitante / Origem / Destino) */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] text-slate-500">Solicitante</div>
-                                <div className="truncate text-sm font-semibold text-slate-900">
+                    {/* ✅ RESUMO PEQUENO */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-700">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Solicitante:</span>{" "}
+                                <b>
                                     {trfSolicitanteId
                                         ? (userById.get(Number(trfSolicitanteId))?.nome || `#${trfSolicitanteId}`)
                                         : "—"}
-                                </div>
-                            </div>
+                                </b>
+                            </span>
 
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] text-slate-500">Origem</div>
-                                <div className="truncate text-sm font-semibold text-slate-900">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Origem:</span>{" "}
+                                <b>
                                     {trfOrigemId
                                         ? (depById.get(Number(trfOrigemId))?.nome || `#${trfOrigemId}`)
                                         : "—"}
-                                </div>
-                            </div>
+                                </b>
+                            </span>
 
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] text-slate-500">Destino</div>
-                                <div className="truncate text-sm font-semibold text-slate-900">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Destino:</span>{" "}
+                                <b>
                                     {trfDestinoId
                                         ? (depById.get(Number(trfDestinoId))?.nome || `#${trfDestinoId}`)
                                         : "—"}
-                                </div>
-                            </div>
+                                </b>
+                            </span>
                         </div>
                     </div>
 
-
+                    {/* Itens */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-sm font-semibold text-slate-900">Itens</p>
 
@@ -5588,22 +5651,24 @@ export default function Page() {
                         </ul>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    {/* ✅ AVISO EMBAIXO */}
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Atenção: após confirmar, a movimentação será registrada no sistema.
+                    </div>
+
+                    {/* Botões */}
+                    <div className="mt-1 flex flex-wrap gap-2">
                         <Button onClick={confirmarTransferenciaDoSnapshot} type="button" disabled={trfConfirmBusy}>
                             {trfConfirmBusy ? "Confirmando..." : "Sim, confirmar"}
                         </Button>
 
-                        <Button
-                            variant="ghost"
-                            onClick={() => setTrfConfirmOpen(false)}
-                            type="button"
-                            disabled={trfConfirmBusy}
-                        >
+                        <Button variant="ghost" onClick={() => setTrfConfirmOpen(false)} type="button" disabled={trfConfirmBusy}>
                             Cancelar
                         </Button>
                     </div>
                 </div>
             </Modal>
+
 
 
             {/* POPUP PÓS-SCAN (Saída) */}
