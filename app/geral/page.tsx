@@ -5138,11 +5138,7 @@ export default function Page() {
                         </div>
 
 
-                        <Field label="Scan" hint="Via Scan abre popup para escolher a quantidade e adicionar direto na lista.">
-                            <Button variant="soft" onClick={() => setSaidaScanOpen(true)} type="button" className="w-full">
-                                📷 Scan
-                            </Button>
-                        </Field>
+                        
 
                         {/* 5ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Qtd">
@@ -5358,11 +5354,7 @@ export default function Page() {
                         </div>
 
 
-                        <Field label="Scan" hint="Via Scan abre popup para escolher a quantidade e adicionar direto na lista.">
-                            <Button variant="soft" onClick={() => setTrfScanOpen(true)} type="button" className="w-full">
-                                📷 Scan
-                            </Button>
-                        </Field>
+                        
 
                         {/* 5ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Qtd">
