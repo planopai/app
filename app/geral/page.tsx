@@ -4055,79 +4055,71 @@ export default function Page() {
                                                         const diff = fis === null ? null : fis - r.qtdSistema;
                                                         const ok = diff !== null && diff === 0;
 
-                                                        const statusLabel = fis === null ? "—" : ok ? "OK" : "Divergente";
-                                                        const statusCls =
+                                                        const icon = fis === null ? "—" : ok ? "✅" : "❌";
+                                                        const iconCls =
                                                             fis === null
-                                                                ? "border-slate-200 bg-white text-slate-600"
+                                                                ? "text-slate-400"
                                                                 : ok
-                                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                                                    : "border-rose-200 bg-rose-50 text-rose-800";
-
-                                                        const diffCls =
-                                                            diff === null
-                                                                ? "text-slate-600"
-                                                                : diff === 0
-                                                                    ? "text-emerald-700"
-                                                                    : "text-rose-700";
+                                                                    ? "text-emerald-600"
+                                                                    : "text-rose-600";
 
                                                         return (
-                                                            <li key={r.p.id} className="px-4 py-3">
-                                                                <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                                                                    {/* Header alinhado: info à esquerda + status/sistema à direita */}
-                                                                    <div className="grid grid-cols-[1fr_auto] items-start gap-3">
-                                                                        <div className="min-w-0">
-                                                                            <p className="text-sm font-semibold text-slate-900 leading-snug">
-                                                                                {r.p.nome}
-                                                                            </p>
-
-                                                                            <p className="mt-1 text-xs text-slate-600">
-                                                                                Fabricante: <b>{r.fabricante || "—"}</b>
-                                                                            </p>
-                                                                        </div>
-
-                                                                        <div className="flex flex-col items-end gap-2">
-                                                                            <span className={["inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold", statusCls].join(" ")}>
-                                                                                {statusLabel}
-                                                                            </span>
-
-                                                                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
-                                                                                Sistema: <b className="font-semibold text-slate-900">{r.qtdSistema}</b>
-                                                                            </div>
-                                                                        </div>
+                                                            <li key={r.p.id} className="px-3 py-2">
+                                                                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                                                    {/* Produto (trunca) */}
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p
+                                                                            className="truncate text-sm font-semibold text-slate-900"
+                                                                            title={`${r.p.nome}${r.fabricante ? ` • Fab: ${r.fabricante}` : ""}`}
+                                                                        >
+                                                                            {r.p.nome}
+                                                                        </p>
                                                                     </div>
 
-                                                                    {/* Linha inferior: input + diferença, bem alinhado */}
-                                                                    <div className="mt-3 grid grid-cols-2 gap-2">
-                                                                        <div>
-                                                                            <p className="mb-1 text-xs font-medium text-slate-700">Qtd física</p>
-                                                                            <TextInput
-                                                                                inputMode="numeric"
-                                                                                value={fisTxt}
-                                                                                onChange={(e) =>
-                                                                                    setConfFisicoByProd((prev) => ({
-                                                                                        ...prev,
-                                                                                        [r.p.id]: e.target.value.replace(/\D/g, ""),
-                                                                                    }))
-                                                                                }
-                                                                                placeholder="Digite..."
-                                                                            />
-                                                                        </div>
+                                                                    {/* Qtd do sistema */}
+                                                                    <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                                                                        Sist: <b className="text-slate-900">{r.qtdSistema}</b>
+                                                                    </div>
 
-                                                                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                                                            <p className="text-xs font-medium text-slate-700">Diferença</p>
-                                                                            <p className={["mt-1 text-lg font-bold leading-none", diffCls].join(" ")}>
-                                                                                {diff === null ? "—" : diff}
-                                                                            </p>
-                                                                            <p className="mt-1 text-[11px] text-slate-500">
-                                                                                (Físico − Sistema)
-                                                                            </p>
-                                                                        </div>
+                                                                    {/* Input físico */}
+                                                                    <div className="shrink-0 w-[92px]">
+                                                                        <TextInput
+                                                                            inputMode="numeric"
+                                                                            value={fisTxt}
+                                                                            onChange={(e) =>
+                                                                                setConfFisicoByProd((prev) => ({
+                                                                                    ...prev,
+                                                                                    [r.p.id]: e.target.value.replace(/\D/g, ""),
+                                                                                }))
+                                                                            }
+                                                                            placeholder="Físico"
+                                                                        />
+                                                                    </div>
+
+                                                                    {/* Ícone status */}
+                                                                    <div
+                                                                        className="shrink-0 w-7 text-center text-lg leading-none"
+                                                                        title={
+                                                                            diff === null
+                                                                                ? "Sem físico informado"
+                                                                                : `Diferença (Físico - Sistema): ${diff}`
+                                                                        }
+                                                                        aria-label={
+                                                                            diff === null
+                                                                                ? "Sem físico informado"
+                                                                                : ok
+                                                                                    ? "Conferência OK"
+                                                                                    : "Conferência divergente"
+                                                                        }
+                                                                    >
+                                                                        <span className={iconCls}>{icon}</span>
                                                                     </div>
                                                                 </div>
                                                             </li>
                                                         );
                                                     })}
                                                 </ul>
+
 
                                         {/* PC */}
                                         <div className="hidden sm:block">
