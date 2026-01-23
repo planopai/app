@@ -4797,16 +4797,7 @@ export default function Page() {
                         </div>
 
 
-                        <Field label="Scan" hint="Use a câmera para preencher o código.">
-                            <Button
-                                variant="soft"
-                                onClick={() => setEntradaScanOpen(true)}
-                                type="button"
-                                className="w-full"
-                            >
-                                📷 Ler código
-                            </Button>
-                        </Field>
+                        
 
                         {/* 4ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Quantidade">
