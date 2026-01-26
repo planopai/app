@@ -2146,6 +2146,9 @@ export default function Page() {
             return alert("Já existe um produto com este código de barras.");
         }
 
+        const depId = Number(novoDepositoId || 0);
+        if (!depId) return alert("Selecione o depósito inicial do produto.");
+
         const payload: any = {
             action: "produto_criar",
             codigo_barras: cb,
@@ -2153,11 +2156,16 @@ export default function Page() {
             valor: Number.isFinite(Number(novoValor)) ? Number(novoValor) : 0,
             minimo: clampInt(novoMin),
             maximo: clampInt(novoMax),
+
+            // ✅ NOVO: depósito inicial
+            deposito_id: depId,
+
             categoria_id: novoCategoriaId ? Number(novoCategoriaId) : 0,
             fabricante_id: novoFabricanteId ? Number(novoFabricanteId) : 0,
             classificacao_id: novoClassificacaoId ? Number(novoClassificacaoId) : 0,
             foto_url: novoFoto || "",
         };
+
 
         const r = await apiPost<{ ok: boolean; msg?: string; id?: number }>(payload);
         if (!r.ok) return alert(r.msg || "Falha ao criar produto.");
@@ -2172,6 +2180,8 @@ export default function Page() {
         setNovoCategoriaId(0);
         setNovoFabricanteId(0);
         setNovoClassificacaoId(0);
+        setNovoDepositoId(depositos[0]?.id || 0);
+
 
         await refreshInit();
     }
@@ -3239,6 +3249,9 @@ export default function Page() {
     const [novoCategoriaId, setNovoCategoriaId] = useState<ID>(0);
     const [novoFabricanteId, setNovoFabricanteId] = useState<ID>(0);
     const [novoClassificacaoId, setNovoClassificacaoId] = useState<ID>(0);
+
+    // ✅ NOVO: depósito inicial do produto
+    const [novoDepositoId, setNovoDepositoId] = useState<ID>(0);
 
 
     const [novoDepNome, setNovoDepNome] = useState("");
@@ -5710,6 +5723,17 @@ export default function Page() {
                 subtitle="Use apenas quando autorizado. A Entrada não cadastra novos produtos."
                 onClose={() => setAdvNovoProdutoOpen(false)}
             >
+                <div className="sm:col-span-3">
+                    <Field label="Depósito inicial (onde o produto vai aparecer)">
+                        <Select value={novoDepositoId} onChange={(e) => setNovoDepositoId(Number(e.target.value))}>
+                            <option value={0} disabled>Selecionar...</option>
+                            {depositos.map((d) => (
+                                <option key={d.id} value={d.id}>{d.nome}</option>
+                            ))}
+                        </Select>
+                    </Field>
+                </div>
+                
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-2">
@@ -5823,7 +5847,11 @@ export default function Page() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        <Button onClick={criarNovoProdutoAvancado} type="button" disabled={!novoCodigoBarras.trim() || !novoNome.trim()}>
+                        <Button
+                            onClick={criarNovoProdutoAvancado}
+                            type="button"
+                            disabled={!novoCodigoBarras.trim() || !novoNome.trim() || !novoDepositoId}
+                        >
                             Criar produto
                         </Button>
                         <Button variant="ghost" onClick={() => setAdvNovoProdutoOpen(false)} type="button">
