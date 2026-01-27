@@ -89,6 +89,58 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
+
+
+// ✅ CONFERÊNCIAS (REGISTROS SALVOS NO BANCO)
+type ConferenciaRegistro = {
+    id: number;
+    deposito_id: ID;
+    deposito_nome?: string;
+    operador_usuario_id: ID;
+    operador_nome?: string;
+    total_itens: number;
+    total_dif: number;
+    criado_em: string;
+};
+
+type ConferenciasListResp = {
+    ok: boolean;
+    rows: ConferenciaRegistro[];
+    msg?: string;
+    need_login?: 1;
+};
+
+type ConferenciaItem = {
+    id: number;
+    conferencia_id: number;
+    produto_id: ID | null;
+    produto_nome_snapshot: string;
+    codigo_barras_snapshot: string | null;
+    qtd_sistema: number;
+    qtd_fisica: number;
+    dif: number;
+};
+
+type ConferenciaDetalheHead = {
+    id: number;
+    deposito_id: ID;
+    deposito_nome?: string;
+    operador_usuario_id: ID;
+    operador_nome?: string;
+    total_itens: number;
+    total_dif: number;
+    criado_em: string;
+};
+
+type ConferenciaDetalheResp = {
+    ok: boolean;
+    head: ConferenciaDetalheHead;
+    items: ConferenciaItem[];
+    msg?: string;
+    need_login?: 1;
+};
+
+
 type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
 type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number };
@@ -366,7 +418,7 @@ function MultiSelectDropdown({
                                 >
                                     Limpar
                                 </Button>
-                                
+
                             </div>
                         </div>
 
@@ -1069,7 +1121,7 @@ export default function Page() {
     const [editFotoNova, setEditFotoNova] = useState<string>("");
 
     // saldos editáveis por depósito
-    
+
 
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
@@ -1189,6 +1241,72 @@ export default function Page() {
 
     // qtd física por produto (como string para permitir vazio)
     const [confFisicoByProd, setConfFisicoByProd] = useState<Record<number, string>>({});
+
+    // ✅ NOVO: CONFERÊNCIAS (REGISTROS SALVOS)
+    const [confRegLoading, setConfRegLoading] = useState(false);
+    const [confRegErr, setConfRegErr] = useState<string>("");
+    const [confRegDepositoId, setConfRegDepositoId] = useState<ID>(0);
+    const [confRegRows, setConfRegRows] = useState<ConferenciaRegistro[]>([]);
+
+    // ✅ DETALHE DE CONFERÊNCIA (REGISTRO SALVO)
+    const [confDetOpen, setConfDetOpen] = useState(false);
+    const [confDetBusy, setConfDetBusy] = useState(false);
+    const [confDetErr, setConfDetErr] = useState<string>("");
+    const [confDetId, setConfDetId] = useState<number>(0);
+    const [confDetHead, setConfDetHead] = useState<ConferenciaDetalheHead | null>(null);
+    const [confDetItems, setConfDetItems] = useState<ConferenciaItem[]>([]);
+
+
+    async function loadConferenciasRegistros() {
+        setConfRegLoading(true);
+        setConfRegErr("");
+        try {
+            const resp = await apiGet<ConferenciasListResp>({
+                conferencias: 1,
+                deposito_id: confRegDepositoId || undefined,
+                limit: 100,
+                _ts: Date.now(),
+            });
+            if (!resp.ok) throw new Error(resp.msg || "Falha ao carregar conferências.");
+            setConfRegRows(resp.rows || []);
+        } catch (e: any) {
+            setConfRegErr(e?.message || "Erro ao carregar conferências.");
+        } finally {
+            setConfRegLoading(false);
+        }
+    }
+
+    async function loadConferenciaDetalhe(conferencia_id: number) {
+        setConfDetBusy(true);
+        setConfDetErr("");
+
+        try {
+            const resp = await apiGet<ConferenciaDetalheResp>({
+                conferencia_detalhe: 1,          // ✅ backend: ajuste o nome se o seu PHP usar outro
+                conferencia_id: conferencia_id,  // ✅ idem
+                _ts: Date.now(),
+            });
+
+            if (!resp.ok) throw new Error(resp.msg || "Falha ao carregar detalhe da conferência.");
+
+            setConfDetHead(resp.head);
+            setConfDetItems(resp.items || []);
+        } catch (e: any) {
+            setConfDetErr(e?.message || "Erro ao carregar detalhe.");
+            setConfDetHead(null);
+            setConfDetItems([]);
+        } finally {
+            setConfDetBusy(false);
+        }
+    }
+
+    function abrirConferenciaDetalhe(conferencia_id: number) {
+        setConfDetId(conferencia_id);
+        setConfDetOpen(true);
+        loadConferenciaDetalhe(conferencia_id);
+    }
+
+
 
     // ✅ MOSTRA Min/Rep apenas se existir pelo menos 1 item (no(s) depósito(s) filtrado(s))
     // com minimo>0 OU maximo>0. Se todos forem 0, some as colunas.
@@ -1820,9 +1938,9 @@ export default function Page() {
         const clsTxt =
             confClassId === "Todas" ? "Todas" : (classById.get(Number(confClassId))?.nome || String(confClassId));
 
-        const onlyPosTxt = 
+        const onlyPosTxt =
             confOnlyPositive ? "Sim" : "Não";
-        
+
 
         // helper: busca imagem e converte para dataURL (precisa CORS liberado)
         async function toDataUrl(url: string): Promise<string | null> {
@@ -1879,7 +1997,7 @@ export default function Page() {
         doc.text(`Fabricante: ${fabTxt}`, marginX + 3, y + 6);
         doc.text(`Categoria: ${catTxt}`, marginX + 3, y + 11);
         doc.text(`Classificação: ${clsTxt}`, marginX + 3, y + 16);
-        
+
 
         y += 24;
 
@@ -2017,9 +2135,225 @@ export default function Page() {
         doc.save(`${safeName}.pdf`);
     }
 
+    function exportarConferenciaRegistroCSV() {
+        if (!confDetHead) return alert("Detalhe não carregado.");
+        if (!confDetItems.length) return alert("Nenhum item no detalhe.");
+
+        const sep = ";";
+        const depNome = confDetHead.deposito_nome || depById.get(Number(confDetHead.deposito_id))?.nome || String(confDetHead.deposito_id);
+        const operador = confDetHead.operador_nome || userById.get(Number(confDetHead.operador_usuario_id))?.nome || String(confDetHead.operador_usuario_id);
+
+        const header = [
+            "Conferência ID",
+            "Depósito",
+            "Operador",
+            "Criado em",
+            "Produto",
+            "Código de Barras",
+            "Qtd Sistema",
+            "Qtd Física",
+            "Dif",
+        ];
+
+        const lines: string[] = [];
+        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
+
+        for (const it of confDetItems) {
+            lines.push(
+                [
+                    confDetHead.id,
+                    depNome,
+                    operador,
+                    fmtDateTime(confDetHead.criado_em),
+                    it.produto_nome_snapshot,
+                    it.codigo_barras_snapshot || "",
+                    it.qtd_sistema,
+                    it.qtd_fisica,
+                    it.dif,
+                ]
+                    .map((x) => escapeCsvCell(x, sep))
+                    .join(sep)
+            );
+        }
+
+        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+
+        const safeName = `conferencia_${confDetHead.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${safeName}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    async function exportarConferenciaRegistroPDF() {
+        if (!confDetHead) return alert("Detalhe não carregado.");
+        if (!confDetItems.length) return alert("Nenhum item no detalhe.");
+
+        const { default: jsPDF } = await import("jspdf");
+        const autoTable = (await import("jspdf-autotable")).default;
+
+        const LOGO_URL =
+            "https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1";
+
+        const depNome =
+            confDetHead.deposito_nome || depById.get(Number(confDetHead.deposito_id))?.nome || String(confDetHead.deposito_id);
+
+        const operador =
+            confDetHead.operador_nome || userById.get(Number(confDetHead.operador_usuario_id))?.nome || String(confDetHead.operador_usuario_id);
+
+        // helper: logo -> dataURL
+        async function toDataUrl(url: string): Promise<string | null> {
+            try {
+                const r = await fetch(url, { mode: "cors", cache: "no-store" });
+                const b = await r.blob();
+                const reader = await new Promise<string>((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onerror = () => reject(new Error("Falha ao ler logo"));
+                    fr.onload = () => resolve(String(fr.result || ""));
+                    fr.readAsDataURL(b);
+                });
+                return reader;
+            } catch {
+                return null;
+            }
+        }
+
+        const logoDataUrl = await toDataUrl(LOGO_URL);
+
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const marginX = 12;
+        let y = 12;
+
+        // header
+        if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", marginX, y, 55, 14);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("Conferência (Registro salvo)", marginX + 62, y + 8);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(
+            `Conferência #${confDetHead.id} • Depósito: ${depNome} • Operador: ${operador}`,
+            marginX + 62,
+            y + 14
+        );
+
+        y += 22;
+
+        // caixa info
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 16, 2, 2, "FD");
+
+        doc.setFontSize(9);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`Criado em: ${fmtDateTime(confDetHead.criado_em)}`, marginX + 3, y + 6);
+        doc.text(`Itens: ${confDetHead.total_itens}`, marginX + 3, y + 11);
+
+        const difTxt = Number(confDetHead.total_dif) > 0 ? `+${confDetHead.total_dif}` : `${confDetHead.total_dif}`;
+        doc.text(`Dif total: ${difTxt}`, pageW / 2, y + 6);
+
+        y += 22;
+
+        // tabela
+        const head = [[
+            "Produto",
+            "Código",
+            "Qtd\u00A0Sistema",
+            "Qtd\u00A0Física",
+            "Dif.",
+        ]];
+
+        const body = confDetItems.map((it) => [
+            it.produto_nome_snapshot,
+            it.codigo_barras_snapshot || "—",
+            String(it.qtd_sistema),
+            String(it.qtd_fisica),
+            String(it.dif),
+        ]);
+
+        // rodapé: totais
+        const totalSistema = confDetItems.reduce((acc, it) => acc + clampInt(it.qtd_sistema), 0);
+        const totalFisico = confDetItems.reduce((acc, it) => acc + clampInt(it.qtd_fisica), 0);
+        const totalDif = totalFisico - totalSistema;
+        const totalDifTxt = totalDif > 0 ? `+${totalDif}` : `${totalDif}`;
+
+        autoTable(doc, {
+            startY: y,
+            head,
+            body,
+            margin: { left: marginX, right: marginX },
+            styles: {
+                font: "helvetica",
+                fontSize: 9.3,
+                cellPadding: 2.4,
+                valign: "middle",
+                lineColor: [226, 232, 240],
+                lineWidth: 0.2,
+                overflow: "ellipsize",
+            },
+            headStyles: {
+                fillColor: [241, 245, 249],
+                textColor: [15, 23, 42],
+                fontStyle: "bold",
+                valign: "middle",
+            },
+            columnStyles: {
+                0: { cellWidth: 140, overflow: "linebreak" }, // Produto
+                1: { cellWidth: 55, overflow: "ellipsize" },  // Código
+                2: { cellWidth: 30, halign: "right" },
+                3: { cellWidth: 30, halign: "right" },
+                4: { cellWidth: 18, halign: "right" },
+            },
+            didParseCell: (data) => {
+                if (data.section !== "body") return;
+
+                // Dif colorida
+                if (data.column.index === 4) {
+                    const v = Number(String(data.cell.raw || "0"));
+                    if (v > 0) data.cell.styles.textColor = [22, 163, 74];
+                    if (v < 0) data.cell.styles.textColor = [185, 28, 28];
+                }
+            },
+        });
+
+        // caixa de totais
+        let yAfter = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 6;
+        if (yAfter + 16 > pageH - 10) {
+            doc.addPage();
+            yAfter = 12;
+        }
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(marginX, yAfter, pageW - marginX * 2, 14, 2, 2, "FD");
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+
+        doc.text(`Total Sistema: ${totalSistema}`, marginX + 4, yAfter + 9);
+        doc.text(`Total Físico: ${totalFisico}`, marginX + 70, yAfter + 9);
+        doc.text(`Dif Total: ${totalDifTxt}`, marginX + 132, yAfter + 9);
+
+        doc.setTextColor(0, 0, 0);
+
+        const safeName = `conferencia_${confDetHead.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
+        doc.save(`${safeName}.pdf`);
+    }
 
 
-    
+
+
+
+
 
 
 
@@ -2057,7 +2391,7 @@ export default function Page() {
     const [entradaProdutoId, setEntradaProdutoId] = useState<ID>(0);
     const [entradaProdQuery, setEntradaProdQuery] = useState("");
 
-    
+
 
     const [catQuickOpen, setCatQuickOpen] = useState(false);
     const [catQuickNome, setCatQuickNome] = useState("");
@@ -2079,7 +2413,9 @@ export default function Page() {
 
     useEffect(() => {
         if (depositos.length && !confDepositoId) setConfDepositoId(depositos[0].id);
-    }, [depositos, confDepositoId]);
+        if (depositos.length && !confRegDepositoId) setConfRegDepositoId(depositos[0].id);
+    }, [depositos, confDepositoId, confRegDepositoId]);
+
 
 
     const entradaProdutoExistente = useMemo(() => {
@@ -2106,7 +2442,7 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entradaBarcode]);
 
-    
+
 
     // NOVO: saldo da Entrada (depósito destino selecionado) para exibir "disp" na lista
     const entradaSaldoByProd = useMemo(() => {
@@ -2210,7 +2546,7 @@ export default function Page() {
 
 
 
-    
+
 
     function resetEntradaForm() {
         setEntradaBarcode("");
@@ -2591,7 +2927,7 @@ export default function Page() {
     }
 
 
-    
+
 
     /* =========================
        SAÍDA
@@ -3025,7 +3361,7 @@ export default function Page() {
     const [trfScanProduto, setTrfScanProduto] = useState<Produto | null>(null);
     const [trfScanDisponivel, setTrfScanDisponivel] = useState<number>(0);
 
-    
+
     const trfSaldoByProd = useMemo(() => {
         const m = new Map<ID, number>();
         const depId = Number(trfOrigemId);
@@ -3334,7 +3670,7 @@ export default function Page() {
         window.open(url, "_blank", "noopener,noreferrer");
     }
 
-    
+
 
 
     // Categorias
@@ -3474,8 +3810,10 @@ export default function Page() {
 
     useEffect(() => {
         if (tab === "HISTORICO") loadHistorico();
+        if (tab === "CONFERENCIA") loadConferenciasRegistros();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab]);
+
 
     const tabs = useMemo(
         () =>
@@ -3611,7 +3949,7 @@ export default function Page() {
                                     <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
                                 </div>
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
-                                    
+
 
                                     <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
                                         ⬇️ CSV
@@ -3789,7 +4127,7 @@ export default function Page() {
                                                                             </>
                                                                         ) : null}
                                                                     </p>
-                                                                    
+
                                                                 </div>
                                                             </div>
 
@@ -3815,150 +4153,150 @@ export default function Page() {
                                         </ul>
 
                                         {/* PC */}
-                                                {/* PC (ESTOQUE - correto, independente do PDF) */}
-                                                <div className="hidden sm:block">
-                                                    <div className="overflow-auto">
-                                                        <table className="min-w-full border-separate border-spacing-0">
-                                                            <thead>
-                                                                <tr className="bg-slate-50 text-left text-xs text-slate-700">
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
+                                        {/* PC (ESTOQUE - correto, independente do PDF) */}
+                                        <div className="hidden sm:block">
+                                            <div className="overflow-auto">
+                                                <table className="min-w-full border-separate border-spacing-0">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
 
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
+
+                                                            {showMinRepColumns ? (
+                                                                <>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Mín</th>
+                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
+                                                                </>
+                                                            ) : null}
+
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor (un)</th>
+                                                        </tr>
+                                                    </thead>
+
+
+                                                    <tbody>
+                                                        {estoqueRows.map(({ p, d, qtd, min, max, rep, hasMinMax }) => {
+                                                            const low = hasMinMax && clampInt(qtd) <= clampInt(min);
+
+                                                            const cat =
+                                                                p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "—";
+                                                            const fab =
+                                                                p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "—";
+                                                            const cls =
+                                                                p.classificacao_nome ||
+                                                                (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") ||
+                                                                "—";
+
+                                                            const valorNum = Number(p.valor) || 0;
+                                                            const foto = normalizeImgUrl(p.foto_url);
+
+                                                            return (
+                                                                <tr key={`${p.id}_${d.id}`} className="bg-white hover:bg-slate-50">
+                                                                    {/* Produto (com editar) */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
+                                                                        <div className="flex items-center gap-3 min-w-0">
+                                                                            <PhotoThumb
+                                                                                url={foto}
+                                                                                onClick={() => {
+                                                                                    if (!foto) return;
+                                                                                    setImgUrl(foto);
+                                                                                    setImgTitle(p.nome);
+                                                                                    setImgOpen(true);
+                                                                                }}
+                                                                            />
+
+                                                                            <div className="min-w-0">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => openProdutoEditor(p.id, d.id)}
+                                                                                    className="block truncate text-left font-semibold text-slate-900 hover:underline"
+                                                                                    title="Clique para editar"
+                                                                                >
+                                                                                    {p.nome}
+                                                                                </button>
+                                                                                <div className="text-xs text-slate-500 font-mono">CB: {p.codigo_barras}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+
+                                                                    {/* Depósito */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
+
+                                                                    {/* Categoria */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat}</td>
+
+                                                                    {/* Fabricante */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab}</td>
+
+                                                                    {/* Classificação */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls}</td>
+
+                                                                    {/* Qtd */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
+                                                                        <span className={low ? "text-rose-700" : "text-slate-900"}>{clampInt(qtd)}</span>
+                                                                    </td>
 
                                                                     {showMinRepColumns ? (
                                                                         <>
-                                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Mín</th>
-                                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
-                                                                        </>
-                                                                    ) : null}
-
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor (un)</th>
-                                                                </tr>
-                                                            </thead>
-
-
-                                                            <tbody>
-                                                                {estoqueRows.map(({ p, d, qtd, min, max, rep, hasMinMax }) => {
-                                                                    const low = hasMinMax && clampInt(qtd) <= clampInt(min);
-
-                                                                    const cat =
-                                                                        p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "—";
-                                                                    const fab =
-                                                                        p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "—";
-                                                                    const cls =
-                                                                        p.classificacao_nome ||
-                                                                        (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") ||
-                                                                        "—";
-
-                                                                    const valorNum = Number(p.valor) || 0;
-                                                                    const foto = normalizeImgUrl(p.foto_url);
-
-                                                                    return (
-                                                                        <tr key={`${p.id}_${d.id}`} className="bg-white hover:bg-slate-50">
-                                                                            {/* Produto (com editar) */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
-                                                                                <div className="flex items-center gap-3 min-w-0">
-                                                                                    <PhotoThumb
-                                                                                        url={foto}
-                                                                                        onClick={() => {
-                                                                                            if (!foto) return;
-                                                                                            setImgUrl(foto);
-                                                                                            setImgTitle(p.nome);
-                                                                                            setImgOpen(true);
-                                                                                        }}
-                                                                                    />
-
-                                                                                    <div className="min-w-0">
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => openProdutoEditor(p.id, d.id)}
-                                                                                            className="block truncate text-left font-semibold text-slate-900 hover:underline"
-                                                                                            title="Clique para editar"
-                                                                                        >
-                                                                                            {p.nome}
-                                                                                        </button>
-                                                                                        <div className="text-xs text-slate-500 font-mono">CB: {p.codigo_barras}</div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </td>
-
-                                                                            {/* Depósito */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
-
-                                                                            {/* Categoria */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat}</td>
-
-                                                                            {/* Fabricante */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab}</td>
-
-                                                                            {/* Classificação */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls}</td>
-
-                                                                            {/* Qtd */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
-                                                                                <span className={low ? "text-rose-700" : "text-slate-900"}>{clampInt(qtd)}</span>
-                                                                            </td>
-
-                                                                            {showMinRepColumns ? (
-                                                                                <>
-                                                                                    {/* Mín */}
-                                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
-                                                                                        {hasMinMax ? clampInt(min) : "—"}
-                                                                                    </td>
-
-                                                                                    {/* Rep */}
-                                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
-                                                                                        {hasMinMax ? (
-                                                                                            <span className="font-semibold text-emerald-700">{clampInt(rep)}</span>
-                                                                                        ) : (
-                                                                                            <span className="text-slate-500">—</span>
-                                                                                        )}
-                                                                                    </td>
-                                                                                </>
-                                                                            ) : null}
-
-                                                                            {/* Valor */}
+                                                                            {/* Mín */}
                                                                             <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
-                                                                                {valorNum ? moneyBRL(valorNum) : "—"}
+                                                                                {hasMinMax ? clampInt(min) : "—"}
                                                                             </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                            </tbody>
 
-
-                                                            <tfoot>
-                                                                <tr className="bg-slate-50 text-xs text-slate-700">
-                                                                    <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={5}>
-                                                                        Total de modelos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
-                                                                    </td>
-
-                                                                    {/* Total Qtd */}
-                                                                    <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
-                                                                        {estoqueResumo.totalUnidades}
-                                                                    </td>
-
-                                                                    {showMinRepColumns ? (
-                                                                        <>
-                                                                            <td className="border-t border-slate-200 px-3 py-3" />
-                                                                            <td className="border-t border-slate-200 px-3 py-3" />
+                                                                            {/* Rep */}
+                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
+                                                                                {hasMinMax ? (
+                                                                                    <span className="font-semibold text-emerald-700">{clampInt(rep)}</span>
+                                                                                ) : (
+                                                                                    <span className="text-slate-500">—</span>
+                                                                                )}
+                                                                            </td>
                                                                         </>
                                                                     ) : null}
 
-                                                                    {/* Total Valor */}
-                                                                    <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
-                                                                        {moneyBRL(estoqueResumo.totalValor)}
+                                                                    {/* Valor */}
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
+                                                                        {valorNum ? moneyBRL(valorNum) : "—"}
                                                                     </td>
                                                                 </tr>
-                                                            </tfoot>
+                                                            );
+                                                        })}
+                                                    </tbody>
 
-                                                        </table>
-                                                    </div>
-                                                </div>
+
+                                                    <tfoot>
+                                                        <tr className="bg-slate-50 text-xs text-slate-700">
+                                                            <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={5}>
+                                                                Total de modelos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
+                                                            </td>
+
+                                                            {/* Total Qtd */}
+                                                            <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
+                                                                {estoqueResumo.totalUnidades}
+                                                            </td>
+
+                                                            {showMinRepColumns ? (
+                                                                <>
+                                                                    <td className="border-t border-slate-200 px-3 py-3" />
+                                                                    <td className="border-t border-slate-200 px-3 py-3" />
+                                                                </>
+                                                            ) : null}
+
+                                                            {/* Total Valor */}
+                                                            <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
+                                                                {moneyBRL(estoqueResumo.totalValor)}
+                                                            </td>
+                                                        </tr>
+                                                    </tfoot>
+
+                                                </table>
+                                            </div>
+                                        </div>
 
                                     </>
                                 )}
@@ -4100,6 +4438,94 @@ export default function Page() {
                                 </Field>
                             </div>
 
+                            {/* ✅ CONFERÊNCIAS SALVAS (REGISTROS) */}
+                            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                    <div>
+                                        <p className="text-sm font-semibold text-slate-900">Conferências salvas</p>
+                                        <p className="mt-1 text-xs text-slate-600">
+                                            Lista de conferências registradas no sistema (não altera saldo).
+                                        </p>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <div className="w-full sm:w-[260px]">
+                                            <Field label="Filtrar por depósito (registros)">
+                                                <Select value={confRegDepositoId} onChange={(e) => setConfRegDepositoId(Number(e.target.value))}>
+                                                    <option value={0}>Todos</option>
+                                                    {depositos.map((d) => (
+                                                        <option key={d.id} value={d.id}>{d.nome}</option>
+                                                    ))}
+                                                </Select>
+                                            </Field>
+                                        </div>
+
+                                        <div className="w-full sm:w-auto">
+                                            <Field label="Ação">
+                                                <Button
+                                                    variant="soft"
+                                                    type="button"
+                                                    onClick={loadConferenciasRegistros}
+                                                    disabled={confRegLoading}
+                                                    className="w-full"
+                                                >
+                                                    {confRegLoading ? "Carregando..." : "Carregar"}
+                                                </Button>
+                                            </Field>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {confRegErr ? (
+                                    <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                        {confRegErr}
+                                    </div>
+                                ) : null}
+
+                                {confRegLoading ? (
+                                    <div className="mt-3 text-sm text-slate-500">Carregando registros...</div>
+                                ) : confRegRows.length === 0 ? (
+                                    <div className="mt-3 text-sm text-slate-500">Nenhuma conferência encontrada.</div>
+                                ) : (
+                                    <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
+                                        <ul className="divide-y divide-slate-200">
+                                            {confRegRows.map((r) => (
+                                                <li key={r.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-semibold text-slate-900">
+                                                            #{r.id} • {r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `Dep #${r.deposito_id}`}
+                                                        </p>
+                                                        <p className="mt-1 text-xs text-slate-600">
+                                                            {fmtDateTime(r.criado_em)} • Operador:{" "}
+                                                            <b>{r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`}</b>
+                                                        </p>
+                                                        <p className="mt-1 text-xs text-slate-600">
+                                                            Itens: <b>{r.total_itens}</b> • Dif total:{" "}
+                                                            <b className={Number(r.total_dif) === 0 ? "text-emerald-700" : "text-rose-700"}>
+                                                                {Number(r.total_dif) > 0 ? `+${r.total_dif}` : `${r.total_dif}`}
+                                                            </b>
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {/* ✅ por enquanto só visualizar (no próximo passo eu coloco o modal detalhe + PDF/CSV) */}
+                                                        <Button
+                                                            variant="ghost"
+                                                            type="button"
+                                                            onClick={() => abrirConferenciaDetalhe(r.id)}
+                                                        >
+                                                            Ver detalhes
+                                                        </Button>
+
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+
+
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
                                 {loading ? (
                                     <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
@@ -4108,68 +4534,68 @@ export default function Page() {
                                 ) : (
                                     <>
                                         {/* MOBILE */}
-                                                <ul className="divide-y divide-slate-200 sm:hidden">
-                                                    {conferenciaRows.map((r) => {
-                                                        const fisTxt = confFisicoByProd[r.p.id] ?? "";
-                                                        const fis = parseFisico(fisTxt);
-                                                        const diff = fis === null ? null : fis - r.qtdSistema;
-                                                        const ok = diff !== null && diff === 0;
+                                        <ul className="divide-y divide-slate-200 sm:hidden">
+                                            {conferenciaRows.map((r) => {
+                                                const fisTxt = confFisicoByProd[r.p.id] ?? "";
+                                                const fis = parseFisico(fisTxt);
+                                                const diff = fis === null ? null : fis - r.qtdSistema;
+                                                const ok = diff !== null && diff === 0;
 
-                                                        const icon = fis === null ? "—" : ok ? "✅" : "❌";
-                                                        const iconCls =
-                                                            fis === null
-                                                                ? "text-slate-400"
-                                                                : ok
-                                                                    ? "text-emerald-600"
-                                                                    : "text-rose-600";
+                                                const icon = fis === null ? "—" : ok ? "✅" : "❌";
+                                                const iconCls =
+                                                    fis === null
+                                                        ? "text-slate-400"
+                                                        : ok
+                                                            ? "text-emerald-600"
+                                                            : "text-rose-600";
 
-                                                        return (
-                                                            <li key={r.p.id} className="px-4 py-2">
-                                                                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                                                                    <div className="flex items-center gap-3">
-                                                                        {/* NOME: sempre completo (pode quebrar linha) */}
-                                                                        <div className="min-w-0 flex-1">
-                                                                            <p className="text-[13px] font-semibold text-slate-900 leading-snug whitespace-normal break-words">
-                                                                                {r.p.nome}
-                                                                            </p>
-                                                                        </div>
-
-                                                                        {/* SISTEMA: label curto em cima do número */}
-                                                                        <div className="shrink-0 flex flex-col items-center">
-                                                                            <span className="text-[10px] leading-none text-slate-500">Sist</span>
-                                                                            <span className="mt-1 inline-flex min-w-[44px] justify-center rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-900">
-                                                                                {r.qtdSistema}
-                                                                            </span>
-                                                                        </div>
-
-                                                                        {/* FÍSICO: menor (metade) e mais à direita */}
-                                                                        <div className="shrink-0 w-[72px]">
-                                                                            <TextInput
-                                                                                inputMode="numeric"
-                                                                                value={fisTxt}
-                                                                                onChange={(e) =>
-                                                                                    setConfFisicoByProd((prev) => ({
-                                                                                        ...prev,
-                                                                                        [r.p.id]: e.target.value.replace(/\D/g, ""),
-                                                                                    }))
-                                                                                }
-                                                                                placeholder="Fís."
-                                                                            />
-                                                                        </div>
-
-                                                                        {/* STATUS */}
-                                                                        <div className="shrink-0 w-7 flex justify-end">
-                                                                            <span className={fis === null ? "text-slate-400" : ok ? "text-emerald-600" : "text-rose-600"}>
-                                                                                {fis === null ? "—" : ok ? "✅" : "❌"}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
+                                                return (
+                                                    <li key={r.p.id} className="px-4 py-2">
+                                                        <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                                                            <div className="flex items-center gap-3">
+                                                                {/* NOME: sempre completo (pode quebrar linha) */}
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="text-[13px] font-semibold text-slate-900 leading-snug whitespace-normal break-words">
+                                                                        {r.p.nome}
+                                                                    </p>
                                                                 </div>
-                                                            </li>
 
-                                                        );
-                                                    })}
-                                                </ul>
+                                                                {/* SISTEMA: label curto em cima do número */}
+                                                                <div className="shrink-0 flex flex-col items-center">
+                                                                    <span className="text-[10px] leading-none text-slate-500">Sist</span>
+                                                                    <span className="mt-1 inline-flex min-w-[44px] justify-center rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-900">
+                                                                        {r.qtdSistema}
+                                                                    </span>
+                                                                </div>
+
+                                                                {/* FÍSICO: menor (metade) e mais à direita */}
+                                                                <div className="shrink-0 w-[72px]">
+                                                                    <TextInput
+                                                                        inputMode="numeric"
+                                                                        value={fisTxt}
+                                                                        onChange={(e) =>
+                                                                            setConfFisicoByProd((prev) => ({
+                                                                                ...prev,
+                                                                                [r.p.id]: e.target.value.replace(/\D/g, ""),
+                                                                            }))
+                                                                        }
+                                                                        placeholder="Fís."
+                                                                    />
+                                                                </div>
+
+                                                                {/* STATUS */}
+                                                                <div className="shrink-0 w-7 flex justify-end">
+                                                                    <span className={fis === null ? "text-slate-400" : ok ? "text-emerald-600" : "text-rose-600"}>
+                                                                        {fis === null ? "—" : ok ? "✅" : "❌"}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+
+                                                );
+                                            })}
+                                        </ul>
 
 
                                         {/* PC */}
@@ -4729,7 +5155,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            
+
                         </div>
                     );
                 })()}
@@ -4857,7 +5283,7 @@ export default function Page() {
                         </div>
 
 
-                        
+
 
                         {/* 4ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Quantidade">
@@ -5189,7 +5615,7 @@ export default function Page() {
                         </div>
 
 
-                        
+
 
                         {/* 5ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Qtd">
@@ -5265,13 +5691,16 @@ export default function Page() {
 
                     {/* ✅ Botões finais: Confirmar (abre ConfirmDialog) e Cancelar */}
                     <div className="flex items-center justify-between gap-2">
-                        <Button
-                            onClick={abrirConcluirSaida}
-                            type="button"
-                            disabled={!saidaItens.length && !saidaProdutoId}
-                        >
-                            Concluir
-                        </Button>
+                        <div className="flex items-center justify-between gap-2">
+                            <Button onClick={abrirConcluirSaida} type="button" disabled={!saidaItens.length && !saidaProdutoId}>
+                                Concluir
+                            </Button>
+
+                            <Button variant="ghost" onClick={cancelarSaida} type="button">
+                                Cancelar
+                            </Button>
+                        </div>
+
                     </div>
                 </div>
             </Modal>
@@ -5405,7 +5834,7 @@ export default function Page() {
                         </div>
 
 
-                        
+
 
                         {/* 5ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Qtd">
@@ -5488,7 +5917,12 @@ export default function Page() {
                         >
                             Concluir
                         </Button>
+
+                        <Button variant="ghost" onClick={cancelarTransferencia} type="button">
+                            Cancelar
+                        </Button>
                     </div>
+
 
                 </div>
             </Modal>
@@ -5780,7 +6214,7 @@ export default function Page() {
                         </Select>
                     </Field>
                 </div>
-                
+
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                         <div className="sm:col-span-2">
@@ -5831,7 +6265,7 @@ export default function Page() {
                                 />
                             </Field>
 
-                            
+
                         </div>
 
                         <div className="sm:col-span-2">
@@ -6237,6 +6671,146 @@ export default function Page() {
 
                     <div className="flex gap-2">
                         <Button variant="ghost" onClick={() => setAdvImportOpen(false)} type="button">
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+
+            {/* ✅ MODAL: DETALHE DA CONFERÊNCIA SALVA */}
+            <Modal
+                open={confDetOpen}
+                title={`Conferência salva #${confDetId || "—"}`}
+                subtitle="Detalhes do registro salvo (itens + exportação)."
+                onClose={() => {
+                    setConfDetOpen(false);
+                    setConfDetErr("");
+                    setConfDetId(0);
+                    setConfDetHead(null);
+                    setConfDetItems([]);
+                }}
+            >
+                <div className="space-y-3">
+                    {confDetErr ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {confDetErr}
+                        </div>
+                    ) : null}
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        {confDetBusy ? (
+                            <div>Carregando detalhe...</div>
+                        ) : confDetHead ? (
+                            <div className="flex flex-col gap-1">
+                                <div>
+                                    Depósito:{" "}
+                                    <b>
+                                        {confDetHead.deposito_nome ||
+                                            depById.get(Number(confDetHead.deposito_id))?.nome ||
+                                            `#${confDetHead.deposito_id}`}
+                                    </b>
+                                </div>
+                                <div>
+                                    Operador:{" "}
+                                    <b>
+                                        {confDetHead.operador_nome ||
+                                            userById.get(Number(confDetHead.operador_usuario_id))?.nome ||
+                                            `#${confDetHead.operador_usuario_id}`}
+                                    </b>
+                                </div>
+                                <div>Criado em: <b>{fmtDateTime(confDetHead.criado_em)}</b></div>
+                                <div>
+                                    Itens: <b>{confDetHead.total_itens}</b> • Dif total:{" "}
+                                    <b className={Number(confDetHead.total_dif) === 0 ? "text-emerald-700" : "text-rose-700"}>
+                                        {Number(confDetHead.total_dif) > 0 ? `+${confDetHead.total_dif}` : `${confDetHead.total_dif}`}
+                                    </b>
+                                </div>
+                            </div>
+                        ) : (
+                            <div>—</div>
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            variant="ghost"
+                            type="button"
+                            onClick={() => confDetId && loadConferenciaDetalhe(confDetId)}
+                            disabled={confDetBusy || !confDetId}
+                        >
+                            Atualizar
+                        </Button>
+
+                        <Button
+                            variant="soft"
+                            type="button"
+                            onClick={exportarConferenciaRegistroCSV}
+                            disabled={confDetBusy || !confDetHead || !confDetItems.length}
+                        >
+                            ⬇️ CSV
+                        </Button>
+
+                        <Button
+                            variant="soft"
+                            type="button"
+                            onClick={exportarConferenciaRegistroPDF}
+                            disabled={confDetBusy || !confDetHead || !confDetItems.length}
+                        >
+                            🧾 PDF
+                        </Button>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-slate-200">
+                        {confDetBusy ? (
+                            <div className="p-4 text-sm text-slate-500">Carregando itens...</div>
+                        ) : !confDetItems.length ? (
+                            <div className="p-4 text-sm text-slate-500">Nenhum item.</div>
+                        ) : (
+                            <div className="overflow-auto">
+                                <table className="min-w-full border-separate border-spacing-0">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Código</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd Sist</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd Fís</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {confDetItems.map((it) => {
+                                            const dif = Number(it.dif) || 0;
+                                            const difCls = dif === 0 ? "text-slate-700" : dif > 0 ? "text-emerald-700 font-semibold" : "text-rose-700 font-semibold";
+
+                                            return (
+                                                <tr key={it.id} className="bg-white">
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
+                                                        <div className="font-semibold">{it.produto_nome_snapshot}</div>
+                                                    </td>
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700 font-mono">
+                                                        {it.codigo_barras_snapshot || "—"}
+                                                    </td>
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
+                                                        {clampInt(it.qtd_sistema)}
+                                                    </td>
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
+                                                        {clampInt(it.qtd_fisica)}
+                                                    </td>
+                                                    <td className={`border-b border-slate-200 px-3 py-2 text-right text-sm ${difCls}`}>
+                                                        {dif > 0 ? `+${dif}` : `${dif}`}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex justify-end">
+                        <Button variant="ghost" type="button" onClick={() => setConfDetOpen(false)}>
                             Fechar
                         </Button>
                     </div>
