@@ -1184,6 +1184,8 @@ export default function Page() {
     const [confCatId, setConfCatId] = useState<ID | "Todas">("Todas");
     const [confClassId, setConfClassId] = useState<ID | "Todas">("Todas");
     const [confQ, setConfQ] = useState("");
+    // ✅ NOVO: ocultar itens zerados na conferência
+    const [confOnlyPositive, setConfOnlyPositive] = useState(false);
 
     // qtd física por produto (como string para permitir vazio)
     const [confFisicoByProd, setConfFisicoByProd] = useState<Record<number, string>>({});
@@ -1676,6 +1678,11 @@ export default function Page() {
             const p = prodById.get(s.produto_id);
             if (!p) continue;
 
+            const qtdSistema = clampInt(s.quantidade);
+
+            // ✅ NOVO: oculta itens zerados na conferência
+            if (confOnlyPositive && qtdSistema <= 0) continue;
+
             if (confCatId !== "Todas") {
                 if (Number(p.categoria_id || 0) !== Number(confCatId)) continue;
             }
@@ -1688,8 +1695,10 @@ export default function Page() {
                 if (Number(p.classificacao_id || 0) !== Number(confClassId)) continue;
             }
 
-            const fabricante = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-            const categoria = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+            const fabricante =
+                p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+            const categoria =
+                p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const classificacao =
                 p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
 
@@ -1700,12 +1709,13 @@ export default function Page() {
 
             rows.push({
                 p,
-                qtdSistema: clampInt(s.quantidade),
+                qtdSistema,
                 fabricante,
                 categoria,
                 classificacao,
             });
         }
+
 
         rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR"));
         return rows;
@@ -1715,6 +1725,7 @@ export default function Page() {
         confCatId,
         confClassId,
         confQ,
+        confOnlyPositive, // ✅ NOVO
         saldos,
         prodById,
         fabById,
@@ -1808,6 +1819,9 @@ export default function Page() {
             confCatId === "Todas" ? "Todas" : (catById.get(Number(confCatId))?.nome || String(confCatId));
         const clsTxt =
             confClassId === "Todas" ? "Todas" : (classById.get(Number(confClassId))?.nome || String(confClassId));
+
+        const onlyPosTxt = 
+            confOnlyPositive ? "Sim" : "Não";
         
 
         // helper: busca imagem e converte para dataURL (precisa CORS liberado)
@@ -4067,9 +4081,21 @@ export default function Page() {
                                     />
                                 </Field>
 
-                                <Field label="Resumo">
-                                    <div className="flex h-[42px] items-center rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm">
-                                        Itens: <b className="ml-2">{conferenciaRows.length}</b>
+                                <Field label="Resumo / Filtros">
+                                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
+                                        <div className="flex items-center">
+                                            Itens: <b className="ml-2">{conferenciaRows.length}</b>
+                                        </div>
+
+                                        <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={confOnlyPositive}
+                                                onChange={(e) => setConfOnlyPositive(e.target.checked)}
+                                                className="h-4 w-4"
+                                            />
+                                            <span>Somente saldo &gt; 0</span>
+                                        </label>
                                     </div>
                                 </Field>
                             </div>
