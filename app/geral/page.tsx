@@ -1262,6 +1262,8 @@ export default function Page() {
     // ✅ DETALHE DE CONFERÊNCIA (REGISTRO SALVO)
     const [confDetOpen, setConfDetOpen] = useState(false);
     const [confDetBusy, setConfDetBusy] = useState(false);
+    // ✅ NOVO: modal com lista de conferências registradas
+    const [confRegOpen, setConfRegOpen] = useState(false);
     const [confDetErr, setConfDetErr] = useState<string>("");
     const [confDetId, setConfDetId] = useState<number>(0);
     const [confDetHead, setConfDetHead] = useState<ConferenciaDetalheHead | null>(null);
@@ -4459,13 +4461,16 @@ export default function Page() {
                                     Limpar físicos
                                 </Button>
 
-                                {/* ✅ NOVO: Registrar conferência */}
+                                {/* ✅ NOVO: abre popup com lista de conferências registradas */}
                                 <Button
+                                    variant="ghost"
                                     type="button"
-                                    onClick={() => abrirSalvarConferencia()}
-                                    disabled={!conferenciaRows.length || !confDepositoId || !confTemFisicos}
+                                    onClick={() => {
+                                        setConfRegOpen(true);
+                                        loadConferenciasRegistros();
+                                    }}
                                 >
-                                    Registrar conferência
+                                    Conferências Registradas
                                 </Button>
 
                                 <Button
@@ -4486,6 +4491,7 @@ export default function Page() {
                                     🧾 PDF
                                 </Button>
                             </div>
+
 
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -4568,92 +4574,7 @@ export default function Page() {
                                 </Field>
                             </div>
 
-                            {/* ✅ CONFERÊNCIAS SALVAS (REGISTROS) */}
-                            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                                    <div>
-                                        <p className="text-sm font-semibold text-slate-900">Conferências salvas</p>
-                                        <p className="mt-1 text-xs text-slate-600">
-                                            Lista de conferências registradas no sistema (não altera saldo).
-                                        </p>
-                                    </div>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        <div className="w-full sm:w-[260px]">
-                                            <Field label="Filtrar por depósito (registros)">
-                                                <Select value={confRegDepositoId} onChange={(e) => setConfRegDepositoId(Number(e.target.value))}>
-                                                    <option value={0}>Todos</option>
-                                                    {depositos.map((d) => (
-                                                        <option key={d.id} value={d.id}>{d.nome}</option>
-                                                    ))}
-                                                </Select>
-                                            </Field>
-                                        </div>
-
-                                        <div className="w-full sm:w-auto">
-                                            <Field label="Ação">
-                                                <Button
-                                                    variant="soft"
-                                                    type="button"
-                                                    onClick={loadConferenciasRegistros}
-                                                    disabled={confRegLoading}
-                                                    className="w-full"
-                                                >
-                                                    {confRegLoading ? "Carregando..." : "Carregar"}
-                                                </Button>
-                                            </Field>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {confRegErr ? (
-                                    <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                                        {confRegErr}
-                                    </div>
-                                ) : null}
-
-                                {confRegLoading ? (
-                                    <div className="mt-3 text-sm text-slate-500">Carregando registros...</div>
-                                ) : confRegRows.length === 0 ? (
-                                    <div className="mt-3 text-sm text-slate-500">Nenhuma conferência encontrada.</div>
-                                ) : (
-                                    <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
-                                        <ul className="divide-y divide-slate-200">
-                                            {confRegRows.map((r) => (
-                                                <li key={r.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                                                    <div className="min-w-0">
-                                                        <p className="text-sm font-semibold text-slate-900">
-                                                            #{r.id} • {r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `Dep #${r.deposito_id}`}
-                                                        </p>
-                                                        <p className="mt-1 text-xs text-slate-600">
-                                                            {fmtDateTime(r.criado_em)} • Operador:{" "}
-                                                            <b>{r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`}</b>
-                                                        </p>
-                                                        <p className="mt-1 text-xs text-slate-600">
-                                                            Itens: <b>{r.total_itens}</b> • Dif total:{" "}
-                                                            <b className={Number(r.total_dif) === 0 ? "text-emerald-700" : "text-rose-700"}>
-                                                                {Number(r.total_dif) > 0 ? `+${r.total_dif}` : `${r.total_dif}`}
-                                                            </b>
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {/* ✅ por enquanto só visualizar (no próximo passo eu coloco o modal detalhe + PDF/CSV) */}
-                                                        <Button
-                                                            variant="ghost"
-                                                            type="button"
-                                                            onClick={() => abrirConferenciaDetalhe(r.id)}
-                                                        >
-                                                            Ver detalhes
-                                                        </Button>
-
-                                                    </div>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
+                            
 
 
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
@@ -4799,6 +4720,22 @@ export default function Page() {
                                     </>
                                 )}
                             </div>
+
+                            {/* ✅ NOVO: Concluir (Registrar conferência) embaixo da lista */}
+                            <div className="mt-4 flex items-center justify-between gap-2">
+                                <div className="text-xs text-slate-500">
+                                    {confTemFisicos ? "Pronto para concluir." : "Informe pelo menos uma Qtd física para concluir."}
+                                </div>
+
+                                <Button
+                                    type="button"
+                                    onClick={abrirSalvarConferencia}
+                                    disabled={!conferenciaRows.length || !confDepositoId || !confTemFisicos}
+                                >
+                                    Concluir
+                                </Button>
+                            </div>
+
 
                             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
                                 Dica: o botão <b>PDF</b> abre a impressão — no celular/PC você pode escolher <b>Salvar como PDF</b>.
@@ -6891,6 +6828,99 @@ export default function Page() {
                     </div>
                 </div>
             </Modal>
+
+            {/* ✅ MODAL: CONFERÊNCIAS REGISTRADAS (LISTA) */}
+            <Modal
+                open={confRegOpen}
+                title="Conferências Registradas"
+                subtitle="Lista de conferências registradas no sistema (não altera saldo)."
+                onClose={() => setConfRegOpen(false)}
+            >
+                <div className="space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div className="w-full sm:w-[260px]">
+                            <Field label="Filtrar por depósito">
+                                <Select value={confRegDepositoId} onChange={(e) => setConfRegDepositoId(Number(e.target.value))}>
+                                    <option value={0}>Todos</option>
+                                    {depositos.map((d) => (
+                                        <option key={d.id} value={d.id}>{d.nome}</option>
+                                    ))}
+                                </Select>
+                            </Field>
+                        </div>
+
+                        <div className="w-full sm:w-auto">
+                            <Field label="Ação">
+                                <Button
+                                    variant="soft"
+                                    type="button"
+                                    onClick={loadConferenciasRegistros}
+                                    disabled={confRegLoading}
+                                    className="w-full"
+                                >
+                                    {confRegLoading ? "Carregando..." : "Carregar"}
+                                </Button>
+                            </Field>
+                        </div>
+                    </div>
+
+                    {confRegErr ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {confRegErr}
+                        </div>
+                    ) : null}
+
+                    {confRegLoading ? (
+                        <div className="text-sm text-slate-500">Carregando registros...</div>
+                    ) : confRegRows.length === 0 ? (
+                        <div className="text-sm text-slate-500">Nenhuma conferência encontrada.</div>
+                    ) : (
+                        <div className="overflow-hidden rounded-2xl border border-slate-200">
+                            <ul className="divide-y divide-slate-200">
+                                {confRegRows.map((r) => (
+                                    <li key={r.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-slate-900">
+                                                #{r.id} • {r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `Dep #${r.deposito_id}`}
+                                            </p>
+                                            <p className="mt-1 text-xs text-slate-600">
+                                                {fmtDateTime(r.criado_em)} • Operador:{" "}
+                                                <b>{r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`}</b>
+                                            </p>
+                                            <p className="mt-1 text-xs text-slate-600">
+                                                Itens: <b>{r.total_itens}</b> • Dif total:{" "}
+                                                <b className={Number(r.total_dif) === 0 ? "text-emerald-700" : "text-rose-700"}>
+                                                    {Number(r.total_dif) > 0 ? `+${r.total_dif}` : `${r.total_dif}`}
+                                                </b>
+                                            </p>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                type="button"
+                                                onClick={() => {
+                                                    setConfRegOpen(false);       // fecha lista
+                                                    abrirConferenciaDetalhe(r.id); // abre detalhe (seu modal já existe)
+                                                }}
+                                            >
+                                                Ver detalhes
+                                            </Button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    <div className="flex justify-end">
+                        <Button variant="ghost" type="button" onClick={() => setConfRegOpen(false)}>
+                            Fechar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
 
             
             {/* ✅ MODAL: DETALHE DA CONFERÊNCIA SALVA */}
