@@ -1173,6 +1173,9 @@ export default function Page() {
 
     const [onlyLow, setOnlyLow] = useState(false);
 
+    // ✅ NOVO: ocultar itens zerados
+    const [onlyPositive, setOnlyPositive] = useState(false);
+
     // =========================
     // CONFERÊNCIA (não altera saldo)
     // =========================
@@ -1245,6 +1248,8 @@ export default function Page() {
             }
 
             const qtd = clampInt(s.quantidade);
+            // ✅ NOVO: oculta itens zerados
+            if (onlyPositive && qtd <= 0) continue;
             const min = clampInt((s as any).minimo ?? 0);
             const max = clampInt((s as any).maximo ?? 0);
 
@@ -1280,6 +1285,7 @@ export default function Page() {
         fabFiltroEstoque,
         classFiltroEstoque,
         onlyLow,
+        onlyPositive,
         catById,
         fabById,
         classById,
@@ -1325,6 +1331,7 @@ export default function Page() {
             fabricante: joinNames(fabricantes, fabFiltroEstoque, "Todos"),
             classificacao: joinNames(classificacoes, classFiltroEstoque, "Todas"),
             somenteAlerta: onlyLow ? "Sim" : "Não",
+            somenteSaldoPositivo: onlyPositive ? "Sim" : "Não", // ✅ NOVO
         };
     }
 
@@ -1508,6 +1515,7 @@ export default function Page() {
 
         // direita
         doc.text(`Somente alerta (do mínimo): ${f.somenteAlerta}`, pageW / 2, y + 6);
+        doc.text(`Somente saldo > 0: ${(f as any).somenteSaldoPositivo}`, pageW / 2, y + 11);
 
         y += 28;
 
@@ -3641,20 +3649,32 @@ export default function Page() {
                                     allLabel="Todas"
                                 />
 
-                                <Field label="Somente alerta (≤ mín)">
-                                    <div className="flex h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-                                        <input
-                                            id="onlyLow"
-                                            type="checkbox"
-                                            checked={onlyLow}
-                                            onChange={(e) => setOnlyLow(e.target.checked)}
-                                            className="h-4 w-4"
-                                        />
-                                        <label htmlFor="onlyLow" className="text-sm text-slate-700">
-                                            Mostrar
+                                <Field label="Filtros rápidos">
+                                    <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                id="onlyLow"
+                                                type="checkbox"
+                                                checked={onlyLow}
+                                                onChange={(e) => setOnlyLow(e.target.checked)}
+                                                className="h-4 w-4"
+                                            />
+                                            <span className="text-sm text-slate-700">Somente alerta (≤ mín)</span>
+                                        </label>
+
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                id="onlyPositive"
+                                                type="checkbox"
+                                                checked={onlyPositive}
+                                                onChange={(e) => setOnlyPositive(e.target.checked)}
+                                                className="h-4 w-4"
+                                            />
+                                            <span className="text-sm text-slate-700">Somente saldo &gt; 0</span>
                                         </label>
                                     </div>
                                 </Field>
+
 
                                 <Field label="Ações">
                                     <div className="flex gap-2">
@@ -3671,6 +3691,7 @@ export default function Page() {
                                                 setFabFiltroEstoque([]);
                                                 setClassFiltroEstoque([]);
                                                 setOnlyLow(false);
+                                                setOnlyPositive(false); // ✅ NOVO
                                                 setQEstoque("");
                                             }}
                                             type="button"
