@@ -141,6 +141,9 @@ type ConferenciaDetalheResp = {
 };
 
 
+
+
+
 type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
 type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number };
@@ -1242,6 +1245,14 @@ export default function Page() {
     // qtd física por produto (como string para permitir vazio)
     const [confFisicoByProd, setConfFisicoByProd] = useState<Record<number, string>>({});
 
+    // ✅ NOVO: Registrar conferência (modal + snapshot)
+    const [confSaveOpen, setConfSaveOpen] = useState(false);
+    const [confSaveBusy, setConfSaveBusy] = useState(false);
+    const [confSaveItens, setConfSaveItens] = useState<
+        Array<{ produto_id: ID; nome: string; qtdSistema: number; qtdFisica: number; dif: number }>
+    >([]);
+
+
     // ✅ NOVO: CONFERÊNCIAS (REGISTROS SALVOS)
     const [confRegLoading, setConfRegLoading] = useState(false);
     const [confRegErr, setConfRegErr] = useState<string>("");
@@ -1255,6 +1266,8 @@ export default function Page() {
     const [confDetId, setConfDetId] = useState<number>(0);
     const [confDetHead, setConfDetHead] = useState<ConferenciaDetalheHead | null>(null);
     const [confDetItems, setConfDetItems] = useState<ConferenciaItem[]>([]);
+    
+    
 
 
     async function loadConferenciasRegistros() {
@@ -1282,8 +1295,7 @@ export default function Page() {
 
         try {
             const resp = await apiGet<ConferenciaDetalheResp>({
-                conferencia_detalhe: 1,          // ✅ backend: ajuste o nome se o seu PHP usar outro
-                conferencia_id: conferencia_id,  // ✅ idem
+                conferencia_id: conferencia_id,
                 _ts: Date.now(),
             });
 
@@ -1299,6 +1311,7 @@ export default function Page() {
             setConfDetBusy(false);
         }
     }
+
 
     function abrirConferenciaDetalhe(conferencia_id: number) {
         setConfDetId(conferencia_id);
@@ -1780,6 +1793,16 @@ export default function Page() {
         const depId = Number(confDepositoId);
         if (!depId) return [];
 
+        // ✅ habilita botão de registrar se tiver pelo menos 1 físico preenchido
+        const confTemFisicos = useMemo(() => {
+            for (const r of conferenciaRows) {
+                const fisTxt = confFisicoByProd[r.p.id] ?? "";
+                const fis = parseFisico(fisTxt);
+                if (fis !== null) return true;
+            }
+            return false;
+        }, [conferenciaRows, confFisicoByProd]);
+
         const qq = confQ.trim().toLowerCase();
 
         const rows: Array<{
@@ -1850,12 +1873,126 @@ export default function Page() {
         catById,
         classById,
     ]);
+    
 
     function parseFisico(v: string): number | null {
         const t = (v || "").replace(/\D/g, "").trim();
         if (!t) return null;
         return clampInt(t);
     }
+
+
+    // ✅ habilita o botão "Registrar" somente se houver pelo menos 1 qtd física informada
+    const confTemFisicos = useMemo(() => {
+        for (const r of conferenciaRows) {
+            const fis = parseFisico(confFisicoByProd[r.p.id] ?? "");
+            if (fis !== null) return true;
+        }
+        return false;
+    }, [conferenciaRows, confFisicoByProd]);
+
+    // ✅ monta a lista que será registrada no banco (somente itens com Qtd física preenchida)
+    function montarSnapshotSalvarConferencia() {
+        if (!confDepositoId) {
+            alert("Selecione o depósito.");
+            return null;
+        }
+
+        const itens: Array<{
+            produto_id: ID;
+            produto_nome: string;
+            qtd_sistema: number;
+            qtd_fisica: number;
+            dif: number;
+        }> = [];
+
+        for (const r of conferenciaRows) {
+            const fis = parseFisico(confFisicoByProd[r.p.id] ?? "");
+            if (fis === null) continue; // só registra os preenchidos
+
+            const qtd_sistema = clampInt(r.qtdSistema);
+            const qtd_fisica = clampInt(fis);
+            const dif = qtd_fisica - qtd_sistema;
+
+            itens.push({
+                produto_id: r.p.id,
+                produto_nome: r.p.nome,
+                qtd_sistema,
+                qtd_fisica,
+                dif,
+            });
+        }
+
+        return itens;
+    }
+
+    function abrirSalvarConferencia() {
+        const itens = montarSnapshotSalvarConferencia();
+        if (!itens) return;
+
+        if (!itens.length) {
+            alert("Informe pelo menos uma Qtd física para registrar a conferência.");
+            return;
+        }
+
+        // ✅ este modal usa confSaveOpen/confSaveItens (não confSalvarOpen/confSalvarItens)
+        setConfSaveItens(
+            itens.map((it) => ({
+                produto_id: it.produto_id,
+                nome: it.produto_nome,
+                qtdSistema: it.qtd_sistema,
+                qtdFisica: it.qtd_fisica,
+                dif: it.dif,
+            }))
+        );
+        setConfSaveOpen(true);
+    }
+
+    async function confirmarSalvarConferencia() {
+        if (!confDepositoId) return alert("Selecione o depósito.");
+        if (!confSaveItens.length) return alert("Nenhum item para registrar.");
+
+        setConfSaveBusy(true);
+        try {
+            const payload: any = {
+                action: "conferencia_criar",
+                deposito_id: Number(confDepositoId),
+
+                // filtros usados (opcional, mas útil se o backend salvar)
+                fabricante_id: confFabId === "Todos" ? 0 : Number(confFabId),
+                categoria_id: confCatId === "Todas" ? 0 : Number(confCatId),
+                classificacao_id: confClassId === "Todas" ? 0 : Number(confClassId),
+                busca: confQ.trim() || "",
+                somente_saldo_positivo: confOnlyPositive ? 1 : 0,
+
+                itens: confSaveItens.map((it) => ({
+                    produto_id: Number(it.produto_id),
+                    qtd_sistema: Number(it.qtdSistema),
+                    qtd_fisica: Number(it.qtdFisica),
+                })),
+            };
+
+            const r = await apiPost<{ ok: boolean; msg?: string; id?: number }>(payload);
+            if (!r.ok) {
+                alert(r.msg || "Falha ao registrar conferência.");
+                return;
+            }
+
+            alert(r.msg || "Conferência registrada.");
+
+            // fecha modal + limpa físicos
+            setConfSaveOpen(false);
+            setConfSaveItens([]);
+            setConfFisicoByProd({});
+
+            // atualiza lista de registros
+            await refreshInit();
+            await loadConferenciasRegistros();
+        } finally {
+            setConfSaveBusy(false);
+        }
+    }
+
 
     function exportarConferenciaCSV() {
         if (!confDepositoId) return alert("Selecione o depósito.");
@@ -4320,43 +4457,44 @@ export default function Page() {
                     {/* CONFERÊNCIA */}
                     {tab === "CONFERENCIA" ? (
                         <Card className="p-4">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                                <div>
-                                    <h2 className="text-base font-semibold text-slate-900">Conferência</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Preencha a <b>Qtd física</b> e compare com a <b>Qtd do sistema</b>. Não altera saldo.
-                                    </p>
-                                </div>
+                            <div className="flex flex-wrap gap-2 sm:justify-end">
+                                <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={() => setConfFisicoByProd({})}
+                                    disabled={!conferenciaRows.length}
+                                >
+                                    Limpar físicos
+                                </Button>
 
-                                <div className="flex flex-wrap gap-2 sm:justify-end">
-                                    <Button
-                                        variant="ghost"
-                                        type="button"
-                                        onClick={() => setConfFisicoByProd({})}
-                                        disabled={!conferenciaRows.length}
-                                    >
-                                        Limpar físicos
-                                    </Button>
+                                {/* ✅ NOVO: Registrar conferência */}
+                                <Button
+                                    type="button"
+                                    onClick={() => abrirSalvarConferencia()}
+                                    disabled={!conferenciaRows.length || !confDepositoId || !confTemFisicos}
+                                >
+                                    Registrar conferência
+                                </Button>
 
-                                    <Button
-                                        variant="soft"
-                                        type="button"
-                                        onClick={exportarConferenciaCSV}
-                                        disabled={!conferenciaRows.length || !confDepositoId}
-                                    >
-                                        ⬇️ CSV
-                                    </Button>
+                                <Button
+                                    variant="soft"
+                                    type="button"
+                                    onClick={exportarConferenciaCSV}
+                                    disabled={!conferenciaRows.length || !confDepositoId}
+                                >
+                                    ⬇️ CSV
+                                </Button>
 
-                                    <Button
-                                        variant="soft"
-                                        type="button"
-                                        onClick={exportarConferenciaPDF}
-                                        disabled={!conferenciaRows.length || !confDepositoId}
-                                    >
-                                        🧾 PDF
-                                    </Button>
-                                </div>
+                                <Button
+                                    variant="soft"
+                                    type="button"
+                                    onClick={exportarConferenciaPDF}
+                                    disabled={!conferenciaRows.length || !confDepositoId}
+                                >
+                                    🧾 PDF
+                                </Button>
                             </div>
+
 
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
                                 <Field label="Depósito (estoque)">
@@ -6678,6 +6816,91 @@ export default function Page() {
             </Modal>
 
 
+            {/* ✅ MODAL: REGISTRAR CONFERÊNCIA */}
+            <Modal
+                open={confSaveOpen}
+                title="Registrar conferência"
+                subtitle="Confira os itens conferidos antes de salvar."
+                onClose={() => {
+                    if (confSaveBusy) return;
+                    setConfSaveOpen(false);
+                }}
+            >
+                <div className="space-y-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-700">
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Depósito:</span>{" "}
+                                <b>{depById.get(Number(confDepositoId))?.nome || `#${confDepositoId}`}</b>
+                            </span>
+
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Itens conferidos:</span>{" "}
+                                <b>{confSaveItens.length}</b>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-slate-200">
+                        {!confSaveItens.length ? (
+                            <div className="p-4 text-sm text-slate-500">Nenhum item.</div>
+                        ) : (
+                            <div className="overflow-auto">
+                                <table className="min-w-full border-separate border-spacing-0">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd Sist</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd Fís</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {confSaveItens.map((it) => {
+                                            const dif = Number(it.dif) || 0;
+                                            const difCls =
+                                                dif === 0 ? "text-slate-700" : dif > 0 ? "text-emerald-700 font-semibold" : "text-rose-700 font-semibold";
+
+                                            return (
+                                                <tr key={it.produto_id} className="bg-white">
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
+                                                        <div className="font-semibold">{it.nome}</div>
+                                                    </td>
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
+                                                        {clampInt(it.qtdSistema)}
+                                                    </td>
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
+                                                        {clampInt(it.qtdFisica)}
+                                                    </td>
+                                                    <td className={`border-b border-slate-200 px-3 py-2 text-right text-sm ${difCls}`}>
+                                                        {dif > 0 ? `+${dif}` : `${dif}`}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Atenção: ao confirmar, a conferência será registrada no sistema (não altera saldo).
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button onClick={confirmarSalvarConferencia} type="button" disabled={confSaveBusy || !confSaveItens.length}>
+                            {confSaveBusy ? "Salvando..." : "Confirmar e registrar"}
+                        </Button>
+
+                        <Button variant="ghost" onClick={() => setConfSaveOpen(false)} type="button" disabled={confSaveBusy}>
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            
             {/* ✅ MODAL: DETALHE DA CONFERÊNCIA SALVA */}
             <Modal
                 open={confDetOpen}
