@@ -1793,15 +1793,7 @@ export default function Page() {
         const depId = Number(confDepositoId);
         if (!depId) return [];
 
-        // ✅ habilita botão de registrar se tiver pelo menos 1 físico preenchido
-        const confTemFisicos = useMemo(() => {
-            for (const r of conferenciaRows) {
-                const fisTxt = confFisicoByProd[r.p.id] ?? "";
-                const fis = parseFisico(fisTxt);
-                if (fis !== null) return true;
-            }
-            return false;
-        }, [conferenciaRows, confFisicoByProd]);
+        
 
         const qq = confQ.trim().toLowerCase();
 
