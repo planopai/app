@@ -6855,65 +6855,158 @@ export default function Page() {
                 subtitle="Lista de conferências registradas no sistema (não altera saldo)."
                 onClose={() => setConfRegOpen(false)}
             >
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
-                    <Field label="Depósito">
-                        <Select
-                            value={confRegDepositoId}
-                            onChange={(e) => setConfRegDepositoId(Number(e.target.value))}
-                        >
-                            <option value={0}>Todos</option>
-                            {depositos.map((d) => (
-                                <option key={d.id} value={d.id}>{d.nome}</option>
-                            ))}
-                        </Select>
-                    </Field>
-
-                    <Field label="Data inicial (opcional)">
-                        <TextInput
-                            type="date"
-                            value={confRegDataIni}
-                            onChange={(e) => setConfRegDataIni(e.target.value)}
-                        />
-                    </Field>
-
-                    <Field label="Data final (opcional)">
-                        <TextInput
-                            type="date"
-                            value={confRegDataFim}
-                            onChange={(e) => setConfRegDataFim(e.target.value)}
-                        />
-                    </Field>
-
-                    <Field label="Ações">
-                        <div className="flex gap-2">
-                            <Button
-                                variant="soft"
-                                type="button"
-                                onClick={loadConferenciasRegistros}
-                                disabled={confRegLoading}
-                                className="w-full"
+                <div className="space-y-4">
+                    {/* filtros */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+                        <Field label="Depósito">
+                            <Select
+                                value={confRegDepositoId}
+                                onChange={(e) => setConfRegDepositoId(Number(e.target.value))}
                             >
-                                {confRegLoading ? "Atualizando..." : "Atualizar"}
-                            </Button>
+                                <option value={0}>Todos</option>
+                                {depositos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                            <Button
-                                variant="ghost"
-                                type="button"
-                                onClick={() => {
-                                    setConfRegDepositoId(0);
-                                    setConfRegDataIni("");
-                                    setConfRegDataFim("");
-                                }}
-                                disabled={confRegLoading}
-                                className="w-full"
-                            >
-                                Limpar
-                            </Button>
+                        <Field label="Data inicial (opcional)">
+                            <TextInput
+                                type="date"
+                                value={confRegDataIni}
+                                onChange={(e) => setConfRegDataIni(e.target.value)}
+                            />
+                        </Field>
+
+                        <Field label="Data final (opcional)">
+                            <TextInput
+                                type="date"
+                                value={confRegDataFim}
+                                onChange={(e) => setConfRegDataFim(e.target.value)}
+                            />
+                        </Field>
+
+                        <Field label="Ações">
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="soft"
+                                    type="button"
+                                    onClick={loadConferenciasRegistros}
+                                    disabled={confRegLoading}
+                                    className="w-full"
+                                >
+                                    {confRegLoading ? "Atualizando..." : "Atualizar"}
+                                </Button>
+
+                                <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={() => {
+                                        setConfRegDepositoId(0);
+                                        setConfRegDataIni("");
+                                        setConfRegDataFim("");
+                                    }}
+                                    disabled={confRegLoading}
+                                    className="w-full"
+                                >
+                                    Limpar
+                                </Button>
+                            </div>
+                        </Field>
+                    </div>
+
+                    {/* erro */}
+                    {confRegErr ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {confRegErr}
                         </div>
-                    </Field>
-                </div>
+                    ) : null}
 
+                    {/* lista */}
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        {confRegLoading ? (
+                            <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
+                        ) : confRegRows.length === 0 ? (
+                            <div className="p-6 text-center text-sm text-slate-500">Nenhuma conferência encontrada.</div>
+                        ) : (
+                            <div className="overflow-auto">
+                                <table className="min-w-full border-separate border-spacing-0">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">ID</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Operador</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Criado em</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Itens</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif</th>
+                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Ação</th>
+                                        </tr>
+                                    </thead>
+
+                                    <tbody>
+                                        {confRegRows.map((r) => {
+                                            const dif = Number(r.total_dif) || 0;
+                                            const difCls =
+                                                dif === 0 ? "text-slate-700" : dif > 0 ? "text-emerald-700 font-semibold" : "text-rose-700 font-semibold";
+
+                                            const depNome =
+                                                r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `#${r.deposito_id}`;
+
+                                            const opNome =
+                                                r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`;
+
+                                            return (
+                                                <tr key={r.id} className="bg-white hover:bg-slate-50">
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
+                                                        #{r.id}
+                                                    </td>
+
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                        {depNome}
+                                                    </td>
+
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                        {opNome}
+                                                    </td>
+
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
+                                                        {fmtDateTime(r.criado_em)}
+                                                    </td>
+
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
+                                                        {Number(r.total_itens) || 0}
+                                                    </td>
+
+                                                    <td className={`border-b border-slate-200 px-3 py-2 text-right text-sm ${difCls}`}>
+                                                        {dif > 0 ? `+${dif}` : `${dif}`}
+                                                    </td>
+
+                                                    <td className="border-b border-slate-200 px-3 py-2 text-right">
+                                                        <Button
+                                                            variant="ghost"
+                                                            type="button"
+                                                            onClick={() => {
+                                                                // opcional: fecha a lista e abre detalhe
+                                                                setConfRegOpen(false);
+                                                                abrirConferenciaDetalhe(r.id);
+                                                            }}
+                                                        >
+                                                            Ver
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </Modal>
+
 
 
             
