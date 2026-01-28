@@ -6931,79 +6931,125 @@ export default function Page() {
                         ) : confRegRows.length === 0 ? (
                             <div className="p-6 text-center text-sm text-slate-500">Nenhuma conferência encontrada.</div>
                         ) : (
-                            <div className="overflow-auto">
-                                <table className="min-w-full border-separate border-spacing-0">
-                                    <thead>
-                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">ID</th>
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Operador</th>
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Criado em</th>
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Itens</th>
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif</th>
-                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Ação</th>
-                                        </tr>
-                                    </thead>
+                            <>
+                                {/* ✅ MOBILE: lista sem scroll lateral */}
+                                <ul className="divide-y divide-slate-200 sm:hidden">
+                                    {confRegRows.map((r) => {
+                                        const depNome =
+                                            r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `#${r.deposito_id}`;
 
-                                    <tbody>
-                                        {confRegRows.map((r) => {
-                                            const dif = Number(r.total_dif) || 0;
-                                            const difCls =
-                                                dif === 0 ? "text-slate-700" : dif > 0 ? "text-emerald-700 font-semibold" : "text-rose-700 font-semibold";
+                                        const opNome =
+                                            r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`;
 
-                                            const depNome =
-                                                r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `#${r.deposito_id}`;
+                                        return (
+                                            <li key={r.id} className="px-3 py-2">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        {/* Depósito (principal) */}
+                                                        <p className="text-[13px] font-semibold text-slate-900 leading-snug truncate">
+                                                            {depNome}
+                                                        </p>
 
-                                            const opNome =
-                                                r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`;
+                                                        {/* Operador + Data (compacto) */}
+                                                        <p className="mt-0.5 text-[11px] text-slate-600 truncate">
+                                                            <span className="text-slate-500">Op:</span>{" "}
+                                                            <b className="font-medium text-slate-700">{opNome}</b>
+                                                            <span className="text-slate-400"> • </span>
+                                                            <span className="text-slate-500">Em:</span>{" "}
+                                                            <b className="font-medium text-slate-700">{fmtDateTime(r.criado_em)}</b>
+                                                        </p>
 
-                                            return (
-                                                <tr key={r.id} className="bg-white hover:bg-slate-50">
-                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
-                                                        #{r.id}
-                                                    </td>
+                                                        {/* ID discreto */}
+                                                        <p className="mt-0.5 text-[10px] text-slate-400">#{r.id}</p>
+                                                    </div>
 
-                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                        {depNome}
-                                                    </td>
-
-                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                        {opNome}
-                                                    </td>
-
-                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">
-                                                        {fmtDateTime(r.criado_em)}
-                                                    </td>
-
-                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
-                                                        {Number(r.total_itens) || 0}
-                                                    </td>
-
-                                                    <td className={`border-b border-slate-200 px-3 py-2 text-right text-sm ${difCls}`}>
-                                                        {dif > 0 ? `+${dif}` : `${dif}`}
-                                                    </td>
-
-                                                    <td className="border-b border-slate-200 px-3 py-2 text-right">
+                                                    {/* Ação (sempre visível) */}
+                                                    <div className="shrink-0">
                                                         <Button
-                                                            variant="ghost"
+                                                            variant="soft"
                                                             type="button"
+                                                            className="px-3 py-2 text-[13px]"
                                                             onClick={() => {
-                                                                // opcional: fecha a lista e abre detalhe
                                                                 setConfRegOpen(false);
                                                                 abrirConferenciaDetalhe(r.id);
                                                             }}
                                                         >
                                                             Ver
                                                         </Button>
-                                                    </td>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+
+                                {/* ✅ DESKTOP: tabela completa */}
+                                <div className="hidden sm:block">
+                                    <div className="overflow-auto">
+                                        <table className="min-w-full border-separate border-spacing-0">
+                                            <thead>
+                                                <tr className="bg-slate-50 text-left text-xs text-slate-700">
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">ID</th>
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Operador</th>
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Criado em</th>
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Itens</th>
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Dif</th>
+                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Ação</th>
                                                 </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                                            </thead>
+
+                                            <tbody>
+                                                {confRegRows.map((r) => {
+                                                    const dif = Number(r.total_dif) || 0;
+                                                    const difCls =
+                                                        dif === 0
+                                                            ? "text-slate-700"
+                                                            : dif > 0
+                                                                ? "text-emerald-700 font-semibold"
+                                                                : "text-rose-700 font-semibold";
+
+                                                    const depNome =
+                                                        r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `#${r.deposito_id}`;
+
+                                                    const opNome =
+                                                        r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`;
+
+                                                    return (
+                                                        <tr key={r.id} className="bg-white hover:bg-slate-50">
+                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">#{r.id}</td>
+                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{depNome}</td>
+                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{opNome}</td>
+                                                            <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fmtDateTime(r.criado_em)}</td>
+                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-900">
+                                                                {Number(r.total_itens) || 0}
+                                                            </td>
+                                                            <td className={`border-b border-slate-200 px-3 py-2 text-right text-sm ${difCls}`}>
+                                                                {dif > 0 ? `+${dif}` : `${dif}`}
+                                                            </td>
+                                                            <td className="border-b border-slate-200 px-3 py-2 text-right">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setConfRegOpen(false);
+                                                                        abrirConferenciaDetalhe(r.id);
+                                                                    }}
+                                                                >
+                                                                    Ver
+                                                                </Button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
+
                 </div>
             </Modal>
 
