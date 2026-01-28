@@ -1257,6 +1257,8 @@ export default function Page() {
     const [confRegLoading, setConfRegLoading] = useState(false);
     const [confRegErr, setConfRegErr] = useState<string>("");
     const [confRegDepositoId, setConfRegDepositoId] = useState<ID>(0);
+    const [confRegDataIni, setConfRegDataIni] = useState<string>(""); // YYYY-MM-DD
+    const [confRegDataFim, setConfRegDataFim] = useState<string>(""); // YYYY-MM-DD
     const [confRegRows, setConfRegRows] = useState<ConferenciaRegistro[]>([]);
 
     // ✅ DETALHE DE CONFERÊNCIA (REGISTRO SALVO)
@@ -1278,10 +1280,13 @@ export default function Page() {
         try {
             const resp = await apiGet<ConferenciasListResp>({
                 conferencias: 1,
-                deposito_id: confRegDepositoId || undefined,
+                deposito_id: confRegDepositoId || undefined, // 0 = todos
+                data_ini: confRegDataIni || undefined,       // ✅ novo
+                data_fim: confRegDataFim || undefined,       // ✅ novo
                 limit: 100,
                 _ts: Date.now(),
             });
+
             if (!resp.ok) throw new Error(resp.msg || "Falha ao carregar conferências.");
             setConfRegRows(resp.rows || []);
         } catch (e: any) {
@@ -1290,6 +1295,20 @@ export default function Page() {
             setConfRegLoading(false);
         }
     }
+
+    useEffect(() => {
+        if (!confRegOpen) return;
+
+        // pequeno debounce para não disparar múltiplas requisições seguidas
+        const t = window.setTimeout(() => {
+            loadConferenciasRegistros();
+        }, 200);
+
+        return () => window.clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [confRegOpen, confRegDepositoId, confRegDataIni, confRegDataFim]);
+
+
 
     async function loadConferenciaDetalhe(conferencia_id: number) {
         setConfDetBusy(true);
@@ -2544,8 +2563,10 @@ export default function Page() {
 
     useEffect(() => {
         if (depositos.length && !confDepositoId) setConfDepositoId(depositos[0].id);
-        if (depositos.length && !confRegDepositoId) setConfRegDepositoId(depositos[0].id);
-    }, [depositos, confDepositoId, confRegDepositoId]);
+
+        // ✅ NÃO definir confRegDepositoId aqui.
+        // Deixe 0 = "Todos" como padrão no modal de registros.
+    }, [depositos, confDepositoId]);
 
 
 
@@ -4465,13 +4486,11 @@ export default function Page() {
                                 <Button
                                     variant="ghost"
                                     type="button"
-                                    onClick={() => {
-                                        setConfRegOpen(true);
-                                        loadConferenciasRegistros();
-                                    }}
+                                    onClick={() => setConfRegOpen(true)}
                                 >
                                     Conferências Registradas
                                 </Button>
+
 
                                 <Button
                                     variant="soft"
@@ -6836,89 +6855,64 @@ export default function Page() {
                 subtitle="Lista de conferências registradas no sistema (não altera saldo)."
                 onClose={() => setConfRegOpen(false)}
             >
-                <div className="space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                        <div className="w-full sm:w-[260px]">
-                            <Field label="Filtrar por depósito">
-                                <Select value={confRegDepositoId} onChange={(e) => setConfRegDepositoId(Number(e.target.value))}>
-                                    <option value={0}>Todos</option>
-                                    {depositos.map((d) => (
-                                        <option key={d.id} value={d.id}>{d.nome}</option>
-                                    ))}
-                                </Select>
-                            </Field>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+                    <Field label="Depósito">
+                        <Select
+                            value={confRegDepositoId}
+                            onChange={(e) => setConfRegDepositoId(Number(e.target.value))}
+                        >
+                            <option value={0}>Todos</option>
+                            {depositos.map((d) => (
+                                <option key={d.id} value={d.id}>{d.nome}</option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Data inicial (opcional)">
+                        <TextInput
+                            type="date"
+                            value={confRegDataIni}
+                            onChange={(e) => setConfRegDataIni(e.target.value)}
+                        />
+                    </Field>
+
+                    <Field label="Data final (opcional)">
+                        <TextInput
+                            type="date"
+                            value={confRegDataFim}
+                            onChange={(e) => setConfRegDataFim(e.target.value)}
+                        />
+                    </Field>
+
+                    <Field label="Ações">
+                        <div className="flex gap-2">
+                            <Button
+                                variant="soft"
+                                type="button"
+                                onClick={loadConferenciasRegistros}
+                                disabled={confRegLoading}
+                                className="w-full"
+                            >
+                                {confRegLoading ? "Atualizando..." : "Atualizar"}
+                            </Button>
+
+                            <Button
+                                variant="ghost"
+                                type="button"
+                                onClick={() => {
+                                    setConfRegDepositoId(0);
+                                    setConfRegDataIni("");
+                                    setConfRegDataFim("");
+                                }}
+                                disabled={confRegLoading}
+                                className="w-full"
+                            >
+                                Limpar
+                            </Button>
                         </div>
-
-                        <div className="w-full sm:w-auto">
-                            <Field label="Ação">
-                                <Button
-                                    variant="soft"
-                                    type="button"
-                                    onClick={loadConferenciasRegistros}
-                                    disabled={confRegLoading}
-                                    className="w-full"
-                                >
-                                    {confRegLoading ? "Carregando..." : "Carregar"}
-                                </Button>
-                            </Field>
-                        </div>
-                    </div>
-
-                    {confRegErr ? (
-                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                            {confRegErr}
-                        </div>
-                    ) : null}
-
-                    {confRegLoading ? (
-                        <div className="text-sm text-slate-500">Carregando registros...</div>
-                    ) : confRegRows.length === 0 ? (
-                        <div className="text-sm text-slate-500">Nenhuma conferência encontrada.</div>
-                    ) : (
-                        <div className="overflow-hidden rounded-2xl border border-slate-200">
-                            <ul className="divide-y divide-slate-200">
-                                {confRegRows.map((r) => (
-                                    <li key={r.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-slate-900">
-                                                #{r.id} • {r.deposito_nome || depById.get(Number(r.deposito_id))?.nome || `Dep #${r.deposito_id}`}
-                                            </p>
-                                            <p className="mt-1 text-xs text-slate-600">
-                                                {fmtDateTime(r.criado_em)} • Operador:{" "}
-                                                <b>{r.operador_nome || userById.get(Number(r.operador_usuario_id))?.nome || `#${r.operador_usuario_id}`}</b>
-                                            </p>
-                                            <p className="mt-1 text-xs text-slate-600">
-                                                Itens: <b>{r.total_itens}</b> • Dif total:{" "}
-                                                <b className={Number(r.total_dif) === 0 ? "text-emerald-700" : "text-rose-700"}>
-                                                    {Number(r.total_dif) > 0 ? `+${r.total_dif}` : `${r.total_dif}`}
-                                                </b>
-                                            </p>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                type="button"
-                                                onClick={() => {
-                                                    setConfRegOpen(false);       // fecha lista
-                                                    abrirConferenciaDetalhe(r.id); // abre detalhe (seu modal já existe)
-                                                }}
-                                            >
-                                                Ver detalhes
-                                            </Button>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-
-                    <div className="flex justify-end">
-                        <Button variant="ghost" type="button" onClick={() => setConfRegOpen(false)}>
-                            Fechar
-                        </Button>
-                    </div>
+                    </Field>
                 </div>
+
             </Modal>
 
 
