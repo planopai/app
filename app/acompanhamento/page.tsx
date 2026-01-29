@@ -806,6 +806,9 @@ export default function AcompanhamentoPage() {
       (data as any).invol_deposito_nome = String((r as any).invol_deposito_nome ?? "");
       (data as any).invol_produto_id = Number((r as any).invol_produto_id ?? 0) || 0;
       (data as any).invol_codigo_barras = String((r as any).invol_codigo_barras ?? "");
+      // ✅ texto do INVOL (para aparecer no combobox ao reabrir)
+      (data as any).invol_item = String((r as any).invol_item ?? "");
+
 
       // ✅ insumos tanato (novo formato dentro do arrumacao_json)
       (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
