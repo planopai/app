@@ -68,6 +68,7 @@ function isRoupaPropria(v: any): boolean {
 }
 
 type InsumoItem = { produto_id: number; qtd: number };
+
 function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens: InsumoItem[] } | null {
   try {
     if (!raw) return null;
@@ -76,15 +77,32 @@ function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens
 
     const deposito_nome = String(obj.deposito_nome ?? obj.deposito ?? "").trim();
     const itensRaw = obj.itens ?? obj.items ?? null;
+    if (!itensRaw) return null;
 
-    if (!Array.isArray(itensRaw) || itensRaw.length === 0) return null;
+    let itens: InsumoItem[] = [];
 
-    const itens: InsumoItem[] = itensRaw
-      .map((x: any) => ({
-        produto_id: Number(x?.produto_id ?? 0) || 0,
-        qtd: Math.max(1, Math.floor(Number(x?.qtd ?? 0) || 0)),
-      }))
-      .filter((x: InsumoItem) => x.produto_id > 0 && x.qtd > 0);
+    // ✅ formato array
+    if (Array.isArray(itensRaw)) {
+      itens = itensRaw
+        .map((x: any) => ({
+          produto_id: Number(x?.produto_id ?? 0) || 0,
+          qtd: Math.max(1, Math.floor(Number(x?.qtd ?? 0) || 0)),
+        }))
+        .filter((x) => x.produto_id > 0 && x.qtd > 0);
+    }
+
+    // ✅ formato objeto/dict
+    if (!Array.isArray(itensRaw) && typeof itensRaw === "object") {
+      itens = Object.entries(itensRaw)
+        .map(([k, v]: any) => {
+          const pid = Number(v?.produto_id ?? 0) || Number(String(k).match(/\d+/)?.[0] ?? 0) || 0;
+          const qtd = Math.max(1, Math.floor(Number(v?.qtd ?? 0) || 0));
+          const checked = v?.checked;
+          if (checked === false || checked === 0 || checked === "0" || checked === "false") return null;
+          return pid > 0 ? { produto_id: pid, qtd } : null;
+        })
+        .filter(Boolean) as InsumoItem[];
+    }
 
     if (!itens.length) return null;
     return { deposito_nome, itens };
@@ -92,6 +110,7 @@ function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens
     return null;
   }
 }
+
 
 
 /* -------------------- utils sessão (IDs de terceiros) -------------------- */
@@ -397,6 +416,7 @@ export default function AcompanhamentoPage() {
           invol_deposito_nome: String(it?.invol_deposito_nome ?? ""),
           invol_produto_id: Number(it?.invol_produto_id ?? 0) || 0,
           invol_codigo_barras: String(it?.invol_codigo_barras ?? ""),
+          invol_item: String(it?.invol_item ?? ""), // 👈 AQUI
 
           // ✅ INSUMOS (novo formato dentro do arrumacao_json)
           arrumacao_json: String(it?.arrumacao_json ?? ""),
