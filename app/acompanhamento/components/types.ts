@@ -1,13 +1,23 @@
 "use client";
 
+/**
+ * Materiais (novo/antigo)
+ * - key pode ser "123" (antigo) ou "item:123" / "subitem:456" (novo)
+ * - helpers.ts já aceita campos extras; aqui tipamos para evitar TS reclamar
+ */
 export type MateriaisItemState = {
     checked: boolean;
     qtd: number;
     nome: string;
     categoria_id?: number | string;
+
+    // extras do formato novo (opcionais)
+    item_id?: number | string; // quando key for subitem, pode referenciar o item pai
+    tipo?: "item" | "subitem" | string;
+    raw_id?: number | string;
 };
 
-export type MateriaisState = Record<string, MateriaisItemState>; // key = itemId (string)
+export type MateriaisState = Record<string, MateriaisItemState>; // key = string (id antigo ou "item:X"/"subitem:Y")
 
 export type SubItem = {
     id: number | string;
@@ -34,6 +44,11 @@ export type Categoria = {
     itens?: Item[];
 };
 
+/**
+ * Arrumação
+ * - hoje continua no formato antigo (checkboxes)
+ * - o backend também aceita arrumacao_json string
+ */
 export type ArrumacaoState = {
     luvas: boolean;
     palha: boolean;
@@ -48,23 +63,40 @@ export type ArrumacaoState = {
     mascara: boolean;
 };
 
+/**
+ * Metas de estoque por item (URNA / ROUPA / INVOL)
+ */
+export type DepositoNomeUrna = "MEMORIAL" | "FUNERARIA";
+export type DepositoNomeArmario = "ARMARIO SANDRO" | "ARMARIO ILDO";
+export type DepositoNomeRoupa = DepositoNomeArmario | "FUNERARIA";
+export type DepositoNomeInvol = DepositoNomeArmario;
+
+/**
+ * Registro (sepultamentos)
+ * - inclui novas colunas: urna_* / roupa_* / invol_*
+ * - mantém [k:string]: any para compatibilidade com colunas antigas
+ */
 export type Registro = {
     id?: number | string;
+
     status?: string;
     falecido?: string;
     agente?: string;
+
     contato?: string;
     religiao?: string;
     convenio?: string;
+
+    // textos (mostrados no wizard)
     urna?: string;
     roupa?: string;
+    invol?: string;
 
     assistencia?: string;
     tanato?: string;
 
     ornamentacao?: string;
     ornamentacao_tipo?: string;
-    invol?: string;
 
     tipo_atendimento?: "funerario" | "terceiro";
 
@@ -80,11 +112,34 @@ export type Registro = {
     observacao_velorio01?: string;
     observacao_velorio02?: string;
 
+    // jsons persistidos no banco
     materiais_json?: string;
     arrumacao_json?: string;
 
+    // estados usados no front
     materiais?: MateriaisState;
     arrumacao?: ArrumacaoState;
+
+    // =========================
+    // ✅ META URNA (estoque)
+    // =========================
+    urna_deposito_nome?: DepositoNomeUrna | string;
+    urna_produto_id?: number;
+    urna_codigo_barras?: string;
+
+    // =========================
+    // ✅ META ROUPA (estoque)
+    // =========================
+    roupa_deposito_nome?: DepositoNomeRoupa | string;
+    roupa_produto_id?: number;
+    roupa_codigo_barras?: string;
+
+    // =========================
+    // ✅ META INVOL (estoque)
+    // =========================
+    invol_deposito_nome?: DepositoNomeInvol | string;
+    invol_produto_id?: number;
+    invol_codigo_barras?: string;
 
     [k: string]: any;
 };

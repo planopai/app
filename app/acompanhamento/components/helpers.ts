@@ -169,6 +169,37 @@ export function isTanatoNo(v?: string) {
     return s === "não" || s === "nao" || s === "n";
 }
 
+/* -------------------- Utils (depósitos / validações metas) -------------------- */
+function normUpper(v: any) {
+    const s = String(v ?? "").trim();
+    return s.replace(/\s+/g, " ").toUpperCase();
+}
+
+function normalizeUrnaDeposito(v: any): "MEMORIAL" | "FUNERARIA" {
+    const s = normUpper(v);
+    return s === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+}
+
+function asPositiveIntOrNull(v: any): number | null {
+    const n = Number(v ?? 0);
+    if (!Number.isFinite(n)) return null;
+    const i = Math.floor(n);
+    return i > 0 ? i : null;
+}
+
+function isSim(v: any): boolean {
+    const s = String(v ?? "").trim().toLowerCase();
+    return s === "sim" || s === "s" || s === "1" || s === "true";
+}
+
+function isRoupapropria(v: any): boolean {
+    const raw = String(v ?? "").trim().toLowerCase();
+    if (!raw) return false;
+    const noAcc = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const t = noAcc.trim();
+    return t === "roupa propria" || t === "roupa própria";
+}
+
 /* -------------------- Materiais: saneamento -------------------- */
 /**
  * Aceita o formato antigo (id -> {...}) e o novo (item:ID / subitem:ID),
@@ -205,12 +236,15 @@ export function normalizeMateriaisState(input: any): MateriaisState {
 
 /* -------------------- Envio de registro -------------------- */
 /**
- * ✅ Garante que materiais_json SEMPRE vá preenchido corretamente:
- * - aceita data.materiais (obj)
- * - aceita data.materiais_json já pronto (string ou obj)
- * - nunca envia string vazia (manda "{}" no mínimo)
+ * ✅ Garante:
+ * - materiais_json sempre string JSON (no mínimo "{}")
+ * - arrumacao_json sempre string JSON (no mínimo "{}")
+ * - URNA meta coerente (deposito_nome normalizado)
+ * - ROUPA/INVOL meta coerente (null quando não selecionado)
+ * - validações extras no front (evita erro 400 do PHP)
  */
 export async function enviarRegistroPHP(data: any) {
+    // ---------- materiais_json ----------
     let materiais_json = "{}";
     const srcMat = data?.materiais_json ?? data?.materiais;
 
@@ -220,6 +254,7 @@ export async function enviarRegistroPHP(data: any) {
         materiais_json = JSON.stringify(normalizeMateriaisState(srcMat));
     }
 
+    // ---------- arrumacao_json ----------
     let arrumacao_json = "{}";
     const srcArr = data?.arrumacao_json ?? data?.arrumacao;
 
@@ -229,11 +264,65 @@ export async function enviarRegistroPHP(data: any) {
         arrumacao_json = JSON.stringify(srcArr);
     }
 
+    // ---------- URNA META ----------
+    const urnaTxt = String(data?.urna ?? "").trim();
+    const urnaPidRaw = asPositiveIntOrNull(data?.urna_produto_id);
+    const urnaDep = normalizeUrnaDeposito(data?.urna_deposito_nome);
+    const urnaCb = String(data?.urna_codigo_barras ?? "").trim();
+
+    // segue regra do PHP: se tiver texto, precisa pid > 0
+    if (urnaTxt !== "" && !urnaPidRaw) {
+        throw new Error('Selecione uma urna da lista (produto do estoque).');
+    }
+
+    // ---------- ROUPA META ----------
+    const roupaTxt = String(data?.roupa ?? "").trim();
+    const roupaEhPropria = roupaTxt !== "" && isRoupapropria(roupaTxt);
+    const roupaPid = roupaEhPropria ? null : asPositiveIntOrNull(data?.roupa_produto_id);
+    const roupaDep = roupaEhPropria ? null : (String(data?.roupa_deposito_nome ?? "").trim() ? normUpper(data?.roupa_deposito_nome) : null);
+    const roupaCb = roupaEhPropria ? null : (String(data?.roupa_codigo_barras ?? "").trim() || null);
+
+    // regra do PHP: se roupa tem texto e NÃO é roupa própria => precisa pid > 0
+    if (roupaTxt !== "" && !roupaEhPropria && !roupaPid) {
+        throw new Error('Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".');
+    }
+
+    // ---------- INVOL META ----------
+    const involTxt = String(data?.invol ?? "").trim();
+    const involSim = isSim(involTxt);
+    const involPid = involSim ? asPositiveIntOrNull(data?.invol_produto_id) : null;
+    const involDep = involSim ? (String(data?.invol_deposito_nome ?? "").trim() ? normUpper(data?.invol_deposito_nome) : null) : null;
+    const involCb = involSim ? (String(data?.invol_codigo_barras ?? "").trim() || null) : null;
+
+    // regra do PHP: se invol == sim => precisa pid > 0
+    if (involSim && !involPid) {
+        throw new Error("Selecione um INVOL da lista (produto do estoque).");
+    }
+
     const body = {
         ...data,
+
+        // segurança: esses sempre existem
         local: data?.local || "",
+
+        // jsons sempre string
         materiais_json,
         arrumacao_json,
+
+        // urna
+        urna_deposito_nome: urnaDep,
+        urna_produto_id: urnaPidRaw ?? 0, // mantém compatível com o que vocês já usam
+        urna_codigo_barras: urnaCb,
+
+        // roupa (usa null quando não aplicável/selecionado)
+        roupa_deposito_nome: roupaDep,
+        roupa_produto_id: roupaPid,
+        roupa_codigo_barras: roupaCb,
+
+        // invol (usa null quando não aplicável/selecionado)
+        invol_deposito_nome: involDep,
+        invol_produto_id: involPid,
+        invol_codigo_barras: involCb,
     };
 
     return jsonWith401(`${API}/api/php/informativo.php`, {

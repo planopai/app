@@ -8,13 +8,23 @@ import { API as API_ROOT } from "./constants";
 type Step = {
     label: string;
     id: string;
-    type: "input" | "select" | "textarea" | "date" | "time" | "datalist" | "custom" | "async_urna";
+    type:
+    | "input"
+    | "select"
+    | "textarea"
+    | "date"
+    | "time"
+    | "datalist"
+    | "custom"
+    | "async_urna"
+    | "async_roupa"
+    | "async_invol";
     options?: string[];
     placeholder?: string;
     datalist?: string[];
 };
 
-type UrnaRow = {
+type EstoqueRow = {
     id?: number;
     produto_id?: number;
     est_produto_id?: number;
@@ -25,116 +35,131 @@ type UrnaRow = {
 
 const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
 
-function UrnaCombobox({
+/* -------------------- helpers -------------------- */
+function normUpper(v: any) {
+    return String(v ?? "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .toUpperCase();
+}
+
+function normNoAccLower(v: any) {
+    return String(v ?? "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isRoupaPropria(v: any) {
+    const s = normNoAccLower(v);
+    return s === "roupa propria" || s === "roupa própria";
+}
+
+function isSimNao(v: string) {
+    return v === "Sim" || v === "Não";
+}
+
+function getPidFromRow(it: EstoqueRow): number {
+    return Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
+}
+
+type DepUrna = "MEMORIAL" | "FUNERARIA";
+type DepRoupa = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
+type DepInvol = "ARMARIO SANDRO" | "ARMARIO ILDO";
+
+function normalizeDepUrna(v: any): DepUrna {
+    const s = normUpper(v);
+    return s === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+}
+
+function normalizeDepRoupa(v: any): DepRoupa {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return "ARMARIO SANDRO";
+}
+
+function normalizeDepInvol(v: any): DepInvol {
+    const s = normUpper(v);
+    return s === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
+}
+
+/* =========================================================================
+   Combobox genérico (estoque)
+   - action: "urnas_buscar" | "roupas_buscar" | "invols_buscar"
+   - Usa deposito_nome e somente_com_saldo=1
+   - IMPORTANTE: inputId precisa existir para o salvarGrupoWizard (DOM)
+   ========================================================================= */
+function EstoqueCombobox({
+    inputId,
+    label,
     required,
     placeholder,
     initialValue,
     disabled,
-    initialDepositoNome,
-    initialProdutoId,
-    initialCodigoBarras,
+
+    depositoLabel,
+    depositoOptions,
+    depositoValue,
+    onChangeDeposito,
+
+    action,
     errorText,
     onBlurValidate,
-    onSelectMeta,
+
+    onSelectRow,
+    onTypingInvalidate,
+
+    footerHint,
+    extraButtons,
 }: {
+    inputId: string;
+    label: string;
     required: boolean;
     placeholder?: string;
     initialValue: string;
     disabled?: boolean;
 
-    initialDepositoNome?: string;
-    initialProdutoId?: number;
-    initialCodigoBarras?: string;
+    depositoLabel: string;
+    depositoOptions: Array<{ value: string; label: string }>;
+    depositoValue: string;
+    onChangeDeposito: (v: string) => void;
 
+    action: string;
     errorText?: string;
     onBlurValidate?: () => void;
 
-    onSelectMeta?: (m: {
-        nome: string;
-        deposito_nome: "MEMORIAL" | "FUNERARIA";
-        produto_id: number;
-        codigo_barras: string;
-    }) => void;
+    onSelectRow: (row: EstoqueRow) => void;
+    onTypingInvalidate?: (typed: string) => void;
+
+    footerHint?: React.ReactNode;
+    extraButtons?: React.ReactNode;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const normalizeDep = (v: any): "MEMORIAL" | "FUNERARIA" => {
-        const s = String(v || "").trim().toUpperCase();
-        return s === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
-    };
-
     const [open, setOpen] = useState(false);
     const [q, setQ] = useState(initialValue || "");
-    const [dep, setDep] = useState<"MEMORIAL" | "FUNERARIA">(normalizeDep(initialDepositoNome));
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
-    const [rows, setRows] = useState<UrnaRow[]>([]);
-
+    const [rows, setRows] = useState<EstoqueRow[]>([]);
     const lastInitSigRef = useRef<string>("");
 
-    const getPidFromRow = (it: UrnaRow): number =>
-        Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
-
-    const applySelection = (it: UrnaRow) => {
-        const pid = getPidFromRow(it);
-        if (!pid || pid <= 0) {
-            setErr("Esta urna veio sem produto_id. Contate o suporte.");
-            onSelectMeta?.({ nome: q, deposito_nome: dep, produto_id: 0, codigo_barras: "" });
-            onBlurValidate?.();
-            return;
-        }
-
-        const cb = String((it as any).codigo_barras || "").trim();
-
-        setQ(String(it.nome || ""));
-        setErr("");
-        setOpen(false);
-
-        // ✅ grava no estado do wizard (isso é o que garante o salvamento)
-        onSelectMeta?.({
-            nome: String(it.nome || "").trim(),
-            deposito_nome: dep,
-            produto_id: pid,
-            codigo_barras: cb,
-        });
-
-        onBlurValidate?.();
-        requestAnimationFrame(() => inputRef.current?.blur());
-    };
-
-    // ✅ sincroniza ao abrir/editar SEM fechar a lista durante a digitação/busca
+    // sincroniza ao abrir/editar sem atrapalhar digitação
     useEffect(() => {
-        const depInit = normalizeDep(initialDepositoNome);
-        const pidInit = Number(initialProdutoId || 0) || 0;
-        const cbInit = String(initialCodigoBarras || "").trim();
-
-        // se usuário está digitando (input focado) OU dropdown aberto, não reinicializa
-        const isFocused =
-            typeof document !== "undefined" && document.activeElement === inputRef.current;
+        const isFocused = typeof document !== "undefined" && document.activeElement === inputRef.current;
         if (isFocused || open) return;
 
-        // evita rodar sem necessidade (loop/efeito em cada render)
-        const sig = `${String(initialValue || "")}||${depInit}||${pidInit}||${cbInit}`;
+        const sig = `${String(initialValue || "")}||${String(depositoValue || "")}`;
         if (lastInitSigRef.current === sig) return;
         lastInitSigRef.current = sig;
 
-        setDep(depInit);
         setQ(initialValue || "");
         setRows([]);
         setErr("");
         setOpen(false);
-
-        // garante que o wizardData reflita o que veio do registro (edição)
-        onSelectMeta?.({
-            nome: String(initialValue || "").trim(),
-            deposito_nome: depInit,
-            produto_id: pidInit,
-            codigo_barras: cbInit,
-        });
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialValue, initialDepositoNome, initialProdutoId, initialCodigoBarras, open]);
+    }, [initialValue, depositoValue, open]);
 
     // fecha ao clicar fora
     useEffect(() => {
@@ -163,11 +188,11 @@ function UrnaCombobox({
             setLoading(true);
             try {
                 const url = new URL(ESTOQUE_API);
-                url.searchParams.set("action", "urnas_buscar");
+                url.searchParams.set("action", action);
                 url.searchParams.set("q", qq);
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "30");
-                url.searchParams.set("deposito_nome", dep);
+                url.searchParams.set("deposito_nome", String(depositoValue || ""));
 
                 const r = await fetch(url.toString(), {
                     method: "GET",
@@ -177,8 +202,8 @@ function UrnaCombobox({
                 });
 
                 const j = await r.json().catch(() => null);
-                if (!j?.ok) throw new Error(j?.msg || "Falha ao buscar urnas");
-                setRows((j.rows || []) as UrnaRow[]);
+                if (!j?.ok) throw new Error(j?.msg || "Falha ao buscar itens no estoque");
+                setRows((j.rows || []) as EstoqueRow[]);
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
                 setErr(e?.message || "Erro na busca");
@@ -192,7 +217,24 @@ function UrnaCombobox({
             clearTimeout(t);
             ac.abort();
         };
-    }, [q, open, dep]);
+    }, [q, open, action, depositoValue]);
+
+    const applySelection = (it: EstoqueRow) => {
+        const pid = getPidFromRow(it);
+        if (!pid || pid <= 0) {
+            setErr("Este item veio sem produto_id. Contate o suporte.");
+            onBlurValidate?.();
+            return;
+        }
+
+        setQ(String(it.nome || ""));
+        setErr("");
+        setOpen(false);
+
+        onSelectRow(it);
+        onBlurValidate?.();
+        requestAnimationFrame(() => inputRef.current?.blur());
+    };
 
     const autoPickIfExactMatch = () => {
         const txt = q.trim().toLowerCase();
@@ -206,39 +248,40 @@ function UrnaCombobox({
     return (
         <div ref={wrapRef}>
             <div className="relative">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr] sm:gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[200px_1fr] sm:gap-2">
                     <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-700">Local da Urna</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-700">{depositoLabel}</label>
                         <select
                             className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
-                            value={dep}
+                            value={depositoValue}
                             onChange={(e) => {
-                                const next = normalizeDep(e.target.value);
-                                setDep(next);
+                                onChangeDeposito(e.target.value);
                                 setRows([]);
                                 setErr("");
                                 setOpen(true);
-
-                                // troca depósito invalida o produto
-                                onSelectMeta?.({ nome: q, deposito_nome: next, produto_id: 0, codigo_barras: "" });
                                 onBlurValidate?.();
                             }}
                             disabled={disabled}
-                            title="Local da Urna"
+                            title={depositoLabel}
                         >
-                            <option value="MEMORIAL">MEMORIAL</option>
-                            <option value="FUNERARIA">FUNERARIA</option>
+                            {depositoOptions.map((op) => (
+                                <option key={op.value} value={op.value}>
+                                    {op.label}
+                                </option>
+                            ))}
                         </select>
+
+                        {extraButtons ? <div className="mt-2 flex flex-wrap gap-2">{extraButtons}</div> : null}
                     </div>
 
                     <div>
                         <label className="mb-1 block text-xs font-medium text-slate-700">
-                            Urna {required && <span className="text-red-600">*</span>}
+                            {label} {required && <span className="text-red-600">*</span>}
                         </label>
 
                         <input
+                            id={inputId}
                             ref={inputRef}
-                            id="wizard-urna"
                             type="text"
                             placeholder={placeholder || "Digite para buscar..."}
                             value={q}
@@ -247,17 +290,14 @@ function UrnaCombobox({
                                 setQ(v);
                                 setOpen(true);
                                 setErr("");
-                                // digitou => invalida pid até selecionar da lista
-                                onSelectMeta?.({ nome: v, deposito_nome: dep, produto_id: 0, codigo_barras: "" });
+                                onTypingInvalidate?.(v);
                             }}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter") {
                                     e.preventDefault();
                                     if (!rows?.length) return;
                                     const txt = q.trim().toLowerCase();
-                                    const exact = rows.find(
-                                        (it) => String(it.nome || "").trim().toLowerCase() === txt
-                                    );
+                                    const exact = rows.find((it) => String(it.nome || "").trim().toLowerCase() === txt);
                                     applySelection(exact || rows[0]);
                                 }
                             }}
@@ -266,11 +306,10 @@ function UrnaCombobox({
                                 autoPickIfExactMatch();
                                 onBlurValidate?.();
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""
-                                }`}
+                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
                             disabled={disabled}
                             autoComplete="off"
-                            title="Urna"
+                            title={label}
                         />
 
                         {errorText ? <div className="mt-1 text-xs text-red-600">{errorText}</div> : null}
@@ -286,9 +325,7 @@ function UrnaCombobox({
                         ) : q.trim().length < 2 ? (
                             <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
                         ) : rows.length === 0 ? (
-                            <div className="p-3 text-sm text-slate-600">
-                                Nenhuma urna encontrada no estoque ({dep}).
-                            </div>
+                            <div className="p-3 text-sm text-slate-600">Nenhum item encontrado no estoque ({depositoValue}).</div>
                         ) : (
                             <ul className="max-h-64 overflow-auto py-1">
                                 {rows.map((it) => {
@@ -323,17 +360,16 @@ function UrnaCombobox({
                 ) : null}
             </div>
 
-            <p className="mt-1 text-[11px] text-slate-500">
-                Dica: escolha o depósito e digite parte do nome (ou código). Ao selecionar, a lista fecha.
-            </p>
+            <p className="mt-1 text-[11px] text-slate-500">Dica: digite parte do nome (ou código). Ao selecionar, a lista fecha.</p>
 
-            <p className="mt-1 text-[11px] text-slate-400">
-                Obs: a baixa de estoque acontece automaticamente ao registrar <b>Ínicio da Ornamentação (fase05)</b>.
-            </p>
+            {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
         </div>
     );
 }
 
+/* =========================================================================
+   Wizard
+   ========================================================================= */
 export default function Wizard({
     open,
     onClose,
@@ -392,22 +428,34 @@ export default function Wizard({
     wizardSubmitting: boolean;
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
+    const [involVal, setInvolVal] = useState<string>("");
 
+    const [assistenciaErro, setAssistenciaErro] = useState<string>("");
     const [urnaErro, setUrnaErro] = useState<string>("");
+    const [roupaErro, setRoupaErro] = useState<string>("");
+    const [involErro, setInvolErro] = useState<string>("");
+
+    // depósitos locais (controlados)
+    const [depUrna, setDepUrna] = useState<DepUrna>("MEMORIAL");
+    const [depRoupa, setDepRoupa] = useState<DepRoupa>("ARMARIO SANDRO");
+    const [depInvol, setDepInvol] = useState<DepInvol>("ARMARIO SANDRO");
 
     useEffect(() => {
         setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
-    }, [open, (wizardData as any).ornamentacao]);
+        setInvolVal(String((wizardData as any).invol ?? ""));
+    }, [open, (wizardData as any).ornamentacao, (wizardData as any).invol]);
 
     useEffect(() => {
-        if (open) setUrnaErro("");
-    }, [open]);
+        if (!open) return;
 
-    const isSimNao = (v: string) => v === "Sim" || v === "Não";
-    const [assistenciaErro, setAssistenciaErro] = useState<string>("");
+        setUrnaErro("");
+        setRoupaErro("");
+        setInvolErro("");
+        setAssistenciaErro("");
 
-    useEffect(() => {
-        if (open) setAssistenciaErro("");
+        setDepUrna(normalizeDepUrna((wizardData as any).urna_deposito_nome ?? "MEMORIAL"));
+        setDepRoupa(normalizeDepRoupa((wizardData as any).roupa_deposito_nome ?? "ARMARIO SANDRO"));
+        setDepInvol(normalizeDepInvol((wizardData as any).invol_deposito_nome ?? "ARMARIO SANDRO"));
     }, [open]);
 
     const assistenciaGroupIndex = useMemo(() => {
@@ -426,6 +474,12 @@ export default function Wizard({
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
 
     const assistenciaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "assistencia"), [grupoSteps]);
+    const urnaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "urna"), [grupoSteps]);
+    const roupaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "roupa"), [grupoSteps]);
+    const involNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol"), [grupoSteps]);
+    const involItemNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol_item"), [grupoSteps]);
+
+    const isRequired = (id: string) => obrigatorios.includes(id);
 
     const validarAssistencia = () => {
         if (!requireAssistencia) return true;
@@ -439,21 +493,79 @@ export default function Wizard({
 
     const bloqueiaPorAssistencia = requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
 
-    // ✅ valida urna pelo wizardData (não depende DOM)
+    // ✅ valida URNA pelo wizardData
     const validarUrnaSeNecessario = () => {
-        const urnaStepNoGrupo = grupoSteps.some((s) => s.id === "urna" && s.type === "async_urna");
-        if (!urnaStepNoGrupo) return true;
+        if (!urnaNoGrupoAtual) return true;
 
         const urnaTxt = String((wizardData as any).urna ?? "").trim();
         const pid = Number((wizardData as any).urna_produto_id ?? 0) || 0;
-        const isRequired = obrigatorios.includes("urna");
+        const req = isRequired("urna");
 
-        if ((isRequired || urnaTxt !== "") && pid <= 0) {
+        if ((req || urnaTxt !== "") && pid <= 0) {
             setUrnaErro("Selecione uma urna da lista (produto do estoque).");
             return false;
         }
 
         setUrnaErro("");
+        return true;
+    };
+
+    // ✅ valida ROUPA pelo wizardData
+    const validarRoupaSeNecessario = () => {
+        if (!roupaNoGrupoAtual) return true;
+
+        const roupaTxt = String((wizardData as any).roupa ?? "").trim();
+        const req = isRequired("roupa");
+
+        if (!req && roupaTxt === "") {
+            setRoupaErro("");
+            return true;
+        }
+
+        if (roupaTxt !== "" && isRoupaPropria(roupaTxt)) {
+            setRoupaErro("");
+            return true;
+        }
+
+        const pid = Number((wizardData as any).roupa_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).roupa_deposito_nome ?? "").trim();
+
+        if (roupaTxt !== "" && pid <= 0) {
+            setRoupaErro('Selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".');
+            return false;
+        }
+        if (roupaTxt !== "" && pid > 0 && dep === "") {
+            setRoupaErro("Selecione o local de saída da roupa.");
+            return false;
+        }
+
+        setRoupaErro("");
+        return true;
+    };
+
+    // ✅ valida INVOL pelo wizardData (só se invol=Sim)
+    const validarInvolSeNecessario = () => {
+        if (!involNoGrupoAtual && !involItemNoGrupoAtual) return true;
+
+        const invol = String((wizardData as any).invol ?? involVal ?? "");
+        if (invol !== "Sim") {
+            setInvolErro("");
+            return true;
+        }
+
+        const pid = Number((wizardData as any).invol_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).invol_deposito_nome ?? "").trim();
+
+        if (pid <= 0) {
+            setInvolErro("Selecione um INVOL da lista (produto do estoque).");
+            return false;
+        }
+        if (!dep) {
+            setInvolErro("Selecione o local do INVOL (ARMARIO SANDRO ou ARMARIO ILDO).");
+            return false;
+        }
+
+        setInvolErro("");
         return true;
     };
 
@@ -508,6 +620,8 @@ export default function Wizard({
         if (wizardSubmitting) return;
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
         if (!validarUrnaSeNecessario()) return;
+        if (!validarRoupaSeNecessario()) return;
+        if (!validarInvolSeNecessario()) return;
 
         const ok = salvarGrupoWizard();
         if (!ok) return;
@@ -518,6 +632,8 @@ export default function Wizard({
         if (wizardSubmitting) return;
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
         if (!validarUrnaSeNecessario()) return;
+        if (!validarRoupaSeNecessario()) return;
+        if (!validarInvolSeNecessario()) return;
 
         try {
             await concluirWizard();
@@ -527,7 +643,6 @@ export default function Wizard({
         }
     };
 
-    const isRequired = (id: string) => obrigatorios.includes(id);
     if (!open) return null;
 
     return (
@@ -564,34 +679,180 @@ export default function Wizard({
                 {grupoSteps.map((step) => {
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
 
-                    if (step.id === "urna" && step.type === "async_urna") {
+                    /* ===========================
+                       URNA (async)
+                       =========================== */
+                    if (step.type === "async_urna" && step.id === "urna") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <UrnaCombobox
+                                <EstoqueCombobox
+                                    inputId="wizard-urna"
+                                    label="Urna"
                                     required={isRequired(step.id)}
-                                    placeholder={step.placeholder}
-                                    initialValue={String((wizardData as any)[step.id] ?? "")}
+                                    placeholder={step.placeholder || "Digite para buscar..."}
+                                    initialValue={String((wizardData as any).urna ?? "")}
                                     disabled={wizardSubmitting}
-                                    initialDepositoNome={String((wizardData as any).urna_deposito_nome ?? "MEMORIAL")}
-                                    initialProdutoId={Number((wizardData as any).urna_produto_id ?? 0) || 0}
-                                    initialCodigoBarras={String((wizardData as any).urna_codigo_barras ?? "")}
-                                    errorText={urnaErro}
-                                    onBlurValidate={validarUrnaSeNecessario}
-                                    onSelectMeta={(m) => {
+                                    depositoLabel="Local da Urna"
+                                    depositoOptions={[
+                                        { value: "MEMORIAL", label: "MEMORIAL" },
+                                        { value: "FUNERARIA", label: "FUNERARIA" },
+                                    ]}
+                                    depositoValue={depUrna}
+                                    onChangeDeposito={(v) => {
+                                        const next = normalizeDepUrna(v);
+                                        setDepUrna(next);
+
                                         setWizardData((prev: any) => ({
                                             ...prev,
-                                            urna: m.nome,
-                                            urna_deposito_nome: m.deposito_nome,
-                                            urna_produto_id: m.produto_id,
-                                            urna_codigo_barras: m.codigo_barras,
+                                            urna_deposito_nome: next,
+                                            urna_produto_id: 0,
+                                            urna_codigo_barras: "",
+                                        }));
+
+                                        validarUrnaSeNecessario();
+                                    }}
+                                    action="urnas_buscar"
+                                    errorText={urnaErro}
+                                    onBlurValidate={validarUrnaSeNecessario}
+                                    onTypingInvalidate={(typed) => {
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            urna: typed,
+                                            urna_deposito_nome: depUrna,
+                                            urna_produto_id: 0,
+                                            urna_codigo_barras: "",
                                         }));
                                     }}
+                                    onSelectRow={(it) => {
+                                        const pid = getPidFromRow(it);
+                                        const cb = String((it as any).codigo_barras || "").trim();
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            urna: String(it.nome || "").trim(),
+                                            urna_deposito_nome: depUrna,
+                                            urna_produto_id: pid,
+                                            urna_codigo_barras: cb,
+                                        }));
+                                    }}
+                                    footerHint={
+                                        <>
+                                            Obs: a baixa do estoque acontece automaticamente ao registrar <b>Ínicio da Ornamentação (fase05)</b>.
+                                        </>
+                                    }
                                 />
                             </div>
                         );
                     }
 
-                    // local_velorio com GPS
+                    /* ===========================
+                       ROUPA (async + ROUPA PRÓPRIA)
+                       =========================== */
+                    if (step.type === "async_roupa" && step.id === "roupa") {
+                        const roupaAtual = String((wizardData as any).roupa ?? "");
+                        const isPropria = isRoupaPropria(roupaAtual);
+
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <EstoqueCombobox
+                                    inputId="wizard-roupa"
+                                    label="Roupa"
+                                    required={isRequired(step.id)}
+                                    placeholder={step.placeholder || 'Selecione no estoque ou digite "ROUPA PRÓPRIA"'}
+                                    initialValue={String((wizardData as any).roupa ?? "")}
+                                    disabled={wizardSubmitting}
+                                    depositoLabel="Local da Roupa"
+                                    depositoOptions={[
+                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                        { value: "FUNERARIA", label: "FUNERARIA" },
+                                    ]}
+                                    depositoValue={depRoupa}
+                                    onChangeDeposito={(v) => {
+                                        const next = normalizeDepRoupa(v);
+                                        setDepRoupa(next);
+
+                                        // se for roupa própria, não precisa depósito nem produto
+                                        if (isRoupaPropria((wizardData as any).roupa)) return;
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            roupa_deposito_nome: next,
+                                            roupa_produto_id: 0,
+                                            roupa_codigo_barras: "",
+                                        }));
+
+                                        validarRoupaSeNecessario();
+                                    }}
+                                    action="roupas_buscar"
+                                    errorText={roupaErro}
+                                    onBlurValidate={validarRoupaSeNecessario}
+                                    onTypingInvalidate={(typed) => {
+                                        if (typed && isRoupaPropria(typed)) {
+                                            setWizardData((prev: any) => ({
+                                                ...prev,
+                                                roupa: "ROUPA PRÓPRIA",
+                                                roupa_deposito_nome: "",
+                                                roupa_produto_id: 0,
+                                                roupa_codigo_barras: "",
+                                            }));
+                                            setRoupaErro("");
+                                            return;
+                                        }
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            roupa: typed,
+                                            roupa_deposito_nome: depRoupa,
+                                            roupa_produto_id: 0,
+                                            roupa_codigo_barras: "",
+                                        }));
+                                    }}
+                                    onSelectRow={(it) => {
+                                        const pid = getPidFromRow(it);
+                                        const cb = String((it as any).codigo_barras || "").trim();
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            roupa: String(it.nome || "").trim(),
+                                            roupa_deposito_nome: depRoupa,
+                                            roupa_produto_id: pid,
+                                            roupa_codigo_barras: cb,
+                                        }));
+                                    }}
+                                    extraButtons={
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                disabled={wizardSubmitting}
+                                                onClick={() => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        roupa: "ROUPA PRÓPRIA",
+                                                        roupa_deposito_nome: "",
+                                                        roupa_produto_id: 0,
+                                                        roupa_codigo_barras: "",
+                                                    }));
+                                                    setRoupaErro("");
+                                                }}
+                                            >
+                                                Usar ROUPA PRÓPRIA
+                                            </button>
+
+                                            {isPropria ? (
+                                                <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span>
+                                            ) : null}
+                                        </>
+                                    }
+                                />
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+                       local_velorio com GPS
+                       =========================== */
                     if (step.id === "local_velorio" && step.type === "datalist") {
                         const listId = `dl-${step.id}`;
                         const currentText = String((wizardData as any)[step.id] ?? "");
@@ -654,7 +915,9 @@ export default function Wizard({
                         );
                     }
 
-                    // custom arrumacao
+                    /* ===========================
+                       custom arrumacao
+                       =========================== */
                     if (step.type === "custom" && step.id === "arrumacao") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
@@ -666,7 +929,7 @@ export default function Wizard({
                                         onClick={() => setArrumacaoOpen(true)}
                                         disabled={wizardSubmitting}
                                     >
-                                        Selecionar Materiais
+                                        Selecionar Itens…
                                     </button>
                                     <span className="text-sm text-muted-foreground">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
                                 </div>
@@ -675,7 +938,9 @@ export default function Wizard({
                         );
                     }
 
-                    // assistencia
+                    /* ===========================
+                       assistencia (controlado)
+                       =========================== */
                     if (step.id === "assistencia" && step.type === "select") {
                         const showRequiredStar = isRequired(step.id) || requireAssistencia;
 
@@ -724,16 +989,16 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">
-                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
-                                        </span>
+                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
                                     </div>
                                 )}
                             </div>
                         );
                     }
 
-                    // tanato select controlado
+                    /* ===========================
+                       tanato (controlado)
+                       =========================== */
                     if (step.id === "tanato" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -758,7 +1023,9 @@ export default function Wizard({
                         );
                     }
 
-                    // ornamentacao select controlado
+                    /* ===========================
+                       ornamentacao (controlado)
+                       =========================== */
                     if (step.id === "ornamentacao" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -787,7 +1054,109 @@ export default function Wizard({
                         );
                     }
 
-                    // ornamentacao_tipo (default)
+                    /* ===========================
+                       INVOL (select controlado)
+                       =========================== */
+                    if (step.id === "invol" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    value={involVal}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setInvolVal(v);
+
+                                        // espelha no wizardData
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            invol: v,
+                                            ...(v !== "Sim" ? { invol_deposito_nome: "", invol_produto_id: 0, invol_codigo_barras: "", invol_item: "" } : {}),
+                                        }));
+
+                                        if (v !== "Sim") setInvolErro("");
+                                    }}
+                                    disabled={wizardSubmitting}
+                                >
+                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+                       INVOL ITEM (async) - só se invol=Sim
+                       =========================== */
+                    if (step.type === "async_invol" && step.id === "invol_item") {
+                        if (involVal !== "Sim") return null;
+
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <EstoqueCombobox
+                                    inputId="wizard-invol_item"
+                                    label="INVOL (estoque)"
+                                    required={true}
+                                    placeholder={step.placeholder || "Digite para buscar INVOL..."}
+                                    initialValue={String((wizardData as any).invol_item ?? "")}
+                                    disabled={wizardSubmitting}
+                                    depositoLabel="Local do INVOL"
+                                    depositoOptions={[
+                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                    ]}
+                                    depositoValue={depInvol}
+                                    onChangeDeposito={(v) => {
+                                        const next = normalizeDepInvol(v);
+                                        setDepInvol(next);
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            invol_deposito_nome: next,
+                                            invol_produto_id: 0,
+                                            invol_codigo_barras: "",
+                                        }));
+                                        validarInvolSeNecessario();
+                                    }}
+                                    action="invols_buscar"
+                                    errorText={involErro}
+                                    onBlurValidate={validarInvolSeNecessario}
+                                    onTypingInvalidate={(typed) => {
+                                        // campo apenas para UI/registro (não existe coluna específica no banco)
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            invol_item: typed,
+                                            invol_deposito_nome: depInvol,
+                                            invol_produto_id: 0,
+                                            invol_codigo_barras: "",
+                                        }));
+                                    }}
+                                    onSelectRow={(it) => {
+                                        const pid = getPidFromRow(it);
+                                        const cb = String((it as any).codigo_barras || "").trim();
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            invol_item: String(it.nome || "").trim(),
+                                            invol_deposito_nome: depInvol,
+                                            invol_produto_id: pid,
+                                            invol_codigo_barras: cb,
+                                        }));
+                                    }}
+                                />
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+                       ornamentacao_tipo (default)
+                       =========================== */
                     if (step.id === "ornamentacao_tipo" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -808,6 +1177,9 @@ export default function Wizard({
                         );
                     }
 
+                    /* ===========================
+                       defaults: input/textarea/select/date/time/datalist
+                       =========================== */
                     if (step.type === "input") {
                         return (
                             <div key={step.id}>

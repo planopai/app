@@ -41,6 +41,59 @@ type TipoAtendimento = "funerario" | "terceiro";
 // ✅ endpoint da baixa automática (novo PHP independente)
 const URNA_SAIDA_API = `${API}/api/php/urna_saida.php`;
 
+// ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
+type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "INSUMOS";
+
+function isSim(v: any): boolean {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "sim" || s === "s" || s === "1" || s === "true";
+}
+
+function isNao(v: any): boolean {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "não" || s === "nao" || s === "n" || s === "0" || s === "false";
+}
+
+function normNoAccLower(v: any): string {
+  return String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isRoupaPropria(v: any): boolean {
+  const s = normNoAccLower(v);
+  return s === "roupa propria" || s === "roupa própria";
+}
+
+type InsumoItem = { produto_id: number; qtd: number };
+function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens: InsumoItem[] } | null {
+  try {
+    if (!raw) return null;
+    const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!obj || typeof obj !== "object") return null;
+
+    const deposito_nome = String(obj.deposito_nome ?? obj.deposito ?? "").trim();
+    const itensRaw = obj.itens ?? obj.items ?? null;
+
+    if (!Array.isArray(itensRaw) || itensRaw.length === 0) return null;
+
+    const itens: InsumoItem[] = itensRaw
+      .map((x: any) => ({
+        produto_id: Number(x?.produto_id ?? 0) || 0,
+        qtd: Math.max(1, Math.floor(Number(x?.qtd ?? 0) || 0)),
+      }))
+      .filter((x: InsumoItem) => x.produto_id > 0 && x.qtd > 0);
+
+    if (!itens.length) return null;
+    return { deposito_nome, itens };
+  } catch {
+    return null;
+  }
+}
+
+
 /* -------------------- utils sessão (IDs de terceiros) -------------------- */
 function addTerceiroIdToSession(id: string | number | undefined | null) {
   try {
@@ -330,11 +383,26 @@ export default function AcompanhamentoPage() {
           id: it?.id != null ? String(it.id) : it.id,
           status: normalizarStatus(it?.status) ?? it?.status,
 
+          // ✅ URNA
           urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
           urna_produto_id: Number(it?.urna_produto_id ?? 0) || 0,
           urna_codigo_barras: String(it?.urna_codigo_barras ?? ""),
+
+          // ✅ ROUPA
+          roupa_deposito_nome: String(it?.roupa_deposito_nome ?? ""),
+          roupa_produto_id: Number(it?.roupa_produto_id ?? 0) || 0,
+          roupa_codigo_barras: String(it?.roupa_codigo_barras ?? ""),
+
+          // ✅ INVOL
+          invol_deposito_nome: String(it?.invol_deposito_nome ?? ""),
+          invol_produto_id: Number(it?.invol_produto_id ?? 0) || 0,
+          invol_codigo_barras: String(it?.invol_codigo_barras ?? ""),
+
+          // ✅ INSUMOS (novo formato dentro do arrumacao_json)
+          arrumacao_json: String(it?.arrumacao_json ?? ""),
         }))
         : [];
+
 
       setRegistros(sane);
     } catch {
@@ -629,22 +697,26 @@ export default function AcompanhamentoPage() {
   /* --------------------
      ✅ baixa automática da urna (fase05)
      -------------------- */
-  const baixarUrnaFase05 = useCallback(async (registro_id: string) => {
-    const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ registro_id }),
-      cache: "no-store",
-    });
+  const baixarItensFase05 = useCallback(
+    async (payload: { registro_id: string; tipo: BaixaTipo; deposito_nome?: string; itens?: Array<{ produto_id: number; qtd: number }> }) => {
+      const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
 
-    if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
-    const j = await r.json().catch(() => null);
-    if (!j) throw new Error("Resposta inválida do servidor (baixa urna).");
-    if (j?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-    if (!r.ok || j?.ok === false) throw new Error(j?.msg || "Falha ao dar baixa na urna (fase05).");
-    return j;
-  }, []);
+      if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+      const j = await r.json().catch(() => null);
+      if (!j) throw new Error(`Resposta inválida do servidor (baixa ${payload.tipo}).`);
+      if (j?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+      if (!r.ok || j?.ok === false) throw new Error(j?.msg || `Falha ao dar baixa automática (${payload.tipo}) na fase05.`);
+      return j;
+    },
+    []
+  );
+
 
   /* -------------------- Aberturas -------------------- */
   const abrirNovoRegistro = useCallback(() => setChooseTipoOpen(true), []);
@@ -678,6 +750,20 @@ export default function AcompanhamentoPage() {
     (empty as any).urna_produto_id = 0;
     (empty as any).urna_codigo_barras = "";
 
+    // ✅ defaults de meta roupa
+    (empty as any).roupa_deposito_nome = "";
+    (empty as any).roupa_produto_id = 0;
+    (empty as any).roupa_codigo_barras = "";
+
+    // ✅ defaults de meta invol
+    (empty as any).invol_deposito_nome = "";
+    (empty as any).invol_produto_id = 0;
+    (empty as any).invol_codigo_barras = "";
+
+    // ✅ insumos tanato (novo formato) - começa vazio
+    (empty as any).arrumacao_json = "";
+
+
     setWizardData(empty);
     setMateriais(defaultMateriais());
     setArrumacao(defaultArrumacao());
@@ -710,6 +796,20 @@ export default function AcompanhamentoPage() {
       (data as any).urna_deposito_nome = String((r as any).urna_deposito_nome ?? "");
       (data as any).urna_produto_id = Number((r as any).urna_produto_id ?? 0) || 0;
       (data as any).urna_codigo_barras = String((r as any).urna_codigo_barras ?? "");
+
+      // ✅ metas da ROUPA no wizardData
+      (data as any).roupa_deposito_nome = String((r as any).roupa_deposito_nome ?? "");
+      (data as any).roupa_produto_id = Number((r as any).roupa_produto_id ?? 0) || 0;
+      (data as any).roupa_codigo_barras = String((r as any).roupa_codigo_barras ?? "");
+
+      // ✅ metas do INVOL no wizardData
+      (data as any).invol_deposito_nome = String((r as any).invol_deposito_nome ?? "");
+      (data as any).invol_produto_id = Number((r as any).invol_produto_id ?? 0) || 0;
+      (data as any).invol_codigo_barras = String((r as any).invol_codigo_barras ?? "");
+
+      // ✅ insumos tanato (novo formato dentro do arrumacao_json)
+      (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
+
 
       const mats = parseMateriaisFromRegistro(r);
       setMateriais(mats);
@@ -803,6 +903,44 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front): se urna tem texto, precisa ter produto_id
     const urnaTxt = String(dataAtualizada?.urna ?? "").trim();
+    // ✅ validação extra (front): ROUPA (se não for própria)
+    const roupaTxt = String(dataAtualizada?.roupa ?? "").trim();
+    const roupaPid = Number(dataAtualizada?.roupa_produto_id ?? 0) || 0;
+    const roupaDep = String(dataAtualizada?.roupa_deposito_nome ?? "").trim();
+
+    if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+      if (roupaPid <= 0) {
+        setWizardMsg({ text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".', ok: false });
+        return;
+      }
+      if (!roupaDep) {
+        setWizardMsg({ text: "Selecione o local de saída da roupa (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).", ok: false });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front): INVOL (se invol = Sim)
+    const involVal = dataAtualizada?.invol ?? "";
+    if (isSim(involVal)) {
+      const involPid = Number(dataAtualizada?.invol_produto_id ?? 0) || 0;
+      const involDep = String(dataAtualizada?.invol_deposito_nome ?? "").trim();
+      if (involPid <= 0) {
+        setWizardMsg({ text: "Selecione um INVOL da lista (produto do estoque).", ok: false });
+        return;
+      }
+      if (!involDep) {
+        setWizardMsg({ text: "Selecione o local do INVOL (ARMARIO SANDRO ou ARMARIO ILDO).", ok: false });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front): INSUMOS TANATO (arrumacao_json novo)
+    const ins = parseInsumosFromArrumacaoJson(dataAtualizada?.arrumacao_json);
+    if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
+      setWizardMsg({ text: "Insumos Tanatopraxia: selecione o depósito e informe itens com quantidade (>=1).", ok: false });
+      return;
+    }
+
     const urnaPid = Number(dataAtualizada?.urna_produto_id ?? 0) || 0;
     if (urnaTxt !== "" && urnaPid <= 0) {
       setWizardMsg({ text: "Selecione uma urna da lista (produto do estoque).", ok: false });
@@ -883,12 +1021,13 @@ export default function AcompanhamentoPage() {
     const statusCode = normalizeStatusCode(acao);
     const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
 
-    // ✅ trava fase05 sem urna vinculada
+    // ✅ trava fase05 sem metas necessárias (urna/roupa/invol/insumos) + exige online
     if (statusCode === "fase05") {
-      const reg = registros.find((x) => String(x.id) === String(acaoId));
-      const pid = Number((reg as any)?.urna_produto_id ?? 0) || 0;
+      const reg = registros.find((x) => String(x.id) === String(acaoId)) as any;
 
-      if (pid <= 0) {
+      // URNA (sempre exige)
+      const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
+      if (urnaPid <= 0) {
         setAcaoMsg({
           ok: false,
           text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
@@ -896,14 +1035,51 @@ export default function AcompanhamentoPage() {
         return false;
       }
 
+      // ROUPA (se não for própria)
+      const roupaTxt = String(reg?.roupa ?? "").trim();
+      if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+        const roupaPid = Number(reg?.roupa_produto_id ?? 0) || 0;
+        const roupaDep = String(reg?.roupa_deposito_nome ?? "").trim();
+        if (roupaPid <= 0) {
+          setAcaoMsg({ ok: false, text: 'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".' });
+          return false;
+        }
+        if (!roupaDep) {
+          setAcaoMsg({ ok: false, text: "Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA)." });
+          return false;
+        }
+      }
+
+      // INVOL (se invol = Sim)
+      if (isSim(reg?.invol)) {
+        const involPid = Number(reg?.invol_produto_id ?? 0) || 0;
+        const involDep = String(reg?.invol_deposito_nome ?? "").trim();
+        if (involPid <= 0) {
+          setAcaoMsg({ ok: false, text: "Invol: selecione um INVOL da lista (estoque)." });
+          return false;
+        }
+        if (!involDep) {
+          setAcaoMsg({ ok: false, text: "Invol: selecione o local (ARMARIO SANDRO ou ARMARIO ILDO)." });
+          return false;
+        }
+      }
+
+      // INSUMOS TANATO (se arrumacao_json tiver itens)
+      const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
+      if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
+        setAcaoMsg({ ok: false, text: "Insumos Tanatopraxia: selecione depósito e itens com quantidade (>=1)." });
+        return false;
+      }
+
       if (!isOnlineNow()) {
         setAcaoMsg({
           ok: false,
-          text: "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática da urna no estoque. Conecte-se e tente novamente.",
+          text: "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática (urna/roupa/invol/insumos) no estoque. Conecte-se e tente novamente.",
         });
         return false;
       }
     }
+
 
     // conferência antes do fase11
     if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
@@ -946,17 +1122,45 @@ export default function AcompanhamentoPage() {
       }
     }
 
-    // ✅ fase05: baixar urna antes
+    // ✅ fase05: dar baixa automática (URNA + ROUPA + INVOL + INSUMOS) antes de mudar status
     if (statusCode === "fase05") {
       try {
         setAcaoSubmitting(true);
-        await baixarUrnaFase05(String(acaoId));
+
+        const reg = registros.find((x) => String(x.id) === String(acaoId)) as any;
+        const registro_id = String(acaoId);
+
+        // 1) URNA (sempre)
+        await baixarItensFase05({ registro_id, tipo: "URNA" });
+
+        // 2) ROUPA (se não for própria e tiver roupa preenchida)
+        const roupaTxt = String(reg?.roupa ?? "").trim();
+        if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+          await baixarItensFase05({ registro_id, tipo: "ROUPA" });
+        }
+
+        // 3) INVOL (se invol = Sim)
+        if (isSim(reg?.invol)) {
+          await baixarItensFase05({ registro_id, tipo: "INVOL" });
+        }
+
+        // 4) INSUMOS (se arrumacao_json tiver itens)
+        const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
+        if (ins && ins.itens.length > 0) {
+          await baixarItensFase05({
+            registro_id,
+            tipo: "INSUMOS",
+            deposito_nome: ins.deposito_nome,
+            itens: ins.itens,
+          });
+        }
       } catch (e: any) {
         setAcaoSubmitting(false);
-        setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática da urna (fase05)." });
+        setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática (fase05)." });
         return false;
       }
     }
+
 
     setAcaoSubmitting(true);
     try {
@@ -1008,8 +1212,9 @@ export default function AcompanhamentoPage() {
     teleStartFase,
     fetchRegistros,
     flushOfflineQueue,
-    baixarUrnaFase05,
+    baixarItensFase05,
   ]);
+
 
   const confirmarAcaoSilenciosa = useCallback(async (fase: string) => {
     const id = teleRegistroId ?? acaoId;
