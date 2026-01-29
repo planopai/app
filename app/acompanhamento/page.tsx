@@ -866,6 +866,58 @@ export default function AcompanhamentoPage() {
       next.urna_deposito_nome = String(next?.urna_deposito_nome ?? "MEMORIAL").trim().toUpperCase() === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
     }
 
+    // ✅ ROUPA META: mesma lógica da URNA (não depende do DOM)
+    const roupaTxt = String(next?.roupa ?? "").trim();
+    if (roupaTxt === "") {
+      // sem roupa -> limpa metas
+      next.roupa_produto_id = 0;
+      next.roupa_codigo_barras = "";
+      next.roupa_deposito_nome = "";
+    } else if (isRoupaPropria(roupaTxt)) {
+      // roupa própria não usa estoque
+      next.roupa = "ROUPA PRÓPRIA";
+      next.roupa_produto_id = 0;
+      next.roupa_codigo_barras = "";
+      next.roupa_deposito_nome = "";
+    } else {
+      // roupa do estoque -> mantém pid/cb/dep do wizardData
+      const roupaPid = Number(next?.roupa_produto_id ?? 0) || 0;
+
+      // normaliza depósito permitido
+      const depRaw = String(next?.roupa_deposito_nome ?? "").trim().toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO SANDRO" || depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
+          ? depRaw
+          : "ARMARIO SANDRO";
+
+      next.roupa_deposito_nome = depOk;
+      next.roupa_codigo_barras = String(next?.roupa_codigo_barras ?? "").trim();
+
+      // se digitou mas não selecionou item do estoque, mantém 0 (wizard/PHP validam)
+      next.roupa_produto_id = roupaPid > 0 ? roupaPid : 0;
+    }
+
+    // ✅ INVOL META: só vale quando invol === "Sim"
+    const involFlag = String(next?.invol ?? "").trim();
+    if (!isSim(involFlag)) {
+      next.invol_produto_id = 0;
+      next.invol_codigo_barras = "";
+      next.invol_deposito_nome = "";
+      // esse campo é só “UI”, mas evita sujeira:
+      next.invol_item = "";
+    } else {
+      const involPid = Number(next?.invol_produto_id ?? 0) || 0;
+
+      // normaliza depósito permitido
+      const depRaw = String(next?.invol_deposito_nome ?? "").trim().toUpperCase();
+      const depOk = depRaw === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
+
+      next.invol_deposito_nome = depOk;
+      next.invol_codigo_barras = String(next?.invol_codigo_barras ?? "").trim();
+      next.invol_produto_id = involPid > 0 ? involPid : 0;
+    }
+
+
     setWizardData(next);
     return next as Registro;
   }, [
