@@ -940,12 +940,25 @@ export default function AcompanhamentoPage() {
       next.invol_produto_id = involPid > 0 ? involPid : 0;
     }
 
-    // ✅ sempre persistir Arrumação/INSUMOS em arrumacao_json
+    // ✅ preservar INSUMOS dentro do arrumacao_json (merge booleans + insumos)
     try {
-      const obj =
-        next.arrumacao && typeof next.arrumacao === "object" ? next.arrumacao : arrumacao;
+      const prevStr = String(next.arrumacao_json ?? "");
+      let prevObj: any = {};
+      try {
+        prevObj = prevStr ? JSON.parse(prevStr) : {};
+      } catch {
+        prevObj = {};
+      }
 
-      next.arrumacao_json = JSON.stringify(obj ?? {});
+      const bools =
+        next.arrumacao && typeof next.arrumacao === "object"
+          ? next.arrumacao
+          : arrumacao;
+
+      // mantém deposito_nome/itens e atualiza booleans
+      const merged = { ...(prevObj || {}), ...(bools || {}) };
+
+      next.arrumacao_json = JSON.stringify(merged);
     } catch {
       next.arrumacao_json = "";
     }
@@ -1475,7 +1488,14 @@ export default function AcompanhamentoPage() {
       />
 
       <MateriaisModal open={materiaisOpen} setOpen={setMateriaisOpen} materiais={materiais} setMateriais={setMateriais} setWizardData={setWizardData} />
-      <ArrumacaoModal open={arrumacaoOpen} setOpen={setArrumacaoOpen} arrumacao={arrumacao} setArrumacao={setArrumacao} setWizardData={setWizardData} />
+      <ArrumacaoModal
+        open={arrumacaoOpen}
+        setOpen={setArrumacaoOpen}
+        arrumacao={arrumacao}
+        setArrumacao={setArrumacao}
+        setWizardData={setWizardData}
+        wizardData={wizardData} // ✅ ESSENCIAL
+      />
 
       <AcaoModal
         open={acaoOpen}
