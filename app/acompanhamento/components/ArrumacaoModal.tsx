@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { ArrumacaoState, Registro } from "./types";
 import { API as API_ROOT } from "./constants";
-import { jsonWith401 } from "./helpers";
 
 type EstoqueRow = {
     id?: number;
@@ -37,64 +36,81 @@ function getPidFromRow(it: EstoqueRow): number {
     return Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
 }
 
-// Tenta ler arrumacao_json existente (para pré-preencher depósito + itens)
-function parseArrumacaoJson(raw: any): { deposito_nome: DepInsumos; itens: Record<number, InsumoSel> } {
+function safeParseJson(raw: any): any {
     try {
-        const out: { deposito_nome: DepInsumos; itens: Record<number, InsumoSel> } = { deposito_nome: "", itens: {} };
-        if (!raw) return out;
-
-        const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-        if (!obj || typeof obj !== "object") return out;
-
-        const dep = normUpper((obj as any).deposito_nome ?? (obj as any).deposito ?? "");
-        out.deposito_nome = dep === "ARMARIO ILDO" ? "ARMARIO ILDO" : dep === "ARMARIO SANDRO" ? "ARMARIO SANDRO" : "";
-
-        const itens = (obj as any).itens ?? (obj as any).items ?? null;
-
-        // array
-        if (Array.isArray(itens)) {
-            for (const it of itens) {
-                const pid = Number(it?.produto_id ?? it?.id ?? 0) || 0;
-                const qtd = Math.max(1, Math.floor(Number(it?.qtd ?? it?.quantidade ?? 1) || 1));
-                if (pid > 0) {
-                    out.itens[pid] = {
-                        checked: true,
-                        qtd,
-                        nome: String(it?.nome ?? "").trim(),
-                        codigo_barras: String(it?.codigo_barras ?? it?.cb ?? "").trim() || undefined,
-                    };
-                }
-            }
-            return out;
-        }
-
-        // object/dict
-        if (itens && typeof itens === "object") {
-            for (const [k, v] of Object.entries(itens)) {
-                const vv: any = v || {};
-                let pid = Number(vv?.produto_id ?? 0) || 0;
-                if (!pid) {
-                    const m = String(k).match(/(\d+)/);
-                    if (m) pid = Number(m[1]) || 0;
-                }
-                const checked = vv?.checked !== false && vv?.checked !== 0 && vv?.checked !== "0" && vv?.checked !== "false";
-                if (!checked || pid <= 0) continue;
-
-                const qtd = Math.max(1, Math.floor(Number(vv?.qtd ?? vv?.quantidade ?? 1) || 1));
-                out.itens[pid] = {
-                    checked: true,
-                    qtd,
-                    nome: String(vv?.nome ?? "").trim(),
-                    codigo_barras: String(vv?.codigo_barras ?? vv?.cb ?? "").trim() || undefined,
-                };
-            }
-            return out;
-        }
-
-        return out;
+        if (!raw) return {};
+        return typeof raw === "string" ? JSON.parse(raw) : raw;
     } catch {
-        return { deposito_nome: "", itens: {} };
+        return {};
     }
+}
+
+// ✅ Pré-preenche depósito + itens a partir do arrumacao_json (suporta aliases)
+function parseArrumacaoJson(raw: any): { deposito_nome: DepInsumos; itens: Record<number, InsumoSel> } {
+    const out: { deposito_nome: DepInsumos; itens: Record<number, InsumoSel> } = { deposito_nome: "", itens: {} };
+
+    const obj = safeParseJson(raw);
+    if (!obj || typeof obj !== "object") return out;
+
+    const dep = normUpper((obj as any).deposito_nome ?? (obj as any).deposito ?? "");
+    out.deposito_nome = dep === "ARMARIO ILDO" ? "ARMARIO ILDO" : dep === "ARMARIO SANDRO" ? "ARMARIO SANDRO" : "";
+
+    const itensRaw = (obj as any).itens ?? (obj as any).items ?? null;
+
+    // ✅ formato array
+    if (Array.isArray(itensRaw)) {
+        for (const it of itensRaw) {
+            const pid = Number((it as any)?.produto_id ?? (it as any)?.id ?? 0) || 0;
+            if (pid <= 0) continue;
+
+            const checked =
+                (it as any)?.checked !== false &&
+                (it as any)?.checked !== 0 &&
+                (it as any)?.checked !== "0" &&
+                (it as any)?.checked !== "false";
+
+            if (!checked) continue;
+
+            const qtd = Math.max(1, Math.floor(Number((it as any)?.qtd ?? (it as any)?.quantidade ?? 1) || 1));
+
+            out.itens[pid] = {
+                checked: true,
+                qtd,
+                nome: String((it as any)?.nome ?? "").trim() || `Produto ${pid}`,
+                codigo_barras: String((it as any)?.codigo_barras ?? (it as any)?.cb ?? "").trim() || undefined,
+            };
+        }
+        return out;
+    }
+
+    // ✅ formato object/dict
+    if (itensRaw && typeof itensRaw === "object") {
+        for (const [k, v] of Object.entries(itensRaw)) {
+            const vv: any = v || {};
+            let pid = Number(vv?.produto_id ?? 0) || 0;
+
+            if (!pid) {
+                const m = String(k).match(/(\d+)/);
+                if (m) pid = Number(m[1]) || 0;
+            }
+            if (pid <= 0) continue;
+
+            const checked =
+                vv?.checked !== false && vv?.checked !== 0 && vv?.checked !== "0" && vv?.checked !== "false";
+            if (!checked) continue;
+
+            const qtd = Math.max(1, Math.floor(Number(vv?.qtd ?? vv?.quantidade ?? 1) || 1));
+
+            out.itens[pid] = {
+                checked: true,
+                qtd,
+                nome: String(vv?.nome ?? "").trim() || `Produto ${pid}`,
+                codigo_barras: String(vv?.codigo_barras ?? vv?.cb ?? "").trim() || undefined,
+            };
+        }
+    }
+
+    return out;
 }
 
 export default function ArrumacaoModal({
@@ -103,7 +119,7 @@ export default function ArrumacaoModal({
     arrumacao,
     setArrumacao,
     setWizardData,
-    // ✅ opcional (recomendado passar) para pré-preencher insumos ao editar
+    // ✅ passe o wizardData para pré-preencher corretamente ao editar
     wizardData,
 }: {
     open: boolean;
@@ -113,7 +129,7 @@ export default function ArrumacaoModal({
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     wizardData?: Registro;
 }) {
-    // ✅ campos visíveis (conforme pedido)
+    // ✅ checks visíveis
     const campos: { key: keyof ArrumacaoState; label: string }[] = [
         { key: "luvas", label: "Luvas" },
         { key: "palha", label: "Palha" },
@@ -135,7 +151,7 @@ export default function ArrumacaoModal({
 
     const abortRef = useRef<AbortController | null>(null);
 
-    // Pré-preenche depósito/itens ao abrir (quando editando)
+    // ✅ Pré-preenche depósito/itens ao abrir (quando editando)
     useEffect(() => {
         if (!open) return;
 
@@ -143,17 +159,24 @@ export default function ArrumacaoModal({
         setQ("");
         setRows([]);
 
-        const parsed = parseArrumacaoJson((wizardData as any)?.arrumacao_json);
-        if (parsed.deposito_nome) setDepInsumos(parsed.deposito_nome);
+        const raw = (wizardData as any)?.arrumacao_json ?? (wizardData as any)?.arrumacao ?? null;
+        const parsed = parseArrumacaoJson(raw);
+
+        // se não houver nada salvo, limpa
+        if (!parsed.deposito_nome) setDepInsumos("");
+        else setDepInsumos(parsed.deposito_nome);
+
         if (Object.keys(parsed.itens).length) setSel(parsed.itens);
+        else setSel({});
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
-    // Busca insumos quando depósito muda (e quando digita busca)
+    // ✅ Busca insumos quando depósito muda (e quando digita busca)
     useEffect(() => {
         if (!open) return;
 
-        // limpa se não tiver depósito selecionado
+        // sem depósito: zera lista e cancela request
         if (!depInsumos) {
             setRows([]);
             setErr("");
@@ -162,7 +185,8 @@ export default function ArrumacaoModal({
         }
 
         const qq = q.trim();
-        // (opcional) só faz busca com 0 ou >=2 chars; 1 char normalmente gera muito ruído
+
+        // opcional: evita 1 caractere (ruído)
         if (qq.length === 1) {
             setRows([]);
             setErr("");
@@ -179,22 +203,21 @@ export default function ArrumacaoModal({
 
             try {
                 const url = new URL(ESTOQUE_API);
-                // ✅ você vai implementar esta action no PHP:
-                // - filtra por depósito (ARMARIO SANDRO / ILDO)
-                // - retorna apenas categoria/classificação: "INSUMOS TANATOPRAXIA"
-                // - pode aceitar q vazio para listar
                 url.searchParams.set("action", "insumos_tanato_listar");
                 url.searchParams.set("deposito_nome", depInsumos);
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "300");
                 if (qq.length >= 2) url.searchParams.set("q", qq);
 
-                const data = await jsonWith401(url.toString(), {
+                const r = await fetch(url.toString(), {
                     method: "GET",
                     cache: "no-store",
                     credentials: "include",
                     signal: ac.signal,
                 });
+
+                if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+                const data = await r.json().catch(() => null);
 
                 if (!data?.ok) throw new Error(data?.msg || "Falha ao buscar insumos");
                 setRows((data.rows || []) as EstoqueRow[]);
@@ -217,7 +240,12 @@ export default function ArrumacaoModal({
         return Object.values(sel).filter((x) => x?.checked && (x?.qtd ?? 0) > 0).length;
     }, [sel]);
 
+    // ✅ monta JSON mesclando o que já existia + booleans + insumos atuais
     const buildArrumacaoJson = () => {
+        // pega o json anterior para não “sumir” com campos não relacionados
+        const oldRaw = (wizardData as any)?.arrumacao_json ?? null;
+        const oldObj = safeParseJson(oldRaw);
+
         const itens = Object.entries(sel)
             .map(([pidStr, v]) => ({
                 produto_id: Number(pidStr) || 0,
@@ -228,13 +256,24 @@ export default function ArrumacaoModal({
             }))
             .filter((x) => x.produto_id > 0 && x.checked && x.qtd > 0);
 
-        // ✅ mantém os booleanos no JSON também (compatível com o seu parse atual)
-        const payload: any = { ...arrumacao };
+        // base: mantém campos antigos + atualiza booleans
+        const payload: any = {
+            ...(oldObj && typeof oldObj === "object" ? oldObj : {}),
+            ...(arrumacao && typeof arrumacao === "object" ? arrumacao : {}),
+        };
 
-        // só inclui bloco de insumos quando houver seleção (evita validação desnecessária)
+        // se tem itens -> grava bloco insumos (com aliases)
         if (itens.length > 0) {
             payload.deposito_nome = depInsumos;
+            payload.deposito = depInsumos; // alias
             payload.itens = itens;
+            payload.items = itens; // alias
+        } else {
+            // se zerou seleções, remove bloco insumos
+            delete payload.deposito_nome;
+            delete payload.deposito;
+            delete payload.itens;
+            delete payload.items;
         }
 
         return JSON.stringify(payload);
@@ -286,11 +325,12 @@ export default function ArrumacaoModal({
                             className="w-full rounded-md border px-3 py-2 text-sm"
                             value={depInsumos}
                             onChange={(e) => {
-                                const next = (normUpper(e.target.value) as DepInsumos) || "";
-                                setDepInsumos(next === "ARMARIO ILDO" ? "ARMARIO ILDO" : next === "ARMARIO SANDRO" ? "ARMARIO SANDRO" : "");
+                                const up = normUpper(e.target.value);
+                                const next: DepInsumos = up === "ARMARIO ILDO" ? "ARMARIO ILDO" : up === "ARMARIO SANDRO" ? "ARMARIO SANDRO" : "";
+                                setDepInsumos(next);
                                 setErr("");
                                 setRows([]);
-                                // opcional: mantém seleções, mas normalmente trocar depósito deve limpar
+                                // ✅ trocar depósito normalmente invalida seleção anterior
                                 setSel({});
                             }}
                         >
@@ -308,7 +348,9 @@ export default function ArrumacaoModal({
                                 onChange={(e) => setQ(e.target.value)}
                                 disabled={!depInsumos}
                             />
-                            <div className="mt-1 text-[11px] text-slate-500">Dica: deixe vazio para listar (depende do PHP aceitar q vazio).</div>
+                            <div className="mt-1 text-[11px] text-slate-500">
+                                Dica: deixe vazio para listar (o PHP já aceita q vazio).
+                            </div>
                         </div>
                     </div>
 
@@ -342,7 +384,7 @@ export default function ArrumacaoModal({
 
                                         const current = sel[pid];
                                         const checked = !!current?.checked;
-                                        const qtd = Number(current?.qtd ?? 1) || 1;
+                                        const qtd = Math.max(1, Math.floor(Number(current?.qtd ?? 1) || 1));
 
                                         return (
                                             <li key={pid} className="grid grid-cols-[1fr_92px_72px] items-center gap-2 px-3 py-2">
@@ -391,7 +433,9 @@ export default function ArrumacaoModal({
                                                                     checked: true,
                                                                     qtd: nextQtd,
                                                                     nome: String(prev?.[pid]?.nome ?? it.nome ?? "").trim(),
-                                                                    codigo_barras: String(prev?.[pid]?.codigo_barras ?? (it as any).codigo_barras ?? "").trim() || undefined,
+                                                                    codigo_barras:
+                                                                        String(prev?.[pid]?.codigo_barras ?? (it as any).codigo_barras ?? "").trim() ||
+                                                                        undefined,
                                                                 },
                                                             }));
                                                         }}
@@ -421,13 +465,14 @@ export default function ArrumacaoModal({
                 <button
                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
                     onClick={() => {
-                        // ✅ salva booleans no wizardData (como já era)
+                        const json = buildArrumacaoJson();
+
                         setWizardData((d: Registro) => ({
                             ...d,
-                            arrumacao,
-                            // ✅ salva arrumacao_json com booleans + (opcional) insumos
-                            arrumacao_json: buildArrumacaoJson(),
+                            arrumacao, // mantém booleans no objeto (compatibilidade)
+                            arrumacao_json: json, // ✅ fonte da verdade (booleans + insumos)
                         }));
+
                         setOpen(false);
                     }}
                 >
