@@ -27,7 +27,7 @@ export type RoupaPickResult = {
     // CORDÃO
     cordao_texto: string;
     cordao_deposito_nome: DepCordao;
-    cordao_produto_id: number;
+    cordao_produto_id: number; // pode ficar 0; backend resolve por CB=6901
     cordao_codigo_barras: string;
 };
 
@@ -51,15 +51,12 @@ type Props = {
 
 const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
 
-// cordão fixo (por pedido)
+// Cordão fixo
 const CORDAO_FIXO_NOME = "CORDAO SAO FRANCISCO";
 const CORDAO_FIXO_CB = "6901";
 
 function normUpper(v: any) {
-    return String(v ?? "")
-        .trim()
-        .replace(/\s+/g, " ")
-        .toUpperCase();
+    return String(v ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 }
 
 function normNoAccLower(v: any) {
@@ -87,13 +84,7 @@ function normalizeDep(v: any): DepRoupa {
     return "";
 }
 
-export default function RoupaPickerModal({
-    open,
-    onClose,
-    disabled,
-    initial,
-    onConfirm,
-}: Props) {
+export default function RoupaPickerModal({ open, onClose, disabled, initial, onConfirm }: Props) {
     // -----------------------------
     // ROUPA
     // -----------------------------
@@ -102,6 +93,8 @@ export default function RoupaPickerModal({
     const [loadingRoupa, setLoadingRoupa] = useState(false);
     const [errRoupa, setErrRoupa] = useState("");
     const [rowsRoupa, setRowsRoupa] = useState<EstoqueRow[]>([]);
+    const [hasLoadedRoupa, setHasLoadedRoupa] = useState(false);
+
     const [selRoupa, setSelRoupa] = useState<{
         kind: "none" | "propria" | "estoque";
         nome: string;
@@ -118,17 +111,34 @@ export default function RoupaPickerModal({
     // validação do modal
     const [uiErr, setUiErr] = useState<string>("");
 
+    // abort fetch
     const abortRef = useRef<AbortController | null>(null);
 
-    // -----------------------------
-    // Sync initial ao abrir
-    // -----------------------------
+    // ✅ Anti-pisca: só sincroniza "initial" quando os VALORES mudarem de verdade
+    const lastInitSigRef = useRef<string>("");
+
     useEffect(() => {
         if (!open) return;
 
+        const sig = [
+            normUpper(initial?.roupa_deposito_nome ?? ""),
+            String(initial?.roupa ?? ""),
+            String(initial?.roupa_produto_id ?? 0),
+            String(initial?.roupa_codigo_barras ?? ""),
+
+            normUpper(initial?.cordao_deposito_nome ?? ""),
+            String(initial?.cordao ?? ""),
+            String(initial?.cordao_produto_id ?? 0),
+            String(initial?.cordao_codigo_barras ?? ""),
+        ].join("|");
+
+        // se o Wizard re-renderizar e mandar outro objeto, mas com mesmos valores, não reseta
+        if (lastInitSigRef.current === sig) return;
+        lastInitSigRef.current = sig;
+
         setUiErr("");
         setErrRoupa("");
-        setRowsRoupa([]);
+        setHasLoadedRoupa(false);
         setQRoupa("");
 
         const depR = normalizeDep(initial?.roupa_deposito_nome ?? "ARMARIO SANDRO") || "ARMARIO SANDRO";
@@ -141,15 +151,7 @@ export default function RoupaPickerModal({
         if (roupaTxt && isRoupaPropria(roupaTxt)) {
             setSelRoupa({ kind: "propria", nome: "ROUPA PRÓPRIA", produto_id: 0, codigo_barras: "" });
         } else if (roupaTxt && roupaPid > 0) {
-            setSelRoupa({
-                kind: "estoque",
-                nome: roupaTxt,
-                produto_id: roupaPid,
-                codigo_barras: roupaCb,
-            });
-        } else if (roupaTxt) {
-            // texto sem pid -> trata como "none" (força usuário escolher de novo)
-            setSelRoupa({ kind: "none", nome: "", produto_id: 0, codigo_barras: "" });
+            setSelRoupa({ kind: "estoque", nome: roupaTxt, produto_id: roupaPid, codigo_barras: roupaCb });
         } else {
             setSelRoupa({ kind: "none", nome: "", produto_id: 0, codigo_barras: "" });
         }
@@ -159,41 +161,51 @@ export default function RoupaPickerModal({
         const cCb = String(initial?.cordao_codigo_barras ?? "").trim();
         const cDep = normalizeDep(initial?.cordao_deposito_nome ?? "ARMARIO SANDRO") || "ARMARIO SANDRO";
 
-        const cordaoSelecionado =
-            (!!cTxt && normUpper(cTxt) === CORDAO_FIXO_NOME) || (cCb && cCb === CORDAO_FIXO_CB);
-
+        const cordaoSelecionado = (!!cTxt && normUpper(cTxt) === CORDAO_FIXO_NOME) || (cCb && cCb === CORDAO_FIXO_CB);
         setCordaoOn(!!cordaoSelecionado);
-        setDepCordao(cDep);
+        setDepCordao(cDep as DepCordao);
     }, [open, initial]);
+
+    // Se trocar o depósito da roupa e ela estava selecionada do estoque, limpa a seleção (evita inconsistência)
+    useEffect(() => {
+        if (!open) return;
+        if (selRoupa.kind === "estoque") {
+            // quando troca o depósito, força escolher de novo (produto muda conforme armário)
+            setSelRoupa({ kind: "none", nome: "", produto_id: 0, codigo_barras: "" });
+        }
+        setUiErr("");
+        // não mexe em rows aqui pra não piscar; a busca vai atualizar
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [depRoupa]);
 
     // -----------------------------
     // Busca roupas (lista)
-    // action=roupas_listar (novo no PHP)
-    // - aceita deposito_nome
-    // - aceita q (opcional)
-    // - somente_com_saldo=1
-    // - limit=300
+    // - deve listar ao trocar depósito (mesmo com q vazio)
+    // - NÃO zera a lista na hora (evita piscar). Mostra "Carregando..." mantendo a lista anterior.
     // -----------------------------
     useEffect(() => {
         if (!open) return;
 
-        // abort anterior
+        // cancela anterior
         if (abortRef.current) abortRef.current.abort();
         const ac = new AbortController();
         abortRef.current = ac;
 
         const dep = depRoupa;
         if (!dep) {
-            setRowsRoupa([]);
             setErrRoupa("");
+            setRowsRoupa([]);
+            setHasLoadedRoupa(true);
             return;
         }
 
         const qq = qRoupa.trim();
+
+        // se tiver 1 letra, não busca (evita ruído)
         if (qq.length === 1) {
-            // evita ruído
-            setRowsRoupa([]);
             setErrRoupa("");
+            setHasLoadedRoupa(true);
+            // mantém a lista anterior (não limpa) pra não piscar
             return;
         }
 
@@ -203,7 +215,7 @@ export default function RoupaPickerModal({
 
             try {
                 const url = new URL(ESTOQUE_API);
-                url.searchParams.set("action", "roupas_listar");
+                url.searchParams.set("action", "roupas_listar"); // ✅ precisa existir no PHP
                 url.searchParams.set("deposito_nome", dep);
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "300");
@@ -212,7 +224,6 @@ export default function RoupaPickerModal({
                 const data = await jsonWith401(url.toString(), {
                     method: "GET",
                     cache: "no-store",
-                    credentials: "include",
                     signal: ac.signal,
                 });
 
@@ -220,10 +231,11 @@ export default function RoupaPickerModal({
                 setRowsRoupa((data.rows || []) as EstoqueRow[]);
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
-                setRowsRoupa([]);
                 setErrRoupa(e?.message || "Falha ao listar roupas");
+                setRowsRoupa([]);
             } finally {
                 setLoadingRoupa(false);
+                setHasLoadedRoupa(true);
             }
         }, 220);
 
@@ -272,25 +284,24 @@ export default function RoupaPickerModal({
     const validarAntesSalvar = (): boolean => {
         setUiErr("");
 
-        // se obrigatoriedade for tratada no Wizard, aqui só garante consistência
+        // Roupa: se escolheu estoque, tem que ter produto válido
         if (selRoupa.kind === "estoque") {
             if (!depRoupa) {
                 setUiErr("Selecione o depósito da roupa.");
                 return false;
             }
             if (selRoupa.produto_id <= 0) {
-                setUiErr("Roupa inválida: selecione um item do estoque.");
+                setUiErr("Roupa inválida: selecione um item da lista.");
                 return false;
             }
         }
 
+        // Cordão: se marcou, tem que ter depósito
         if (cordaoOn) {
             if (!depCordao) {
                 setUiErr("Selecione o depósito do cordão.");
                 return false;
             }
-            // produto_id pode ficar 0 (vamos resolver no backend depois),
-            // mas o CB é fixo e suficiente para identificar.
         }
 
         return true;
@@ -304,21 +315,16 @@ export default function RoupaPickerModal({
         const result: RoupaPickResult = {
             // ROUPA
             roupa_texto:
-                selRoupa.kind === "propria"
-                    ? "ROUPA PRÓPRIA"
-                    : selRoupa.kind === "estoque"
-                        ? selRoupa.nome
-                        : "",
-            roupa_deposito_nome:
-                roupaIsPropria || selRoupa.kind !== "estoque" ? "" : (depRoupa as DepRoupa),
+                selRoupa.kind === "propria" ? "ROUPA PRÓPRIA" : selRoupa.kind === "estoque" ? selRoupa.nome : "",
+            roupa_deposito_nome: roupaIsPropria || selRoupa.kind !== "estoque" ? "" : (depRoupa as DepRoupa),
             roupa_produto_id: roupaIsPropria ? 0 : selRoupa.kind === "estoque" ? selRoupa.produto_id : 0,
             roupa_codigo_barras: roupaIsPropria ? "" : selRoupa.kind === "estoque" ? selRoupa.codigo_barras : "",
 
-            // CORDÃO
+            // CORDÃO (só checkbox + depósito)
             cordao_texto: cordaoOn ? CORDAO_FIXO_NOME : "",
             cordao_deposito_nome: cordaoOn ? (depCordao as DepCordao) : "",
-            // pode ficar 0 (vamos resolver por CB=6901 no backend)
-            cordao_produto_id: cordaoOn ? 0 : 0,
+            // pode ficar 0 mesmo; o backend resolve por CB 6901 (ou você pode preencher depois)
+            cordao_produto_id: cordaoOn ? Number(initial?.cordao_produto_id ?? 0) || 0 : 0,
             cordao_codigo_barras: cordaoOn ? CORDAO_FIXO_CB : "",
         };
 
@@ -333,7 +339,8 @@ export default function RoupaPickerModal({
                 <div>
                     <h3 className="text-lg font-semibold">Selecionar Roupa e Cordão</h3>
                     <div className="mt-1 text-xs text-muted-foreground">
-                        Seleção guiada para evitar digitação. A baixa do estoque acontece automaticamente na <b>fase05</b>.
+                        Escolha o <b>armário</b> da roupa para listar. Cordão é só marcar e escolher o armário. A baixa ocorre na{" "}
+                        <b>fase05</b>.
                     </div>
                 </div>
 
@@ -361,21 +368,17 @@ export default function RoupaPickerModal({
             </div>
 
             {uiErr ? (
-                <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {uiErr}
-                </div>
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uiErr}</div>
             ) : null}
 
             <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {/* =========================
-            ROUPA
-           ========================= */}
+                {/* ========================= ROUPA ========================= */}
                 <div className="rounded-xl border p-4">
                     <div className="flex items-end justify-between gap-2">
                         <div>
                             <div className="text-sm font-semibold">Roupa</div>
                             <div className="text-[11px] text-slate-500">
-                                Escolha uma roupa do estoque ou selecione <b>ROUPA PRÓPRIA</b>.
+                                Selecione o <b>armário</b> e escolha uma roupa da lista, ou clique em <b>ROUPA PRÓPRIA</b>.
                             </div>
                         </div>
 
@@ -402,15 +405,15 @@ export default function RoupaPickerModal({
 
                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[220px_1fr]">
                         <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-700">Depósito</label>
+                            <label className="mb-1 block text-xs font-medium text-slate-700">Armário/Depósito</label>
                             <select
                                 className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                                 value={depRoupa}
                                 onChange={(e) => {
                                     const next = normalizeDep(e.target.value) || "ARMARIO SANDRO";
                                     setDepRoupa(next);
+                                    setUiErr("");
                                     setErrRoupa("");
-                                    setRowsRoupa([]);
                                 }}
                                 disabled={!!disabled}
                             >
@@ -428,26 +431,31 @@ export default function RoupaPickerModal({
                                     onChange={(e) => setQRoupa(e.target.value)}
                                     disabled={!!disabled}
                                 />
-                                <div className="mt-1 text-[11px] text-slate-500">
-                                    Dica: deixe vazio para listar todas (depende do PHP aceitar q vazio).
-                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">Dica: deixe vazio para listar todas do armário.</div>
                             </div>
                         </div>
 
                         <div>
                             <label className="mb-1 block text-xs font-medium text-slate-700">Lista</label>
 
-                            {loadingRoupa ? (
-                                <div className="rounded-md border p-3 text-sm text-slate-600">Carregando…</div>
-                            ) : errRoupa ? (
+                            {/* mantém lista e mostra loading (sem piscar) */}
+                            {errRoupa ? (
                                 <div className="rounded-md border p-3 text-sm text-red-600">{errRoupa}</div>
+                            ) : !hasLoadedRoupa && loadingRoupa ? (
+                                <div className="rounded-md border p-3 text-sm text-slate-600">Carregando…</div>
                             ) : rowsRoupa.length === 0 ? (
                                 <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">
                                     Nenhuma roupa encontrada com saldo em <b>{depRoupa}</b>.
                                 </div>
                             ) : (
-                                <div className="max-h-80 overflow-auto rounded-md border">
-                                    <div className="grid grid-cols-[1fr_88px] gap-2 border-b bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+                                <div className="relative max-h-80 overflow-auto rounded-md border">
+                                    {loadingRoupa ? (
+                                        <div className="absolute inset-x-0 top-0 z-10 border-b bg-white/80 px-3 py-2 text-xs text-slate-600">
+                                            Atualizando lista…
+                                        </div>
+                                    ) : null}
+
+                                    <div className={`grid grid-cols-[1fr_88px] gap-2 border-b bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 ${loadingRoupa ? "pt-9" : ""}`}>
                                         <div>Produto</div>
                                         <div className="text-right">Estoque</div>
                                     </div>
@@ -468,9 +476,7 @@ export default function RoupaPickerModal({
                                                     >
                                                         <div className="flex items-center justify-between gap-2">
                                                             <div className="min-w-0">
-                                                                <div className="truncate text-sm font-medium text-slate-900">
-                                                                    {it.nome}
-                                                                </div>
+                                                                <div className="truncate text-sm font-medium text-slate-900">{it.nome}</div>
                                                                 <div className="truncate text-[11px] text-slate-500">
                                                                     CB: <b>{String((it as any).codigo_barras || "")}</b>
                                                                 </div>
@@ -494,15 +500,13 @@ export default function RoupaPickerModal({
                     </div>
                 </div>
 
-                {/* =========================
-            CORDÃO (fixo)
-           ========================= */}
+                {/* ========================= CORDÃO ========================= */}
                 <div className="rounded-xl border p-4">
                     <div className="flex items-start justify-between gap-2">
                         <div>
                             <div className="text-sm font-semibold">Cordão</div>
                             <div className="text-[11px] text-slate-500">
-                                Item fixo: <b>{CORDAO_FIXO_NOME}</b> (CB <b>{CORDAO_FIXO_CB}</b>).
+                                Só marque <b>Usar cordão</b> e escolha o armário. Será descontada <b>1 unidade</b> (CB {CORDAO_FIXO_CB}).
                             </div>
                         </div>
 
@@ -521,13 +525,13 @@ export default function RoupaPickerModal({
                     </div>
 
                     <div className="mt-4">
-                        <label className="mb-1 block text-xs font-medium text-slate-700">Depósito do Cordão</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-700">Armário/Depósito do Cordão</label>
                         <select
                             className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                             value={depCordao}
                             onChange={(e) => {
                                 const next = normalizeDep(e.target.value) || "ARMARIO SANDRO";
-                                setDepCordao(next);
+                                setDepCordao(next as DepCordao);
                                 setUiErr("");
                             }}
                             disabled={!!disabled || !cordaoOn}
@@ -544,9 +548,7 @@ export default function RoupaPickerModal({
                             <div className="mt-1">
                                 <b>Código de barras:</b> {CORDAO_FIXO_CB}
                             </div>
-                            <div className="mt-1 text-[11px] text-slate-500">
-                                * A baixa será feita na fase05 junto com os demais itens.
-                            </div>
+                            <div className="mt-1 text-[11px] text-slate-500">* A baixa será feita na fase05 junto com os demais itens.</div>
                         </div>
                     </div>
                 </div>
@@ -554,12 +556,7 @@ export default function RoupaPickerModal({
 
             {/* AÇÕES */}
             <div className="mt-5 flex justify-end gap-2">
-                <button
-                    className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                    onClick={onClose}
-                    disabled={!!disabled}
-                    type="button"
-                >
+                <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={!!disabled} type="button">
                     Cancelar
                 </button>
 
