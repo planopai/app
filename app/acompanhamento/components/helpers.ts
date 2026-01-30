@@ -200,6 +200,32 @@ function isRoupapropria(v: any): boolean {
     return t === "roupa propria" || t === "roupa própria";
 }
 
+function normalizeRoupaDepositoOrNull(v: any): "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA" | null {
+    const s = normUpper(v);
+    if (s === "ARMARIO SANDRO") return "ARMARIO SANDRO";
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return null;
+}
+
+function normalizeInvolDepositoOrNull(v: any): "ARMARIO SANDRO" | "ARMARIO ILDO" | null {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "ARMARIO SANDRO") return "ARMARIO SANDRO";
+    return null;
+}
+
+/**
+ * ✅ Cordão sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
+ */
+function normalizeCordaoDepositoOrNull(v: any): "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA" | null {
+    const s = normUpper(v);
+    if (s === "ARMARIO SANDRO") return "ARMARIO SANDRO";
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return null;
+}
+
 /* -------------------- Materiais: saneamento -------------------- */
 /**
  * Aceita o formato antigo (id -> {...}) e o novo (item:ID / subitem:ID),
@@ -240,7 +266,7 @@ export function normalizeMateriaisState(input: any): MateriaisState {
  * - materiais_json sempre string JSON (no mínimo "{}")
  * - arrumacao_json sempre string JSON (no mínimo "{}")
  * - URNA meta coerente (deposito_nome normalizado)
- * - ROUPA/INVOL meta coerente (null quando não selecionado)
+ * - ROUPA/INVOL/CORDAO meta coerente (null quando não selecionado / não aplicável)
  * - validações extras no front (evita erro 400 do PHP)
  */
 export async function enviarRegistroPHP(data: any) {
@@ -278,25 +304,49 @@ export async function enviarRegistroPHP(data: any) {
     // ---------- ROUPA META ----------
     const roupaTxt = String(data?.roupa ?? "").trim();
     const roupaEhPropria = roupaTxt !== "" && isRoupapropria(roupaTxt);
+
     const roupaPid = roupaEhPropria ? null : asPositiveIntOrNull(data?.roupa_produto_id);
-    const roupaDep = roupaEhPropria ? null : (String(data?.roupa_deposito_nome ?? "").trim() ? normUpper(data?.roupa_deposito_nome) : null);
+    const roupaDep = roupaEhPropria ? null : normalizeRoupaDepositoOrNull(data?.roupa_deposito_nome);
     const roupaCb = roupaEhPropria ? null : (String(data?.roupa_codigo_barras ?? "").trim() || null);
 
     // regra do PHP: se roupa tem texto e NÃO é roupa própria => precisa pid > 0
     if (roupaTxt !== "" && !roupaEhPropria && !roupaPid) {
         throw new Error('Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".');
     }
+    // se roupa é do estoque, exige depósito válido
+    if (roupaTxt !== "" && !roupaEhPropria && !roupaDep) {
+        throw new Error("Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
+    }
 
     // ---------- INVOL META ----------
     const involTxt = String(data?.invol ?? "").trim();
     const involSim = isSim(involTxt);
     const involPid = involSim ? asPositiveIntOrNull(data?.invol_produto_id) : null;
-    const involDep = involSim ? (String(data?.invol_deposito_nome ?? "").trim() ? normUpper(data?.invol_deposito_nome) : null) : null;
+    const involDep = involSim ? normalizeInvolDepositoOrNull(data?.invol_deposito_nome) : null;
     const involCb = involSim ? (String(data?.invol_codigo_barras ?? "").trim() || null) : null;
 
     // regra do PHP: se invol == sim => precisa pid > 0
     if (involSim && !involPid) {
         throw new Error("Selecione um INVOL da lista (produto do estoque).");
+    }
+    if (involSim && !involDep) {
+        throw new Error("Invol: selecione o local (ARMARIO SANDRO ou ARMARIO ILDO).");
+    }
+
+    // ---------- CORDAO META (opcional) ----------
+    // Pode vir do RoupaPickerModal:
+    // - cordao_produto_id
+    // - cordao_deposito_nome
+    // - cordao_codigo_barras
+    // - cordao (texto/nome) opcional
+    const cordaoPid = asPositiveIntOrNull(data?.cordao_produto_id);
+    const cordaoDep = cordaoPid ? normalizeCordaoDepositoOrNull(data?.cordao_deposito_nome) : null;
+    const cordaoCb = cordaoPid ? (String(data?.cordao_codigo_barras ?? "").trim() || null) : null;
+    const cordaoNome = String(data?.cordao ?? "").trim();
+
+    // Se selecionou cordão (pid>0), depósito deve ser válido
+    if (cordaoPid && !cordaoDep) {
+        throw new Error("Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
     }
 
     const body = {
@@ -311,18 +361,27 @@ export async function enviarRegistroPHP(data: any) {
 
         // urna
         urna_deposito_nome: urnaDep,
-        urna_produto_id: urnaPidRaw ?? 0, // mantém compatível com o que vocês já usam
+        urna_produto_id: urnaPidRaw ?? 0,
         urna_codigo_barras: urnaCb,
 
         // roupa (usa null quando não aplicável/selecionado)
         roupa_deposito_nome: roupaDep,
         roupa_produto_id: roupaPid,
         roupa_codigo_barras: roupaCb,
+        // reforço de "ROUPA PRÓPRIA" (opcional, mas ajuda consistência)
+        ...(roupaEhPropria ? { roupa: "ROUPA PRÓPRIA" } : {}),
 
         // invol (usa null quando não aplicável/selecionado)
         invol_deposito_nome: involDep,
         invol_produto_id: involPid,
         invol_codigo_barras: involCb,
+
+        // cordão (opcional)
+        cordao_deposito_nome: cordaoDep,
+        cordao_produto_id: cordaoPid,
+        cordao_codigo_barras: cordaoCb,
+        // opcional: mantém texto do cordão se você quiser gravar
+        cordao: cordaoNome || (cordaoPid ? "CORDAO SAO FRANCISCO" : ""),
     };
 
     return jsonWith401(`${API}/api/php/informativo.php`, {
@@ -372,11 +431,9 @@ export function proximaFaseDoRegistro(
     const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
     const skipConservacao = isTanatoNo(r.tanato);
     const skipOrnamentacao =
-        String(r.ornamentacao || "").toLowerCase() === "não" ||
-        String(r.ornamentacao || "").toLowerCase() === "nao";
+        String(r.ornamentacao || "").toLowerCase() === "não" || String(r.ornamentacao || "").toLowerCase() === "nao";
     const skipMaterialRecolhido =
-        String(r.assistencia || "").toLowerCase() === "não" ||
-        String(r.assistencia || "").toLowerCase() === "nao";
+        String(r.assistencia || "").toLowerCase() === "não" || String(r.assistencia || "").toLowerCase() === "nao";
 
     while (nextIdx < fases.length) {
         const next = fases[nextIdx];
