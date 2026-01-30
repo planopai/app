@@ -940,6 +940,17 @@ export default function AcompanhamentoPage() {
       next.invol_produto_id = involPid > 0 ? involPid : 0;
     }
 
+    // ✅ sempre persistir Arrumação/INSUMOS em arrumacao_json
+    try {
+      const obj =
+        next.arrumacao && typeof next.arrumacao === "object" ? next.arrumacao : arrumacao;
+
+      next.arrumacao_json = JSON.stringify(obj ?? {});
+    } catch {
+      next.arrumacao_json = "";
+    }
+
+
 
     setWizardData(next);
     return next as Registro;
