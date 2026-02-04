@@ -554,7 +554,7 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                 </div>
             </div>
 
-            {/* AÇÕES */}
+            {/* Ações */}
             <div className="mt-5 flex justify-end gap-2">
                 <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={!!disabled} type="button">
                     Cancelar
