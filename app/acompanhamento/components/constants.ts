@@ -105,7 +105,7 @@ export const steps = [
 ] as const;
 
 /**
- * ✅ Mantém: URNA obrigatória
+ * ✅ Mantém: URNA a
  * (ROUPA e INVOL não são obrigatórios, mas quando preenchidos precisam do vínculo no estoque — regra do PHP)
  */
 export const obrigatorios = ["falecido", "contato", "convenio", "religiao", "urna"];
