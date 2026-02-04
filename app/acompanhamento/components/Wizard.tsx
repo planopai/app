@@ -89,7 +89,7 @@ function normalizeDepInvol(v: any): DepInvol {
    Combobox genérico (estoque)
    - action: "urnas_buscar" | "roupas_buscar" | "invols_buscar"
    - Usa deposito_nome e somente_com_saldo=1
-   - IMPORTANTE: inputId precisa existir para o salvarGrupoWizard (DOM)
+   - ✅ AGORA: abre o modal já carregando a lista do depósito, sem precisar digitar
    ========================================================================= */
 function EstoqueCombobox({
     inputId,
@@ -144,7 +144,7 @@ function EstoqueCombobox({
     // valor exibido no campo principal (e que o salvarGrupoWizard lê pelo DOM)
     const [value, setValue] = useState(initialValue || "");
 
-    // busca dentro do modal
+    // busca dentro do modal (agora é opcional)
     const [q, setQ] = useState("");
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
@@ -156,41 +156,40 @@ function EstoqueCombobox({
         const sig = `${String(initialValue || "")}||${String(depositoValue || "")}`;
         if (lastInitSigRef.current === sig) return;
         lastInitSigRef.current = sig;
-
         setValue(initialValue || "");
     }, [initialValue, depositoValue]);
 
-    // sempre que abrir o modal, limpa busca e foca campo de pesquisa
+    // ✅ ao abrir modal: limpa filtro, limpa erro e dispara carregamento da lista do depósito
     useEffect(() => {
         if (!pickerOpen) return;
+
         setErr("");
         setRows([]);
-        setQ("");
-        requestAnimationFrame(() => {
-            // iOS/Android: foco no próximo frame é mais confiável
-            searchRef.current?.focus();
-        });
+        setQ(""); // filtro opcional
+
+        // 🔥 não focar teclado automaticamente (você quer clicar e escolher)
+        // requestAnimationFrame(() => searchRef.current?.focus());
     }, [pickerOpen]);
 
-    // busca async (dentro do modal)
+    // ✅ busca async (dentro do modal)
+    // Agora busca mesmo com q vazio (lista do depósito)
     useEffect(() => {
         if (!pickerOpen) return;
 
         const qq = q.trim();
-        setErr("");
-
-        if (qq.length < 2) {
-            setRows([]);
-            return;
-        }
 
         const ac = new AbortController();
         const t = setTimeout(async () => {
             setLoading(true);
+            setErr("");
+
             try {
                 const url = new URL(ESTOQUE_API);
                 url.searchParams.set("action", action);
+
+                // ✅ seu PHP já aceita q vazio (não filtra). Mantemos assim.
                 url.searchParams.set("q", qq);
+
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "60");
                 url.searchParams.set("deposito_nome", String(depositoValue || ""));
@@ -204,6 +203,7 @@ function EstoqueCombobox({
 
                 const j = await r.json().catch(() => null);
                 if (!j?.ok) throw new Error(j?.msg || "Falha ao buscar itens no estoque");
+
                 setRows((j.rows || []) as EstoqueRow[]);
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
@@ -212,7 +212,7 @@ function EstoqueCombobox({
             } finally {
                 setLoading(false);
             }
-        }, 250);
+        }, 150);
 
         return () => {
             clearTimeout(t);
@@ -220,17 +220,11 @@ function EstoqueCombobox({
         };
     }, [q, pickerOpen, action, depositoValue]);
 
-    const validateAfterStateFlush = () => {
-        if (!onBlurValidate) return;
-        // ✅ garante que o setWizardData do pai já aplicou (evita erro “não some”)
-        setTimeout(() => onBlurValidate(), 0);
-    };
-
     const applySelection = (it: EstoqueRow) => {
         const pid = getPidFromRow(it);
         if (!pid || pid <= 0) {
             setErr("Este item veio sem produto_id. Contate o suporte.");
-            validateAfterStateFlush();
+            onBlurValidate?.();
             return;
         }
 
@@ -241,13 +235,10 @@ function EstoqueCombobox({
         setErr("");
         setPickerOpen(false);
 
-        // ✅ 1) atualiza wizardData (pid/cb/dep)
+        // informa o wizardData (meta: produto_id, cb, depósito etc)
         onSelectRow(it);
+        onBlurValidate?.();
 
-        // ✅ 2) só valida DEPOIS do state do pai aplicar
-        validateAfterStateFlush();
-
-        // garante que não fica foco aberto
         requestAnimationFrame(() => {
             searchRef.current?.blur();
             inputRef.current?.blur();
@@ -259,12 +250,8 @@ function EstoqueCombobox({
         setQ("");
         setRows([]);
         setErr("");
-
-        // invalida meta no wizardData (zera pid/cb no seu onTypingInvalidate)
         onTypingInvalidate?.("");
-
-        // valida depois
-        validateAfterStateFlush();
+        onBlurValidate?.();
     };
 
     return (
@@ -280,9 +267,9 @@ function EstoqueCombobox({
                             onChangeDeposito(e.target.value);
                             setRows([]);
                             setErr("");
-                            // ao trocar depósito, sugere selecionar novamente
+                            // ✅ ao trocar depósito, já abre o modal pra escolher (sem digitar)
                             setPickerOpen(true);
-                            validateAfterStateFlush();
+                            onBlurValidate?.();
                         }}
                         disabled={disabled}
                         title={depositoLabel}
@@ -303,7 +290,7 @@ function EstoqueCombobox({
                     </label>
 
                     <div className="flex gap-2">
-                        {/* IMPORTANTE: mantém o input com id=inputId para o salvarGrupoWizard ler */}
+                        {/* mantém id pro salvarGrupoWizard */}
                         <input
                             id={inputId}
                             ref={inputRef}
@@ -314,8 +301,7 @@ function EstoqueCombobox({
                             onClick={() => {
                                 if (!disabled) setPickerOpen(true);
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""
-                                }`}
+                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
                             disabled={disabled}
                             autoComplete="off"
                             title={label}
@@ -347,13 +333,18 @@ function EstoqueCombobox({
             </div>
 
             <p className="mt-1 text-[11px] text-slate-500">
-                Dica: toque em <b>Selecionar</b>. No popup, pesquise e escolha.
+                Dica: selecione o <b>local</b> e toque em <b>Selecionar</b>. A lista já abre pronta.
             </p>
 
             {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
 
             {/* MODAL / POPUP */}
-            <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} ariaLabel={`Selecionar ${label}`} maxWidth={720}>
+            <Modal
+                open={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                ariaLabel={`Selecionar ${label}`}
+                maxWidth={720}
+            >
                 <div className="flex items-center justify-between gap-2">
                     <div>
                         <h3 className="text-lg font-semibold">Selecionar {label}</h3>
@@ -371,6 +362,7 @@ function EstoqueCombobox({
                     </button>
                 </div>
 
+                {/* ✅ busca opcional (se quiser filtrar). Se não digitar, lista já aparece */}
                 <div className="mt-4 flex gap-2">
                     <input
                         ref={searchRef}
@@ -380,38 +372,33 @@ function EstoqueCombobox({
                             const v = e.target.value;
                             setQ(v);
                             setErr("");
-                            // ✅ invalida meta enquanto digita (zera pid/cb no wizardData)
-                            // ✅ aqui tem que invalidar usando o "value" do campo principal (o que fica salvo)
-                            // e marcar que "precisa escolher de novo"
+                            // invalida meta enquanto mexe no filtro
                             onTypingInvalidate?.(value);
-                            // e valida depois do state do pai (para limpar erro quando apagar)
-                            validateAfterStateFlush();
                         }}
-                        placeholder="Digite pelo menos 2 letras para buscar..."
+                        placeholder="(Opcional) filtrar por nome ou código…"
                         className="w-full rounded-md border px-3 py-2 text-sm"
                         autoComplete="off"
                     />
 
-                    {/* botão OK: útil no iOS/Android pra “fechar teclado” (blur) */}
                     <button
                         type="button"
                         className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                        onClick={() => searchRef.current?.blur()}
-                        title="Fechar teclado"
+                        onClick={() => setQ("")}
+                        title="Limpar filtro"
                     >
-                        OK
+                        Limpar filtro
                     </button>
                 </div>
 
                 <div className="mt-3 rounded-xl border bg-white">
                     {loading ? (
-                        <div className="p-3 text-sm text-slate-600">Buscando...</div>
+                        <div className="p-3 text-sm text-slate-600">Carregando itens do depósito…</div>
                     ) : err ? (
                         <div className="p-3 text-sm text-red-600">{err}</div>
-                    ) : q.trim().length < 2 ? (
-                        <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
                     ) : rows.length === 0 ? (
-                        <div className="p-3 text-sm text-slate-600">Nenhum item encontrado no estoque ({depositoValue}).</div>
+                        <div className="p-3 text-sm text-slate-600">
+                            Nenhum item encontrado no estoque ({depositoValue}).
+                        </div>
                     ) : (
                         <ul className="max-h-[65vh] overflow-auto py-1">
                             {rows.map((it) => {
@@ -421,19 +408,7 @@ function EstoqueCombobox({
                                         <button
                                             type="button"
                                             className="w-full px-3 py-3 text-left text-sm hover:bg-slate-50"
-                                            // ✅ iOS: garante seleção mesmo se o botão perder foco antes do click
-                                            onPointerDown={(e) => {
-                                                e.preventDefault();
-                                                applySelection(it);
-                                            }}
-                                            onMouseDown={(e) => {
-                                                e.preventDefault();
-                                                applySelection(it);
-                                            }}
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                applySelection(it);
-                                            }}
+                                            onClick={() => applySelection(it)}
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="truncate font-medium text-slate-900">{it.nome}</span>
@@ -453,12 +428,13 @@ function EstoqueCombobox({
                 </div>
 
                 <div className="mt-3 text-[11px] text-slate-500">
-                    Pesquise, toque no item para selecionar. O teclado não deve atrapalhar a lista porque ela fica no popup.
+                    Toque no item para selecionar. (Sem digitar, a lista já vem do depósito.)
                 </div>
             </Modal>
         </div>
     );
 }
+
 
 /* =========================================================================
    Wizard
@@ -743,7 +719,10 @@ export default function Wizard({
             <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
-                    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700" aria-live="polite">
+                    <span
+                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                        aria-live="polite"
+                    >
                         <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
@@ -779,7 +758,7 @@ export default function Wizard({
                                     inputId="wizard-urna"
                                     label="Urna"
                                     required={isRequired(step.id)}
-                                    placeholder={step.placeholder || "Digite para buscar..."}
+                                    placeholder={step.placeholder || "Selecione no estoque…"}
                                     initialValue={String((wizardData as any).urna ?? "")}
                                     disabled={wizardSubmitting}
                                     depositoLabel="Local da Urna"
@@ -799,8 +778,7 @@ export default function Wizard({
                                             urna_codigo_barras: "",
                                         }));
 
-                                        // ✅ valida depois do state aplicar
-                                        setTimeout(() => validarUrnaSeNecessario(), 0);
+                                        validarUrnaSeNecessario();
                                     }}
                                     action="urnas_buscar"
                                     errorText={urnaErro}
@@ -849,7 +827,7 @@ export default function Wizard({
                                     inputId="wizard-roupa"
                                     label="Roupa"
                                     required={isRequired(step.id)}
-                                    placeholder={step.placeholder || 'Selecione no estoque ou digite "ROUPA PRÓPRIA"'}
+                                    placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
                                     initialValue={String((wizardData as any).roupa ?? "")}
                                     disabled={wizardSubmitting}
                                     depositoLabel="Local da Roupa"
@@ -863,7 +841,6 @@ export default function Wizard({
                                         const next = normalizeDepRoupa(v);
                                         setDepRoupa(next);
 
-                                        // se for roupa própria, não precisa depósito nem produto
                                         if (isRoupaPropria((wizardData as any).roupa)) return;
 
                                         setWizardData((prev: any) => ({
@@ -873,7 +850,7 @@ export default function Wizard({
                                             roupa_codigo_barras: "",
                                         }));
 
-                                        setTimeout(() => validarRoupaSeNecessario(), 0);
+                                        validarRoupaSeNecessario();
                                     }}
                                     action="roupas_buscar"
                                     errorText={roupaErro}
@@ -931,7 +908,9 @@ export default function Wizard({
                                                 Usar ROUPA PRÓPRIA
                                             </button>
 
-                                            {isPropria ? <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span> : null}
+                                            {isPropria ? (
+                                                <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span>
+                                            ) : null}
                                         </>
                                     }
                                 />
@@ -996,7 +975,9 @@ export default function Wizard({
                                 </datalist>
 
                                 {gpsMsg && (
-                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>{gpsMsg}</div>
+                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>
+                                        {gpsMsg}
+                                    </div>
                                 )}
                             </div>
                         );
@@ -1040,7 +1021,8 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
+                                        }`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1158,7 +1140,6 @@ export default function Wizard({
                                         const v = e.target.value;
                                         setInvolVal(v);
 
-                                        // espelha no wizardData
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             invol: v,
@@ -1191,7 +1172,7 @@ export default function Wizard({
                                     inputId="wizard-invol_item"
                                     label="INVOL (estoque)"
                                     required={true}
-                                    placeholder={step.placeholder || "Digite para buscar INVOL..."}
+                                    placeholder={step.placeholder || "Selecione no estoque…"}
                                     initialValue={String((wizardData as any).invol_item ?? "")}
                                     disabled={wizardSubmitting}
                                     depositoLabel="Local do INVOL"
@@ -1209,7 +1190,7 @@ export default function Wizard({
                                             invol_produto_id: 0,
                                             invol_codigo_barras: "",
                                         }));
-                                        setTimeout(() => validarInvolSeNecessario(), 0);
+                                        validarInvolSeNecessario();
                                     }}
                                     action="invols_buscar"
                                     errorText={involErro}
@@ -1263,7 +1244,7 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       defaults: input/textarea/select/date/time/datalist
+                       defaults
                        =========================== */
                     if (step.type === "input") {
                         return (
