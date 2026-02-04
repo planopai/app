@@ -830,7 +830,7 @@ export default function Wizard({
                                     placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
                                     initialValue={String((wizardData as any).roupa ?? "")}
                                     disabled={wizardSubmitting}
-                                    depositoLabel="Local da Roupa"
+                                    depositoLabel="Local da Roupa:"
                                     depositoOptions={[
                                         { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
                                         { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
