@@ -136,44 +136,44 @@ function EstoqueCombobox({
     footerHint?: React.ReactNode;
     extraButtons?: React.ReactNode;
 }) {
-    const wrapRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
 
-    const [open, setOpen] = useState(false);
-    const [q, setQ] = useState(initialValue || "");
+    const [pickerOpen, setPickerOpen] = useState(false);
+
+    // valor exibido no campo principal (e que o salvarGrupoWizard lê pelo DOM)
+    const [value, setValue] = useState(initialValue || "");
+
+    // busca dentro do modal
+    const [q, setQ] = useState("");
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const lastInitSigRef = useRef<string>("");
 
-    // sincroniza ao abrir/editar sem atrapalhar digitação
+    // sincroniza quando abrir/editar registro
     useEffect(() => {
-        const isFocused = typeof document !== "undefined" && document.activeElement === inputRef.current;
-        if (isFocused || open) return;
-
         const sig = `${String(initialValue || "")}||${String(depositoValue || "")}`;
         if (lastInitSigRef.current === sig) return;
         lastInitSigRef.current = sig;
 
-        setQ(initialValue || "");
-        setRows([]);
+        setValue(initialValue || "");
+    }, [initialValue, depositoValue]);
+
+    // sempre que abrir o modal, limpa busca e foca campo de pesquisa
+    useEffect(() => {
+        if (!pickerOpen) return;
         setErr("");
-        setOpen(false);
-    }, [initialValue, depositoValue, open]);
+        setRows([]);
+        setQ("");
+        requestAnimationFrame(() => {
+            searchRef.current?.focus();
+        });
+    }, [pickerOpen]);
 
-    // fecha ao clicar fora
+    // busca async (dentro do modal)
     useEffect(() => {
-        const onDoc = (e: PointerEvent) => {
-            if (!wrapRef.current) return;
-            if (!wrapRef.current.contains(e.target as any)) setOpen(false);
-        };
-        document.addEventListener("pointerdown", onDoc, true);
-        return () => document.removeEventListener("pointerdown", onDoc, true);
-    }, []);
-
-    // busca async
-    useEffect(() => {
-        if (!open) return;
+        if (!pickerOpen) return;
 
         const qq = q.trim();
         setErr("");
@@ -191,7 +191,7 @@ function EstoqueCombobox({
                 url.searchParams.set("action", action);
                 url.searchParams.set("q", qq);
                 url.searchParams.set("somente_com_saldo", "1");
-                url.searchParams.set("limit", "30");
+                url.searchParams.set("limit", "60");
                 url.searchParams.set("deposito_nome", String(depositoValue || ""));
 
                 const r = await fetch(url.toString(), {
@@ -217,7 +217,7 @@ function EstoqueCombobox({
             clearTimeout(t);
             ac.abort();
         };
-    }, [q, open, action, depositoValue]);
+    }, [q, pickerOpen, action, depositoValue]);
 
     const applySelection = (it: EstoqueRow) => {
         const pid = getPidFromRow(it);
@@ -227,84 +227,79 @@ function EstoqueCombobox({
             return;
         }
 
-        setQ(String(it.nome || ""));
-        setErr("");
-        setOpen(false);
+        const nome = String(it.nome || "").trim();
 
+        // atualiza valor do campo principal (DOM lê isso)
+        setValue(nome);
+        setErr("");
+        setPickerOpen(false);
+
+        // informa o wizardData (meta: produto_id, cb, depósito etc)
         onSelectRow(it);
         onBlurValidate?.();
-        requestAnimationFrame(() => inputRef.current?.blur());
+
+        // garante que não fica foco aberto
+        requestAnimationFrame(() => {
+            searchRef.current?.blur();
+            inputRef.current?.blur();
+        });
     };
 
-    const autoPickIfExactMatch = () => {
-        const txt = q.trim().toLowerCase();
-        if (txt.length < 2) return;
-        if (!rows?.length) return;
-
-        const match = rows.find((it) => String(it.nome || "").trim().toLowerCase() === txt);
-        if (match) applySelection(match);
+    const limparSelecao = () => {
+        setValue("");
+        setQ("");
+        setRows([]);
+        setErr("");
+        onTypingInvalidate?.(""); // invalida meta no wizardData (zera pid/cb no seu onTypingInvalidate)
+        onBlurValidate?.();
     };
 
     return (
-        <div ref={wrapRef}>
-            <div className="relative">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[200px_1fr] sm:gap-2">
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-700">{depositoLabel}</label>
-                        <select
-                            className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
-                            value={depositoValue}
-                            onChange={(e) => {
-                                onChangeDeposito(e.target.value);
-                                setRows([]);
-                                setErr("");
-                                setOpen(true);
-                                onBlurValidate?.();
-                            }}
-                            disabled={disabled}
-                            title={depositoLabel}
-                        >
-                            {depositoOptions.map((op) => (
-                                <option key={op.value} value={op.value}>
-                                    {op.label}
-                                </option>
-                            ))}
-                        </select>
+        <div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[200px_1fr] sm:gap-2">
+                <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-700">{depositoLabel}</label>
 
-                        {extraButtons ? <div className="mt-2 flex flex-wrap gap-2">{extraButtons}</div> : null}
-                    </div>
+                    <select
+                        className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
+                        value={depositoValue}
+                        onChange={(e) => {
+                            onChangeDeposito(e.target.value);
+                            setRows([]);
+                            setErr("");
+                            // ao trocar depósito, sugere selecionar novamente
+                            setPickerOpen(true);
+                            onBlurValidate?.();
+                        }}
+                        disabled={disabled}
+                        title={depositoLabel}
+                    >
+                        {depositoOptions.map((op) => (
+                            <option key={op.value} value={op.value}>
+                                {op.label}
+                            </option>
+                        ))}
+                    </select>
 
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-700">
-                            {label} {required && <span className="text-red-600">*</span>}
-                        </label>
+                    {extraButtons ? <div className="mt-2 flex flex-wrap gap-2">{extraButtons}</div> : null}
+                </div>
 
+                <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-700">
+                        {label} {required && <span className="text-red-600">*</span>}
+                    </label>
+
+                    <div className="flex gap-2">
+                        {/* IMPORTANTE: mantém o input com id=inputId para o salvarGrupoWizard ler */}
                         <input
                             id={inputId}
                             ref={inputRef}
                             type="text"
-                            placeholder={placeholder || "Digite para buscar..."}
-                            value={q}
-                            onChange={(e) => {
-                                const v = e.target.value;
-                                setQ(v);
-                                setOpen(true);
-                                setErr("");
-                                onTypingInvalidate?.(v);
-                            }}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    if (!rows?.length) return;
-                                    const txt = q.trim().toLowerCase();
-                                    const exact = rows.find((it) => String(it.nome || "").trim().toLowerCase() === txt);
-                                    applySelection(exact || rows[0]);
-                                }
-                            }}
-                            onFocus={() => setOpen(true)}
-                            onBlur={() => {
-                                autoPickIfExactMatch();
-                                onBlurValidate?.();
+                            placeholder={placeholder || "Clique em Selecionar..."}
+                            value={value}
+                            readOnly
+                            onClick={() => {
+                                if (!disabled) setPickerOpen(true);
                             }}
                             className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
                             disabled={disabled}
@@ -312,60 +307,136 @@ function EstoqueCombobox({
                             title={label}
                         />
 
-                        {errorText ? <div className="mt-1 text-xs text-red-600">{errorText}</div> : null}
+                        <button
+                            type="button"
+                            className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            disabled={disabled}
+                            onClick={() => setPickerOpen(true)}
+                        >
+                            Selecionar
+                        </button>
+                    </div>
+
+                    {errorText ? <div className="mt-1 text-xs text-red-600">{errorText}</div> : null}
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                            disabled={disabled}
+                            onClick={limparSelecao}
+                        >
+                            Limpar
+                        </button>
                     </div>
                 </div>
-
-                {open ? (
-                    <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border bg-white shadow-lg">
-                        {loading ? (
-                            <div className="p-3 text-sm text-slate-600">Buscando...</div>
-                        ) : err ? (
-                            <div className="p-3 text-sm text-red-600">{err}</div>
-                        ) : q.trim().length < 2 ? (
-                            <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
-                        ) : rows.length === 0 ? (
-                            <div className="p-3 text-sm text-slate-600">Nenhum item encontrado no estoque ({depositoValue}).</div>
-                        ) : (
-                            <ul className="max-h-64 overflow-auto py-1">
-                                {rows.map((it) => {
-                                    const pidKey = getPidFromRow(it);
-                                    return (
-                                        <li key={pidKey || it.nome}>
-                                            <button
-                                                type="button"
-                                                className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                                                onPointerDown={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    applySelection(it);
-                                                }}
-                                            >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className="truncate font-medium text-slate-900">{it.nome}</span>
-                                                    <span className="shrink-0 text-xs text-slate-600">
-                                                        estoque: <b>{Number(it.saldo_total) || 0}</b>
-                                                    </span>
-                                                </div>
-                                                <div className="mt-0.5 truncate text-xs text-slate-600">
-                                                    CB: <b>{(it as any).codigo_barras || ""}</b>
-                                                </div>
-                                            </button>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        )}
-                    </div>
-                ) : null}
             </div>
 
-            <p className="mt-1 text-[11px] text-slate-500">Dica: digite parte do nome (ou código). Ao selecionar, a lista fecha.</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+                Dica: toque em <b>Selecionar</b>. No popup, pesquise e escolha.
+            </p>
 
             {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
+
+            {/* MODAL / POPUP */}
+            <Modal
+                open={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                ariaLabel={`Selecionar ${label}`}
+                maxWidth={720}
+            >
+                <div className="flex items-center justify-between gap-2">
+                    <div>
+                        <h3 className="text-lg font-semibold">Selecionar {label}</h3>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                            Depósito: <b>{depositoValue}</b>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        onClick={() => setPickerOpen(false)}
+                    >
+                        Fechar
+                    </button>
+                </div>
+
+                <div className="mt-4 flex gap-2">
+                    <input
+                        ref={searchRef}
+                        type="text"
+                        value={q}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            setQ(v);
+                            setErr("");
+                            // invalida meta enquanto digita (zera pid/cb no wizardData)
+                            onTypingInvalidate?.(value); // mantém o valor atual no campo principal
+                        }}
+                        placeholder="Digite pelo menos 2 letras para buscar..."
+                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        autoComplete="off"
+                    />
+
+                    {/* botão OK: útil no Android pra “fechar teclado” (blur) */}
+                    <button
+                        type="button"
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        onClick={() => searchRef.current?.blur()}
+                        title="Fechar teclado"
+                    >
+                        OK
+                    </button>
+                </div>
+
+                <div className="mt-3 rounded-xl border bg-white">
+                    {loading ? (
+                        <div className="p-3 text-sm text-slate-600">Buscando...</div>
+                    ) : err ? (
+                        <div className="p-3 text-sm text-red-600">{err}</div>
+                    ) : q.trim().length < 2 ? (
+                        <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
+                    ) : rows.length === 0 ? (
+                        <div className="p-3 text-sm text-slate-600">
+                            Nenhum item encontrado no estoque ({depositoValue}).
+                        </div>
+                    ) : (
+                        <ul className="max-h-[65vh] overflow-auto py-1">
+                            {rows.map((it) => {
+                                const pidKey = getPidFromRow(it);
+                                return (
+                                    <li key={pidKey || it.nome}>
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-3 text-left text-sm hover:bg-slate-50"
+                                            onClick={() => applySelection(it)}
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="truncate font-medium text-slate-900">{it.nome}</span>
+                                                <span className="shrink-0 text-xs text-slate-600">
+                                                    estoque: <b>{Number(it.saldo_total) || 0}</b>
+                                                </span>
+                                            </div>
+                                            <div className="mt-0.5 truncate text-xs text-slate-600">
+                                                CB: <b>{(it as any).codigo_barras || ""}</b>
+                                            </div>
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </div>
+
+                <div className="mt-3 text-[11px] text-slate-500">
+                    Pesquise, toque no item para selecionar. O teclado não deve atrapalhar a lista porque ela fica no popup.
+                </div>
+            </Modal>
         </div>
     );
 }
+
 
 /* =========================================================================
    Wizard
