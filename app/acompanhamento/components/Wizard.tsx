@@ -61,7 +61,9 @@ function isSimNao(v: string) {
 }
 
 function getPidFromRow(it: EstoqueRow): number {
-    return Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
+    return (
+        Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0
+    );
 }
 
 type DepUrna = "MEMORIAL" | "FUNERARIA";
@@ -87,9 +89,12 @@ function normalizeDepInvol(v: any): DepInvol {
 
 /* =========================================================================
    Combobox genérico (estoque)
-   - action: "urnas_buscar" | "roupas_buscar" | "invols_buscar"
-   - Usa deposito_nome e somente_com_saldo=1
-   - IMPORTANTE: inputId precisa existir para o salvarGrupoWizard (DOM)
+   MELHORIAS DE SELEÇÃO (iOS/Android/PC):
+   - Abre o popup ao focar/clicar/Enter/Espaço no campo.
+   - Busca não invalida mais meta "a cada tecla" com parâmetro errado.
+   - Ao começar a digitar no popup (q), invalida meta 1x (pid/cb = 0) mantendo o texto atual.
+   - Botão "OK" dá blur (fecha teclado).
+   - Clique/touch no item seleciona (onClick + onTouchStart).
    ========================================================================= */
 function EstoqueCombobox({
     inputId,
@@ -151,6 +156,15 @@ function EstoqueCombobox({
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const lastInitSigRef = useRef<string>("");
 
+    // usado para invalidar meta apenas 1x quando o usuário começar a buscar novamente
+    const invalidatedThisSearchRef = useRef(false);
+
+    const openPicker = () => {
+        if (disabled) return;
+        invalidatedThisSearchRef.current = false;
+        setPickerOpen(true);
+    };
+
     // sincroniza quando abrir/editar registro
     useEffect(() => {
         const sig = `${String(initialValue || "")}||${String(depositoValue || "")}`;
@@ -166,9 +180,12 @@ function EstoqueCombobox({
         setErr("");
         setRows([]);
         setQ("");
-        requestAnimationFrame(() => {
+        invalidatedThisSearchRef.current = false;
+
+        // iOS: pequeno delay ajuda o foco aparecer de verdade
+        setTimeout(() => {
             searchRef.current?.focus();
-        });
+        }, 50);
     }, [pickerOpen]);
 
     // busca async (dentro do modal)
@@ -250,7 +267,8 @@ function EstoqueCombobox({
         setQ("");
         setRows([]);
         setErr("");
-        onTypingInvalidate?.(""); // invalida meta no wizardData (zera pid/cb no seu onTypingInvalidate)
+        invalidatedThisSearchRef.current = false;
+        onTypingInvalidate?.(""); // zera pid/cb no wizardData
         onBlurValidate?.();
     };
 
@@ -267,7 +285,9 @@ function EstoqueCombobox({
                             onChangeDeposito(e.target.value);
                             setRows([]);
                             setErr("");
-                            // ao trocar depósito, sugere selecionar novamente
+                            invalidatedThisSearchRef.current = false;
+
+                            // ao trocar depósito, abre o popup para selecionar novamente
                             setPickerOpen(true);
                             onBlurValidate?.();
                         }}
@@ -298,20 +318,27 @@ function EstoqueCombobox({
                             placeholder={placeholder || "Clique em Selecionar..."}
                             value={value}
                             readOnly
-                            onClick={() => {
-                                if (!disabled) setPickerOpen(true);
+                            onClick={openPicker}
+                            onFocus={openPicker}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    openPicker();
+                                }
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
+                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""
+                                }`}
                             disabled={disabled}
                             autoComplete="off"
                             title={label}
+                            aria-haspopup="dialog"
                         />
 
                         <button
                             type="button"
                             className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
                             disabled={disabled}
-                            onClick={() => setPickerOpen(true)}
+                            onClick={openPicker}
                         >
                             Selecionar
                         </button>
@@ -339,12 +366,7 @@ function EstoqueCombobox({
             {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
 
             {/* MODAL / POPUP */}
-            <Modal
-                open={pickerOpen}
-                onClose={() => setPickerOpen(false)}
-                ariaLabel={`Selecionar ${label}`}
-                maxWidth={720}
-            >
+            <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} ariaLabel={`Selecionar ${label}`} maxWidth={720}>
                 <div className="flex items-center justify-between gap-2">
                     <div>
                         <h3 className="text-lg font-semibold">Selecionar {label}</h3>
@@ -371,15 +393,27 @@ function EstoqueCombobox({
                             const v = e.target.value;
                             setQ(v);
                             setErr("");
-                            // invalida meta enquanto digita (zera pid/cb no wizardData)
-                            onTypingInvalidate?.(value); // mantém o valor atual no campo principal
+
+                            // ✅ MELHORIA: invalida meta 1x quando o usuário começar nova busca
+                            // (mantém o texto atual no campo principal, mas zera pid/cb até selecionar de novo)
+                            if (!invalidatedThisSearchRef.current && v.trim().length >= 1) {
+                                invalidatedThisSearchRef.current = true;
+                                onTypingInvalidate?.(value);
+                            }
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                                e.preventDefault();
+                                setPickerOpen(false);
+                            }
                         }}
                         placeholder="Digite pelo menos 2 letras para buscar..."
                         className="w-full rounded-md border px-3 py-2 text-sm"
                         autoComplete="off"
+                        inputMode="search"
                     />
 
-                    {/* botão OK: útil no Android pra “fechar teclado” (blur) */}
+                    {/* botão OK: útil no Android/iOS pra “fechar teclado” (blur) */}
                     <button
                         type="button"
                         className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
@@ -398,9 +432,7 @@ function EstoqueCombobox({
                     ) : q.trim().length < 2 ? (
                         <div className="p-3 text-sm text-slate-600">Digite pelo menos 2 letras…</div>
                     ) : rows.length === 0 ? (
-                        <div className="p-3 text-sm text-slate-600">
-                            Nenhum item encontrado no estoque ({depositoValue}).
-                        </div>
+                        <div className="p-3 text-sm text-slate-600">Nenhum item encontrado no estoque ({depositoValue}).</div>
                     ) : (
                         <ul className="max-h-[65vh] overflow-auto py-1">
                             {rows.map((it) => {
@@ -411,6 +443,7 @@ function EstoqueCombobox({
                                             type="button"
                                             className="w-full px-3 py-3 text-left text-sm hover:bg-slate-50"
                                             onClick={() => applySelection(it)}
+                                            onTouchStart={() => applySelection(it)} // ✅ iOS: melhora tap
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="truncate font-medium text-slate-900">{it.nome}</span>
@@ -430,16 +463,15 @@ function EstoqueCombobox({
                 </div>
 
                 <div className="mt-3 text-[11px] text-slate-500">
-                    Pesquise, toque no item para selecionar. O teclado não deve atrapalhar a lista porque ela fica no popup.
+                    Pesquise, toque no item para selecionar. Se o teclado atrapalhar, toque em <b>OK</b>.
                 </div>
             </Modal>
         </div>
     );
 }
 
-
 /* =========================================================================
-   Wizard TSX
+   Wizard
    ========================================================================= */
 export default function Wizard({
     open,
@@ -760,7 +792,7 @@ export default function Wizard({
                                     inputId="wizard-urna"
                                     label="Urna"
                                     required={isRequired(step.id)}
-                                    placeholder={step.placeholder || "Digite para buscar..."}
+                                    placeholder={step.placeholder || "Clique em Selecionar..."}
                                     initialValue={String((wizardData as any).urna ?? "")}
                                     disabled={wizardSubmitting}
                                     depositoLabel="Local da Urna"
@@ -808,7 +840,8 @@ export default function Wizard({
                                     }}
                                     footerHint={
                                         <>
-                                            Obs: a baixa do estoque acontece automaticamente ao registrar <b>Ínicio da Ornamentação (fase05)</b>.
+                                            Obs: a baixa do estoque acontece automaticamente ao registrar{" "}
+                                            <b>Ínicio da Ornamentação (fase05)</b>.
                                         </>
                                     }
                                 />
@@ -829,7 +862,7 @@ export default function Wizard({
                                     inputId="wizard-roupa"
                                     label="Roupa"
                                     required={isRequired(step.id)}
-                                    placeholder={step.placeholder || 'Selecione no estoque ou digite "ROUPA PRÓPRIA"'}
+                                    placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
                                     initialValue={String((wizardData as any).roupa ?? "")}
                                     disabled={wizardSubmitting}
                                     depositoLabel="Local da Roupa"
@@ -1002,7 +1035,9 @@ export default function Wizard({
                                     >
                                         Selecionar Itens…
                                     </button>
-                                    <span className="text-sm text-muted-foreground">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        {arrumacaoSelecionadaResumo || "Nenhum item selecionado"}
+                                    </span>
                                 </div>
                                 <input id="wizard-arrumacao" type="hidden" defaultValue="__custom__" />
                             </div>
@@ -1060,7 +1095,9 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -1147,7 +1184,9 @@ export default function Wizard({
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             invol: v,
-                                            ...(v !== "Sim" ? { invol_deposito_nome: "", invol_produto_id: 0, invol_codigo_barras: "", invol_item: "" } : {}),
+                                            ...(v !== "Sim"
+                                                ? { invol_deposito_nome: "", invol_produto_id: 0, invol_codigo_barras: "", invol_item: "" }
+                                                : {}),
                                         }));
 
                                         if (v !== "Sim") setInvolErro("");
@@ -1176,7 +1215,7 @@ export default function Wizard({
                                     inputId="wizard-invol_item"
                                     label="INVOL (estoque)"
                                     required={true}
-                                    placeholder={step.placeholder || "Digite para buscar INVOL..."}
+                                    placeholder={step.placeholder || "Clique em Selecionar..."}
                                     initialValue={String((wizardData as any).invol_item ?? "")}
                                     disabled={wizardSubmitting}
                                     depositoLabel="Local do INVOL"
