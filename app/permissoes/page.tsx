@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 type Usuario = { id: number; nome: string; usuario: string };
 type Pagina = { key: string; label: string };
 
-const API_URL = '/api/php/pai_api.php';
+const API_URL = 'https://api.planoassistencialintegrado.com.br/pai_api.php';
 
 /* ---------------- parser robusto (tolera BOM/HTML/HTML) ---------------- */
 async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
