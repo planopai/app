@@ -314,24 +314,12 @@ export async function enviarRegistroPHP(data: any) {
     // ---------- ROUPA META ----------
     const roupaTxt = String(data?.roupa ?? "").trim();
     const roupaEhPropria = roupaTxt !== "" && isRoupapropria(roupaTxt);
-<<<<<<< HEAD
-    const roupaPid = roupaEhPropria
-        ? null
-        : asPositiveIntOrNull(data?.roupa_produto_id);
-    const roupaDep = roupaEhPropria
-        ? null
-        : String(data?.roupa_deposito_nome ?? "").trim()
-            ? normUpper(data?.roupa_deposito_nome)
-            : null;
-    const roupaCb = roupaEhPropria
-        ? null
-        : (String(data?.roupa_codigo_barras ?? "").trim() || null);
-=======
+
 
     const roupaPid = roupaEhPropria ? null : asPositiveIntOrNull(data?.roupa_produto_id);
     const roupaDep = roupaEhPropria ? null : normalizeRoupaDepositoOrNull(data?.roupa_deposito_nome);
     const roupaCb = roupaEhPropria ? null : (String(data?.roupa_codigo_barras ?? "").trim() || null);
->>>>>>> dd3ec64af84ff10ad500a9adaddbd7e98aebf002
+
 
     // regra do PHP: se roupa tem texto e NÃO é roupa própria => precisa pid > 0
     if (roupaTxt !== "" && !roupaEhPropria && !roupaPid) {
@@ -347,23 +335,10 @@ export async function enviarRegistroPHP(data: any) {
     // ---------- INVOL META ----------
     const involTxt = String(data?.invol ?? "").trim();
     const involSim = isSim(involTxt);
-<<<<<<< HEAD
-    const involPid = involSim
-        ? asPositiveIntOrNull(data?.invol_produto_id)
-        : null;
-    const involDep = involSim
-        ? String(data?.invol_deposito_nome ?? "").trim()
-            ? normUpper(data?.invol_deposito_nome)
-            : null
-        : null;
-    const involCb = involSim
-        ? (String(data?.invol_codigo_barras ?? "").trim() || null)
-        : null;
-=======
+
     const involPid = involSim ? asPositiveIntOrNull(data?.invol_produto_id) : null;
     const involDep = involSim ? normalizeInvolDepositoOrNull(data?.invol_deposito_nome) : null;
     const involCb = involSim ? (String(data?.invol_codigo_barras ?? "").trim() || null) : null;
->>>>>>> dd3ec64af84ff10ad500a9adaddbd7e98aebf002
 
     // regra do PHP: se invol == sim => precisa pid > 0
     if (involSim && !involPid) {

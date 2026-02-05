@@ -5,10 +5,6 @@ import Modal from "./Modal";
 import { Registro } from "./types";
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
-// ✅ NOVO: modal de seleção guiada (vou gerar no próximo passo)
-import RoupaPickerModal, { RoupaPickResult } from "./RoupaPickerModal";
-
-
 type Step = {
     label: string;
     id: string;
@@ -91,13 +87,9 @@ function normalizeDepInvol(v: any): DepInvol {
 
 /* =========================================================================
    Combobox genérico (estoque)
-<<<<<<< HEAD
    - action: "urnas_buscar" | "roupas_buscar" | "invols_buscar"
    - Usa deposito_nome e somente_com_saldo=1
    - ✅ AGORA: abre o modal já carregando a lista do depósito, sem precisar digitar
-=======
-   - action: "urnas_buscar" | "invols_buscar"
->>>>>>> dd3ec64af84ff10ad500a9adaddbd7e98aebf002
    ========================================================================= */
 function EstoqueCombobox({
     inputId,
@@ -303,34 +295,11 @@ function EstoqueCombobox({
                             id={inputId}
                             ref={inputRef}
                             type="text"
-<<<<<<< HEAD
                             placeholder={placeholder || "Clique em Selecionar..."}
                             value={value}
                             readOnly
                             onClick={() => {
                                 if (!disabled) setPickerOpen(true);
-=======
-                            placeholder={placeholder || "Digite para buscar..."}
-                            value={q}
-                            onChange={(e) => {
-                                const v = e.target.value;
-                                setQ(v);
-                                setOpen(true);
-                                setErr("");
-                                onTypingInvalidate?.(v);
-                            }}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    if (!rows?.length) return;
-                                    applySelection(rows[0]);
-                                }
-                            }}
-                            onFocus={() => setOpen(true)}
-                            onBlur={() => {
-                                autoPickIfExactMatch();
-                                onBlurValidate?.();
->>>>>>> dd3ec64af84ff10ad500a9adaddbd7e98aebf002
                             }}
                             className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
                             disabled={disabled}
@@ -537,10 +506,8 @@ export default function Wizard({
 
     // depósitos locais (controlados)
     const [depUrna, setDepUrna] = useState<DepUrna>("MEMORIAL");
+    const [depRoupa, setDepRoupa] = useState<DepRoupa>("ARMARIO SANDRO");
     const [depInvol, setDepInvol] = useState<DepInvol>("ARMARIO SANDRO");
-
-    // ✅ NOVO: modal de roupa + cordão
-    const [roupaPickerOpen, setRoupaPickerOpen] = useState(false);
 
     useEffect(() => {
         setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
@@ -556,6 +523,7 @@ export default function Wizard({
         setAssistenciaErro("");
 
         setDepUrna(normalizeDepUrna((wizardData as any).urna_deposito_nome ?? "MEMORIAL"));
+        setDepRoupa(normalizeDepRoupa((wizardData as any).roupa_deposito_nome ?? "ARMARIO SANDRO"));
         setDepInvol(normalizeDepInvol((wizardData as any).invol_deposito_nome ?? "ARMARIO SANDRO"));
     }, [open]);
 
@@ -611,26 +579,23 @@ export default function Wizard({
         return true;
     };
 
-    // ✅ valida ROUPA pelo wizardData (agora roupa vem do modal)
+    // ✅ valida ROUPA pelo wizardData
     const validarRoupaSeNecessario = () => {
         if (!roupaNoGrupoAtual) return true;
 
         const roupaTxt = String((wizardData as any).roupa ?? "").trim();
         const req = isRequired("roupa");
 
-        // se não é obrigatório e está vazio -> ok
         if (!req && roupaTxt === "") {
             setRoupaErro("");
             return true;
         }
 
-        // roupa própria -> ok
         if (roupaTxt !== "" && isRoupaPropria(roupaTxt)) {
             setRoupaErro("");
             return true;
         }
 
-        // roupa do estoque -> exige pid e depósito
         const pid = Number((wizardData as any).roupa_produto_id ?? 0) || 0;
         const dep = String((wizardData as any).roupa_deposito_nome ?? "").trim();
 
@@ -672,32 +637,6 @@ export default function Wizard({
         setInvolErro("");
         return true;
     };
-
-    // ✅ resumo de roupa + cordão
-    const roupaResumo = useMemo(() => {
-        const roupaTxt = String((wizardData as any).roupa ?? "").trim();
-        const roupaIsPropria = roupaTxt !== "" && isRoupaPropria(roupaTxt);
-
-        const roupaPid = Number((wizardData as any).roupa_produto_id ?? 0) || 0;
-        const roupaDep = String((wizardData as any).roupa_deposito_nome ?? "").trim();
-        const roupaCb = String((wizardData as any).roupa_codigo_barras ?? "").trim();
-
-        const cordaoTxt = String((wizardData as any).cordao ?? "").trim();
-        const cordaoPid = Number((wizardData as any).cordao_produto_id ?? 0) || 0;
-        const cordaoDep = String((wizardData as any).cordao_deposito_nome ?? "").trim();
-        const cordaoCb = String((wizardData as any).cordao_codigo_barras ?? "").trim();
-
-        const parts: string[] = [];
-
-        if (!roupaTxt) parts.push("Roupa: (não selecionada)");
-        else if (roupaIsPropria) parts.push("Roupa: ROUPA PRÓPRIA");
-        else parts.push(`Roupa: ${roupaTxt} — ${roupaDep || "sem depósito"} — PID ${roupaPid || 0} — CB ${roupaCb || "-"}`);
-
-        if (!cordaoTxt) parts.push("Cordão: (não selecionado)");
-        else parts.push(`Cordão: ${cordaoTxt} — ${cordaoDep || "sem depósito"} — PID ${cordaoPid || 0} — CB ${cordaoCb || "-"}`);
-
-        return parts.join(" • ");
-    }, [wizardData]);
 
     // GPS p/ Local do Velório
     const [gpsLoading, setGpsLoading] = useState(false);
@@ -777,44 +716,6 @@ export default function Wizard({
 
     return (
         <Modal open={open} onClose={onClose} ariaLabel="Wizard" maxWidth={740}>
-            {/* ✅ MODAL DE ROUPA + CORDÃO */}
-            <RoupaPickerModal
-                open={roupaPickerOpen}
-                onClose={() => setRoupaPickerOpen(false)}
-                initial={{
-                    roupa_deposito_nome: String((wizardData as any).roupa_deposito_nome ?? ""),
-                    roupa: String((wizardData as any).roupa ?? ""),
-                    roupa_produto_id: Number((wizardData as any).roupa_produto_id ?? 0) || 0,
-                    roupa_codigo_barras: String((wizardData as any).roupa_codigo_barras ?? ""),
-
-                    cordao_deposito_nome: String((wizardData as any).cordao_deposito_nome ?? ""),
-                    cordao: String((wizardData as any).cordao ?? ""),
-                    cordao_produto_id: Number((wizardData as any).cordao_produto_id ?? 0) || 0,
-                    cordao_codigo_barras: String((wizardData as any).cordao_codigo_barras ?? ""),
-                }}
-                disabled={wizardSubmitting}
-                onConfirm={(result: RoupaPickResult) => {
-                    setWizardData((prev: any) => ({
-                        ...prev,
-
-                        // ROUPA
-                        roupa: result.roupa_texto,
-                        roupa_deposito_nome: result.roupa_deposito_nome,
-                        roupa_produto_id: result.roupa_produto_id,
-                        roupa_codigo_barras: result.roupa_codigo_barras,
-
-                        // CORDÃO
-                        cordao: result.cordao_texto,
-                        cordao_deposito_nome: result.cordao_deposito_nome,
-                        cordao_produto_id: result.cordao_produto_id,
-                        cordao_codigo_barras: result.cordao_codigo_barras,
-                    }));
-
-                    setRoupaErro("");
-                    setRoupaPickerOpen(false);
-                }}
-            />
-
             <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
@@ -914,12 +815,14 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       ✅ ROUPA (novo: botão + modal)
+                       ROUPA (async + ROUPA PRÓPRIA)
                        =========================== */
                     if (step.type === "async_roupa" && step.id === "roupa") {
+                        const roupaAtual = String((wizardData as any).roupa ?? "");
+                        const isPropria = isRoupaPropria(roupaAtual);
+
                         return (
                             <div key={step.id} className="sm:col-span-2">
-<<<<<<< HEAD
                                 <EstoqueCombobox
                                     inputId="wizard-roupa"
                                     label="Roupa"
@@ -939,35 +842,77 @@ export default function Wizard({
                                         setDepRoupa(next);
 
                                         if (isRoupaPropria((wizardData as any).roupa)) return;
-=======
-                                <label className="mb-1 block text-sm font-medium">
-                                    Roupa {isRequired(step.id) && <span className="text-red-600"> *</span>}
-                                </label>
 
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                    <button
-                                        type="button"
-                                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                                        onClick={() => setRoupaPickerOpen(true)}
-                                        disabled={wizardSubmitting}
-                                    >
-                                        Selecionar roupa…
-                                    </button>
->>>>>>> dd3ec64af84ff10ad500a9adaddbd7e98aebf002
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            roupa_deposito_nome: next,
+                                            roupa_produto_id: 0,
+                                            roupa_codigo_barras: "",
+                                        }));
 
-                                    <span className="text-xs text-muted-foreground">
-                                        {roupaResumo || "Nenhum item selecionado"}
-                                    </span>
-                                </div>
+                                        validarRoupaSeNecessario();
+                                    }}
+                                    action="roupas_buscar"
+                                    errorText={roupaErro}
+                                    onBlurValidate={validarRoupaSeNecessario}
+                                    onTypingInvalidate={(typed) => {
+                                        if (typed && isRoupaPropria(typed)) {
+                                            setWizardData((prev: any) => ({
+                                                ...prev,
+                                                roupa: "ROUPA PRÓPRIA",
+                                                roupa_deposito_nome: "",
+                                                roupa_produto_id: 0,
+                                                roupa_codigo_barras: "",
+                                            }));
+                                            setRoupaErro("");
+                                            return;
+                                        }
 
-                                {roupaErro ? <div className="mt-1 text-xs text-red-600">{roupaErro}</div> : null}
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            roupa: typed,
+                                            roupa_deposito_nome: depRoupa,
+                                            roupa_produto_id: 0,
+                                            roupa_codigo_barras: "",
+                                        }));
+                                    }}
+                                    onSelectRow={(it) => {
+                                        const pid = getPidFromRow(it);
+                                        const cb = String((it as any).codigo_barras || "").trim();
 
-                                {/* ✅ mantém id "wizard-roupa" para o salvarGrupoWizard (DOM) */}
-                                <input
-                                    id="wizard-roupa"
-                                    type="hidden"
-                                    value={String((wizardData as any).roupa ?? "")}
-                                    readOnly
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            roupa: String(it.nome || "").trim(),
+                                            roupa_deposito_nome: depRoupa,
+                                            roupa_produto_id: pid,
+                                            roupa_codigo_barras: cb,
+                                        }));
+                                    }}
+                                    extraButtons={
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                disabled={wizardSubmitting}
+                                                onClick={() => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        roupa: "ROUPA PRÓPRIA",
+                                                        roupa_deposito_nome: "",
+                                                        roupa_produto_id: 0,
+                                                        roupa_codigo_barras: "",
+                                                    }));
+                                                    setRoupaErro("");
+                                                }}
+                                            >
+                                                Usar ROUPA PRÓPRIA
+                                            </button>
+
+                                            {isPropria ? (
+                                                <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span>
+                                            ) : null}
+                                        </>
+                                    }
                                 />
                             </div>
                         );
@@ -1076,7 +1021,8 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
+                                        }`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
