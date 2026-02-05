@@ -64,16 +64,19 @@ export type ArrumacaoState = {
 };
 
 /**
- * Metas de estoque por item (URNA / ROUPA / INVOL)
+ * Metas de estoque por item (URNA / ROUPA / INVOL / CORDAO)
  */
 export type DepositoNomeUrna = "MEMORIAL" | "FUNERARIA";
 export type DepositoNomeArmario = "ARMARIO SANDRO" | "ARMARIO ILDO";
 export type DepositoNomeRoupa = DepositoNomeArmario | "FUNERARIA";
 export type DepositoNomeInvol = DepositoNomeArmario;
 
+// ✅ Cordão sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
+export type DepositoNomeCordao = DepositoNomeArmario | "FUNERARIA";
+
 /**
  * Registro (sepultamentos)
- * - inclui novas colunas: urna_* / roupa_* / invol_*
+ * - inclui novas colunas: urna_* / roupa_* / invol_* / cordao_*
  * - mantém [k:string]: any para compatibilidade com colunas antigas
  */
 export type Registro = {
@@ -140,6 +143,19 @@ export type Registro = {
     invol_deposito_nome?: DepositoNomeInvol | string;
     invol_produto_id?: number;
     invol_codigo_barras?: string;
+
+    // texto exibido no wizard (usado no front)
+    invol_item?: string;
+
+    // =========================
+    // ✅ META CORDAO SAO FRANCISCO (estoque)
+    // =========================
+    cordao_deposito_nome?: DepositoNomeCordao | string;
+    cordao_produto_id?: number;
+    cordao_codigo_barras?: string;
+
+    // opcional: se você quiser guardar também o texto/nome do cordão no registro
+    cordao?: string;
 
     [k: string]: any;
 };
