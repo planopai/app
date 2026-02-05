@@ -1223,7 +1223,7 @@ export default function QuadroAtendimentoPage() {
                 setRegistros(arr);
                 writeLS("qa_registros", arr);
             } catch {
-                // mantém o que já tem
+                // mantém já tem
             }
         }
 
