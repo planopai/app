@@ -528,7 +528,7 @@ export default function AcompanhamentoPage() {
 
   const editarAviso = useCallback(async (id: number | string, mensagem: string) => {
     try {
-      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -548,7 +548,7 @@ export default function AcompanhamentoPage() {
   const excluirAviso = useCallback(async (id: number | string) => {
     if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
     try {
-      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -567,7 +567,7 @@ export default function AcompanhamentoPage() {
 
   const finalizarAviso = useCallback(async (id: number | string) => {
     try {
-      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
