@@ -24,7 +24,7 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     return json;
 }
 
-/* ---------------- Modal simples ---------------- */
+/* ---------------- Modal simples ------------ */
 function Modal({
     open,
     onClose,
