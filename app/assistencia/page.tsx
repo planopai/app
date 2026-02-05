@@ -126,8 +126,9 @@ type ConferenciaListResp = {
 /* =======================
    Ajustes
    ======================= */
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const PHP_FILE = "materiais_admin.php";
-const PROXY_BASE = "/api/php";
+const PROXY_BASE = ENDPOINT; // em vez de "/api/php"
 
 type ViewMode = "materiais" | "conferencias";
 
