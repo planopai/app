@@ -386,11 +386,6 @@ export default function AcompanhamentoPage() {
     try {
       const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`, {
         cache: "no-store",
-        headers: {
-          Pragma: "no-cache",
-          Expires: "0",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-        },
         credentials: "include",
       });
 
