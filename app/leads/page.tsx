@@ -31,7 +31,7 @@ type ApiLead = {
     telefone: string;
 };
 
-const ENDPOINT = "/api/php/obter_leads.php";
+const ENDPOINT = "https://clube.planoassistencialintegrado.com.br/obter_leads.php";
 
 /* ===== estilos de botões (iguais ao restante do projeto) ===== */
 const btnOutline =
