@@ -150,7 +150,8 @@ type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd
 type SaidaItem = { id: number; payload: any; resumo: string };
 type TrfItem = { id: number; payload: any; resumo: string };
 
-const API_BASE = "/api/php/materiais_gerais.php";
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
 
 function clampInt(v: unknown) {
     const n = Number(v);
