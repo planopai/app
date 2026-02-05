@@ -1212,15 +1212,12 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE = "/api/php/informativo.php?listar=1";
+        const BASE = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
 
         async function load() {
             try {
                 const url = `${BASE}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, {
-                    ttlMs: 6_000,
-                    cacheKey: "informativo_listar",
-                });
+                const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
                 if (!alive) return;
                 const arr = Array.isArray(j) ? (j as Registro[]) : [];
                 setRegistros(arr);
@@ -1240,15 +1237,12 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE = "/api/php/avisos.php?listar=1";
+        const BASE = "https://api.planoassistencialintegrado.com.br/avisos.php?listar=1";
 
         async function load() {
             try {
                 const url = `${BASE}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, {
-                    ttlMs: 15_000,
-                    cacheKey: "avisos_listar",
-                });
+                const j = await fetchJsonFast<any>(url, { ttlMs: 15_000, cacheKey: "avisos_listar" });
                 if (!alive) return;
                 const arr = Array.isArray(j) ? (j as Aviso[]) : [];
                 setAvisos(arr);
@@ -1271,7 +1265,8 @@ export default function QuadroAtendimentoPage() {
 
         async function loadMateriaisCatalog() {
             try {
-                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                // ✅ DEPOIS (direto no PHP)
+                const url = `https://api.planoassistencialintegrado.com.br/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
                 const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
 
                 const tree = (res?.data ?? res) as any[];
@@ -1397,13 +1392,12 @@ export default function QuadroAtendimentoPage() {
                 return;
             }
 
-            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
+            // ✅ DEPOIS (direto no PHP)
+            const BASE = `https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
+                String(sepId)
+            )}`;
             const url = `${BASE}&_ts=${Date.now()}`;
-
-            const json: any = await fetchJsonFast<any>(url, {
-                ttlMs: 20_000,
-                cacheKey: `hist_${sepId}`,
-            });
+            const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
 
             let logs: LogItem[] = [];
             if (Array.isArray(json)) logs = json as LogItem[];
