@@ -33,9 +33,13 @@ type Categoria = {
     itens?: Item[];
 };
 
+/**
+ * ✅ Endpoint base da API (PHP)
+ */
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
 // ✅ ajuste se seu arquivo PHP tiver outro nome
 const PHP_FILE = "materiais_admin.php";
-const PROXY_BASE = "/api/php";
 
 function asBool(v: any) {
     return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
@@ -81,7 +85,9 @@ export default function MateriaisModal({
     setMateriais: React.Dispatch<React.SetStateAction<MateriaisState>>;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
 }) {
-    const endpoint = useMemo(() => `${PROXY_BASE}/${PHP_FILE}`, []);
+    // ✅ Agora direto no PHP do domínio da API (sem passar por /api/php do Next)
+    const endpoint = useMemo(() => `${ENDPOINT}/${PHP_FILE}`, []);
+
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
     const [needLogin, setNeedLogin] = useState(false);
@@ -103,7 +109,8 @@ export default function MateriaisModal({
             setMsg(null);
 
             try {
-                const url = new URL(endpoint, window.location.origin);
+                // ✅ como agora é URL absoluta, não precisa de window.location.origin
+                const url = new URL(endpoint);
                 url.searchParams.set("op", "list");
                 url.searchParams.set("all", "0");
                 url.searchParams.set("_nocache", String(Date.now()));
@@ -124,7 +131,7 @@ export default function MateriaisModal({
                     return;
                 }
 
-                const json = (await r.json().catch(() => null)) as (ApiOk<Categoria[]> | ApiErr | null);
+                const json = (await r.json().catch(() => null)) as ApiOk<Categoria[]> | ApiErr | null;
                 if (!json) throw new Error("Resposta inválida do servidor.");
 
                 if ((json as any)?.need_login) {
@@ -213,7 +220,15 @@ export default function MateriaisModal({
         });
     }
 
-    function setQty(key: string, nome: string, categoria_id: any, item_id: any, tipo: "item" | "subitem", raw_id: any, qtdVal: any) {
+    function setQty(
+        key: string,
+        nome: string,
+        categoria_id: any,
+        item_id: any,
+        tipo: "item" | "subitem",
+        raw_id: any,
+        qtdVal: any
+    ) {
         const qtd = Math.max(1, toInt(qtdVal, 1));
         setMateriais((prev) => {
             const p = ((prev || {}) as any) as DynMat;
@@ -240,7 +255,10 @@ export default function MateriaisModal({
             </div>
 
             {msg ? (
-                <div className={`mt-3 rounded-md border px-3 py-2 text-sm ${needLogin ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-800"}`}>
+                <div
+                    className={`mt-3 rounded-md border px-3 py-2 text-sm ${needLogin ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-800"
+                        }`}
+                >
                     {msg}
                     {needLogin ? (
                         <div className="mt-2">
@@ -326,7 +344,9 @@ export default function MateriaisModal({
                                                                 className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50"
                                                                 disabled={!state.checked}
                                                                 value={state.checked ? String(state.qtd ?? 1) : ""}
-                                                                onChange={(e) => setQty(key, s.nome, it.categoria_id, s.item_id, "subitem", s.id, e.target.value)}
+                                                                onChange={(e) =>
+                                                                    setQty(key, s.nome, it.categoria_id, s.item_id, "subitem", s.id, e.target.value)
+                                                                }
                                                                 placeholder="Qtd"
                                                             />
                                                         </div>

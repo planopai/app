@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
-import { API as API_ROOT } from "./constants";
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
 type Step = {
     label: string;
@@ -33,7 +33,7 @@ type EstoqueRow = {
     saldo_total?: number;
 };
 
-const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
+const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
 
 /* -------------------- helpers -------------------- */
 function normUpper(v: any) {

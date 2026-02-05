@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { ArrumacaoState, Registro } from "./types";
-import { API as API_ROOT } from "./constants";
+
 
 type EstoqueRow = {
     id?: number;
@@ -23,7 +23,8 @@ type InsumoSel = {
 
 type DepInsumos = "ARMARIO SANDRO" | "ARMARIO ILDO" | "";
 
-const ESTOQUE_API = `${API_ROOT}/api/php/materiais_gerais.php`;
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
 
 function normUpper(v: any) {
     return String(v ?? "")

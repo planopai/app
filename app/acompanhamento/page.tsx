@@ -39,7 +39,10 @@ import MateriaisConferenciaModal, {
 type TipoAtendimento = "funerario" | "terceiro";
 
 // ✅ endpoint da baixa automática (novo PHP independente)
-const URNA_SAIDA_API = `${API}/api/php/urna_saida.php`;
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
+// ✅ endpoint da baixa automática (novo PHP independente)
+const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 
 // ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
 type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "INSUMOS";
@@ -381,7 +384,7 @@ export default function AcompanhamentoPage() {
 
   const fetchRegistros = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/api/php/informativo.php?listar=1&_nocache=${Date.now()}`, {
+      const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`, {
         cache: "no-store",
         headers: {
           Pragma: "no-cache",
@@ -491,7 +494,9 @@ export default function AcompanhamentoPage() {
   /* -------------------- Avisos -------------------- */
   const fetchAvisos = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/api/php/avisos.php?listar=1&_nocache=${Date.now()}`, { credentials: "include" });
+      const r = await fetch(`${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`, {
+        credentials: "include",
+      });
       if (r.status === 401) return;
       const data = await r.json().catch(() => null);
       if (data?.need_login) return;
@@ -508,7 +513,7 @@ export default function AcompanhamentoPage() {
       return;
     }
     try {
-      const res = await jsonWith401(`${API}/api/php/avisos.php`, {
+      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -693,7 +698,7 @@ export default function AcompanhamentoPage() {
     const registro_id = data.registro_id != null ? String(data.registro_id) : "";
     if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
 
-    const r = await fetch(`${API}/api/php/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
+    const r = await fetch(`${ENDPOINT}/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

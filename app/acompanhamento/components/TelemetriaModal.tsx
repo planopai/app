@@ -10,8 +10,11 @@ import React, {
 } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
-import { API } from "./constants";
+
 import TextFeedback from "./TextFeedback";
+
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
 
 /* ======================= Tipos ======================= */
 export type TipoTele = "remocao" | "para_velorio" | "para_sepultamento";
@@ -319,7 +322,7 @@ export default forwardRef<
             let sent = false;
             try {
                 if (navigator.onLine) {
-                    const r = await fetch(`${API}/api/php/telemetria.php`, {
+                    const r = await fetch(`${ENDPOINT}/api/php/telemetria.php`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         credentials: "include",
@@ -331,7 +334,7 @@ export default forwardRef<
                 }
             } catch {
                 const q = readQueue();
-                q.push({ when: Date.now(), url: `${API}/api/php/telemetria.php`, body: payload });
+                q.push({ when: Date.now(), url: `${ENDPOINT}/api/php/telemetria.php`, body: payload });
                 writeQueue(q);
                 try {
                     alert("Sem internet: sessão salva no aparelho e será enviada ao reconectar.");

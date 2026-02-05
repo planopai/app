@@ -36,8 +36,10 @@ function isNao(v?: string) {
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
 const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
 
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
 async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
-    const res = await fetch("/api/php/informativo.php?me=1", {
+    const res = await fetch(`${ENDPOINT}/informativo.php?me=1`, {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
@@ -54,6 +56,7 @@ async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
         cargo: (data?.cargo || "").toString().trim().toLowerCase(),
     };
 }
+
 
 export default function AcaoModal({
     open,

@@ -1,7 +1,13 @@
 "use client";
 
-import { API, LOGIN_ABSOLUTE, salasMemorial } from "./constants";
+import { LOGIN_ABSOLUTE, salasMemorial } from "./constants";
 import type { ArrumacaoState, MateriaisState } from "./types";
+
+/**
+ * ✅ Endpoint base da API (PHP)
+ * Ajuste aqui se trocar domínio.
+ */
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
 let IS_REDIRECTING = false;
 
@@ -36,7 +42,8 @@ export function redirectToLogin(loginUrl?: string, msg?: string) {
         if (msg) alert(msg);
     } catch { }
 
-    const url = (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
+    const url =
+        (loginUrl && /^https?:\/\//i.test(loginUrl) && loginUrl) || LOGIN_ABSOLUTE;
 
     try {
         window.location.replace(url);
@@ -66,7 +73,10 @@ export async function jsonWith401(url: string, init?: RequestInit) {
     }
 
     if (data?.need_login) {
-        redirectToLogin(data?.login_url, data?.msg || "Sessão expirada. Faça login novamente.");
+        redirectToLogin(
+            data?.login_url,
+            data?.msg || "Sessão expirada. Faça login novamente."
+        );
         throw new Error(data?.msg || "Sessão expirada.");
     }
 
@@ -278,21 +288,39 @@ export async function enviarRegistroPHP(data: any) {
     // ---------- ROUPA META ----------
     const roupaTxt = String(data?.roupa ?? "").trim();
     const roupaEhPropria = roupaTxt !== "" && isRoupapropria(roupaTxt);
-    const roupaPid = roupaEhPropria ? null : asPositiveIntOrNull(data?.roupa_produto_id);
-    const roupaDep = roupaEhPropria ? null : (String(data?.roupa_deposito_nome ?? "").trim() ? normUpper(data?.roupa_deposito_nome) : null);
-    const roupaCb = roupaEhPropria ? null : (String(data?.roupa_codigo_barras ?? "").trim() || null);
+    const roupaPid = roupaEhPropria
+        ? null
+        : asPositiveIntOrNull(data?.roupa_produto_id);
+    const roupaDep = roupaEhPropria
+        ? null
+        : String(data?.roupa_deposito_nome ?? "").trim()
+            ? normUpper(data?.roupa_deposito_nome)
+            : null;
+    const roupaCb = roupaEhPropria
+        ? null
+        : (String(data?.roupa_codigo_barras ?? "").trim() || null);
 
     // regra do PHP: se roupa tem texto e NÃO é roupa própria => precisa pid > 0
     if (roupaTxt !== "" && !roupaEhPropria && !roupaPid) {
-        throw new Error('Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".');
+        throw new Error(
+            'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".'
+        );
     }
 
     // ---------- INVOL META ----------
     const involTxt = String(data?.invol ?? "").trim();
     const involSim = isSim(involTxt);
-    const involPid = involSim ? asPositiveIntOrNull(data?.invol_produto_id) : null;
-    const involDep = involSim ? (String(data?.invol_deposito_nome ?? "").trim() ? normUpper(data?.invol_deposito_nome) : null) : null;
-    const involCb = involSim ? (String(data?.invol_codigo_barras ?? "").trim() || null) : null;
+    const involPid = involSim
+        ? asPositiveIntOrNull(data?.invol_produto_id)
+        : null;
+    const involDep = involSim
+        ? String(data?.invol_deposito_nome ?? "").trim()
+            ? normUpper(data?.invol_deposito_nome)
+            : null
+        : null;
+    const involCb = involSim
+        ? (String(data?.invol_codigo_barras ?? "").trim() || null)
+        : null;
 
     // regra do PHP: se invol == sim => precisa pid > 0
     if (involSim && !involPid) {
@@ -325,7 +353,8 @@ export async function enviarRegistroPHP(data: any) {
         invol_codigo_barras: involCb,
     };
 
-    return jsonWith401(`${API}/api/php/informativo.php`, {
+    // ✅ agora aponta DIRETO pro PHP no domínio da API
+    return jsonWith401(`${ENDPOINT}/informativo.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -340,8 +369,13 @@ export type StatusConsulta = {
     tanato: string;
 };
 
-export async function consultarStatusAtual(id: number | string): Promise<StatusConsulta> {
-    const url = `${API}/api/php/informativo.php?status_atual=1&id=${encodeURIComponent(String(id))}`;
+export async function consultarStatusAtual(
+    id: number | string
+): Promise<StatusConsulta> {
+    // ✅ agora aponta DIRETO pro PHP no domínio da API
+    const url = `${ENDPOINT}/informativo.php?status_atual=1&id=${encodeURIComponent(
+        String(id)
+    )}`;
     const data = await jsonWith401(url);
 
     if (!data?.sucesso) throw new Error(data?.msg || "Falha ao consultar status.");
@@ -404,7 +438,13 @@ export function proximaFaseDoRegistro(
     return null;
 }
 
-export async function proximaFaseOnline(id: number | string, fases: readonly string[]): Promise<string | null> {
+export async function proximaFaseOnline(
+    id: number | string,
+    fases: readonly string[]
+): Promise<string | null> {
     const s = await consultarStatusAtual(id);
-    return proximaFaseDoRegistro({ status: s.status, local_velorio: s.local_velorio, tanato: s.tanato }, fases);
+    return proximaFaseDoRegistro(
+        { status: s.status, local_velorio: s.local_velorio, tanato: s.tanato },
+        fases
+    );
 }
