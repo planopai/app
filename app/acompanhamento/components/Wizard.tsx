@@ -775,6 +775,7 @@ export default function Wizard({
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
+                                            urna: "",
                                             urna_deposito_nome: next,
                                             urna_produto_id: 0,
                                             urna_codigo_barras: "",
@@ -843,10 +844,13 @@ export default function Wizard({
                                         const next = normalizeDepRoupa(v);
                                         setDepRoupa(next);
 
+                                        // se for roupa própria, depósito não importa
                                         if (isRoupaPropria((wizardData as any).roupa)) return;
 
+                                        // ✅ ao trocar depósito, limpa a seleção para não ficar "nome sem produto_id"
                                         setWizardData((prev: any) => ({
                                             ...prev,
+                                            roupa: "",
                                             roupa_deposito_nome: next,
                                             roupa_produto_id: 0,
                                             roupa_codigo_barras: "",
@@ -854,6 +858,7 @@ export default function Wizard({
 
                                         validarRoupaSeNecessario();
                                     }}
+
                                     action="roupas_buscar"
                                     errorText={roupaErro}
                                     onBlurValidate={validarRoupaSeNecessario}
@@ -1188,6 +1193,7 @@ export default function Wizard({
                                         setDepInvol(next);
                                         setWizardData((prev: any) => ({
                                             ...prev,
+                                            invol_item: "",
                                             invol_deposito_nome: next,
                                             invol_produto_id: 0,
                                             invol_codigo_barras: "",
