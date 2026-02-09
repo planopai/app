@@ -374,9 +374,9 @@ function EstoqueCombobox({
                             const v = e.target.value;
                             setQ(v);
                             setErr("");
-                            // invalida meta enquanto mexe no filtro
-                            onTypingInvalidate?.(value);
+                            // NÃO mexe na seleção (texto/produto_id) ao filtrar
                         }}
+
                         placeholder="(Opcional) filtrar por nome ou código…"
                         className="w-full rounded-md border px-3 py-2 text-sm"
                         autoComplete="off"
