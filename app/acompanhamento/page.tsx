@@ -1309,7 +1309,7 @@ export default function AcompanhamentoPage() {
           await baixarItensFase05({ registro_id, tipo: "ROUPA" });
         }
 
-        // 3) INVOL (se invol = Sim)
+        // 3) INVOL 
         if (isSim(reg?.invol)) {
           await baixarItensFase05({ registro_id, tipo: "INVOL" });
         }
