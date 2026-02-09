@@ -885,7 +885,7 @@ export default function AcompanhamentoPage() {
         }
       }
 
-      // ✅ valida obrigatórios também para async
+      // valida obrigatórios também para async
       if (obrigatoriosForTipo.includes(s.id) && !v) {
         setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
         return null;

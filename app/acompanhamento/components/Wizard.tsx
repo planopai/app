@@ -374,7 +374,7 @@ function EstoqueCombobox({
                             const v = e.target.value;
                             setQ(v);
                             setErr("");
-                            // NÃO mexe na eleção (texto/produto_id) ao filtrar
+                            // NÃO mexe na eleção 
                         }}
 
                         placeholder="(Opcional) filtrar por nome ou código…"
