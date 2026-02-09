@@ -458,17 +458,43 @@ export default function AcompanhamentoPage() {
               }
             } catch { }
 
+            // ✅ enviado com sucesso -> remove da fila
             const after = safeReadQueue().filter((x) => x.qid !== item.qid);
             safeWriteQueue(after);
           } else {
+            const msg = String(json?.erro || json?.msg || "");
+
+            // ✅ ERROS "PERMANENTES" (validação) -> remove da fila para não ficar tentando pra sempre
+            const isValidation =
+              msg.includes("Selecione uma roupa da lista") ||
+              msg.includes("Selecione uma urna da lista") ||
+              msg.includes("Selecione um INVOL da lista") ||
+              msg.includes("Depósito inválido") ||
+              msg.includes("Dados inválidos") ||
+              msg.includes("Confirmação obrigatória") ||
+              msg.includes("Apenas Tanatopraxista");
+
+            if (isValidation) {
+              const after = safeReadQueue().filter((x) => x.qid !== item.qid);
+              safeWriteQueue(after);
+
+              // opcional: log pra você ver o que foi descartado
+              console.warn("Removido da fila offline (validação):", item.payload, msg);
+
+              // ✅ segue para o próximo item da fila (não trava tudo)
+              continue;
+            }
+
+            // ❗ Erro "temporário" -> mantém na fila e para (pra não martelar o servidor)
             const after = safeReadQueue().map((x) =>
               x.qid === item.qid
-                ? { ...x, tries: (x.tries ?? 0) + 1, lastError: json?.erro || json?.msg || "Erro ao enviar (offline queue)." }
+                ? { ...x, tries: (x.tries ?? 0) + 1, lastError: msg || "Erro ao enviar (offline queue)." }
                 : x
             );
             safeWriteQueue(after);
             break;
           }
+
         } catch (e: any) {
           const after = safeReadQueue().map((x) =>
             x.qid === item.qid
@@ -1109,13 +1135,32 @@ export default function AcompanhamentoPage() {
         setWizardMsg({ text: json?.erro || json?.msg || "Erro ao salvar!", ok: false });
       }
     } catch (e: any) {
-      enqueueOffline({ ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" }, e?.message);
-      setWizardMsg({
-        text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
-        ok: true,
-      });
-      setTimeout(() => setWizardOpen(false), 950);
-    } finally {
+      const msg = String(e?.message || "");
+
+      // ✅ só enfileira offline se for falha de rede / fetch (não validação)
+      const isNetwork =
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError") ||
+        msg.includes("ERR_NETWORK") ||
+        msg.includes("Load failed") ||
+        msg.includes("fetch") && msg.includes("failed");
+
+      if (isNetwork) {
+        enqueueOffline({ ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" }, msg);
+        setWizardMsg({
+          text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
+          ok: true,
+        });
+        setTimeout(() => setWizardOpen(false), 950);
+      } else {
+        // ❗ erro real do servidor (ex.: validação 400) -> não enfileira
+        setWizardMsg({
+          text: msg || "Erro ao salvar!",
+          ok: false,
+        });
+      }
+    }
+ finally {
       setWizardSubmitting(false);
       flushOfflineQueue();
     }
@@ -1318,14 +1363,29 @@ export default function AcompanhamentoPage() {
       setAcaoMsg({ text: String(json?.msg || json?.erro || "Erro ao atualizar status."), ok: false });
       return false;
     } catch (e: any) {
-      enqueueOffline(
-        { acao: "atualizar_status", id: acaoId, status: statusCode || acao, ...(needsBackendConfirm ? { confirmar: true } : {}) },
-        e?.message
-      );
-      setAcaoMsg({ text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.", ok: true });
-      setAcaoOpen(false);
-      return true;
-    } finally {
+      const msg = String(e?.message || "");
+
+      const isNetwork =
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError") ||
+        msg.includes("ERR_NETWORK") ||
+        msg.includes("Load failed") ||
+        msg.includes("fetch") && msg.includes("failed");
+
+      if (isNetwork) {
+        enqueueOffline(
+          { acao: "atualizar_status", id: acaoId, status: statusCode || acao, ...(needsBackendConfirm ? { confirmar: true } : {}) },
+          msg
+        );
+        setAcaoMsg({ text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.", ok: true });
+        setAcaoOpen(false);
+        return true;
+      }
+
+      setAcaoMsg({ text: msg || "Erro ao atualizar status.", ok: false });
+      return false;
+    }
+ finally {
       setAcaoSubmitting(false);
       flushOfflineQueue();
     }
