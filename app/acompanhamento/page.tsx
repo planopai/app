@@ -858,16 +858,42 @@ export default function AcompanhamentoPage() {
 
     for (const idx of grupo) {
       const s = (stepsForTipo as any)[idx] as any;
-      const el = document.getElementById("wizard-" + s.id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-      const v = (el?.value ?? "").trim();
 
+      // ✅ Para campos async (combobox/autocomplete), pega do state (wizardData), não do DOM
+      const isAsyncField =
+        s?.type === "async_urna" ||
+        s?.type === "async_roupa" ||
+        s?.type === "async_invol";
+
+      let v = "";
+
+      if (isAsyncField) {
+        v = String((wizardData as any)?.[s.id] ?? "").trim();
+      } else {
+        const el = document.getElementById("wizard-" + s.id) as
+          | HTMLInputElement
+          | HTMLTextAreaElement
+          | HTMLSelectElement
+          | null;
+
+        v = (el?.value ?? "").trim();
+
+        if (obrigatoriosForTipo.includes(s.id) && !v) {
+          el?.focus?.();
+          setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
+          return null;
+        }
+      }
+
+      // ✅ valida obrigatórios também para async
       if (obrigatoriosForTipo.includes(s.id) && !v) {
-        el?.focus?.();
         setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
         return null;
       }
+
       next[s.id] = v;
     }
+
 
     if ((wizardData as any).id != null) next.id = (wizardData as any).id;
 
