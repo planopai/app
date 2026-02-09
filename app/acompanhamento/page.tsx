@@ -1044,7 +1044,7 @@ export default function AcompanhamentoPage() {
       }
     }
 
-    // ✅ validação extra (front): INVOL (se invol = Sim)
+    // ✅ validação extra (front):
     const involVal = dataAtualizada?.invol ?? "";
     if (isSim(involVal)) {
       const involPid = Number(dataAtualizada?.invol_produto_id ?? 0) || 0;
