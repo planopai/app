@@ -242,8 +242,7 @@ function EstoqueCombobox({
         // informa o wizardData (meta: produto_id, cb, depósito etc)
         onSelectRow(it);
 
-        // ✅ roda depois do setWizardData aplicar
-        requestAnimationFrame(() => onBlurValidate?.());
+        
 
         requestAnimationFrame(() => {
             searchRef.current?.blur();
