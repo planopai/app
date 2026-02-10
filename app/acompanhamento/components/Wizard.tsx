@@ -902,18 +902,35 @@ export default function Wizard({
                                                 className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
                                                 disabled={wizardSubmitting}
                                                 onClick={() => {
+                                                    // 1) Atualiza o state (wizardData)
                                                     setWizardData((prev: any) => ({
                                                         ...prev,
                                                         roupa: "ROUPA PRÓPRIA",
                                                         roupa_deposito_nome: "",
                                                         roupa_produto_id: 0,
                                                         roupa_codigo_barras: "",
+                                                        // opcional (não quebra o PHP; ajuda debug/controle no futuro)
+                                                        roupa_propria: 1,
                                                     }));
+
+                                                    // 2) Força o valor no input do DOM (caso salvarGrupoWizard leia do DOM)
+                                                    const el = document.getElementById("wizard-roupa") as HTMLInputElement | null;
+                                                    if (el) {
+                                                        el.value = "ROUPA PRÓPRIA";
+                                                        // dispara eventos para quem estiver escutando input/change
+                                                        el.dispatchEvent(new Event("input", { bubbles: true }));
+                                                        el.dispatchEvent(new Event("change", { bubbles: true }));
+                                                        el.blur();
+                                                    }
+
+                                                    // 3) Limpa erro e valida em seguida (garante que o próximo clique não bloqueie)
                                                     setRoupaErro("");
+                                                    requestAnimationFrame(() => validarRoupaSeNecessario());
                                                 }}
                                             >
                                                 Usar ROUPA PRÓPRIA
                                             </button>
+
 
                                             {isPropria ? (
                                                 <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span>
