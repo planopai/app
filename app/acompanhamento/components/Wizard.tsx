@@ -859,12 +859,9 @@ export default function Wizard({
                                             urna_codigo_barras: cb,
                                         }));
 
-                                        // ✅ limpa o erro imediatamente (não depende do state atualizar)
-                                        if (pid > 0) setUrnaErro("");
-
-                                        // opcional: revalida “depois” (se você quiser manter a regra centralizada)
-                                        setTimeout(() => validarUrnaSeNecessario(), 0);
+                                        setUrnaErro(""); // pronto, some na hora
                                     }}
+
 
 
                                     footerHint={
@@ -1301,11 +1298,10 @@ export default function Wizard({
                                             invol_codigo_barras: cb,
                                         }));
 
-                                        // ✅ limpa erro imediatamente
-                                        if (pid > 0) setInvolErro("");
-
-                                        setTimeout(() => validarInvolSeNecessario(), 0);
+                                        // some na hora (sem revalidar cedo demais)
+                                        setInvolErro("");
                                     }}
+
 
 
                                 />
