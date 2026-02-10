@@ -71,6 +71,9 @@ export type DepositoNomeArmario = "ARMARIO SANDRO" | "ARMARIO ILDO";
 export type DepositoNomeRoupa = DepositoNomeArmario | "FUNERARIA";
 export type DepositoNomeInvol = DepositoNomeArmario;
 
+// ✅ Véu sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
+export type DepositoNomeVeu = DepositoNomeArmario | "FUNERARIA";
+
 // ✅ Cordão sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
 export type DepositoNomeCordao = DepositoNomeArmario | "FUNERARIA";
 
@@ -148,14 +151,23 @@ export type Registro = {
     invol_item?: string;
 
     // =========================
+    // ✅ META VÉU (estoque)
+    // =========================
+    veu?: string; // "Sim" | "Não"
+    veu_item?: string; // nome exibido no wizard (ex: "VEU SIMPLES - RENASCER")
+    veu_deposito_nome?: DepositoNomeVeu | string;
+    veu_produto_id?: number;
+    veu_codigo_barras?: string;
+
+    // =========================
     // ✅ META CORDAO SAO FRANCISCO (estoque)
     // =========================
+    cordao?: string; // "Sim" | "Não"
+    cordao_item?: string; // nome exibido no wizard (ex: "CORDAO SAO FRANCISCO")
     cordao_deposito_nome?: DepositoNomeCordao | string;
     cordao_produto_id?: number;
     cordao_codigo_barras?: string;
 
-    // opcional: se você quiser guardar também o texto/nome do cordão no registro
-    cordao?: string;
 
     [k: string]: any;
 };

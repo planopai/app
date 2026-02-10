@@ -11,18 +11,19 @@ export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamen
  * Com isso, os índices a partir de "arrumacao" foram deslocados.
  */
 export const wizardStepIndexes = [
-    // Atendimento: dados iniciais + observação do atendimento
-    [0, 1, 2, 3, 19],
+    // Atendimento
+    [0, 1, 2, 3, 23],
 
-    // Itens: urna/roupa + assistencia/tanato/ornamentacao + invol + invol_item + arrumacao + obs itens
-    [4, 5, 6, 7, 8, 9, 10, 11, 12, 20],
+    // Itens: urna, roupa, veu, veu_item, cordao, cordao_item, assistencia, tanato, ornamentacao, tipo, invol, invol_item, arrumacao, obs itens
+    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24],
 
-    // Velório: (mantido no seu padrão) local sepultamento + local velorio + data inicio + obs 01
-    [13, 14, 15, 21],
+    // Velório
+    [17, 18, 19, 25],
 
-    // Sepultamento: data fim + horas + obs 02
-    [16, 17, 18, 22],
+    // Sepultamento
+    [20, 21, 22, 26],
 ];
+
 
 export const steps = [
     { label: "Nome do Falecido(a)", id: "falecido", type: "input", placeholder: "Digite o nome" },
@@ -56,7 +57,22 @@ export const steps = [
      */
     { label: "Roupa", id: "roupa", type: "async_roupa", placeholder: 'Selecione no estoque ou use "ROUPA PRÓPRIA"...' },
 
+    /**
+     * ✅ VÉU: primeiro pergunta Sim/Não.
+     * Se Sim, aparece o popup (async_veu) para escolher do estoque.
+     */
+    { label: "Véu", id: "veu", type: "select", options: ["", "Sim", "Não"] },
+    { label: "Véu (estoque)", id: "veu_item", type: "async_veu", placeholder: "Selecione o véu no estoque..." },
+
+    /**
+     * ✅ CORDÃO: primeiro pergunta Sim/Não.
+     * Se Sim, aparece o popup (async_cordao) para escolher do estoque.
+     */
+    { label: "Cordão São Francisco", id: "cordao", type: "select", options: ["", "Sim", "Não"] },
+    { label: "Cordão (estoque)", id: "cordao_item", type: "async_cordao", placeholder: "Selecione o cordão no estoque..." },
+
     { label: "Assistência (Materiais)", id: "assistencia", type: "select", options: ["", "Sim", "Não"] },
+
     { label: "Tanatopraxia", id: "tanato", type: "select", options: ["", "Sim", "Não"] },
     { label: "Ornamentação", id: "ornamentacao", type: "select", options: ["", "Sim", "Não"] },
     { label: "Tipo de Ornamentação", id: "ornamentacao_tipo", type: "select", options: ["", "Natural", "Artificial"] },

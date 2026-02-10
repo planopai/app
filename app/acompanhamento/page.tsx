@@ -984,7 +984,9 @@ export default function AcompanhamentoPage() {
       const isAsyncField =
         s?.type === "async_urna" ||
         s?.type === "async_roupa" ||
-        s?.type === "async_invol";
+        s?.type === "async_invol" ||
+        s?.type === "async_veu" ||
+        s?.type === "async_cordao";
 
       let v = "";
 
@@ -1094,6 +1096,49 @@ export default function AcompanhamentoPage() {
       next.invol_codigo_barras = String(next?.invol_codigo_barras ?? "").trim();
       next.invol_produto_id = involPid > 0 ? involPid : 0;
     }
+
+    // ✅ VÉU META: só vale quando veu === "Sim"
+    const veuFlag = String(next?.veu ?? "").trim();
+    if (!isSim(veuFlag)) {
+      next.veu_produto_id = 0;
+      next.veu_codigo_barras = "";
+      next.veu_deposito_nome = "";
+      next.veu_item = "";
+    } else {
+      const veuPid = Number(next?.veu_produto_id ?? 0) || 0;
+
+      const depRaw = String(next?.veu_deposito_nome ?? "").trim().toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
+          ? depRaw
+          : "ARMARIO SANDRO";
+
+      next.veu_deposito_nome = depOk;
+      next.veu_codigo_barras = String(next?.veu_codigo_barras ?? "").trim();
+      next.veu_produto_id = veuPid > 0 ? veuPid : 0;
+    }
+
+    // ✅ CORDÃO META: só vale quando cordao === "Sim"
+    const cordaoFlag = String(next?.cordao ?? "").trim();
+    if (!isSim(cordaoFlag)) {
+      next.cordao_produto_id = 0;
+      next.cordao_codigo_barras = "";
+      next.cordao_deposito_nome = "";
+      next.cordao_item = "";
+    } else {
+      const cordaoPid = Number(next?.cordao_produto_id ?? 0) || 0;
+
+      const depRaw = String(next?.cordao_deposito_nome ?? "").trim().toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
+          ? depRaw
+          : "ARMARIO SANDRO";
+
+      next.cordao_deposito_nome = depOk;
+      next.cordao_codigo_barras = String(next?.cordao_codigo_barras ?? "").trim();
+      next.cordao_produto_id = cordaoPid > 0 ? cordaoPid : 0;
+    }
+
 
     // ✅ preservar INSUMOS dentro do arrumacao_json (merge booleans + insumos)
     try {

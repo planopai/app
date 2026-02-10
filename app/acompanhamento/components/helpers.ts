@@ -226,6 +226,20 @@ function normalizeInvolDepositoOrNull(v: any): "ARMARIO SANDRO" | "ARMARIO ILDO"
 }
 
 /**
+ * ✅ Véu sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
+ */
+function normalizeVeuDepositoOrNull(
+    v: any
+): "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA" | null {
+    const s = normUpper(v);
+    if (s === "ARMARIO SANDRO") return "ARMARIO SANDRO";
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return null;
+}
+
+
+/**
  * ✅ Cordão sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
  */
 function normalizeCordaoDepositoOrNull(v: any): "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA" | null {
@@ -347,20 +361,35 @@ export async function enviarRegistroPHP(data: any) {
     if (involSim && !involDep) {
         throw new Error("Invol: selecione o local (ARMARIO SANDRO ou ARMARIO ILDO).");
     }
+    // ---------- VÉU META ----------
+    const veuTxt = String(data?.veu ?? "").trim();
+    const veuSim = isSim(veuTxt);
+
+    const veuPid = veuSim ? asPositiveIntOrNull(data?.veu_produto_id) : null;
+    const veuDep = veuSim ? normalizeVeuDepositoOrNull(data?.veu_deposito_nome) : null;
+    const veuCb = veuSim ? (String(data?.veu_codigo_barras ?? "").trim() || null) : null;
+
+    if (veuSim && !veuPid) {
+        throw new Error("Selecione um VÉU da lista (produto do estoque).");
+    }
+    if (veuSim && !veuDep) {
+        throw new Error("Véu: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
+    }
+
 
     // ---------- CORDAO META (opcional) ----------
-    // Pode vir do RoupaPickerModal:
-    // - cordao_produto_id
-    // - cordao_deposito_nome
-    // - cordao_codigo_barras
-    // - cordao (texto/nome) opcional
-    const cordaoPid = asPositiveIntOrNull(data?.cordao_produto_id);
-    const cordaoDep = cordaoPid ? normalizeCordaoDepositoOrNull(data?.cordao_deposito_nome) : null;
-    const cordaoCb = cordaoPid ? (String(data?.cordao_codigo_barras ?? "").trim() || null) : null;
-    const cordaoNome = String(data?.cordao ?? "").trim();
+    // ---------- CORDÃO META ----------
+    const cordaoTxt = String(data?.cordao ?? "").trim();
+    const cordaoSim = isSim(cordaoTxt);
 
-    // Se selecionou cordão (pid>0), depósito deve ser válido
-    if (cordaoPid && !cordaoDep) {
+    const cordaoPid = cordaoSim ? asPositiveIntOrNull(data?.cordao_produto_id) : null;
+    const cordaoDep = cordaoSim ? normalizeCordaoDepositoOrNull(data?.cordao_deposito_nome) : null;
+    const cordaoCb = cordaoSim ? (String(data?.cordao_codigo_barras ?? "").trim() || null) : null;
+
+    if (cordaoSim && !cordaoPid) {
+        throw new Error("Selecione um CORDÃO da lista (produto do estoque).");
+    }
+    if (cordaoSim && !cordaoDep) {
         throw new Error("Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
     }
 
@@ -391,12 +420,20 @@ export async function enviarRegistroPHP(data: any) {
         invol_produto_id: involPid,
         invol_codigo_barras: involCb,
 
-        // cordão (opcional)
+        // véu
+        veu: veuSim ? "Sim" : "Não",
+        veu_item: veuSim ? String(data?.veu_item ?? "").trim() : "",
+        veu_deposito_nome: veuDep,
+        veu_produto_id: veuPid,
+        veu_codigo_barras: veuCb,
+
+        // cordão
+        cordao: cordaoSim ? "Sim" : "Não",
+        cordao_item: cordaoSim ? String(data?.cordao_item ?? "").trim() : "",
         cordao_deposito_nome: cordaoDep,
         cordao_produto_id: cordaoPid,
         cordao_codigo_barras: cordaoCb,
-        // opcional: mantém texto do cordão se você quiser gravar
-        cordao: cordaoNome || (cordaoPid ? "CORDAO SAO FRANCISCO" : ""),
+
     };
 
     // ✅ agora aponta DIRETO pro PHP no domínio da API

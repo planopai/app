@@ -18,11 +18,14 @@ type Step = {
     | "custom"
     | "async_urna"
     | "async_roupa"
-    | "async_invol";
+    | "async_invol"
+    | "async_veu"
+    | "async_cordao";
     options?: string[];
     placeholder?: string;
     datalist?: string[];
 };
+
 
 type EstoqueRow = {
     id?: number;
@@ -68,6 +71,10 @@ type DepUrna = "MEMORIAL" | "FUNERARIA";
 type DepRoupa = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
 type DepInvol = "ARMARIO SANDRO" | "ARMARIO ILDO";
 
+// ✅ VÉU e CORDÃO saem só destes 3
+type DepVeu = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
+type DepCordao = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
+
 function normalizeDepUrna(v: any): DepUrna {
     const s = normUpper(v);
     return s === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
@@ -84,6 +91,21 @@ function normalizeDepInvol(v: any): DepInvol {
     const s = normUpper(v);
     return s === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
 }
+
+function normalizeDepVeu(v: any): DepVeu {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return "ARMARIO SANDRO";
+}
+
+function normalizeDepCordao(v: any): DepCordao {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return "ARMARIO SANDRO";
+}
+
 
 /* =========================================================================
    Combobox genérico (estoque)
@@ -508,21 +530,39 @@ export default function Wizard({
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
     const [involVal, setInvolVal] = useState<string>("");
+    const [veuVal, setVeuVal] = useState<string>("");
+    const [cordaoVal, setCordaoVal] = useState<string>("");
+
 
     const [assistenciaErro, setAssistenciaErro] = useState<string>("");
     const [urnaErro, setUrnaErro] = useState<string>("");
     const [roupaErro, setRoupaErro] = useState<string>("");
     const [involErro, setInvolErro] = useState<string>("");
+    const [veuErro, setVeuErro] = useState<string>("");
+    const [cordaoErro, setCordaoErro] = useState<string>("");
+
 
     // depósitos locais (controlados)
     const [depUrna, setDepUrna] = useState<DepUrna>("MEMORIAL");
     const [depRoupa, setDepRoupa] = useState<DepRoupa>("ARMARIO SANDRO");
     const [depInvol, setDepInvol] = useState<DepInvol>("ARMARIO SANDRO");
+    const [depVeu, setDepVeu] = useState<DepVeu>("ARMARIO SANDRO");
+    const [depCordao, setDepCordao] = useState<DepCordao>("ARMARIO SANDRO");
+
 
     useEffect(() => {
         setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
         setInvolVal(String((wizardData as any).invol ?? ""));
-    }, [open, (wizardData as any).ornamentacao, (wizardData as any).invol]);
+        setVeuVal(String((wizardData as any).veu ?? ""));
+        setCordaoVal(String((wizardData as any).cordao ?? ""));
+    }, [
+        open,
+        (wizardData as any).ornamentacao,
+        (wizardData as any).invol,
+        (wizardData as any).veu,
+        (wizardData as any).cordao,
+    ]);
+
 
     useEffect(() => {
         if (!open) return;
@@ -530,12 +570,18 @@ export default function Wizard({
         setUrnaErro("");
         setRoupaErro("");
         setInvolErro("");
+        setVeuErro("");
+        setCordaoErro("");
         setAssistenciaErro("");
 
         setDepUrna(normalizeDepUrna((wizardData as any).urna_deposito_nome ?? "MEMORIAL"));
         setDepRoupa(normalizeDepRoupa((wizardData as any).roupa_deposito_nome ?? "ARMARIO SANDRO"));
         setDepInvol(normalizeDepInvol((wizardData as any).invol_deposito_nome ?? "ARMARIO SANDRO"));
+
+        setDepVeu(normalizeDepVeu((wizardData as any).veu_deposito_nome ?? "ARMARIO SANDRO"));
+        setDepCordao(normalizeDepCordao((wizardData as any).cordao_deposito_nome ?? "ARMARIO SANDRO"));
     }, [open]);
+
 
     // ✅ auto-limpa erro quando produto_id chega
     useEffect(() => {
@@ -547,6 +593,17 @@ export default function Wizard({
         const involPid = Number((wizardData as any).invol_produto_id ?? 0) || 0;
         if (involPid > 0) setInvolErro("");
     }, [(wizardData as any).invol_produto_id]);
+
+    useEffect(() => {
+        const pid = Number((wizardData as any).veu_produto_id ?? 0) || 0;
+        if (pid > 0) setVeuErro("");
+    }, [(wizardData as any).veu_produto_id]);
+
+    useEffect(() => {
+        const pid = Number((wizardData as any).cordao_produto_id ?? 0) || 0;
+        if (pid > 0) setCordaoErro("");
+    }, [(wizardData as any).cordao_produto_id]);
+
 
 
     // ✅ limpa erro URNA quando a seleção (produto_id) chega no wizardData
@@ -584,6 +641,47 @@ export default function Wizard({
         (wizardData as any).invol_deposito_nome,
     ]);
 
+    useEffect(() => {
+        if (!open) return;
+
+        const veu = String((wizardData as any).veu ?? veuVal ?? "");
+        if (veu !== "Sim") {
+            setVeuErro("");
+            return;
+        }
+
+        const pid = Number((wizardData as any).veu_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).veu_deposito_nome ?? "").trim();
+        if (pid > 0 && dep) setVeuErro("");
+    }, [
+        open,
+        veuVal,
+        (wizardData as any).veu,
+        (wizardData as any).veu_produto_id,
+        (wizardData as any).veu_deposito_nome,
+    ]);
+
+    useEffect(() => {
+        if (!open) return;
+
+        const cordao = String((wizardData as any).cordao ?? cordaoVal ?? "");
+        if (cordao !== "Sim") {
+            setCordaoErro("");
+            return;
+        }
+
+        const pid = Number((wizardData as any).cordao_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).cordao_deposito_nome ?? "").trim();
+        if (pid > 0 && dep) setCordaoErro("");
+    }, [
+        open,
+        cordaoVal,
+        (wizardData as any).cordao,
+        (wizardData as any).cordao_produto_id,
+        (wizardData as any).cordao_deposito_nome,
+    ]);
+
+
 
     const assistenciaGroupIndex = useMemo(() => {
         return wizardStepIndexes.findIndex((arr) => arr.some((idx) => steps[idx]?.id === "assistencia"));
@@ -605,6 +703,11 @@ export default function Wizard({
     const roupaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "roupa"), [grupoSteps]);
     const involNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol"), [grupoSteps]);
     const involItemNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol_item"), [grupoSteps]);
+    const veuNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu"), [grupoSteps]);
+    const veuItemNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu_item"), [grupoSteps]);
+    const cordaoNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
+    const cordaoItemNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao_item"), [grupoSteps]);
+
 
     const isRequired = (id: string) => obrigatorios.includes(id);
 
@@ -696,6 +799,57 @@ export default function Wizard({
         return true;
     };
 
+    const validarVeuSeNecessario = () => {
+        if (!veuNoGrupoAtual && !veuItemNoGrupoAtual) return true;
+
+        const veu = String((wizardData as any).veu ?? veuVal ?? "");
+        if (veu !== "Sim") {
+            setVeuErro("");
+            return true;
+        }
+
+        const pid = Number((wizardData as any).veu_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).veu_deposito_nome ?? "").trim();
+
+        if (pid <= 0) {
+            setVeuErro("Selecione um VÉU da lista (produto do estoque).");
+            return false;
+        }
+        if (!dep) {
+            setVeuErro("Selecione o local do VÉU (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
+            return false;
+        }
+
+        setVeuErro("");
+        return true;
+    };
+
+    const validarCordaoSeNecessario = () => {
+        if (!cordaoNoGrupoAtual && !cordaoItemNoGrupoAtual) return true;
+
+        const cordao = String((wizardData as any).cordao ?? cordaoVal ?? "");
+        if (cordao !== "Sim") {
+            setCordaoErro("");
+            return true;
+        }
+
+        const pid = Number((wizardData as any).cordao_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).cordao_deposito_nome ?? "").trim();
+
+        if (pid <= 0) {
+            setCordaoErro("Selecione um CORDÃO da lista (produto do estoque).");
+            return false;
+        }
+        if (!dep) {
+            setCordaoErro("Selecione o local do CORDÃO (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
+            return false;
+        }
+
+        setCordaoErro("");
+        return true;
+    };
+
+
     // GPS p/ Local do Velório
     const [gpsLoading, setGpsLoading] = useState(false);
     const [gpsMsg, setGpsMsg] = useState<string | null>(null);
@@ -748,6 +902,8 @@ export default function Wizard({
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
         if (!validarUrnaSeNecessario()) return;
         if (!validarRoupaSeNecessario()) return;
+        if (!validarVeuSeNecessario()) return;
+        if (!validarCordaoSeNecessario()) return;
         if (!validarInvolSeNecessario()) return;
 
         const ok = salvarGrupoWizard();
@@ -760,6 +916,8 @@ export default function Wizard({
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
         if (!validarUrnaSeNecessario()) return;
         if (!validarRoupaSeNecessario()) return;
+        if (!validarVeuSeNecessario()) return;
+        if (!validarCordaoSeNecessario()) return;
         if (!validarInvolSeNecessario()) return;
 
         try {
@@ -1002,6 +1160,219 @@ export default function Wizard({
                             </div>
                         );
                     }
+
+                    /* ===========================
+   VÉU (select controlado)
+   =========================== */
+                    if (step.id === "veu" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuErro ? "border-red-500" : ""}`}
+                                    value={veuVal}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setVeuVal(v);
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            veu: v,
+                                            ...(v !== "Sim"
+                                                ? { veu_deposito_nome: "", veu_produto_id: 0, veu_codigo_barras: "", veu_item: "" }
+                                                : {}),
+                                        }));
+
+                                        if (v !== "Sim") setVeuErro("");
+                                    }}
+                                    disabled={wizardSubmitting}
+                                >
+                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {veuErro && <div className="mt-1 text-xs text-red-600">{veuErro}</div>}
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+   VÉU ITEM (async) - só se veu=Sim
+   =========================== */
+                    if (step.type === "async_veu" && step.id === "veu_item") {
+                        if (veuVal !== "Sim") return null;
+
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <EstoqueCombobox
+                                    inputId="wizard-veu_item"
+                                    label="VÉU (estoque)"
+                                    required={true}
+                                    placeholder={step.placeholder || "Selecione no estoque…"}
+                                    initialValue={String((wizardData as any).veu_item ?? "")}
+                                    disabled={wizardSubmitting}
+                                    depositoLabel="Local do VÉU"
+                                    depositoOptions={[
+                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                        { value: "FUNERARIA", label: "FUNERARIA" },
+                                    ]}
+                                    depositoValue={depVeu}
+                                    onChangeDeposito={(v) => {
+                                        const next = normalizeDepVeu(v);
+                                        setDepVeu(next);
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            veu_item: "",
+                                            veu_deposito_nome: next,
+                                            veu_produto_id: 0,
+                                            veu_codigo_barras: "",
+                                        }));
+                                        validarVeuSeNecessario();
+                                    }}
+                                    action="veus_buscar"
+                                    errorText={veuErro}
+                                    onBlurValidate={validarVeuSeNecessario}
+                                    onTypingInvalidate={(typed) => {
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            veu_item: typed,
+                                            veu_deposito_nome: depVeu,
+                                            veu_produto_id: 0,
+                                            veu_codigo_barras: "",
+                                        }));
+                                    }}
+                                    onSelectRow={(it) => {
+                                        const pid = getPidFromRow(it);
+                                        const cb = String((it as any).codigo_barras || "").trim();
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            veu_item: String(it.nome || "").trim(),
+                                            veu_deposito_nome: depVeu,
+                                            veu_produto_id: pid,
+                                            veu_codigo_barras: cb,
+                                        }));
+
+                                        setVeuErro("");
+                                    }}
+                                />
+                            </div>
+                        );
+                    }
+                    /* ===========================
+   CORDÃO (select controlado)
+   =========================== */
+                    if (step.id === "cordao" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+
+                                <select
+                                    id={`wizard-${step.id}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoErro ? "border-red-500" : ""}`}
+                                    value={cordaoVal}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setCordaoVal(v);
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            cordao: v,
+                                            ...(v !== "Sim"
+                                                ? { cordao_deposito_nome: "", cordao_produto_id: 0, cordao_codigo_barras: "", cordao_item: "" }
+                                                : {}),
+                                        }));
+
+                                        if (v !== "Sim") setCordaoErro("");
+                                    }}
+                                    disabled={wizardSubmitting}
+                                >
+                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {cordaoErro && <div className="mt-1 text-xs text-red-600">{cordaoErro}</div>}
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+   CORDÃO ITEM (async) - só se cordao=Sim
+   =========================== */
+                    if (step.type === "async_cordao" && step.id === "cordao_item") {
+                        if (cordaoVal !== "Sim") return null;
+
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <EstoqueCombobox
+                                    inputId="wizard-cordao_item"
+                                    label="CORDÃO (estoque)"
+                                    required={true}
+                                    placeholder={step.placeholder || "Selecione no estoque…"}
+                                    initialValue={String((wizardData as any).cordao_item ?? "")}
+                                    disabled={wizardSubmitting}
+                                    depositoLabel="Local do CORDÃO"
+                                    depositoOptions={[
+                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                        { value: "FUNERARIA", label: "FUNERARIA" },
+                                    ]}
+                                    depositoValue={depCordao}
+                                    onChangeDeposito={(v) => {
+                                        const next = normalizeDepCordao(v);
+                                        setDepCordao(next);
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            cordao_item: "",
+                                            cordao_deposito_nome: next,
+                                            cordao_produto_id: 0,
+                                            cordao_codigo_barras: "",
+                                        }));
+                                        validarCordaoSeNecessario();
+                                    }}
+                                    action="cordoes_buscar"
+                                    errorText={cordaoErro}
+                                    onBlurValidate={validarCordaoSeNecessario}
+                                    onTypingInvalidate={(typed) => {
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            cordao_item: typed,
+                                            cordao_deposito_nome: depCordao,
+                                            cordao_produto_id: 0,
+                                            cordao_codigo_barras: "",
+                                        }));
+                                    }}
+                                    onSelectRow={(it) => {
+                                        const pid = getPidFromRow(it);
+                                        const cb = String((it as any).codigo_barras || "").trim();
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            cordao_item: String(it.nome || "").trim(),
+                                            cordao_deposito_nome: depCordao,
+                                            cordao_produto_id: pid,
+                                            cordao_codigo_barras: cb,
+                                        }));
+
+                                        setCordaoErro("");
+                                    }}
+                                />
+                            </div>
+                        );
+                    }
+
+
+
+
 
                     /* ===========================
                        local_velorio com GPS
