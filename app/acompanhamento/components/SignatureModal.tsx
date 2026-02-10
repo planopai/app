@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
-import { API, materiaisConfig } from "./constants";
+import { API } from "./constants";
 import { jsonWith401 } from "./helpers";
 
 type Step = 0 | 1 | 2; // 0: nome, 1: cpf, 2: assinatura
@@ -393,40 +393,61 @@ export default function SignatureModal({
 
     function extrairMateriaisDoRegistro(r?: Registro): MatItem[] {
         if (!r) return [];
+
+        // helper: interpreta "checked"/"ok"
+        const isChecked = (v: any) => {
+            if (v === true || v === 1 || v === "1") return true;
+            const s = String(v ?? "").trim().toLowerCase();
+            return ["true", "1", "sim", "s", "yes", "on"].includes(s);
+        };
+
+        // 1) Se já vier como objeto (ex.: r.materiais)
+        const srcObj: any = (r as any).materiais && typeof (r as any).materiais === "object"
+            ? (r as any).materiais
+            : null;
+
+        // 2) Se vier como string JSON (ex.: r.materiais_json)
+        let srcJson: any = null;
+        const rawJson = (r as any).materiais_json;
+        if (!srcObj && rawJson) {
+            try {
+                srcJson = JSON.parse(String(rawJson));
+            } catch {
+                srcJson = null;
+            }
+        }
+
+        const obj = srcObj || srcJson;
+        if (!obj || typeof obj !== "object") return [];
+
+        // Esperado (pelo seu código antigo):
+        // obj = { chaveX: { rotulo, qtd, checked }, chaveY: { ... } }
         const out: MatItem[] = [];
 
-        if (r.materiais) {
-            materiaisConfig.forEach((m) => {
-                const it = (r.materiais as any)[m.key];
-                const qtd = Number(it?.qtd ?? 0);
-                const checked = !!it?.checked;
-                if (checked && qtd > 0) out.push({ rotulo: (it?.rotulo as string) || m.label, qtd });
-            });
-            if (out.length) return out;
-        }
+        Object.entries(obj).forEach(([key, val]) => {
+            const it: any = val || {};
+            const qtd = Number(it.qtd ?? it.quantidade ?? 0) || 0;
 
-        if (r.materiais_json) {
-            try {
-                const obj = JSON.parse(String(r.materiais_json));
-                materiaisConfig.forEach((m) => {
-                    const it = obj?.[m.key];
-                    const qtd = Number(it?.qtd ?? 0);
-                    const checked = String(it?.checked ?? "").toLowerCase();
-                    const ok = qtd > 0 && ["true", "1", "sim"].includes(checked);
-                    if (ok) out.push({ rotulo: (it?.rotulo as string) || m.label, qtd });
-                });
-            } catch { /* no-op */ }
-            if (out.length) return out;
-        }
+            // alguns backends usam "checked", outros "ok", outros "selecionado"
+            const checked =
+                isChecked(it.checked) ||
+                isChecked(it.ok) ||
+                isChecked(it.selecionado) ||
+                isChecked(it.selected);
 
-        materiaisConfig.forEach((m) => {
-            const col = (r as any)[`materiais_${m.key}_qtd`];
-            const qtd = Number(col ?? 0);
-            if (qtd > 0) out.push({ rotulo: m.label, qtd });
+            if (!checked || qtd <= 0) return;
+
+            const rotulo =
+                String(it.rotulo ?? it.label ?? it.nome ?? key).trim() || String(key);
+
+            out.push({ rotulo, qtd });
         });
 
+        // ordena pra ficar bonito no termo
+        out.sort((a, b) => a.rotulo.localeCompare(b.rotulo));
         return out;
     }
+
 
     async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png") {
         if (!nome.trim() || cpfDigits.length !== 11 || !assinaturaB64) {
@@ -599,7 +620,7 @@ export default function SignatureModal({
                         type="text"
                         value={nome}
                         onChange={(e) => setNome(e.target.value)}
-                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        className="w-full rounded-md border px-3 py-2 text-base"
                         placeholder="Digite o nome do responsável/requerente"
                     />
                     <div className="mt-4 flex justify-end gap-2">
@@ -625,7 +646,7 @@ export default function SignatureModal({
                         inputMode="numeric"
                         value={cpf}
                         onChange={(e) => setCpf(maskCpf(e.target.value))}
-                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        className="w-full rounded-md border px-3 py-2 text-base"
                         placeholder="000.000.000-00"
                         maxLength={14}
                     />

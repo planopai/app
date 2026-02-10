@@ -266,7 +266,8 @@ function EstoqueCombobox({
                     <label className="mb-1 block text-xs font-medium text-slate-700">{depositoLabel}</label>
 
                     <select
-                        className="w-full rounded-md border px-2 py-2 text-sm disabled:opacity-60"
+                        className="w-full rounded-md border px-2 py-2 text-base disabled:opacity-60"
+
                         value={depositoValue}
                         onChange={(e) => {
                             onChangeDeposito(e.target.value);
@@ -306,7 +307,8 @@ function EstoqueCombobox({
                             onClick={() => {
                                 if (!disabled) setPickerOpen(true);
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
+                            className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
+
                             disabled={disabled}
                             autoComplete="off"
                             title={label}
@@ -314,7 +316,8 @@ function EstoqueCombobox({
 
                         <button
                             type="button"
-                            className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-muted disabled:opacity-60"
+
                             disabled={disabled}
                             onClick={() => setPickerOpen(true)}
                         >
@@ -360,7 +363,7 @@ function EstoqueCombobox({
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        className="rounded-md border px-3 py-2 text-base hover:bg-muted"
                         onClick={() => setPickerOpen(false)}
                     >
                         Fechar
@@ -381,13 +384,15 @@ function EstoqueCombobox({
                         }}
 
                         placeholder="(Opcional) filtrar por nome ou código…"
-                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        className="w-full rounded-md border px-3 py-2 text-base"
+
                         autoComplete="off"
                     />
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        className="rounded-md border px-3 py-2 text-base hover:bg-muted"
+
                         onClick={() => setQ("")}
                         title="Limpar filtro"
                     >
@@ -397,11 +402,11 @@ function EstoqueCombobox({
 
                 <div className="mt-3 rounded-xl border bg-white">
                     {loading ? (
-                        <div className="p-3 text-sm text-slate-600">Carregando itens do depósito…</div>
+                        <div className="p-3 text-base text-slate-600">Carregando itens do depósito…</div>
                     ) : err ? (
                         <div className="p-3 text-sm text-red-600">{err}</div>
                     ) : rows.length === 0 ? (
-                        <div className="p-3 text-sm text-slate-600">
+                        <div className="p-3 text-base text-slate-600">
                             Nenhum item encontrado no estoque ({depositoValue}).
                         </div>
                     ) : (
@@ -412,7 +417,7 @@ function EstoqueCombobox({
                                     <li key={pidKey || it.nome}>
                                         <button
                                             type="button"
-                                            className="w-full px-3 py-3 text-left text-sm hover:bg-slate-50"
+                                            className="w-full px-3 py-3 text-left text-base hover:bg-slate-50"
                                             onClick={() => applySelection(it)}
                                         >
                                             <div className="flex items-center justify-between gap-2">
@@ -1018,7 +1023,8 @@ export default function Wizard({
                                         list={listId}
                                         placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
                                         defaultValue={currentText}
-                                        className="w-full flex-1 rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                        className="w-full flex-1 rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                         disabled={wizardSubmitting}
                                     />
 
@@ -1101,8 +1107,8 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
-                                        }`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
+
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1156,7 +1162,8 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     value={tanatoVal}
                                     onChange={(e) => setTanatoVal(e.target.value)}
                                     disabled={wizardSubmitting}
@@ -1178,29 +1185,33 @@ export default function Wizard({
                         return (
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
+
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     value={ornamentacaoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
                                         setOrnamentacaoVal(v);
-                                        if (v !== "Sim") {
-                                            const el = document.getElementById("wizard-ornamentacao_tipo") as HTMLSelectElement | null;
-                                            if (el) el.value = "";
-                                        }
+
+                                        // ✅ grava no wizardData (para não resetar quando invol mudar)
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            ornamentacao: v,
+                                            ...(v !== "Sim" ? { ornamentacao_tipo: "" } : {}),
+                                        }));
                                     }}
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
                             </div>
                         );
                     }
+
 
                     /* ===========================
                        INVOL (select controlado)
@@ -1214,7 +1225,8 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     value={involVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1315,16 +1327,20 @@ export default function Wizard({
                         return (
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
+
                                 <select
                                     id="wizard-ornamentacao_tipo"
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-                                    defaultValue={String((wizardData as any).ornamentacao_tipo ?? "")}
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
+                                    value={String((wizardData as any).ornamentacao_tipo ?? "")}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setWizardData((prev: any) => ({ ...prev, ornamentacao_tipo: v }));
+                                    }}
                                     disabled={wizardSubmitting}
                                 >
                                     {(step.options || ["", "Natural", "Artificial"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
                                 </select>
                             </div>
@@ -1346,7 +1362,8 @@ export default function Wizard({
                                     type="text"
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -1361,7 +1378,8 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     rows={3}
                                     disabled={wizardSubmitting}
                                 />
@@ -1378,7 +1396,8 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     disabled={wizardSubmitting}
                                 >
@@ -1400,7 +1419,8 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="date"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -1415,7 +1435,8 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="time"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -1432,7 +1453,8 @@ export default function Wizard({
                                     list={listId}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+
                                     disabled={wizardSubmitting}
                                 />
                                 <datalist id={listId}>
