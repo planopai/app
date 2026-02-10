@@ -171,6 +171,8 @@ function EstoqueCombobox({
         // requestAnimationFrame(() => searchRef.current?.focus());
     }, [pickerOpen]);
 
+    
+
     // ✅ busca async (dentro do modal)
     // Agora busca mesmo com q vazio (lista do depósito)
     useEffect(() => {
@@ -219,6 +221,8 @@ function EstoqueCombobox({
             ac.abort();
         };
     }, [q, pickerOpen, action, depositoValue]);
+
+    
 
     const applySelection = (it: EstoqueRow) => {
         const pid = getPidFromRow(it);
@@ -528,6 +532,42 @@ export default function Wizard({
         setDepRoupa(normalizeDepRoupa((wizardData as any).roupa_deposito_nome ?? "ARMARIO SANDRO"));
         setDepInvol(normalizeDepInvol((wizardData as any).invol_deposito_nome ?? "ARMARIO SANDRO"));
     }, [open]);
+
+    // ✅ limpa erro URNA quando a seleção (produto_id) chega no wizardData
+    useEffect(() => {
+        if (!open) return;
+
+        const urnaTxt = String((wizardData as any).urna ?? "").trim();
+        const pid = Number((wizardData as any).urna_produto_id ?? 0) || 0;
+
+        // se já tem produto selecionado (ou o campo está vazio), não faz sentido manter erro
+        if (pid > 0 || urnaTxt === "") setUrnaErro("");
+    }, [open, (wizardData as any).urna, (wizardData as any).urna_produto_id]);
+
+    // ✅ limpa erro INVOL quando invol != Sim, ou quando produto/depósito chegam
+    useEffect(() => {
+        if (!open) return;
+
+        const invol = String((wizardData as any).invol ?? involVal ?? "");
+
+        if (invol !== "Sim") {
+            // se não é Sim, não deve exigir INVOL do estoque
+            setInvolErro("");
+            return;
+        }
+
+        const pid = Number((wizardData as any).invol_produto_id ?? 0) || 0;
+        const dep = String((wizardData as any).invol_deposito_nome ?? "").trim();
+
+        if (pid > 0 && dep) setInvolErro("");
+    }, [
+        open,
+        involVal,
+        (wizardData as any).invol,
+        (wizardData as any).invol_produto_id,
+        (wizardData as any).invol_deposito_nome,
+    ]);
+
 
     const assistenciaGroupIndex = useMemo(() => {
         return wizardStepIndexes.findIndex((arr) => arr.some((idx) => steps[idx]?.id === "assistencia"));
