@@ -993,16 +993,9 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
     const cordaoRaw = decodeHtmlEntitiesDeep(String((r as any)?.cordao ?? "")).trim().toLowerCase();
     const cordaoYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(cordaoRaw) ? "SIM" : "NÃO";
 
-    const veuRaw = decodeHtmlEntitiesDeep(String((r as any)?.veu ?? "")).trim();
-    const veuLow = veuRaw.toLowerCase();
-    const veuTxt =
-        !veuRaw
-            ? "NÃO"
-            : ["nao", "não", "n", "0", "false"].includes(veuLow)
-                ? "NÃO"
-                : ["sim", "s", "1", "true"].includes(veuLow)
-                    ? "SIM"
-                    : veuRaw; // nome do véu
+    const veuTxt = getVeuText(r).toUpperCase();
+
+
 
 
     const localVelRaw = v("local_velorio") || "A DEFINIR";
@@ -1099,6 +1092,62 @@ function involSimNao(value: any): string {
     if (["1", "true", "t", "sim", "s", "yes", "y"].includes(s)) return "Sim";
     return "Não";
 }
+
+function getVeuText(r: Registro): string {
+    // 1) tenta achar um nome em campos alternativos
+    const pick = (...keys: string[]) => {
+        for (const k of keys) {
+            const val = decodeHtmlEntitiesDeep(String((r as any)?.[k] ?? "")).trim();
+            if (val) return val;
+        }
+        return "";
+    };
+
+    const nome =
+        pick("veu_nome", "nome_veu", "veuTipo", "veu_tipo", "tipo_veu", "veu_descricao", "descricao_veu") ||
+        "";
+
+    // 2) pega o campo principal "veu"
+    const rawAny = (r as any)?.veu;
+
+    // 2a) se veio objeto (ex: {nome:"Véu Branco", checked:true})
+    if (rawAny && typeof rawAny === "object" && !Array.isArray(rawAny)) {
+        const obj: any = rawAny;
+        const n =
+            decodeHtmlEntitiesDeep(String(obj?.nome ?? obj?.name ?? obj?.descricao ?? obj?.descrição ?? "")).trim();
+        if (n) return n;
+
+        // se objeto só tiver flag
+        const checked = decodeHtmlEntitiesDeep(String(obj?.checked ?? "")).trim().toLowerCase();
+        if (["1", "true", "t", "sim", "s", "yes", "y"].includes(checked)) return nome || "Sim";
+        return "Não";
+    }
+
+    // 2b) se veio string
+    const raw = decodeHtmlEntitiesDeep(String(rawAny ?? "")).trim();
+    const low = raw.toLowerCase();
+
+    // sem nada: não
+    if (!raw) return nome ? nome : "Não";
+
+    // se for "não"
+    if (["nao", "não", "n", "0", "false"].includes(low)) return "Não";
+
+    // se for "sim"
+    if (["sim", "s", "1", "true"].includes(low)) return nome ? nome : "Sim";
+
+    // 2c) se veio "Sim: Nome" / "Sim - Nome" / "Sim | Nome" etc
+    // pega tudo depois de separador, se existir
+    const m = raw.match(/^(sim)\s*[:\-|]\s*(.+)$/i);
+    if (m?.[2]) {
+        const after = m[2].trim();
+        return after ? after : (nome ? nome : "Sim");
+    }
+
+    // 2d) se veio já como nome direto
+    return raw;
+}
+
 
 /* ===== Helpers Linha do Tempo ===== */
 function parseRegistroDateTime(r: Registro) {
@@ -1619,15 +1668,9 @@ export default function QuadroAtendimentoPage() {
 
                                     <Field
                                         label="Véu"
-                                        value={(() => {
-                                            const raw = decodeHtmlEntitiesDeep(String((detail as any).veu ?? "")).trim();
-                                            if (!raw) return "Não";
-                                            const low = raw.toLowerCase();
-                                            if (["nao", "não", "n", "0", "false"].includes(low)) return "Não";
-                                            if (["sim", "s", "1", "true"].includes(low)) return "Sim";
-                                            return raw; // nome do véu
-                                        })()}
+                                        value={getVeuText(detail)}
                                     />
+
 
 
                                     <Field label="Invol" value={involSimNao(detail.invol)} />
