@@ -847,12 +847,13 @@ export default function Wizard({
                                             urna_codigo_barras: cb,
                                         }));
 
-                                        // ✅ some na hora (não espera re-render)
-                                        setUrnaErro("");
+                                        // ✅ limpa o erro imediatamente (não depende do state atualizar)
+                                        if (pid > 0) setUrnaErro("");
 
-                                        // (opcional) se quiser revalidar, faz depois do commit
+                                        // opcional: revalida “depois” (se você quiser manter a regra centralizada)
                                         setTimeout(() => validarUrnaSeNecessario(), 0);
                                     }}
+
 
                                     footerHint={
                                         <>
@@ -1288,12 +1289,12 @@ export default function Wizard({
                                             invol_codigo_barras: cb,
                                         }));
 
-                                        // ✅ some na hora
-                                        setInvolErro("");
+                                        // ✅ limpa erro imediatamente
+                                        if (pid > 0) setInvolErro("");
 
-                                        // (opcional)
                                         setTimeout(() => validarInvolSeNecessario(), 0);
                                     }}
+
 
                                 />
                             </div>
