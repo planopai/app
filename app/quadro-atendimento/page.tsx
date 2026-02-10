@@ -1104,8 +1104,17 @@ function getVeuText(r: Registro): string {
     };
 
     const nome =
-        pick("veu_nome", "nome_veu", "veuTipo", "veu_tipo", "tipo_veu", "veu_descricao", "descricao_veu") ||
-        "";
+        pick(
+            "veu_item",          // ✅ adiciona isso primeiro
+            "veu_nome",
+            "nome_veu",
+            "veuTipo",
+            "veu_tipo",
+            "tipo_veu",
+            "veu_descricao",
+            "descricao_veu"
+        ) || "";
+
 
     // 2) pega o campo principal "veu"
     const rawAny = (r as any)?.veu;
