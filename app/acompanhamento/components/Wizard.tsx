@@ -846,7 +846,14 @@ export default function Wizard({
                                             urna_produto_id: pid,
                                             urna_codigo_barras: cb,
                                         }));
+
+                                        // ✅ some na hora (não espera re-render)
+                                        setUrnaErro("");
+
+                                        // (opcional) se quiser revalidar, faz depois do commit
+                                        setTimeout(() => validarUrnaSeNecessario(), 0);
                                     }}
+
                                     footerHint={
                                         <>
                                             Obs: a baixa do estoque acontece automaticamente ao registrar <b>Ínicio da Ornamentação (fase05)</b>.
@@ -1272,6 +1279,7 @@ export default function Wizard({
                                     onSelectRow={(it) => {
                                         const pid = getPidFromRow(it);
                                         const cb = String((it as any).codigo_barras || "").trim();
+
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             invol_item: String(it.nome || "").trim(),
@@ -1279,7 +1287,14 @@ export default function Wizard({
                                             invol_produto_id: pid,
                                             invol_codigo_barras: cb,
                                         }));
+
+                                        // ✅ some na hora
+                                        setInvolErro("");
+
+                                        // (opcional)
+                                        setTimeout(() => validarInvolSeNecessario(), 0);
                                     }}
+
                                 />
                             </div>
                         );
