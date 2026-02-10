@@ -66,9 +66,9 @@ function normNoAccLower(v: any): string {
 }
 
 function isRoupaPropria(v: any): boolean {
-  const s = normNoAccLower(v);
-  return s === "roupa propria" || s === "roupa própria";
+  return normNoAccLower(v) === "roupa propria";
 }
+
 
 type InsumoItem = { produto_id: number; qtd: number };
 
@@ -295,6 +295,76 @@ function normalizeStatusCode(v: any): string {
   return helper ? String(helper) : raw;
 }
 
+// ==============================
+// ✅ Snapshot do registro original (para comparar no EDITAR)
+// ==============================
+type RoupaSnapshot = {
+  roupa: string;
+  roupa_produto_id: number;
+  roupa_deposito_nome: string;
+  roupa_codigo_barras: string;
+  roupa_propria: number;
+};
+
+function scrubRoupaNoEditar(payload: any, original: RoupaSnapshot | null) {
+  if (!original) return;
+
+  const rNow = String(payload.roupa ?? "").trim();
+  const rOrig = String(original.roupa ?? "").trim();
+
+  const pidNow = Number(payload.roupa_produto_id ?? 0) || 0;
+  const pidOrig = Number(original.roupa_produto_id ?? 0) || 0;
+
+  const depNow = String(payload.roupa_deposito_nome ?? "").trim();
+  const depOrig = String(original.roupa_deposito_nome ?? "").trim();
+
+  const cbNow = String(payload.roupa_codigo_barras ?? "").trim();
+  const cbOrig = String(original.roupa_codigo_barras ?? "").trim();
+
+  const propNow = Number(payload.roupa_propria ?? 0) ? 1 : 0;
+  const propOrig = Number(original.roupa_propria ?? 0) ? 1 : 0;
+
+  const mudou =
+    rNow !== rOrig ||
+    pidNow !== pidOrig ||
+    depNow !== depOrig ||
+    cbNow !== cbOrig ||
+    propNow !== propOrig;
+
+  // ✅ se não mudou -> NÃO MANDA roupa nenhuma no payload do editar
+  if (!mudou) {
+    delete payload.roupa;
+    delete payload.roupa_produto_id;
+    delete payload.roupa_deposito_nome;
+    delete payload.roupa_codigo_barras;
+    delete payload.roupa_propria;
+    return;
+  }
+
+  // ✅ mudou e virou ROUPA PRÓPRIA
+  if (rNow && isRoupaPropria(rNow)) {
+    payload.roupa = "ROUPA PRÓPRIA";
+    payload.roupa_propria = 1;
+    payload.roupa_produto_id = null;
+    payload.roupa_deposito_nome = null;
+    payload.roupa_codigo_barras = null;
+    return;
+  }
+
+  // ✅ mudou e não é própria: exige combo completo (front safety)
+  if (rNow) {
+    const pid = Number(payload.roupa_produto_id ?? 0) || 0;
+    const dep = String(payload.roupa_deposito_nome ?? "").trim();
+    if (pid <= 0) {
+      throw new Error('Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".');
+    }
+    if (!dep) {
+      throw new Error("Roupa: selecione o local de saída (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
+    }
+  }
+}
+
+
 export default function AcompanhamentoPage() {
   // Tabela
   const [registros, setRegistros] = useState<Registro[]>([]);
@@ -317,6 +387,9 @@ export default function AcompanhamentoPage() {
   const [wizardData, setWizardData] = useState<Registro>({});
   const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
+  // ✅ snapshot do registro original (para não revalidar / não reenviar roupa no EDITAR)
+  const wizardOriginalRoupaRef = useRef<RoupaSnapshot | null>(null);
+
 
   // selects
   const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -409,6 +482,7 @@ export default function AcompanhamentoPage() {
           roupa_deposito_nome: String(it?.roupa_deposito_nome ?? ""),
           roupa_produto_id: Number(it?.roupa_produto_id ?? 0) || 0,
           roupa_codigo_barras: String(it?.roupa_codigo_barras ?? ""),
+          roupa_propria: Number(it?.roupa_propria ?? 0) || 0,
 
           // ✅ INVOL
           invol_deposito_nome: String(it?.invol_deposito_nome ?? ""),
@@ -769,6 +843,8 @@ export default function AcompanhamentoPage() {
 
   const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
     setChooseTipoOpen(false);
+    wizardOriginalRoupaRef.current = null;
+
     setTipoAtendimento(tipo);
 
     setWizardSubmitting(false);
@@ -800,6 +876,8 @@ export default function AcompanhamentoPage() {
     (empty as any).roupa_deposito_nome = "";
     (empty as any).roupa_produto_id = 0;
     (empty as any).roupa_codigo_barras = "";
+    (empty as any).roupa_propria = 0;
+
 
     // ✅ defaults de meta invol
     (empty as any).invol_deposito_nome = "";
@@ -847,6 +925,18 @@ export default function AcompanhamentoPage() {
       (data as any).roupa_deposito_nome = String((r as any).roupa_deposito_nome ?? "");
       (data as any).roupa_produto_id = Number((r as any).roupa_produto_id ?? 0) || 0;
       (data as any).roupa_codigo_barras = String((r as any).roupa_codigo_barras ?? "");
+      (data as any).roupa_propria = Number((r as any).roupa_propria ?? 0) || 0;
+
+
+      // ✅ snapshot original de ROUPA (para comparar no salvar do EDITAR)
+      wizardOriginalRoupaRef.current = {
+        roupa: String((r as any).roupa ?? ""),
+        roupa_produto_id: Number((r as any).roupa_produto_id ?? 0) || 0,
+        roupa_deposito_nome: String((r as any).roupa_deposito_nome ?? ""),
+        roupa_codigo_barras: String((r as any).roupa_codigo_barras ?? ""),
+        roupa_propria: Number((r as any).roupa_propria ?? 0) || 0,
+      };
+
 
       // ✅ metas do INVOL no wizardData
       (data as any).invol_deposito_nome = String((r as any).invol_deposito_nome ?? "");
@@ -943,17 +1033,21 @@ export default function AcompanhamentoPage() {
 
     // ✅ ROUPA META: mesma lógica da URNA (não depende do DOM)
     const roupaTxt = String(next?.roupa ?? "").trim();
+    const roupaPropriaFlag = Number((next as any)?.roupa_propria ?? 0) ? 1 : 0;
+
     if (roupaTxt === "") {
-      // sem roupa -> limpa metas
+      // sem roupa -> limpa metas e flag
       next.roupa_produto_id = 0;
       next.roupa_codigo_barras = "";
       next.roupa_deposito_nome = "";
-    } else if (isRoupaPropria(roupaTxt)) {
+      (next as any).roupa_propria = 0;
+    } else if (isRoupaPropria(roupaTxt) || roupaPropriaFlag === 1) {
       // roupa própria não usa estoque
       next.roupa = "ROUPA PRÓPRIA";
       next.roupa_produto_id = 0;
       next.roupa_codigo_barras = "";
       next.roupa_deposito_nome = "";
+      (next as any).roupa_propria = 1;
     } else {
       // roupa do estoque -> mantém pid/cb/dep do wizardData
       const roupaPid = Number(next?.roupa_produto_id ?? 0) || 0;
@@ -970,7 +1064,11 @@ export default function AcompanhamentoPage() {
 
       // se digitou mas não selecionou item do estoque, mantém 0 (wizard/PHP validam)
       next.roupa_produto_id = roupaPid > 0 ? roupaPid : 0;
+
+      // não é própria -> garante flag zerado
+      (next as any).roupa_propria = 0;
     }
+
 
     // ✅ INVOL META: só vale quando invol === "Sim"
     const involFlag = String(next?.invol ?? "").trim();
@@ -1059,7 +1157,20 @@ export default function AcompanhamentoPage() {
     const roupaPid = Number(dataAtualizada?.roupa_produto_id ?? 0) || 0;
     const roupaDep = String(dataAtualizada?.roupa_deposito_nome ?? "").trim();
 
-    if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+    // ✅ no EDITAR: só valida roupa se ela mudou em relação ao original
+    const origRoupa = wizardOriginalRoupaRef.current;
+
+    const roupaMudou = wizardEditing
+      ? (
+        String(roupaTxt).trim() !== String(origRoupa?.roupa ?? "").trim() ||
+        (Number(roupaPid) || 0) !== (Number(origRoupa?.roupa_produto_id ?? 0) || 0) ||
+        String(roupaDep).trim() !== String(origRoupa?.roupa_deposito_nome ?? "").trim() ||
+        String((dataAtualizada as any)?.roupa_codigo_barras ?? "").trim() !== String(origRoupa?.roupa_codigo_barras ?? "").trim() ||
+        (Number((dataAtualizada as any)?.roupa_propria ?? 0) ? 1 : 0) !== (Number(origRoupa?.roupa_propria ?? 0) ? 1 : 0)
+      )
+      : true;
+
+    if (roupaMudou && roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
       if (roupaPid <= 0) {
         setWizardMsg({ text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".', ok: false });
         return;
@@ -1069,6 +1180,7 @@ export default function AcompanhamentoPage() {
         return;
       }
     }
+
 
     // ✅ validação extra (front):
     const involVal = dataAtualizada?.invol ?? "";
@@ -1101,8 +1213,15 @@ export default function AcompanhamentoPage() {
     if (!isOnlineNow()) {
       try {
         setWizardSubmitting(true);
-        const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+        const payload: any = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+
+        if (payload.acao === "editar") {
+          // ✅ remove roupa do payload se não mudou
+          scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+        }
+
         enqueueOffline(payload, "offline");
+
         setWizardMsg({
           text: "Sem internet: registro salvo offline e será enviado automaticamente quando a conexão voltar.",
           ok: true,
@@ -1118,7 +1237,13 @@ export default function AcompanhamentoPage() {
 
     try {
       setWizardSubmitting(true);
-      const payload = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+      const payload: any = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+
+      if (payload.acao === "editar") {
+        // ✅ remove roupa do payload se não mudou
+        scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+      }
+
       const json = await enviarRegistroPHP(payload);
 
       if (json?.sucesso) {
@@ -1146,7 +1271,15 @@ export default function AcompanhamentoPage() {
         msg.includes("fetch") && msg.includes("failed");
 
       if (isNetwork) {
-        enqueueOffline({ ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" }, msg);
+        const payload: any = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+        if (payload.acao === "editar") {
+          try {
+            scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+          } catch {
+            // se scrub lançar erro aqui, ignora e mantém payload original para não travar o offline
+          }
+        }
+        enqueueOffline(payload, msg);
         setWizardMsg({
           text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
           ok: true,
@@ -1205,20 +1338,37 @@ export default function AcompanhamentoPage() {
         return false;
       }
 
-      // ROUPA (se não for própria)
+      // ✅ ROUPA (se não for própria)
       const roupaTxt = String(reg?.roupa ?? "").trim();
-      if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+      const roupaPropria = Number(reg?.roupa_propria ?? 0) ? 1 : 0;
+
+      // Só valida como "roupa de estoque" quando:
+      // - tem texto de roupa
+      // - e NÃO é roupa própria (nem pelo texto, nem pela flag)
+      const precisaValidarRoupaEstoque =
+        roupaTxt !== "" && !isRoupaPropria(roupaTxt) && roupaPropria !== 1;
+
+      if (precisaValidarRoupaEstoque) {
         const roupaPid = Number(reg?.roupa_produto_id ?? 0) || 0;
         const roupaDep = String(reg?.roupa_deposito_nome ?? "").trim();
+
         if (roupaPid <= 0) {
-          setAcaoMsg({ ok: false, text: 'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".' });
+          setAcaoMsg({
+            ok: false,
+            text: 'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".',
+          });
           return false;
         }
+
         if (!roupaDep) {
-          setAcaoMsg({ ok: false, text: "Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA)." });
+          setAcaoMsg({
+            ok: false,
+            text: "Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          });
           return false;
         }
       }
+
 
       // INVOL (se invol = Sim)
       if (isSim(reg?.invol)) {
