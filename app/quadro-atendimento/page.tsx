@@ -107,6 +107,10 @@ type Registro = {
 
     // ✅ novo campo (Invol)
     invol?: any;
+    // ✅ novo campo (Cordão / Véu)
+    cordao?: any; // "Sim"/"Não" ou 1/0 etc
+    veu?: any;    // "Não" ou nome do véu
+
 
     ornamentacao?: string;
     ornamentacao_tipo?: string;
@@ -931,6 +935,9 @@ const LABELS: Record<string, string> = {
     assistencia: "Assistência",
     tanato: "Tanatopraxia",
     invol: "Invol",
+    cordao: "Cordão São Francisco",
+    veu: "Véu",
+
     local_velorio: "Local do Velório",
     data_inicio_velorio: "Data Início Velório",
     data_fim_velorio: "Data Fim Velório",
@@ -983,6 +990,20 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
     const involRaw = r?.invol;
     const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
     const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
+    const cordaoRaw = decodeHtmlEntitiesDeep(String((r as any)?.cordao ?? "")).trim().toLowerCase();
+    const cordaoYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(cordaoRaw) ? "SIM" : "NÃO";
+
+    const veuRaw = decodeHtmlEntitiesDeep(String((r as any)?.veu ?? "")).trim();
+    const veuLow = veuRaw.toLowerCase();
+    const veuTxt =
+        !veuRaw
+            ? "NÃO"
+            : ["nao", "não", "n", "0", "false"].includes(veuLow)
+                ? "NÃO"
+                : ["sim", "s", "1", "true"].includes(veuLow)
+                    ? "SIM"
+                    : veuRaw; // nome do véu
+
 
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
@@ -1043,6 +1064,8 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
+        `*Cordão São Francisco:* ${cordaoYN}`,
+        `*Véu:* ${veuTxt}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
         ...materiaisClipboardLines,
@@ -1589,6 +1612,23 @@ export default function QuadroAtendimentoPage() {
                                     <Field label="Roupa" value={shown(detail.roupa)} />
                                     <Field label="Assistência" value={shown(detail.assistencia)} />
                                     <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+                                    <Field
+                                        label="Cordão São Francisco"
+                                        value={isSim(String((detail as any).cordao ?? "")) ? "Sim" : "Não"}
+                                    />
+
+                                    <Field
+                                        label="Véu"
+                                        value={(() => {
+                                            const raw = decodeHtmlEntitiesDeep(String((detail as any).veu ?? "")).trim();
+                                            if (!raw) return "Não";
+                                            const low = raw.toLowerCase();
+                                            if (["nao", "não", "n", "0", "false"].includes(low)) return "Não";
+                                            if (["sim", "s", "1", "true"].includes(low)) return "Sim";
+                                            return raw; // nome do véu
+                                        })()}
+                                    />
+
 
                                     <Field label="Invol" value={involSimNao(detail.invol)} />
 
