@@ -533,6 +533,18 @@ export default function Wizard({
         setDepInvol(normalizeDepInvol((wizardData as any).invol_deposito_nome ?? "ARMARIO SANDRO"));
     }, [open]);
 
+    // ✅ auto-limpa erro quando produto_id chega
+    useEffect(() => {
+        const urnaPid = Number((wizardData as any).urna_produto_id ?? 0) || 0;
+        if (urnaPid > 0) setUrnaErro("");
+    }, [(wizardData as any).urna_produto_id]);
+
+    useEffect(() => {
+        const involPid = Number((wizardData as any).invol_produto_id ?? 0) || 0;
+        if (involPid > 0) setInvolErro("");
+    }, [(wizardData as any).invol_produto_id]);
+
+
     // ✅ limpa erro URNA quando a seleção (produto_id) chega no wizardData
     useEffect(() => {
         if (!open) return;
