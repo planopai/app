@@ -536,7 +536,12 @@ export default function AcompanhamentoPage() {
             const after = safeReadQueue().filter((x) => x.qid !== item.qid);
             safeWriteQueue(after);
           } else {
-            const msg = String(json?.erro || json?.msg || "");
+            const msg =
+              typeof json?.msg === "string" && json.msg.trim()
+                ? json.msg
+                : typeof json?.erro === "string"
+                  ? json.erro
+                  : "";
 
             // ✅ ERROS "PERMANENTES" (validação) -> remove da fila para não ficar tentando pra sempre
             const isValidation =
