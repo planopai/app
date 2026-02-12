@@ -540,6 +540,17 @@ export default function Wizard({
     const [involErro, setInvolErro] = useState<string>("");
     const [veuErro, setVeuErro] = useState<string>("");
     const [cordaoErro, setCordaoErro] = useState<string>("");
+    // ✅ erros de "Sim/Não" (select obrigatório)
+    const [tanatoSelectErro, setTanatoSelectErro] = useState<string>("");
+    const [ornamentacaoSelectErro, setOrnamentacaoSelectErro] = useState<string>("");
+    const [involSelectErro, setInvolSelectErro] = useState<string>("");
+    const [veuSelectErro, setVeuSelectErro] = useState<string>("");
+    const [cordaoSelectErro, setCordaoSelectErro] = useState<string>("");
+
+    // ✅ erro do tipo (Natural/Artificial) quando ornamentacao = Sim
+    const [ornamentacaoTipoErro, setOrnamentacaoTipoErro] = useState<string>("");
+
+
 
 
     // depósitos locais (controlados)
@@ -573,6 +584,17 @@ export default function Wizard({
         setVeuErro("");
         setCordaoErro("");
         setAssistenciaErro("");
+        // ✅ limpa erros dos selects Sim/Não
+        setTanatoSelectErro("");
+        setOrnamentacaoSelectErro("");
+        setInvolSelectErro("");
+        setVeuSelectErro("");
+        setCordaoSelectErro("");
+
+        // ✅ limpa erro do Natural/Artificial
+        setOrnamentacaoTipoErro("");
+
+
 
         setDepUrna(normalizeDepUrna((wizardData as any).urna_deposito_nome ?? "MEMORIAL"));
         setDepRoupa(normalizeDepRoupa((wizardData as any).roupa_deposito_nome ?? "ARMARIO SANDRO"));
@@ -722,6 +744,82 @@ export default function Wizard({
     };
 
     const bloqueiaPorAssistencia = requireAssistencia && assistenciaNoGrupoAtual && !isSimNao(assistenciaVal);
+
+    // ✅ validações "Sim/Não" para selects obrigatórios
+    const validarTanatoSelect = () => {
+        if (!isRequired("tanato")) return true;
+        if (isSimNao(tanatoVal)) {
+            setTanatoSelectErro("");
+            return true;
+        }
+        setTanatoSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const validarOrnamentacaoSelect = () => {
+        if (!isRequired("ornamentacao")) return true;
+        if (isSimNao(ornamentacaoVal)) {
+            setOrnamentacaoSelectErro("");
+            return true;
+        }
+        setOrnamentacaoSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const validarInvolSelect = () => {
+        if (!isRequired("invol")) return true;
+        if (isSimNao(involVal)) {
+            setInvolSelectErro("");
+            return true;
+        }
+        setInvolSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const validarVeuSelect = () => {
+        if (!isRequired("veu")) return true;
+        if (isSimNao(veuVal)) {
+            setVeuSelectErro("");
+            return true;
+        }
+        setVeuSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const validarCordaoSelect = () => {
+        if (!isRequired("cordao")) return true;
+        if (isSimNao(cordaoVal)) {
+            setCordaoSelectErro("");
+            return true;
+        }
+        setCordaoSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    // ✅ se ornamentacao = Sim, exige Natural/Artificial (ornamentacao_tipo)
+    const validarOrnamentacaoTipoSeNecessario = () => {
+        // Só valida se o campo existe no grupo atual (ou seja, está renderizando agora)
+        const tipoNoGrupoAtual = grupoSteps.some((s) => s.id === "ornamentacao_tipo");
+        if (!tipoNoGrupoAtual) return true;
+
+        // Só obriga se Ornamentação = Sim
+        if (ornamentacaoVal !== "Sim") {
+            setOrnamentacaoTipoErro("");
+            return true;
+        }
+
+        const tipo = String((wizardData as any).ornamentacao_tipo ?? "").trim();
+        if (!tipo) {
+            setOrnamentacaoTipoErro('Selecione "Natural" ou "Artificial".');
+            return false;
+        }
+
+        setOrnamentacaoTipoErro("");
+        return true;
+    };
+
+
+
 
     // ✅ valida URNA pelo wizardData
     const validarUrnaSeNecessario = () => {
@@ -899,7 +997,23 @@ export default function Wizard({
 
     const goNext = () => {
         if (wizardSubmitting) return;
+
+        // Assistência (já existia)
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+
+        // ✅ obrigar Sim/Não nos selects (quando forem obrigatórios)
+        if (!validarTanatoSelect()) return;
+        if (!validarOrnamentacaoSelect()) return;
+
+        // ✅ se ornamentacao = Sim, exige Natural/Artificial
+        if (!validarOrnamentacaoTipoSeNecessario()) return;
+
+        if (!validarInvolSelect()) return;
+        if (!validarVeuSelect()) return;
+        if (!validarCordaoSelect()) return;
+
+
+        // validações de estoque (já existiam)
         if (!validarUrnaSeNecessario()) return;
         if (!validarRoupaSeNecessario()) return;
         if (!validarVeuSeNecessario()) return;
@@ -911,9 +1025,25 @@ export default function Wizard({
         if (!isLastStep) setWizardStep(wizardStep + 1);
     };
 
+
     const tentarConcluir = async () => {
         if (wizardSubmitting) return;
+
         if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+
+        // ✅ obrigar Sim/Não nos selects (quando forem obrigatórios)
+        if (!validarTanatoSelect()) return;
+        if (!validarOrnamentacaoSelect()) return;
+
+        // ✅ se ornamentacao = Sim, exige Natural/Artificial
+        if (!validarOrnamentacaoTipoSeNecessario()) return;
+
+        if (!validarInvolSelect()) return;
+        if (!validarVeuSelect()) return;
+        if (!validarCordaoSelect()) return;
+
+
+        // validações de estoque (já existiam)
         if (!validarUrnaSeNecessario()) return;
         if (!validarRoupaSeNecessario()) return;
         if (!validarVeuSeNecessario()) return;
@@ -927,6 +1057,7 @@ export default function Wizard({
             alert(e?.message || "Erro ao salvar. Veja o console/Network.");
         }
     };
+
 
     if (!open) return null;
 
@@ -1171,7 +1302,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuSelectErro || veuErro ? "border-red-500" : ""}`}
                                     value={veuVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1185,18 +1316,24 @@ export default function Wizard({
                                                 : {}),
                                         }));
 
-                                        if (v !== "Sim") setVeuErro("");
+                                        if (isSimNao(v)) setVeuSelectErro("");
+                                        if (v !== "Sim") setVeuErro(""); // mantém seu erro de estoque limpo
                                     }}
+                                    onBlur={() => validarVeuSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
 
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {["Sim", "Não"].map((op) => (
+                                        <option key={op} value={op}>{op}</option>
+                                    ))}
+
+                                </select>
+                                {veuSelectErro && <div className="mt-1 text-xs text-red-600">{veuSelectErro}</div>}
                                 {veuErro && <div className="mt-1 text-xs text-red-600">{veuErro}</div>}
+
                             </div>
                         );
                     }
@@ -1277,7 +1414,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoSelectErro || cordaoErro ? "border-red-500" : ""}`}
                                     value={cordaoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1291,18 +1428,24 @@ export default function Wizard({
                                                 : {}),
                                         }));
 
-                                        if (v !== "Sim") setCordaoErro("");
+                                        if (isSimNao(v)) setCordaoSelectErro("");
+                                        if (v !== "Sim") setCordaoErro(""); // mantém seu erro de estoque limpo
                                     }}
+                                    onBlur={() => validarCordaoSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
 
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {["Sim", "Não"].map((op) => (
+                                        <option key={op} value={op}>{op}</option>
+                                    ))}
+
+                                </select>
+                                {cordaoSelectErro && <div className="mt-1 text-xs text-red-600">{cordaoSelectErro}</div>}
                                 {cordaoErro && <div className="mt-1 text-xs text-red-600">{cordaoErro}</div>}
+
                             </div>
                         );
                     }
@@ -1498,11 +1641,10 @@ export default function Wizard({
                                     <option value="" disabled>
                                         Selecione…
                                     </option>
-                                    {(step.options || ["Sim", "Não"]).filter(Boolean).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                    {["Sim", "Não"].map((op) => (
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
+
                                 </select>
 
                                 {assistenciaErro && <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>}
@@ -1536,21 +1678,31 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${tanatoSelectErro ? "border-red-500" : ""}`}
                                     value={tanatoVal}
-                                    onChange={(e) => setTanatoVal(e.target.value)}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        setTanatoVal(v);
+                                        setWizardData((prev: any) => ({ ...prev, tanato: v }));
+                                        if (isSimNao(v)) setTanatoSelectErro("");
+                                    }}
+                                    onBlur={() => validarTanatoSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {["Sim", "Não"].map((op) => (
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
+
                                 </select>
+
+                                {tanatoSelectErro && <div className="mt-1 text-xs text-red-600">{tanatoSelectErro}</div>}
                             </div>
                         );
                     }
+
 
                     /* ===========================
                        ornamentacao (controlado)
@@ -1558,30 +1710,43 @@ export default function Wizard({
                     if (step.id === "ornamentacao" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+
 
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoSelectErro ? "border-red-500" : ""}`}
                                     value={ornamentacaoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
                                         setOrnamentacaoVal(v);
 
-                                        // ✅ grava no wizardData (para não resetar quando invol mudar)
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             ornamentacao: v,
                                             ...(v !== "Sim" ? { ornamentacao_tipo: "" } : {}),
                                         }));
+
+                                        if (isSimNao(v)) setOrnamentacaoSelectErro("");
                                     }}
+                                    onBlur={() => validarOrnamentacaoSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
+                                    
+
+
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {["Sim", "Não"].map((op) => (
                                         <option key={op} value={op}>{op}</option>
                                     ))}
+
                                 </select>
+                                {ornamentacaoSelectErro && <div className="mt-1 text-xs text-red-600">{ornamentacaoSelectErro}</div>}
                             </div>
                         );
                     }
@@ -1599,8 +1764,7 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${involSelectErro ? "border-red-500" : ""}`}
                                     value={involVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1612,16 +1776,24 @@ export default function Wizard({
                                             ...(v !== "Sim" ? { invol_deposito_nome: "", invol_produto_id: 0, invol_codigo_barras: "", invol_item: "" } : {}),
                                         }));
 
-                                        if (v !== "Sim") setInvolErro("");
+                                        if (isSimNao(v)) setInvolSelectErro("");
+                                        if (v !== "Sim") setInvolErro(""); // mantém seu erro de estoque limpo
                                     }}
+                                    onBlur={() => validarInvolSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Sim", "Não"]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                    
+
+
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {["Sim", "Não"].map((op) => (
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
+
                                 </select>
+                                {involSelectErro && <div className="mt-1 text-xs text-red-600">{involSelectErro}</div>}
                             </div>
                         );
                     }
@@ -1703,23 +1875,37 @@ export default function Wizard({
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
 
                                 <select
-                                    id="wizard-ornamentacao_tipo"
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
+                                    id={`wizard-${step.id}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoTipoErro ? "border-red-500" : ""
+                                        }`}
                                     value={String((wizardData as any).ornamentacao_tipo ?? "")}
                                     onChange={(e) => {
                                         const v = e.target.value;
                                         setWizardData((prev: any) => ({ ...prev, ornamentacao_tipo: v }));
+                                        if (v) setOrnamentacaoTipoErro("");
                                     }}
+                                    onBlur={() => validarOrnamentacaoTipoSeNecessario()}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || ["", "Natural", "Artificial"]).map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+
+                                    {(step.options || ["Natural", "Artificial"]).filter(Boolean).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
                                 </select>
+
+                                {ornamentacaoTipoErro && (
+                                    <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>
+                                )}
                             </div>
                         );
                     }
+
+
 
                     /* ===========================
                        defaults
@@ -1775,11 +1961,13 @@ export default function Wizard({
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     disabled={wizardSubmitting}
                                 >
-                                    {(step.options || [""]).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {["Sim", "Não"].map((op) => (
+                                        <option key={op} value={op}>{op}</option>
                                     ))}
+
                                 </select>
                             </div>
                         );

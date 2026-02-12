@@ -130,18 +130,20 @@ export const obrigatorios = [
     "convenio",
     "religiao",
 
-    // Aba ITENS (tudo obrigatório)
-    "urna",
-    "roupa",
-    "veu",
-    "cordao",
+    // ITENS (Sim/Não obrigatórios)
     "assistencia",
     "tanato",
     "ornamentacao",
-    "ornamentacao_tipo",
     "invol",
-    "arrumacao",
+    "veu",
+    "cordao",
+
+    // e se quiser também obrigar a escolha da urna/roupa:
+    "urna",
+    "roupa",
 ];
+
+
 
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
