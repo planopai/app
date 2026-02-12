@@ -124,7 +124,25 @@ export const steps = [
  * ✅ Mantém: Urna Obrigatoria 
  * (ROUPA e INVOL não são obrigatórios, mas quando preenchidos precisam do vínculo no estoque — regra do PHP)
  */
-export const obrigatorios = ["falecido", "contato", "convenio", "religiao", "urna"];
+export const obrigatorios = [
+    "falecido",
+    "contato",
+    "convenio",
+    "religiao",
+
+    // Aba ITENS (tudo obrigatório)
+    "urna",
+    "roupa",
+    "veu",
+    "cordao",
+    "assistencia",
+    "tanato",
+    "ornamentacao",
+    "ornamentacao_tipo",
+    "invol",
+    "arrumacao",
+];
+
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
 
