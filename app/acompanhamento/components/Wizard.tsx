@@ -729,6 +729,12 @@ export default function Wizard({
     const veuItemNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu_item"), [grupoSteps]);
     const cordaoNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
     const cordaoItemNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao_item"), [grupoSteps]);
+    const tanatoNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "tanato"), [grupoSteps]);
+    const ornamentacaoNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "ornamentacao"), [grupoSteps]);
+    const involSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol"), [grupoSteps]);
+    const veuSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu"), [grupoSteps]);
+    const cordaoSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
+
 
 
     const isRequired = (id: string) => obrigatorios.includes(id);
@@ -747,7 +753,9 @@ export default function Wizard({
 
     // ✅ validações "Sim/Não" para selects obrigatórios
     const validarTanatoSelect = () => {
+        if (!tanatoNoGrupoAtual) return true;           // ✅ só valida se está na tela
         if (!isRequired("tanato")) return true;
+
         if (isSimNao(tanatoVal)) {
             setTanatoSelectErro("");
             return true;
@@ -756,8 +764,11 @@ export default function Wizard({
         return false;
     };
 
+
     const validarOrnamentacaoSelect = () => {
+        if (!ornamentacaoNoGrupoAtual) return true;     // ✅
         if (!isRequired("ornamentacao")) return true;
+
         if (isSimNao(ornamentacaoVal)) {
             setOrnamentacaoSelectErro("");
             return true;
@@ -766,8 +777,11 @@ export default function Wizard({
         return false;
     };
 
+
     const validarInvolSelect = () => {
+        if (!involSelectNoGrupoAtual) return true;      // ✅
         if (!isRequired("invol")) return true;
+
         if (isSimNao(involVal)) {
             setInvolSelectErro("");
             return true;
@@ -777,7 +791,9 @@ export default function Wizard({
     };
 
     const validarVeuSelect = () => {
+        if (!veuSelectNoGrupoAtual) return true;        // ✅
         if (!isRequired("veu")) return true;
+
         if (isSimNao(veuVal)) {
             setVeuSelectErro("");
             return true;
@@ -787,7 +803,9 @@ export default function Wizard({
     };
 
     const validarCordaoSelect = () => {
+        if (!cordaoSelectNoGrupoAtual) return true;     // ✅
         if (!isRequired("cordao")) return true;
+
         if (isSimNao(cordaoVal)) {
             setCordaoSelectErro("");
             return true;
