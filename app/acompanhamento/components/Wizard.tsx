@@ -1013,30 +1013,44 @@ export default function Wizard({
         setWizardStep(Math.max(0, wizardStep - 1));
     };
 
+    const scrollToFirstError = () => {
+        // pega o primeiro campo "marcado" como erro
+        const el =
+            (document.querySelector('[data-wizard-error="1"]') as HTMLElement | null) ||
+            (document.querySelector(".border-red-500") as HTMLElement | null);
+
+        if (!el) return;
+
+        // rola suavemente pra ele (bom no celular)
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // tenta focar (select/input)
+        requestAnimationFrame(() => {
+            (el as any)?.focus?.();
+        });
+    };
+
+    
     const goNext = () => {
         if (wizardSubmitting) return;
 
         // Assistência (já existia)
-        if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+        if (assistenciaNoGrupoAtual && !validarAssistencia()) { scrollToFirstError(); return; }
 
-        // ✅ obrigar Sim/Não nos selects (quando forem obrigatórios)
-        if (!validarTanatoSelect()) return;
-        if (!validarOrnamentacaoSelect()) return;
+        if (!validarTanatoSelect()) { scrollToFirstError(); return; }
+        if (!validarOrnamentacaoSelect()) { scrollToFirstError(); return; }
+        if (!validarOrnamentacaoTipoSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarInvolSelect()) { scrollToFirstError(); return; }
+        if (!validarVeuSelect()) { scrollToFirstError(); return; }
+        if (!validarCordaoSelect()) { scrollToFirstError(); return; }
 
-        // ✅ se ornamentacao = Sim, exige Natural/Artificial
-        if (!validarOrnamentacaoTipoSeNecessario()) return;
+        if (!validarUrnaSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarRoupaSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarVeuSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarCordaoSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarInvolSeNecessario()) { scrollToFirstError(); return; }
 
-        if (!validarInvolSelect()) return;
-        if (!validarVeuSelect()) return;
-        if (!validarCordaoSelect()) return;
 
-
-        // validações de estoque (já existiam)
-        if (!validarUrnaSeNecessario()) return;
-        if (!validarRoupaSeNecessario()) return;
-        if (!validarVeuSeNecessario()) return;
-        if (!validarCordaoSeNecessario()) return;
-        if (!validarInvolSeNecessario()) return;
 
         const ok = salvarGrupoWizard();
         if (!ok) return;
@@ -1047,26 +1061,21 @@ export default function Wizard({
     const tentarConcluir = async () => {
         if (wizardSubmitting) return;
 
-        if (assistenciaNoGrupoAtual && !validarAssistencia()) return;
+        if (assistenciaNoGrupoAtual && !validarAssistencia()) { scrollToFirstError(); return; }
 
-        // ✅ obrigar Sim/Não nos selects (quando forem obrigatórios)
-        if (!validarTanatoSelect()) return;
-        if (!validarOrnamentacaoSelect()) return;
+        if (!validarTanatoSelect()) { scrollToFirstError(); return; }
+        if (!validarOrnamentacaoSelect()) { scrollToFirstError(); return; }
+        if (!validarOrnamentacaoTipoSeNecessario()) { scrollToFirstError(); return; }
 
-        // ✅ se ornamentacao = Sim, exige Natural/Artificial
-        if (!validarOrnamentacaoTipoSeNecessario()) return;
+        if (!validarInvolSelect()) { scrollToFirstError(); return; }
+        if (!validarVeuSelect()) { scrollToFirstError(); return; }
+        if (!validarCordaoSelect()) { scrollToFirstError(); return; }
 
-        if (!validarInvolSelect()) return;
-        if (!validarVeuSelect()) return;
-        if (!validarCordaoSelect()) return;
-
-
-        // validações de estoque (já existiam)
-        if (!validarUrnaSeNecessario()) return;
-        if (!validarRoupaSeNecessario()) return;
-        if (!validarVeuSeNecessario()) return;
-        if (!validarCordaoSeNecessario()) return;
-        if (!validarInvolSeNecessario()) return;
+        if (!validarUrnaSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarRoupaSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarVeuSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarCordaoSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarInvolSeNecessario()) { scrollToFirstError(); return; }
 
         try {
             await concluirWizard();
@@ -1075,6 +1084,7 @@ export default function Wizard({
             alert(e?.message || "Erro ao salvar. Veja o console/Network.");
         }
     };
+
 
 
     if (!open) return null;
@@ -1320,6 +1330,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={veuSelectErro || veuErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuSelectErro || veuErro ? "border-red-500" : ""}`}
                                     value={veuVal}
                                     onChange={(e) => {
@@ -1432,6 +1443,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={cordaoSelectErro || cordaoErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoSelectErro || cordaoErro ? "border-red-500" : ""}`}
                                     value={cordaoVal}
                                     onChange={(e) => {
@@ -1642,6 +1654,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={assistenciaErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
 
                                     value={assistenciaVal}
@@ -1696,6 +1709,7 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={tanatoSelectErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${tanatoSelectErro ? "border-red-500" : ""}`}
                                     value={tanatoVal}
                                     onChange={(e) => {
@@ -1736,6 +1750,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={ornamentacaoSelectErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoSelectErro ? "border-red-500" : ""}`}
                                     value={ornamentacaoVal}
                                     onChange={(e) => {
@@ -1782,6 +1797,7 @@ export default function Wizard({
                                 </label>
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={involSelectErro || involErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${involSelectErro ? "border-red-500" : ""}`}
                                     value={involVal}
                                     onChange={(e) => {
@@ -1894,6 +1910,7 @@ export default function Wizard({
 
                                 <select
                                     id={`wizard-${step.id}`}
+                                    data-wizard-error={ornamentacaoTipoErro ? "1" : "0"}
                                     className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoTipoErro ? "border-red-500" : ""
                                         }`}
                                     value={String((wizardData as any).ornamentacao_tipo ?? "")}
