@@ -1253,6 +1253,7 @@ export default function Wizard({
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
+                                            veu: "Sim", // ✅ garante coerência
                                             veu_item: String(it.nome || "").trim(),
                                             veu_deposito_nome: depVeu,
                                             veu_produto_id: pid,
@@ -1261,6 +1262,7 @@ export default function Wizard({
 
                                         setVeuErro("");
                                     }}
+
                                 />
                             </div>
                         );
@@ -1357,6 +1359,7 @@ export default function Wizard({
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
+                                            cordao: "Sim", // ✅ garante coerência
                                             cordao_item: String(it.nome || "").trim(),
                                             cordao_deposito_nome: depCordao,
                                             cordao_produto_id: pid,

@@ -489,12 +489,25 @@ export default function AcompanhamentoPage() {
           invol_deposito_nome: String(it?.invol_deposito_nome ?? ""),
           invol_produto_id: Number(it?.invol_produto_id ?? 0) || 0,
           invol_codigo_barras: String(it?.invol_codigo_barras ?? ""),
-          invol_item: String(it?.invol_item ?? ""), // 👈 AQUI
+          invol_item: String(it?.invol_item ?? ""),
+
+          // ✅ VÉU
+          veu_deposito_nome: String(it?.veu_deposito_nome ?? ""),
+          veu_produto_id: Number(it?.veu_produto_id ?? 0) || 0,
+          veu_codigo_barras: String(it?.veu_codigo_barras ?? ""),
+          veu_item: String(it?.veu_item ?? ""),
+
+          // ✅ CORDÃO
+          cordao_deposito_nome: String(it?.cordao_deposito_nome ?? ""),
+          cordao_produto_id: Number(it?.cordao_produto_id ?? 0) || 0,
+          cordao_codigo_barras: String(it?.cordao_codigo_barras ?? ""),
+          cordao_item: String(it?.cordao_item ?? ""),
 
           // ✅ INSUMOS (novo formato dentro do arrumacao_json)
           arrumacao_json: String(it?.arrumacao_json ?? ""),
         }))
         : [];
+
 
 
       setRegistros(sane);
@@ -890,8 +903,21 @@ export default function AcompanhamentoPage() {
     (empty as any).invol_produto_id = 0;
     (empty as any).invol_codigo_barras = "";
 
+    // ✅ defaults de meta VÉU
+    (empty as any).veu_deposito_nome = "";
+    (empty as any).veu_produto_id = 0;
+    (empty as any).veu_codigo_barras = "";
+    (empty as any).veu_item = "";
+
+    // ✅ defaults de meta CORDÃO
+    (empty as any).cordao_deposito_nome = "";
+    (empty as any).cordao_produto_id = 0;
+    (empty as any).cordao_codigo_barras = "";
+    (empty as any).cordao_item = "";
+
     // ✅ insumos tanato (novo formato) - começa vazio
     (empty as any).arrumacao_json = "";
+
 
 
     setWizardData(empty);
@@ -951,9 +977,21 @@ export default function AcompanhamentoPage() {
       // ✅ texto do INVOL (para aparecer no combobox ao reabrir)
       (data as any).invol_item = String((r as any).invol_item ?? "");
 
+      // ✅ metas do VÉU no wizardData
+      (data as any).veu_deposito_nome = String((r as any).veu_deposito_nome ?? "");
+      (data as any).veu_produto_id = Number((r as any).veu_produto_id ?? 0) || 0;
+      (data as any).veu_codigo_barras = String((r as any).veu_codigo_barras ?? "");
+      (data as any).veu_item = String((r as any).veu_item ?? "");
+
+      // ✅ metas do CORDÃO no wizardData
+      (data as any).cordao_deposito_nome = String((r as any).cordao_deposito_nome ?? "");
+      (data as any).cordao_produto_id = Number((r as any).cordao_produto_id ?? 0) || 0;
+      (data as any).cordao_codigo_barras = String((r as any).cordao_codigo_barras ?? "");
+      (data as any).cordao_item = String((r as any).cordao_item ?? "");
 
       // ✅ insumos tanato (novo formato dentro do arrumacao_json)
       (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
+
 
 
       const mats = parseMateriaisFromRegistro(r);
@@ -1247,6 +1285,37 @@ export default function AcompanhamentoPage() {
         return;
       }
     }
+
+    // ✅ validação extra (front): VÉU
+    const veuVal = dataAtualizada?.veu ?? "";
+    if (isSim(veuVal)) {
+      const veuPid = Number(dataAtualizada?.veu_produto_id ?? 0) || 0;
+      const veuDep = String(dataAtualizada?.veu_deposito_nome ?? "").trim();
+      if (veuPid <= 0) {
+        setWizardMsg({ text: "Selecione um VÉU da lista (produto do estoque).", ok: false });
+        return;
+      }
+      if (!veuDep) {
+        setWizardMsg({ text: "Selecione o local do VÉU (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).", ok: false });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front): CORDÃO
+    const cordaoVal = dataAtualizada?.cordao ?? "";
+    if (isSim(cordaoVal)) {
+      const cordaoPid = Number(dataAtualizada?.cordao_produto_id ?? 0) || 0;
+      const cordaoDep = String(dataAtualizada?.cordao_deposito_nome ?? "").trim();
+      if (cordaoPid <= 0) {
+        setWizardMsg({ text: "Selecione um CORDÃO da lista (produto do estoque).", ok: false });
+        return;
+      }
+      if (!cordaoDep) {
+        setWizardMsg({ text: "Selecione o local do CORDÃO (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).", ok: false });
+        return;
+      }
+    }
+
 
     // ✅ validação extra (front): INSUMOS TANATO (arrumacao_json novo)
     const ins = parseInsumosFromArrumacaoJson(dataAtualizada?.arrumacao_json);
