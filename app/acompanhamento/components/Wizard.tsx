@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
+
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
 type Step = {
@@ -25,7 +26,6 @@ type Step = {
     placeholder?: string;
     datalist?: string[];
 };
-
 
 type EstoqueRow = {
     id?: number;
@@ -64,55 +64,45 @@ function isSimNao(v: string) {
 }
 
 function getPidFromRow(it: EstoqueRow): number {
-    return Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
+    return (
+        Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0
+    );
 }
 
-type DepUrna = "MEMORIAL" | "FUNERARIA";
-type DepRoupa = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
-type DepInvol = "ARMARIO SANDRO" | "ARMARIO ILDO";
-
-// ✅ VÉU e CORDÃO saem só destes 3
-type DepVeu = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
-type DepCordao = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
-
-function normalizeDepUrna(v: any): DepUrna {
-    const s = normUpper(v);
-    return s === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+// key estável p/ lista do estoque (evita “clicar e não selecionar” / DOM reusado)
+function getStableRowKey(it: EstoqueRow) {
+    const pid = getPidFromRow(it);
+    const cb = String((it as any).codigo_barras ?? "");
+    const nome = String(it.nome ?? "");
+    const saldo = String((it as any).saldo_total ?? "");
+    return `${pid || "0"}|${cb}|${nome}|${saldo}`;
 }
 
-function normalizeDepRoupa(v: any): DepRoupa {
-    const s = normUpper(v);
-    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
-    if (s === "FUNERARIA") return "FUNERARIA";
-    return "ARMARIO SANDRO";
+function isMobileCoarsePointer() {
+    if (typeof window === "undefined") return false;
+    try {
+        return window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+    } catch {
+        return false;
+    }
 }
-
-function normalizeDepInvol(v: any): DepInvol {
-    const s = normUpper(v);
-    return s === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
-}
-
-function normalizeDepVeu(v: any): DepVeu {
-    const s = normUpper(v);
-    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
-    if (s === "FUNERARIA") return "FUNERARIA";
-    return "ARMARIO SANDRO";
-}
-
-function normalizeDepCordao(v: any): DepCordao {
-    const s = normUpper(v);
-    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
-    if (s === "FUNERARIA") return "FUNERARIA";
-    return "ARMARIO SANDRO";
-}
-
 
 /* =========================================================================
    Combobox genérico (estoque)
-   - action: "urnas_buscar" | "roupas_buscar" | "invols_buscar"
+   - action: "urnas_buscar" | "roupas_buscar" | "invols_buscar" | "veus_buscar" | "cordoes_buscar"
    - Usa deposito_nome e somente_com_saldo=1
-   - ✅ AGORA: abre o modal já carregando a lista do depósito, sem precisar digitar
+   - ✅ abre o modal já carregando a lista do depósito, sem precisar digitar
+   - ✅ cache por depósito/action (evita modal “branco”)
+   - ✅ iOS scroll smoothing e eventos pointer
    ========================================================================= */
+
+type CacheKey = string;
+type CacheEntry = {
+    rows: EstoqueRow[];
+    ts: number;
+};
+const CACHE_TTL_MS = 60_000; // 1 min (ajuda evitar “piscar branco” sem ficar desatualizado)
+
 function EstoqueCombobox({
     inputId,
     label,
@@ -166,12 +156,17 @@ function EstoqueCombobox({
     // valor exibido no campo principal (e que o salvarGrupoWizard lê pelo DOM)
     const [value, setValue] = useState(initialValue || "");
 
-    // busca dentro do modal (agora é opcional)
+    // busca dentro do modal (opcional)
     const [q, setQ] = useState("");
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const lastInitSigRef = useRef<string>("");
+
+    // cache local (por componente) p/ evitar “tela branca” quando já carregou antes
+    const cacheRef = useRef<Record<CacheKey, CacheEntry>>({});
+
+    const cacheKey: CacheKey = `${action}||${String(depositoValue || "").trim()}`;
 
     // sincroniza quando abrir/editar registro
     useEffect(() => {
@@ -181,27 +176,37 @@ function EstoqueCombobox({
         setValue(initialValue || "");
     }, [initialValue, depositoValue]);
 
-    // ✅ ao abrir modal: limpa filtro, limpa erro e dispara carregamento da lista do depósito
+    // ✅ ao abrir modal: limpa erro, e tenta popular rows via cache instantâneo
     useEffect(() => {
         if (!pickerOpen) return;
 
         setErr("");
-        setRows([]);
-        setQ(""); // filtro opcional
 
-        // 🔥 não focar teclado automaticamente (você quer clicar e escolher)
+        // sempre limpa o filtro ao abrir para vir “lista do depósito”
+        setQ("");
+
+        // usa cache se existir e estiver recente
+        const cached = cacheRef.current[cacheKey];
+        if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+            setRows(cached.rows || []);
+            setLoading(false);
+        } else {
+            // não zera rows agressivamente se já tinha algo (evita “branco” em re-open),
+            // mas se não tiver cache, mantém o que estiver e mostra loading ao buscar
+            // (o fetch vai atualizar)
+        }
+
+        // 🔥 não focar teclado automaticamente (evita bugs/reflow no celular)
         // requestAnimationFrame(() => searchRef.current?.focus());
-    }, [pickerOpen]);
+    }, [pickerOpen, cacheKey]);
 
-    
-
-    // ✅ busca async (dentro do modal)
-    // Agora busca mesmo com q vazio (lista do depósito)
+    // ✅ busca async (dentro do modal) — busca mesmo com q vazio
     useEffect(() => {
         if (!pickerOpen) return;
 
         const qq = q.trim();
 
+        // debounce pequeno
         const ac = new AbortController();
         const t = setTimeout(async () => {
             setLoading(true);
@@ -210,10 +215,7 @@ function EstoqueCombobox({
             try {
                 const url = new URL(ESTOQUE_API);
                 url.searchParams.set("action", action);
-
-                // ✅ seu PHP já aceita q vazio (não filtra). Mantemos assim.
-                url.searchParams.set("q", qq);
-
+                url.searchParams.set("q", qq); // pode ser vazio
                 url.searchParams.set("somente_com_saldo", "1");
                 url.searchParams.set("limit", "60");
                 url.searchParams.set("deposito_nome", String(depositoValue || ""));
@@ -225,10 +227,20 @@ function EstoqueCombobox({
                     signal: ac.signal,
                 });
 
+                // se sessão cair, isso aqui ajuda a diagnosticar
                 const j = await r.json().catch(() => null);
-                if (!j?.ok) throw new Error(j?.msg || "Falha ao buscar itens no estoque");
+                if (!j?.ok) {
+                    const httpInfo = r?.status ? ` (HTTP ${r.status})` : "";
+                    throw new Error((j?.msg || "Falha ao buscar itens no estoque") + httpInfo);
+                }
 
-                setRows((j.rows || []) as EstoqueRow[]);
+                const nextRows = (j.rows || []) as EstoqueRow[];
+
+                setRows(nextRows);
+                // cacheia somente quando q está vazio (lista “base” do depósito)
+                if (!qq) {
+                    cacheRef.current[cacheKey] = { rows: nextRows, ts: Date.now() };
+                }
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
                 setErr(e?.message || "Erro na busca");
@@ -242,9 +254,7 @@ function EstoqueCombobox({
             clearTimeout(t);
             ac.abort();
         };
-    }, [q, pickerOpen, action, depositoValue]);
-
-    
+    }, [q, pickerOpen, action, depositoValue, cacheKey]);
 
     const applySelection = (it: EstoqueRow) => {
         const pid = getPidFromRow(it);
@@ -264,11 +274,14 @@ function EstoqueCombobox({
         // informa o wizardData (meta: produto_id, cb, depósito etc)
         onSelectRow(it);
 
-        
-
+        // blur leve para evitar teclado/scroll bugs em mobile
         requestAnimationFrame(() => {
-            searchRef.current?.blur();
-            inputRef.current?.blur();
+            try {
+                searchRef.current?.blur();
+                inputRef.current?.blur();
+            } catch {
+                // noop
+            }
         });
     };
 
@@ -289,14 +302,16 @@ function EstoqueCombobox({
 
                     <select
                         className="w-full rounded-md border px-2 py-2 text-base disabled:opacity-60"
-
                         value={depositoValue}
                         onChange={(e) => {
                             onChangeDeposito(e.target.value);
-                            setRows([]);
+
+                            // não zera rows agressivamente aqui (evita “modal branco”)
                             setErr("");
-                            // ✅ ao trocar depósito, já abre o modal pra escolher (sem digitar)
+
+                            // ✅ ao trocar depósito, já abre o modal
                             setPickerOpen(true);
+
                             onBlurValidate?.();
                         }}
                         disabled={disabled}
@@ -329,8 +344,8 @@ function EstoqueCombobox({
                             onClick={() => {
                                 if (!disabled) setPickerOpen(true);
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
-
+                            className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${errorText ? "border-red-500" : ""
+                                }`}
                             disabled={disabled}
                             autoComplete="off"
                             title={label}
@@ -339,7 +354,6 @@ function EstoqueCombobox({
                         <button
                             type="button"
                             className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-muted disabled:opacity-60"
-
                             disabled={disabled}
                             onClick={() => setPickerOpen(true)}
                         >
@@ -369,12 +383,7 @@ function EstoqueCombobox({
             {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
 
             {/* MODAL / POPUP */}
-            <Modal
-                open={pickerOpen}
-                onClose={() => setPickerOpen(false)}
-                ariaLabel={`Selecionar ${label}`}
-                maxWidth={720}
-            >
+            <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} ariaLabel={`Selecionar ${label}`} maxWidth={720}>
                 <div className="flex items-center justify-between gap-2">
                     <div>
                         <h3 className="text-lg font-semibold">Selecionar {label}</h3>
@@ -392,7 +401,7 @@ function EstoqueCombobox({
                     </button>
                 </div>
 
-                {/* ✅ busca opcional (se quiser filtrar). Se não digitar, lista já aparece */}
+                {/* ✅ busca opcional */}
                 <div className="mt-4 flex gap-2">
                     <input
                         ref={searchRef}
@@ -402,19 +411,16 @@ function EstoqueCombobox({
                             const v = e.target.value;
                             setQ(v);
                             setErr("");
-                            // NÃO mexe na eleção 
+                            // NÃO mexe na seleção
                         }}
-
                         placeholder="(Opcional) filtrar por nome ou código…"
                         className="w-full rounded-md border px-3 py-2 text-base"
-
                         autoComplete="off"
                     />
 
                     <button
                         type="button"
                         className="rounded-md border px-3 py-2 text-base hover:bg-muted"
-
                         onClick={() => setQ("")}
                         title="Limpar filtro"
                     >
@@ -428,19 +434,21 @@ function EstoqueCombobox({
                     ) : err ? (
                         <div className="p-3 text-sm text-red-600">{err}</div>
                     ) : rows.length === 0 ? (
-                        <div className="p-3 text-base text-slate-600">
-                            Nenhum item encontrado no estoque ({depositoValue}).
-                        </div>
+                        <div className="p-3 text-base text-slate-600">Nenhum item encontrado no estoque ({depositoValue}).</div>
                     ) : (
-                        <ul className="max-h-[65vh] overflow-auto py-1">
+                        <ul
+                            className="max-h-[65vh] overflow-auto py-1"
+                            style={{ WebkitOverflowScrolling: "touch" }} // ✅ iOS smoother scroll
+                        >
                             {rows.map((it) => {
-                                const pidKey = getPidFromRow(it);
+                                const k = getStableRowKey(it);
                                 return (
-                                    <li key={pidKey || it.nome}>
+                                    <li key={k}>
                                         <button
                                             type="button"
                                             className="w-full px-3 py-3 text-left text-base hover:bg-slate-50"
                                             onClick={() => applySelection(it)}
+                                            onPointerUp={() => applySelection(it)} // ✅ melhora toque no iOS dentro de overflow
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="truncate font-medium text-slate-900">{it.nome}</span>
@@ -459,14 +467,51 @@ function EstoqueCombobox({
                     )}
                 </div>
 
-                <div className="mt-3 text-[11px] text-slate-500">
-                    Toque no item para selecionar. (Sem digitar, a lista já vem do depósito.)
-                </div>
+                <div className="mt-3 text-[11px] text-slate-500">Toque no item para selecionar. (Sem digitar, a lista já vem do depósito.)</div>
             </Modal>
         </div>
     );
 }
 
+/* -------------------- depósitos -------------------- */
+type DepUrna = "MEMORIAL" | "FUNERARIA";
+type DepRoupa = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
+type DepInvol = "ARMARIO SANDRO" | "ARMARIO ILDO";
+
+// ✅ VÉU e CORDÃO saem só destes 3
+type DepVeu = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
+type DepCordao = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
+
+function normalizeDepUrna(v: any): DepUrna {
+    const s = normUpper(v);
+    return s === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+}
+
+function normalizeDepRoupa(v: any): DepRoupa {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return "ARMARIO SANDRO";
+}
+
+function normalizeDepInvol(v: any): DepInvol {
+    const s = normUpper(v);
+    return s === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
+}
+
+function normalizeDepVeu(v: any): DepVeu {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return "ARMARIO SANDRO";
+}
+
+function normalizeDepCordao(v: any): DepCordao {
+    const s = normUpper(v);
+    if (s === "ARMARIO ILDO") return "ARMARIO ILDO";
+    if (s === "FUNERARIA") return "FUNERARIA";
+    return "ARMARIO SANDRO";
+}
 
 /* =========================================================================
    Wizard
@@ -533,13 +578,13 @@ export default function Wizard({
     const [veuVal, setVeuVal] = useState<string>("");
     const [cordaoVal, setCordaoVal] = useState<string>("");
 
-
     const [assistenciaErro, setAssistenciaErro] = useState<string>("");
     const [urnaErro, setUrnaErro] = useState<string>("");
     const [roupaErro, setRoupaErro] = useState<string>("");
     const [involErro, setInvolErro] = useState<string>("");
     const [veuErro, setVeuErro] = useState<string>("");
     const [cordaoErro, setCordaoErro] = useState<string>("");
+
     // ✅ erros de "Sim/Não" (select obrigatório)
     const [tanatoSelectErro, setTanatoSelectErro] = useState<string>("");
     const [ornamentacaoSelectErro, setOrnamentacaoSelectErro] = useState<string>("");
@@ -550,9 +595,6 @@ export default function Wizard({
     // ✅ erro do tipo (Natural/Artificial) quando ornamentacao = Sim
     const [ornamentacaoTipoErro, setOrnamentacaoTipoErro] = useState<string>("");
 
-
-
-
     // depósitos locais (controlados)
     const [depUrna, setDepUrna] = useState<DepUrna>("MEMORIAL");
     const [depRoupa, setDepRoupa] = useState<DepRoupa>("ARMARIO SANDRO");
@@ -560,20 +602,12 @@ export default function Wizard({
     const [depVeu, setDepVeu] = useState<DepVeu>("ARMARIO SANDRO");
     const [depCordao, setDepCordao] = useState<DepCordao>("ARMARIO SANDRO");
 
-
     useEffect(() => {
         setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
         setInvolVal(String((wizardData as any).invol ?? ""));
         setVeuVal(String((wizardData as any).veu ?? ""));
         setCordaoVal(String((wizardData as any).cordao ?? ""));
-    }, [
-        open,
-        (wizardData as any).ornamentacao,
-        (wizardData as any).invol,
-        (wizardData as any).veu,
-        (wizardData as any).cordao,
-    ]);
-
+    }, [open, (wizardData as any).ornamentacao, (wizardData as any).invol, (wizardData as any).veu, (wizardData as any).cordao]);
 
     useEffect(() => {
         if (!open) return;
@@ -584,6 +618,7 @@ export default function Wizard({
         setVeuErro("");
         setCordaoErro("");
         setAssistenciaErro("");
+
         // ✅ limpa erros dos selects Sim/Não
         setTanatoSelectErro("");
         setOrnamentacaoSelectErro("");
@@ -594,16 +629,12 @@ export default function Wizard({
         // ✅ limpa erro do Natural/Artificial
         setOrnamentacaoTipoErro("");
 
-
-
         setDepUrna(normalizeDepUrna((wizardData as any).urna_deposito_nome ?? "MEMORIAL"));
         setDepRoupa(normalizeDepRoupa((wizardData as any).roupa_deposito_nome ?? "ARMARIO SANDRO"));
         setDepInvol(normalizeDepInvol((wizardData as any).invol_deposito_nome ?? "ARMARIO SANDRO"));
-
         setDepVeu(normalizeDepVeu((wizardData as any).veu_deposito_nome ?? "ARMARIO SANDRO"));
         setDepCordao(normalizeDepCordao((wizardData as any).cordao_deposito_nome ?? "ARMARIO SANDRO"));
     }, [open]);
-
 
     // ✅ auto-limpa erro quando produto_id chega
     useEffect(() => {
@@ -626,16 +657,13 @@ export default function Wizard({
         if (pid > 0) setCordaoErro("");
     }, [(wizardData as any).cordao_produto_id]);
 
-
-
-    // ✅ limpa erro URNA quando a seleção (produto_id) chega no wizardData
+    // ✅ limpa erro URNA quando seleção chega no wizardData
     useEffect(() => {
         if (!open) return;
 
         const urnaTxt = String((wizardData as any).urna ?? "").trim();
         const pid = Number((wizardData as any).urna_produto_id ?? 0) || 0;
 
-        // se já tem produto selecionado (ou o campo está vazio), não faz sentido manter erro
         if (pid > 0 || urnaTxt === "") setUrnaErro("");
     }, [open, (wizardData as any).urna, (wizardData as any).urna_produto_id]);
 
@@ -644,9 +672,7 @@ export default function Wizard({
         if (!open) return;
 
         const invol = String((wizardData as any).invol ?? involVal ?? "");
-
         if (invol !== "Sim") {
-            // se não é Sim, não deve exigir INVOL do estoque
             setInvolErro("");
             return;
         }
@@ -655,13 +681,7 @@ export default function Wizard({
         const dep = String((wizardData as any).invol_deposito_nome ?? "").trim();
 
         if (pid > 0 && dep) setInvolErro("");
-    }, [
-        open,
-        involVal,
-        (wizardData as any).invol,
-        (wizardData as any).invol_produto_id,
-        (wizardData as any).invol_deposito_nome,
-    ]);
+    }, [open, involVal, (wizardData as any).invol, (wizardData as any).invol_produto_id, (wizardData as any).invol_deposito_nome]);
 
     useEffect(() => {
         if (!open) return;
@@ -675,13 +695,7 @@ export default function Wizard({
         const pid = Number((wizardData as any).veu_produto_id ?? 0) || 0;
         const dep = String((wizardData as any).veu_deposito_nome ?? "").trim();
         if (pid > 0 && dep) setVeuErro("");
-    }, [
-        open,
-        veuVal,
-        (wizardData as any).veu,
-        (wizardData as any).veu_produto_id,
-        (wizardData as any).veu_deposito_nome,
-    ]);
+    }, [open, veuVal, (wizardData as any).veu, (wizardData as any).veu_produto_id, (wizardData as any).veu_deposito_nome]);
 
     useEffect(() => {
         if (!open) return;
@@ -695,15 +709,7 @@ export default function Wizard({
         const pid = Number((wizardData as any).cordao_produto_id ?? 0) || 0;
         const dep = String((wizardData as any).cordao_deposito_nome ?? "").trim();
         if (pid > 0 && dep) setCordaoErro("");
-    }, [
-        open,
-        cordaoVal,
-        (wizardData as any).cordao,
-        (wizardData as any).cordao_produto_id,
-        (wizardData as any).cordao_deposito_nome,
-    ]);
-
-
+    }, [open, cordaoVal, (wizardData as any).cordao, (wizardData as any).cordao_produto_id, (wizardData as any).cordao_deposito_nome]);
 
     const assistenciaGroupIndex = useMemo(() => {
         return wizardStepIndexes.findIndex((arr) => arr.some((idx) => steps[idx]?.id === "assistencia"));
@@ -735,8 +741,6 @@ export default function Wizard({
     const veuSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu"), [grupoSteps]);
     const cordaoSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
 
-
-
     const isRequired = (id: string) => obrigatorios.includes(id);
 
     const validarAssistencia = () => {
@@ -753,7 +757,7 @@ export default function Wizard({
 
     // ✅ validações "Sim/Não" para selects obrigatórios
     const validarTanatoSelect = () => {
-        if (!tanatoNoGrupoAtual) return true;           // ✅ só valida se está na tela
+        if (!tanatoNoGrupoAtual) return true;
         if (!isRequired("tanato")) return true;
 
         if (isSimNao(tanatoVal)) {
@@ -764,9 +768,8 @@ export default function Wizard({
         return false;
     };
 
-
     const validarOrnamentacaoSelect = () => {
-        if (!ornamentacaoNoGrupoAtual) return true;     // ✅
+        if (!ornamentacaoNoGrupoAtual) return true;
         if (!isRequired("ornamentacao")) return true;
 
         if (isSimNao(ornamentacaoVal)) {
@@ -777,9 +780,8 @@ export default function Wizard({
         return false;
     };
 
-
     const validarInvolSelect = () => {
-        if (!involSelectNoGrupoAtual) return true;      // ✅
+        if (!involSelectNoGrupoAtual) return true;
         if (!isRequired("invol")) return true;
 
         if (isSimNao(involVal)) {
@@ -791,7 +793,7 @@ export default function Wizard({
     };
 
     const validarVeuSelect = () => {
-        if (!veuSelectNoGrupoAtual) return true;        // ✅
+        if (!veuSelectNoGrupoAtual) return true;
         if (!isRequired("veu")) return true;
 
         if (isSimNao(veuVal)) {
@@ -803,7 +805,7 @@ export default function Wizard({
     };
 
     const validarCordaoSelect = () => {
-        if (!cordaoSelectNoGrupoAtual) return true;     // ✅
+        if (!cordaoSelectNoGrupoAtual) return true;
         if (!isRequired("cordao")) return true;
 
         if (isSimNao(cordaoVal)) {
@@ -814,13 +816,11 @@ export default function Wizard({
         return false;
     };
 
-    // ✅ se ornamentacao = Sim, exige Natural/Artificial (ornamentacao_tipo)
+    // ✅ se ornamentacao = Sim, exige Natural/Artificial
     const validarOrnamentacaoTipoSeNecessario = () => {
-        // Só valida se o campo existe no grupo atual (ou seja, está renderizando agora)
         const tipoNoGrupoAtual = grupoSteps.some((s) => s.id === "ornamentacao_tipo");
         if (!tipoNoGrupoAtual) return true;
 
-        // Só obriga se Ornamentação = Sim
         if (ornamentacaoVal !== "Sim") {
             setOrnamentacaoTipoErro("");
             return true;
@@ -836,10 +836,7 @@ export default function Wizard({
         return true;
     };
 
-
-
-
-    // ✅ valida URNA pelo wizardData
+    // ✅ valida URNA
     const validarUrnaSeNecessario = () => {
         if (!urnaNoGrupoAtual) return true;
 
@@ -856,7 +853,7 @@ export default function Wizard({
         return true;
     };
 
-    // ✅ valida ROUPA pelo wizardData
+    // ✅ valida ROUPA
     const validarRoupaSeNecessario = () => {
         if (!roupaNoGrupoAtual) return true;
 
@@ -889,7 +886,7 @@ export default function Wizard({
         return true;
     };
 
-    // ✅ valida INVOL pelo wizardData (só se invol=Sim)
+    // ✅ valida INVOL (só se invol=Sim)
     const validarInvolSeNecessario = () => {
         if (!involNoGrupoAtual && !involItemNoGrupoAtual) return true;
 
@@ -965,7 +962,6 @@ export default function Wizard({
         return true;
     };
 
-
     // GPS p/ Local do Velório
     const [gpsLoading, setGpsLoading] = useState(false);
     const [gpsMsg, setGpsMsg] = useState<string | null>(null);
@@ -1014,68 +1010,137 @@ export default function Wizard({
     };
 
     const scrollToFirstError = () => {
-        // pega o primeiro campo "marcado" como erro
         const el =
             (document.querySelector('[data-wizard-error="1"]') as HTMLElement | null) ||
             (document.querySelector(".border-red-500") as HTMLElement | null);
 
         if (!el) return;
 
-        // rola suavemente pra ele (bom no celular)
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        // ✅ no mobile: evita smooth (reduz bug “tela branca”/repaint)
+        const mobile = isMobileCoarsePointer();
+        el.scrollIntoView({ behavior: mobile ? "auto" : "smooth", block: "center" });
 
-        // tenta focar (select/input)
-        requestAnimationFrame(() => {
-            (el as any)?.focus?.();
-        });
+        // ✅ no mobile: não força focus (teclado/reflow)
+        if (!mobile) {
+            requestAnimationFrame(() => {
+                (el as any)?.focus?.();
+            });
+        }
     };
 
-    
     const goNext = () => {
         if (wizardSubmitting) return;
 
-        // Assistência (já existia)
-        if (assistenciaNoGrupoAtual && !validarAssistencia()) { scrollToFirstError(); return; }
+        if (assistenciaNoGrupoAtual && !validarAssistencia()) {
+            scrollToFirstError();
+            return;
+        }
 
-        if (!validarTanatoSelect()) { scrollToFirstError(); return; }
-        if (!validarOrnamentacaoSelect()) { scrollToFirstError(); return; }
-        if (!validarOrnamentacaoTipoSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarInvolSelect()) { scrollToFirstError(); return; }
-        if (!validarVeuSelect()) { scrollToFirstError(); return; }
-        if (!validarCordaoSelect()) { scrollToFirstError(); return; }
+        if (!validarTanatoSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarOrnamentacaoSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarOrnamentacaoTipoSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarInvolSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarVeuSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarCordaoSelect()) {
+            scrollToFirstError();
+            return;
+        }
 
-        if (!validarUrnaSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarRoupaSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarVeuSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarCordaoSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarInvolSeNecessario()) { scrollToFirstError(); return; }
-
-
+        if (!validarUrnaSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarRoupaSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarVeuSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarCordaoSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarInvolSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
 
         const ok = salvarGrupoWizard();
         if (!ok) return;
         if (!isLastStep) setWizardStep(wizardStep + 1);
     };
 
-
     const tentarConcluir = async () => {
         if (wizardSubmitting) return;
 
-        if (assistenciaNoGrupoAtual && !validarAssistencia()) { scrollToFirstError(); return; }
+        if (assistenciaNoGrupoAtual && !validarAssistencia()) {
+            scrollToFirstError();
+            return;
+        }
 
-        if (!validarTanatoSelect()) { scrollToFirstError(); return; }
-        if (!validarOrnamentacaoSelect()) { scrollToFirstError(); return; }
-        if (!validarOrnamentacaoTipoSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarTanatoSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarOrnamentacaoSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarOrnamentacaoTipoSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
 
-        if (!validarInvolSelect()) { scrollToFirstError(); return; }
-        if (!validarVeuSelect()) { scrollToFirstError(); return; }
-        if (!validarCordaoSelect()) { scrollToFirstError(); return; }
+        if (!validarInvolSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarVeuSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarCordaoSelect()) {
+            scrollToFirstError();
+            return;
+        }
 
-        if (!validarUrnaSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarRoupaSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarVeuSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarCordaoSeNecessario()) { scrollToFirstError(); return; }
-        if (!validarInvolSeNecessario()) { scrollToFirstError(); return; }
+        if (!validarUrnaSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarRoupaSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarVeuSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarCordaoSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarInvolSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
 
         try {
             await concluirWizard();
@@ -1084,8 +1149,6 @@ export default function Wizard({
             alert(e?.message || "Erro ao salvar. Veja o console/Network.");
         }
     };
-
-
 
     if (!open) return null;
 
@@ -1180,11 +1243,8 @@ export default function Wizard({
                                             urna_codigo_barras: cb,
                                         }));
 
-                                        setUrnaErro(""); // pronto, some na hora
+                                        setUrnaErro("");
                                     }}
-
-
-
                                     footerHint={
                                         <>
                                             Obs: a baixa do estoque acontece automaticamente ao registrar <b>Ínicio da Ornamentação (fase05)</b>.
@@ -1222,10 +1282,8 @@ export default function Wizard({
                                         const next = normalizeDepRoupa(v);
                                         setDepRoupa(next);
 
-                                        // se for roupa própria, depósito não importa
                                         if (isRoupaPropria((wizardData as any).roupa)) return;
 
-                                        // ✅ ao trocar depósito, limpa a seleção para não ficar "nome sem produto_id"
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             roupa: "",
@@ -1236,7 +1294,6 @@ export default function Wizard({
 
                                         validarRoupaSeNecessario();
                                     }}
-
                                     action="roupas_buscar"
                                     errorText={roupaErro}
                                     onBlurValidate={validarRoupaSeNecessario}
@@ -1280,35 +1337,29 @@ export default function Wizard({
                                                 className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
                                                 disabled={wizardSubmitting}
                                                 onClick={() => {
-                                                    // 1) Atualiza o state (wizardData)
                                                     setWizardData((prev: any) => ({
                                                         ...prev,
                                                         roupa: "ROUPA PRÓPRIA",
                                                         roupa_deposito_nome: "",
                                                         roupa_produto_id: 0,
                                                         roupa_codigo_barras: "",
-                                                        // opcional (não quebra o PHP; ajuda debug/controle no futuro)
                                                         roupa_propria: 1,
                                                     }));
 
-                                                    // 2) Força o valor no input do DOM (caso salvarGrupoWizard leia do DOM)
                                                     const el = document.getElementById("wizard-roupa") as HTMLInputElement | null;
                                                     if (el) {
                                                         el.value = "ROUPA PRÓPRIA";
-                                                        // dispara eventos para quem estiver escutando input/change
                                                         el.dispatchEvent(new Event("input", { bubbles: true }));
                                                         el.dispatchEvent(new Event("change", { bubbles: true }));
                                                         el.blur();
                                                     }
 
-                                                    // 3) Limpa erro e valida em seguida (garante que o próximo clique não bloqueie)
                                                     setRoupaErro("");
                                                     requestAnimationFrame(() => validarRoupaSeNecessario());
                                                 }}
                                             >
                                                 Usar ROUPA PRÓPRIA
                                             </button>
-
 
                                             {isPropria ? (
                                                 <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span>
@@ -1321,8 +1372,8 @@ export default function Wizard({
                     }
 
                     /* ===========================
-   VÉU (select controlado)
-   =========================== */
+                       VÉU (select controlado)
+                       =========================== */
                     if (step.id === "veu" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -1331,7 +1382,8 @@ export default function Wizard({
                                 <select
                                     id={`wizard-${step.id}`}
                                     data-wizard-error={veuSelectErro || veuErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuSelectErro || veuErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuSelectErro || veuErro ? "border-red-500" : ""
+                                        }`}
                                     value={veuVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1340,36 +1392,34 @@ export default function Wizard({
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             veu: v,
-                                            ...(v !== "Sim"
-                                                ? { veu_deposito_nome: "", veu_produto_id: 0, veu_codigo_barras: "", veu_item: "" }
-                                                : {}),
+                                            ...(v !== "Sim" ? { veu_deposito_nome: "", veu_produto_id: 0, veu_codigo_barras: "", veu_item: "" } : {}),
                                         }));
 
                                         if (isSimNao(v)) setVeuSelectErro("");
-                                        if (v !== "Sim") setVeuErro(""); // mantém seu erro de estoque limpo
+                                        if (v !== "Sim") setVeuErro("");
                                     }}
                                     onBlur={() => validarVeuSelect()}
                                     disabled={wizardSubmitting}
                                 >
-
                                     <option value="" disabled>
                                         Selecione…
                                     </option>
                                     {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
-
                                 </select>
+
                                 {veuSelectErro && <div className="mt-1 text-xs text-red-600">{veuSelectErro}</div>}
                                 {veuErro && <div className="mt-1 text-xs text-red-600">{veuErro}</div>}
-
                             </div>
                         );
                     }
 
                     /* ===========================
-   VÉU ITEM (async) - só se veu=Sim
-   =========================== */
+                       VÉU ITEM (async) - só se veu=Sim
+                       =========================== */
                     if (step.type === "async_veu" && step.id === "veu_item") {
                         if (veuVal !== "Sim") return null;
 
@@ -1419,7 +1469,7 @@ export default function Wizard({
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
-                                            veu: "Sim", // ✅ garante coerência
+                                            veu: "Sim",
                                             veu_item: String(it.nome || "").trim(),
                                             veu_deposito_nome: depVeu,
                                             veu_produto_id: pid,
@@ -1428,14 +1478,14 @@ export default function Wizard({
 
                                         setVeuErro("");
                                     }}
-
                                 />
                             </div>
                         );
                     }
+
                     /* ===========================
-   CORDÃO (select controlado)
-   =========================== */
+                       CORDÃO (select controlado)
+                       =========================== */
                     if (step.id === "cordao" && step.type === "select") {
                         return (
                             <div key={step.id}>
@@ -1444,7 +1494,8 @@ export default function Wizard({
                                 <select
                                     id={`wizard-${step.id}`}
                                     data-wizard-error={cordaoSelectErro || cordaoErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoSelectErro || cordaoErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoSelectErro || cordaoErro ? "border-red-500" : ""
+                                        }`}
                                     value={cordaoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1459,30 +1510,30 @@ export default function Wizard({
                                         }));
 
                                         if (isSimNao(v)) setCordaoSelectErro("");
-                                        if (v !== "Sim") setCordaoErro(""); // mantém seu erro de estoque limpo
+                                        if (v !== "Sim") setCordaoErro("");
                                     }}
                                     onBlur={() => validarCordaoSelect()}
                                     disabled={wizardSubmitting}
                                 >
-
                                     <option value="" disabled>
                                         Selecione…
                                     </option>
                                     {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
-
                                 </select>
+
                                 {cordaoSelectErro && <div className="mt-1 text-xs text-red-600">{cordaoSelectErro}</div>}
                                 {cordaoErro && <div className="mt-1 text-xs text-red-600">{cordaoErro}</div>}
-
                             </div>
                         );
                     }
 
                     /* ===========================
-   CORDÃO ITEM (async) - só se cordao=Sim
-   =========================== */
+                       CORDÃO ITEM (async) - só se cordao=Sim
+                       =========================== */
                     if (step.type === "async_cordao" && step.id === "cordao_item") {
                         if (cordaoVal !== "Sim") return null;
 
@@ -1532,7 +1583,7 @@ export default function Wizard({
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
-                                            cordao: "Sim", // ✅ garante coerência
+                                            cordao: "Sim",
                                             cordao_item: String(it.nome || "").trim(),
                                             cordao_deposito_nome: depCordao,
                                             cordao_produto_id: pid,
@@ -1546,12 +1597,8 @@ export default function Wizard({
                         );
                     }
 
-
-
-
-
                     /* ===========================
-                       local_velorio com GPS
+                       local_velorio com GPS (datalist)
                        =========================== */
                     if (step.id === "local_velorio" && step.type === "datalist") {
                         const listId = `dl-${step.id}`;
@@ -1565,13 +1612,13 @@ export default function Wizard({
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                     <input
+                                        key={`${wizardStep}-${step.id}`} // ✅ força remount do defaultValue por step (evita “travadas”)
                                         ref={localVelorioRef}
                                         id={`wizard-${step.id}`}
                                         list={listId}
                                         placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
                                         defaultValue={currentText}
                                         className="w-full flex-1 rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                         disabled={wizardSubmitting}
                                     />
 
@@ -1655,8 +1702,8 @@ export default function Wizard({
                                 <select
                                     id={`wizard-${step.id}`}
                                     data-wizard-error={assistenciaErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""}`}
-
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
+                                        }`}
                                     value={assistenciaVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1673,9 +1720,10 @@ export default function Wizard({
                                         Selecione…
                                     </option>
                                     {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
-
                                 </select>
 
                                 {assistenciaErro && <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>}
@@ -1690,7 +1738,9 @@ export default function Wizard({
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">{materiaisSelecionadosResumo || "Nenhum material selecionado"}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -1710,7 +1760,8 @@ export default function Wizard({
                                 <select
                                     id={`wizard-${step.id}`}
                                     data-wizard-error={tanatoSelectErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${tanatoSelectErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${tanatoSelectErro ? "border-red-500" : ""
+                                        }`}
                                     value={tanatoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1725,16 +1776,16 @@ export default function Wizard({
                                         Selecione…
                                     </option>
                                     {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
-
                                 </select>
 
                                 {tanatoSelectErro && <div className="mt-1 text-xs text-red-600">{tanatoSelectErro}</div>}
                             </div>
                         );
                     }
-
 
                     /* ===========================
                        ornamentacao (controlado)
@@ -1747,11 +1798,11 @@ export default function Wizard({
                                     {isRequired(step.id) && <span className="text-red-600"> *</span>}
                                 </label>
 
-
                                 <select
                                     id={`wizard-${step.id}`}
                                     data-wizard-error={ornamentacaoSelectErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoSelectErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoSelectErro ? "border-red-500" : ""
+                                        }`}
                                     value={ornamentacaoVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1768,22 +1819,20 @@ export default function Wizard({
                                     onBlur={() => validarOrnamentacaoSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    
-
-
                                     <option value="" disabled>
                                         Selecione…
                                     </option>
                                     {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
-
                                 </select>
+
                                 {ornamentacaoSelectErro && <div className="mt-1 text-xs text-red-600">{ornamentacaoSelectErro}</div>}
                             </div>
                         );
                     }
-
 
                     /* ===========================
                        INVOL (select controlado)
@@ -1798,7 +1847,8 @@ export default function Wizard({
                                 <select
                                     id={`wizard-${step.id}`}
                                     data-wizard-error={involSelectErro || involErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${involSelectErro ? "border-red-500" : ""}`}
+                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${involSelectErro ? "border-red-500" : ""
+                                        }`}
                                     value={involVal}
                                     onChange={(e) => {
                                         const v = e.target.value;
@@ -1811,22 +1861,21 @@ export default function Wizard({
                                         }));
 
                                         if (isSimNao(v)) setInvolSelectErro("");
-                                        if (v !== "Sim") setInvolErro(""); // mantém seu erro de estoque limpo
+                                        if (v !== "Sim") setInvolErro("");
                                     }}
                                     onBlur={() => validarInvolSelect()}
                                     disabled={wizardSubmitting}
                                 >
-                                    
-
-
                                     <option value="" disabled>
                                         Selecione…
                                     </option>
                                     {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
                                     ))}
-
                                 </select>
+
                                 {involSelectErro && <div className="mt-1 text-xs text-red-600">{involSelectErro}</div>}
                             </div>
                         );
@@ -1889,19 +1938,15 @@ export default function Wizard({
                                             invol_codigo_barras: cb,
                                         }));
 
-                                        // some na hora (sem revalidar cedo demais)
                                         setInvolErro("");
                                     }}
-
-
-
                                 />
                             </div>
                         );
                     }
 
                     /* ===========================
-                       ornamentacao_tipo (default)
+                       ornamentacao_tipo (select)
                        =========================== */
                     if (step.id === "ornamentacao_tipo" && step.type === "select") {
                         return (
@@ -1933,14 +1978,10 @@ export default function Wizard({
                                     ))}
                                 </select>
 
-                                {ornamentacaoTipoErro && (
-                                    <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>
-                                )}
+                                {ornamentacaoTipoErro && <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>}
                             </div>
                         );
                     }
-
-
 
                     /* ===========================
                        defaults
@@ -1953,12 +1994,12 @@ export default function Wizard({
                                     {isRequired(step.id) && <span className="text-red-600"> *</span>}
                                 </label>
                                 <input
+                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step (defaultValue confiável)
                                     id={`wizard-${step.id}`}
                                     type="text"
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -1970,11 +2011,11 @@ export default function Wizard({
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
                                 <textarea
+                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                     rows={3}
                                     disabled={wizardSubmitting}
                                 />
@@ -1983,9 +2024,7 @@ export default function Wizard({
                     }
 
                     if (step.type === "select") {
-                        const options = (step.options && step.options.length > 0)
-                            ? step.options
-                            : ["Sim", "Não"]; // fallback só se não vier opções
+                        const options = step.options && step.options.length > 0 ? step.options : ["Sim", "Não"];
 
                         return (
                             <div key={step.id}>
@@ -1995,6 +2034,7 @@ export default function Wizard({
                                 </label>
 
                                 <select
+                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
@@ -2014,17 +2054,16 @@ export default function Wizard({
                         );
                     }
 
-
                     if (step.type === "date") {
                         return (
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
                                 <input
+                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     type="date"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -2036,11 +2075,11 @@ export default function Wizard({
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
                                 <input
+                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     type="time"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -2053,12 +2092,12 @@ export default function Wizard({
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">{step.label}</label>
                                 <input
+                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     list={listId}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                     disabled={wizardSubmitting}
                                 />
                                 <datalist id={listId}>
