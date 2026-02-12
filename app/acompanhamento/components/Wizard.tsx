@@ -1948,30 +1948,37 @@ export default function Wizard({
                     }
 
                     if (step.type === "select") {
+                        const options = (step.options && step.options.length > 0)
+                            ? step.options
+                            : ["Sim", "Não"]; // fallback só se não vier opções
+
                         return (
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-red-600"> *</span>}
                                 </label>
+
                                 <select
                                     id={`wizard-${step.id}`}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
-
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     disabled={wizardSubmitting}
                                 >
                                     <option value="" disabled>
                                         Selecione…
                                     </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>{op}</option>
-                                    ))}
 
+                                    {options.filter(Boolean).map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
                         );
                     }
+
 
                     if (step.type === "date") {
                         return (
