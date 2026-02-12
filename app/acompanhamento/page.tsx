@@ -1490,7 +1490,8 @@ export default function AcompanhamentoPage() {
       }
 
 
-      // INVOL (se invol = Sim)
+      
+      // 3) INVOL (se invol = Sim)
       if (isSim(reg?.invol)) {
         const involPid = Number(reg?.invol_produto_id ?? 0) || 0;
         const involDep = String(reg?.invol_deposito_nome ?? "").trim();
@@ -1504,6 +1505,34 @@ export default function AcompanhamentoPage() {
         }
       }
 
+      // ✅ VÉU (se veu = Sim)
+      if (isSim(reg?.veu)) {
+        const veuPid = Number(reg?.veu_produto_id ?? 0) || 0;
+        const veuDep = String(reg?.veu_deposito_nome ?? "").trim();
+        if (veuPid <= 0) {
+          setAcaoMsg({ ok: false, text: "Véu: selecione um VÉU da lista (estoque)." });
+          return false;
+        }
+        if (!veuDep) {
+          setAcaoMsg({ ok: false, text: "Véu: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA)." });
+          return false;
+        }
+      }
+
+      // ✅ CORDÃO (se cordao = Sim)
+      if (isSim(reg?.cordao)) {
+        const cordaoPid = Number(reg?.cordao_produto_id ?? 0) || 0;
+        const cordaoDep = String(reg?.cordao_deposito_nome ?? "").trim();
+        if (cordaoPid <= 0) {
+          setAcaoMsg({ ok: false, text: "Cordão: selecione um CORDÃO da lista (estoque)." });
+          return false;
+        }
+        if (!cordaoDep) {
+          setAcaoMsg({ ok: false, text: "Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA)." });
+          return false;
+        }
+      }
+
       // INSUMOS TANATO (se arrumacao_json tiver itens)
       const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
       if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
@@ -1511,13 +1540,6 @@ export default function AcompanhamentoPage() {
         return false;
       }
 
-      if (!isOnlineNow()) {
-        setAcaoMsg({
-          ok: false,
-          text: "Sem internet: não é possível iniciar a fase05 porque precisa dar baixa automática (urna/roupa/invol/insumos) no estoque. Conecte-se e tente novamente.",
-        });
-        return false;
-      }
     }
 
 
