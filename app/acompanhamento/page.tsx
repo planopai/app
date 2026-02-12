@@ -45,7 +45,8 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 
 // ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
-type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "INSUMOS";
+type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "INSUMOS";
+
 
 function isSim(v: any): boolean {
   const s = String(v ?? "").trim().toLowerCase();
@@ -1500,21 +1501,31 @@ export default function AcompanhamentoPage() {
         const reg = registros.find((x) => String(x.id) === String(acaoId)) as any;
         const registro_id = String(acaoId);
 
-        // 1) URNA (sempre)
+        // 1) URNA
         await baixarItensFase05({ registro_id, tipo: "URNA" });
 
-        // 2) ROUPA (se não for própria e tiver roupa preenchida)
+        // 2) ROUPA (se não for própria)
         const roupaTxt = String(reg?.roupa ?? "").trim();
         if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
           await baixarItensFase05({ registro_id, tipo: "ROUPA" });
         }
 
-        // 3) INVOL 
+        // 3) INVOL
         if (isSim(reg?.invol)) {
           await baixarItensFase05({ registro_id, tipo: "INVOL" });
         }
 
-        // 4) INSUMOS (se arrumacao_json tiver itens)
+        // 4) VÉU
+        if (isSim(reg?.veu)) {
+          await baixarItensFase05({ registro_id, tipo: "VEU" });
+        }
+
+        // 5) CORDÃO
+        if (isSim(reg?.cordao)) {
+          await baixarItensFase05({ registro_id, tipo: "CORDAO" });
+        }
+
+        // 6) INSUMOS
         const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
         if (ins && ins.itens.length > 0) {
           await baixarItensFase05({
@@ -1524,6 +1535,7 @@ export default function AcompanhamentoPage() {
             itens: ins.itens,
           });
         }
+
       } catch (e: any) {
         setAcaoSubmitting(false);
         setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática (fase05)." });
