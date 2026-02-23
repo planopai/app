@@ -17,26 +17,38 @@ import {
     IconX,
     IconCheck,
     IconAlertTriangle,
+    IconCopy,
+    IconInfoCircle,
 } from "@tabler/icons-react";
 
 /* =========================
    CONFIG
 ========================= */
-const ENDPOINT = "https://api.planoassistencialintegrado.com.br/associados_geral.php";
+const ENDPOINT =
+    "https://api.planoassistencialintegrado.com.br/associados_geral.php";
 
 /* =========================
-   UI styles (mesmo padrão)
+   UI styles (padrão + melhor alinhamento)
 ========================= */
+const btnBase =
+    "inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition " +
+    "disabled:opacity-50 disabled:cursor-not-allowed";
+
 const btnOutline =
-    "inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold " +
-    "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50";
+    btnBase + " border border-primary text-primary hover:bg-primary/5 active:bg-primary/10";
 
 const btnNeutral =
-    "inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold " +
-    "border-muted text-foreground hover:bg-muted/40 active:bg-muted/50 disabled:opacity-50";
+    btnBase + " border border-muted text-foreground hover:bg-muted/40 active:bg-muted/50";
+
+const btnDanger =
+    btnBase + " border border-red-300 text-red-700 hover:bg-red-50 active:bg-red-100 dark:border-red-900/50 dark:text-red-200 dark:hover:bg-red-900/20";
 
 const badge =
     "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold";
+
+const inputCls =
+    "w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none " +
+    "focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition";
 
 /* =========================
    Types
@@ -69,7 +81,7 @@ type LocalAuth = {
     ultimo_login: string | null;
 } | null;
 
-type BeneficiarioResponse = any; // a API pode variar; vamos mostrar em blocos
+type BeneficiarioResponse = any;
 
 type ContasReceberItem = {
     id: number;
@@ -104,7 +116,6 @@ function fmtMoneyBR(v: any) {
 function fmtDate(v: any) {
     if (!v) return "-";
     const s = String(v);
-    // se vier ISO
     const d = new Date(s);
     if (!isNaN(d.getTime())) return d.toLocaleString("pt-BR");
     return s;
@@ -112,11 +123,64 @@ function fmtDate(v: any) {
 
 function statusBadgeSituacao(situacao?: string) {
     const s = (situacao || "").toUpperCase();
-    if (s.includes("ATIVO")) return badge + " border-emerald-300 bg-emerald-50 text-emerald-800";
-    if (s.includes("INADIMPL")) return badge + " border-amber-300 bg-amber-50 text-amber-900";
-    if (s.includes("BLOQUE")) return badge + " border-red-300 bg-red-50 text-red-800";
-    if (s.includes("CANCEL")) return badge + " border-zinc-300 bg-zinc-50 text-zinc-800";
+    if (s.includes("ATIVO"))
+        return (
+            badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+        );
+    if (s.includes("INADIMPL"))
+        return (
+            badge + " border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200"
+        );
+    if (s.includes("BLOQUE"))
+        return (
+            badge + " border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+        );
+    if (s.includes("CANCEL"))
+        return (
+            badge + " border-zinc-300 bg-zinc-50 text-zinc-800 dark:bg-zinc-900/20 dark:text-zinc-200"
+        );
     return badge + " border-muted bg-muted/30 text-foreground";
+}
+
+async function safeJson(res: Response) {
+    try {
+        return await res.json();
+    } catch {
+        return null;
+    }
+}
+
+function normalizeContractsPayload(data: any): Contract[] {
+    const raw = data?.data;
+    if (Array.isArray(raw)) return raw as Contract[];
+    if (raw && Array.isArray(raw.data)) return raw.data as Contract[];
+    if (raw && Array.isArray(raw.items)) return raw.items as Contract[];
+    if (Array.isArray(data)) return data as Contract[];
+    return [];
+}
+
+function normalizeContasPayload(raw: any): ContasReceberItem[] {
+    if (Array.isArray(raw)) return raw as any;
+    if (raw && Array.isArray(raw.items)) return raw.items;
+    if (raw && Array.isArray(raw.data)) return raw.data;
+    return [];
+}
+
+function toastMessage(kind: "ok" | "warn" | "err", msg: string) {
+    // simples (sem libs): usa alert no fallback
+    // você pode trocar por sonner/toast no futuro.
+    if (kind === "ok") alert(msg);
+    else if (kind === "warn") alert(msg);
+    else alert(msg);
+}
+
+async function copyToClipboard(text: string) {
+    try {
+        await navigator.clipboard.writeText(text);
+        toastMessage("ok", "Copiado para a área de transferência.");
+    } catch {
+        toastMessage("err", "Não foi possível copiar.");
+    }
 }
 
 /* =========================
@@ -132,10 +196,10 @@ function ContractCard({
     return (
         <button
             onClick={() => onOpen(item)}
-            className="text-left w-full rounded-xl border bg-card/70 p-3 shadow-sm hover:bg-card/90 transition sm:p-4"
+            className="text-left w-full rounded-2xl border bg-card/70 p-4 shadow-sm hover:bg-card/90 hover:shadow-md transition"
         >
             <div className="flex items-start gap-3">
-                <div className="shrink-0 grid size-12 place-items-center rounded-md border">
+                <div className="shrink-0 grid size-12 place-items-center rounded-xl border bg-background/40">
                     <IconUserCircle className="size-6 text-muted-foreground" />
                 </div>
 
@@ -203,22 +267,24 @@ function Pager({
     disabledNext: boolean;
 }) {
     return (
-        <div className="mt-4 flex items-center justify-center gap-3">
+        <div className="mt-6 flex items-center justify-center gap-3">
             <button
                 onClick={onPrev}
                 disabled={disabledPrev}
-                className={btnNeutral + " min-w-[112px] disabled:cursor-not-allowed"}
+                className={btnNeutral + " min-w-[120px]"}
             >
                 <IconChevronLeft className="size-4" />
                 Anterior
             </button>
+
             <span className="text-sm text-muted-foreground">
                 Página <span className="font-semibold text-foreground">{page}</span>
             </span>
+
             <button
                 onClick={onNext}
                 disabled={disabledNext}
-                className={btnNeutral + " min-w-[112px] disabled:cursor-not-allowed"}
+                className={btnNeutral + " min-w-[120px]"}
             >
                 Próximo
                 <IconChevronRight className="size-4" />
@@ -246,7 +312,12 @@ function DetailDrawer({
     detail: ContractDetail | null;
     loading: boolean;
     onReload: () => void;
-    onUpsertAccess: (payload: { cpf: string; senha: string; email: string; telefone: string }) => Promise<void>;
+    onUpsertAccess: (payload: {
+        cpf: string;
+        senha: string;
+        email: string;
+        telefone: string;
+    }) => Promise<void>;
     onResetAccess: (cpf: string) => Promise<void>;
 }) {
     const [senha, setSenha] = useState("");
@@ -264,21 +335,23 @@ function DetailDrawer({
         setSenha("");
     }, [detail, open]);
 
+    useEffect(() => {
+        function onEsc(e: KeyboardEvent) {
+            if (e.key === "Escape") onClose();
+        }
+        if (open) window.addEventListener("keydown", onEsc);
+        return () => window.removeEventListener("keydown", onEsc);
+    }, [open, onClose]);
+
     if (!open) return null;
 
     const cpfDigits = onlyDigits(contract?.cpf_cnpj || "");
-
-    const contas: ContasReceberItem[] = useMemo(() => {
-        // O SearchAsync costuma retornar array direto; se vier envelope, tente achar
-        const raw = detail?.contas_receber;
-        if (Array.isArray(raw)) return raw as any;
-        if (raw && Array.isArray(raw.items)) return raw.items;
-        if (raw && Array.isArray(raw.data)) return raw.data;
-        return [];
-    }, [detail]);
+    const contas = useMemo(
+        () => normalizeContasPayload(detail?.contas_receber),
+        [detail]
+    );
 
     const local = detail?.local_auth;
-
     const hasAccess = !!local;
 
     return (
@@ -289,7 +362,7 @@ function DetailDrawer({
                 aria-hidden="true"
             />
             <div className="absolute right-0 top-0 h-full w-full max-w-3xl bg-background shadow-2xl">
-                <div className="flex items-center justify-between border-b px-4 py-3">
+                <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
                     <div className="min-w-0">
                         <div className="truncate text-lg font-bold">
                             {contract?.nome || "Detalhes do Associado"}
@@ -311,7 +384,7 @@ function DetailDrawer({
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                         <button onClick={onReload} className={btnNeutral} title="Recarregar">
                             <IconRefresh className="size-4" />
                             Atualizar
@@ -323,17 +396,16 @@ function DetailDrawer({
                     </div>
                 </div>
 
-                <div className="h-[calc(100%-56px)] overflow-y-auto p-4">
-                    {/* Estado */}
+                <div className="h-[calc(100%-64px)] overflow-y-auto p-4">
                     {loading && (
-                        <div className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                        <div className="mb-4 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
                             Carregando detalhes…
                         </div>
                     )}
 
                     {/* Acesso App */}
-                    <div className="rounded-xl border bg-card/60 p-4">
-                        <div className="flex items-start justify-between gap-3">
+                    <div className="rounded-2xl border bg-card/60 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                                 <div className="flex items-center gap-2 text-base font-semibold">
                                     <IconLock className="size-5 text-muted-foreground" />
@@ -349,8 +421,8 @@ function DetailDrawer({
                                     badge +
                                     " " +
                                     (hasAccess
-                                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                                        : "border-amber-300 bg-amber-50 text-amber-900")
+                                        ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+                                        : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200")
                                 }
                             >
                                 {hasAccess ? (
@@ -365,27 +437,59 @@ function DetailDrawer({
                             </span>
                         </div>
 
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-lg border bg-background p-3">
-                                <div className="text-sm font-semibold mb-2">Status</div>
-                                <div className="text-sm text-muted-foreground grid gap-1">
-                                    <div><span className="text-foreground font-medium">CPF:</span> {cpfDigits || "-"}</div>
+                        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                            <div className="rounded-xl border bg-background p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="text-sm font-semibold">Status</div>
+                                    <button
+                                        className={btnNeutral + " py-1 px-2 text-xs"}
+                                        onClick={() => cpfDigits && copyToClipboard(cpfDigits)}
+                                        disabled={!cpfDigits}
+                                        title="Copiar CPF (somente números)"
+                                    >
+                                        <IconCopy className="size-4" />
+                                        Copiar CPF
+                                    </button>
+                                </div>
+
+                                <div className="mt-2 text-sm text-muted-foreground grid gap-1">
+                                    <div>
+                                        <span className="text-foreground font-medium">CPF:</span>{" "}
+                                        {cpfDigits || "-"}
+                                    </div>
+
                                     <div className="flex items-center gap-2">
                                         <IconMail className="size-4" />
                                         <span className="text-foreground font-medium">Email:</span>{" "}
                                         {local?.email || "-"}
                                         {local?.email_verificado ? (
-                                            <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800"}>verificado</span>
+                                            <span
+                                                className={
+                                                    badge +
+                                                    " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+                                                }
+                                            >
+                                                verificado
+                                            </span>
                                         ) : null}
                                     </div>
+
                                     <div className="flex items-center gap-2">
                                         <IconPhone className="size-4" />
                                         <span className="text-foreground font-medium">Telefone:</span>{" "}
                                         {local?.telefone || "-"}
                                         {local?.telefone_verificado ? (
-                                            <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800"}>verificado</span>
+                                            <span
+                                                className={
+                                                    badge +
+                                                    " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+                                                }
+                                            >
+                                                verificado
+                                            </span>
                                         ) : null}
                                     </div>
+
                                     <div>
                                         <span className="text-foreground font-medium">Último login:</span>{" "}
                                         {local?.ultimo_login ? fmtDate(local.ultimo_login) : "-"}
@@ -397,40 +501,48 @@ function DetailDrawer({
                                 </div>
                             </div>
 
-                            <div className="rounded-lg border bg-background p-3">
-                                <div className="text-sm font-semibold mb-2">
-                                    Criar / Atualizar Acesso
-                                </div>
+                            <div className="rounded-xl border bg-background p-3">
+                                <div className="text-sm font-semibold mb-2">Criar / Atualizar Acesso</div>
 
                                 <div className="grid gap-2">
-                                    <label className="text-xs text-muted-foreground">E-mail</label>
-                                    <input
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="input w-full"
-                                        placeholder="email@dominio.com"
-                                    />
+                                    <div className="grid gap-1">
+                                        <label className="text-xs text-muted-foreground">E-mail</label>
+                                        <input
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            className={inputCls}
+                                            placeholder="email@dominio.com"
+                                            inputMode="email"
+                                        />
+                                    </div>
 
-                                    <label className="text-xs text-muted-foreground">Telefone (DDD + número)</label>
-                                    <input
-                                        value={telefone}
-                                        onChange={(e) => setTelefone(e.target.value)}
-                                        className="input w-full"
-                                        placeholder="(11) 99999-9999"
-                                    />
+                                    <div className="grid gap-1">
+                                        <label className="text-xs text-muted-foreground">
+                                            Telefone (DDD + número)
+                                        </label>
+                                        <input
+                                            value={telefone}
+                                            onChange={(e) => setTelefone(e.target.value)}
+                                            className={inputCls}
+                                            placeholder="(11) 99999-9999"
+                                            inputMode="tel"
+                                        />
+                                    </div>
 
-                                    <label className="text-xs text-muted-foreground">Nova senha (mín. 6)</label>
-                                    <input
-                                        value={senha}
-                                        onChange={(e) => setSenha(e.target.value)}
-                                        className="input w-full"
-                                        placeholder="Digite uma senha"
-                                        type="password"
-                                    />
+                                    <div className="grid gap-1">
+                                        <label className="text-xs text-muted-foreground">Nova senha (mín. 6)</label>
+                                        <input
+                                            value={senha}
+                                            onChange={(e) => setSenha(e.target.value)}
+                                            className={inputCls}
+                                            placeholder="Digite uma senha"
+                                            type="password"
+                                        />
+                                    </div>
 
-                                    <div className="flex flex-wrap gap-2 pt-2">
+                                    <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                                         <button
-                                            className={btnOutline}
+                                            className={btnOutline + " w-full"}
                                             onClick={() =>
                                                 onUpsertAccess({
                                                     cpf: cpfDigits,
@@ -447,7 +559,7 @@ function DetailDrawer({
                                         </button>
 
                                         <button
-                                            className={btnNeutral}
+                                            className={btnNeutral + " w-full"}
                                             onClick={() => onResetAccess(cpfDigits)}
                                             disabled={!cpfDigits || !hasAccess}
                                             title="Gera senha temporária e envia por e-mail"
@@ -457,16 +569,19 @@ function DetailDrawer({
                                         </button>
                                     </div>
 
-                                    <div className="text-xs text-muted-foreground pt-1">
-                                        * Reset envia uma senha temporária para o e-mail cadastrado no acesso.
+                                    <div className="mt-1 flex items-start gap-2 text-xs text-muted-foreground">
+                                        <IconInfoCircle className="size-4 shrink-0 mt-[1px]" />
+                                        <span>
+                                            Reset envia uma senha temporária para o e-mail cadastrado no acesso.
+                                        </span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Beneficiário (apiecommerce) */}
-                    <div className="mt-4 rounded-xl border bg-card/60 p-4">
+                    {/* Beneficiário */}
+                    <div className="mt-4 rounded-2xl border bg-card/60 p-4">
                         <div className="flex items-center gap-2 text-base font-semibold">
                             <IconFileText className="size-5 text-muted-foreground" />
                             Dados do Beneficiário (Unypax)
@@ -475,13 +590,13 @@ function DetailDrawer({
                             Retorno bruto do endpoint /convenio/beneficiario.
                         </div>
 
-                        <pre className="mt-3 max-h-[340px] overflow-auto rounded-lg border bg-background p-3 text-xs">
+                        <pre className="mt-3 max-h-[340px] overflow-auto rounded-xl border bg-background p-3 text-xs">
                             {JSON.stringify(detail?.beneficiario ?? null, null, 2)}
                         </pre>
                     </div>
 
                     {/* Contas a receber */}
-                    <div className="mt-4 rounded-xl border bg-card/60 p-4">
+                    <div className="mt-4 rounded-2xl border bg-card/60 p-4">
                         <div className="flex items-center gap-2 text-base font-semibold">
                             <IconCash className="size-5 text-muted-foreground" />
                             Contas a Receber (Unypax)
@@ -491,20 +606,20 @@ function DetailDrawer({
                         </div>
 
                         {contas.length === 0 ? (
-                            <div className="mt-3 rounded-lg border bg-background p-3 text-sm text-muted-foreground">
+                            <div className="mt-3 rounded-xl border bg-background p-3 text-sm text-muted-foreground">
                                 Nenhuma conta a receber retornada para este contrato (ou o endpoint retornou outro formato).
                             </div>
                         ) : (
-                            <div className="mt-3 overflow-auto rounded-lg border bg-background">
+                            <div className="mt-3 overflow-auto rounded-xl border bg-background">
                                 <table className="w-full text-sm">
                                     <thead className="border-b bg-muted/30">
                                         <tr>
-                                            <th className="px-3 py-2 text-left">ID</th>
-                                            <th className="px-3 py-2 text-left">Situação</th>
-                                            <th className="px-3 py-2 text-left">Parcela</th>
-                                            <th className="px-3 py-2 text-left">Vencimento</th>
-                                            <th className="px-3 py-2 text-left">Valor</th>
-                                            <th className="px-3 py-2 text-left">Cobrança</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">ID</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Situação</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Parcela</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Vencimento</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Valor</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Cobrança</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -513,7 +628,9 @@ function DetailDrawer({
                                                 <td className="px-3 py-2">{c.id}</td>
                                                 <td className="px-3 py-2">{c.situacao}</td>
                                                 <td className="px-3 py-2">{c.parcela ?? "-"}</td>
-                                                <td className="px-3 py-2">{c.dataVencimento ? fmtDate(c.dataVencimento) : "-"}</td>
+                                                <td className="px-3 py-2">
+                                                    {c.dataVencimento ? fmtDate(c.dataVencimento) : "-"}
+                                                </td>
                                                 <td className="px-3 py-2">{fmtMoneyBR(c.valor)}</td>
                                                 <td className="px-3 py-2">{c.cobranca ?? "-"}</td>
                                             </tr>
@@ -527,7 +644,7 @@ function DetailDrawer({
                             <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
                                 Ver JSON bruto
                             </summary>
-                            <pre className="mt-2 max-h-[260px] overflow-auto rounded-lg border bg-background p-3 text-xs">
+                            <pre className="mt-2 max-h-[260px] overflow-auto rounded-xl border bg-background p-3 text-xs">
                                 {JSON.stringify(detail?.contas_receber ?? null, null, 2)}
                             </pre>
                         </details>
@@ -539,12 +656,9 @@ function DetailDrawer({
 }
 
 /* =========================
-   Page principal
+   Page principal (SEM X-Admin-Key)
 ========================= */
 export default function AssociadosGeralPage() {
-    // chave admin
-    const [adminKey, setAdminKey] = useState("");
-
     // busca
     const [query, setQuery] = useState("");
     const [situacao, setSituacao] = useState("2,3,6,7,8,9,1,4,5"); // default amplo
@@ -562,18 +676,14 @@ export default function AssociadosGeralPage() {
     const [detail, setDetail] = useState<ContractDetail | null>(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
 
-    const canFetch = adminKey.trim().length > 0;
-
+    // headers SEM X-Admin-Key
     const headers = useMemo(() => {
         return {
             "Content-Type": "application/json",
-            "X-Admin-Key": adminKey.trim(),
-        };
-    }, [adminKey]);
+        } as Record<string, string>;
+    }, []);
 
     const loadContracts = useCallback(async () => {
-        if (!canFetch) return;
-
         try {
             setLoading(true);
             setError(null);
@@ -590,59 +700,58 @@ export default function AssociadosGeralPage() {
                 headers,
                 cache: "no-store",
             });
-            const data = await res.json().catch(() => null);
+            const data = await safeJson(res);
 
             if (!res.ok || !data?.ok) {
                 throw new Error(data?.error || "Erro ao carregar contratos.");
             }
 
-            const arr = Array.isArray(data.data) ? data.data : (data.data?.data ?? data.data?.items ?? []);
-            setContracts(Array.isArray(arr) ? arr : []);
+            setContracts(normalizeContractsPayload(data));
         } catch (e: any) {
             setError(e?.message || "Falha ao carregar.");
             setContracts([]);
         } finally {
             setLoading(false);
         }
-    }, [canFetch, headers, page, pageSize, query, situacao]);
+    }, [headers, page, pageSize, query, situacao]);
 
-    useEffect(() => {
-        // não auto-carrega sem adminKey
-    }, []);
-
-    const openDetail = useCallback(async (c: Contract) => {
-        setSelected(c);
-        setDrawerOpen(true);
-        setDetail(null);
-
-        const cpfDigits = onlyDigits(c.cpf_cnpj || "");
-        const idContrato = Number(c.id);
-
-        try {
-            setLoadingDetail(true);
-
-            const url = new URL(ENDPOINT);
-            url.searchParams.set("op", "contract_detail");
-            if (idContrato > 0) url.searchParams.set("idContrato", String(idContrato));
-            if (cpfDigits) url.searchParams.set("cpf", cpfDigits);
-
-            const res = await fetch(url.toString(), {
-                method: "GET",
-                headers,
-                cache: "no-store",
-            });
-            const data = await res.json().catch(() => null);
-            if (!res.ok || !data?.ok) {
-                throw new Error(data?.error || "Erro ao carregar detalhes.");
-            }
-            setDetail(data as ContractDetail);
-        } catch (e: any) {
-            alert(e?.message || "Erro ao carregar detalhes.");
+    const openDetail = useCallback(
+        async (c: Contract) => {
+            setSelected(c);
+            setDrawerOpen(true);
             setDetail(null);
-        } finally {
-            setLoadingDetail(false);
-        }
-    }, [headers]);
+
+            const cpfDigits = onlyDigits(c.cpf_cnpj || "");
+            const idContrato = Number(c.id);
+
+            try {
+                setLoadingDetail(true);
+
+                const url = new URL(ENDPOINT);
+                url.searchParams.set("op", "contract_detail");
+                if (idContrato > 0) url.searchParams.set("idContrato", String(idContrato));
+                if (cpfDigits) url.searchParams.set("cpf", cpfDigits);
+
+                const res = await fetch(url.toString(), {
+                    method: "GET",
+                    headers,
+                    cache: "no-store",
+                });
+                const data = await safeJson(res);
+
+                if (!res.ok || !data?.ok) {
+                    throw new Error(data?.error || "Erro ao carregar detalhes.");
+                }
+                setDetail(data as ContractDetail);
+            } catch (e: any) {
+                toastMessage("err", e?.message || "Erro ao carregar detalhes.");
+                setDetail(null);
+            } finally {
+                setLoadingDetail(false);
+            }
+        },
+        [headers]
+    );
 
     const reloadDetail = useCallback(async () => {
         if (!selected) return;
@@ -651,9 +760,12 @@ export default function AssociadosGeralPage() {
 
     const upsertAccess = useCallback(
         async (payload: { cpf: string; senha: string; email: string; telefone: string }) => {
-            if (!canFetch) return;
             if (!payload.cpf || payload.cpf.length !== 11) {
-                alert("CPF inválido.");
+                toastMessage("warn", "CPF inválido.");
+                return;
+            }
+            if ((payload.senha || "").trim().length < 6) {
+                toastMessage("warn", "Senha muito curta (mín. 6).");
                 return;
             }
 
@@ -668,23 +780,22 @@ export default function AssociadosGeralPage() {
                     cache: "no-store",
                 });
 
-                const data = await res.json().catch(() => null);
+                const data = await safeJson(res);
                 if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao salvar acesso.");
 
-                alert(data.created ? "Acesso criado com sucesso!" : "Acesso atualizado com sucesso!");
+                toastMessage("ok", data.created ? "Acesso criado com sucesso!" : "Acesso atualizado com sucesso!");
                 await reloadDetail();
             } catch (e: any) {
-                alert(e?.message || "Erro ao salvar acesso.");
+                toastMessage("err", e?.message || "Erro ao salvar acesso.");
             }
         },
-        [canFetch, headers, reloadDetail]
+        [headers, reloadDetail]
     );
 
     const resetAccess = useCallback(
         async (cpf: string) => {
-            if (!canFetch) return;
             if (!cpf || cpf.length !== 11) {
-                alert("CPF inválido.");
+                toastMessage("warn", "CPF inválido.");
                 return;
             }
 
@@ -701,147 +812,107 @@ export default function AssociadosGeralPage() {
                     cache: "no-store",
                 });
 
-                const data = await res.json().catch(() => null);
+                const data = await safeJson(res);
                 if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao resetar.");
 
-                // O PHP retorna temp_password para o admin (você pode remover isso do PHP se não quiser).
                 const temp = data?.temp_password ? `\n\nSenha temporária: ${data.temp_password}` : "";
-                alert(`Reset concluído. Email: ${data?.email || "-"}.${temp}`);
+                toastMessage("ok", `Reset concluído. Email: ${data?.email || "-"}.${temp}`);
 
                 await reloadDetail();
             } catch (e: any) {
-                alert(e?.message || "Erro ao resetar senha.");
+                toastMessage("err", e?.message || "Erro ao resetar senha.");
             }
         },
-        [canFetch, headers, reloadDetail]
+        [headers, reloadDetail]
     );
 
     const hasResults = contracts.length > 0;
 
     return (
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-6">
             {/* Topbar */}
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold">Associados — Consulta Geral</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">Associados — Consulta Geral</h1>
                     <p className="text-sm text-muted-foreground">
                         Unypax (contratos/financeiro) + banco local (acesso do app).
                     </p>
                 </div>
+
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={loadContracts}
-                        className={btnNeutral}
-                        disabled={!canFetch}
-                        title={!canFetch ? "Informe a chave admin" : "Atualizar"}
-                    >
+                    <button onClick={loadContracts} className={btnNeutral} title="Atualizar">
                         <IconRefresh className="size-4" />
                         Atualizar
                     </button>
                 </div>
             </div>
 
-            {/* Admin Key */}
-            <div className="mb-4 rounded-xl border bg-card/60 p-4">
-                <div className="flex items-start gap-3">
-                    <div className="grid size-12 place-items-center rounded-md border">
-                        <IconShieldLock className="size-6 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1">
-                        <div className="text-base font-semibold">Chave Admin</div>
-                        <div className="text-sm text-muted-foreground">
-                            Necessária para consultar e alterar acessos.
-                        </div>
-                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <input
-                                value={adminKey}
-                                onChange={(e) => setAdminKey(e.target.value)}
-                                className="input w-full"
-                                placeholder="Cole aqui a X-Admin-Key"
-                                type="password"
-                            />
-                            <button
-                                className={btnOutline + " sm:min-w-[180px]"}
-                                onClick={() => {
-                                    setPage(1);
-                                    loadContracts();
-                                }}
-                                disabled={!adminKey.trim()}
-                            >
-                                <IconSearch className="size-4" />
-                                Carregar Dados
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             {/* Filtros */}
-            <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="col-span-2 lg:col-span-1">
-                    <div className="relative">
-                        <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="mb-5 rounded-2xl border bg-card/60 p-4">
+                <div className="grid gap-3 lg:grid-cols-12">
+                    <div className="lg:col-span-6">
+                        <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
+                        <div className="relative mt-1">
+                            <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                                value={query}
+                                onChange={(e) => {
+                                    setQuery(e.target.value);
+                                    setPage(1);
+                                }}
+                                placeholder="Digite aqui… (textToSearch)"
+                                className={inputCls + " pl-9"}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-4">
+                        <label className="text-xs text-muted-foreground">Situações (IDs por vírgula)</label>
                         <input
-                            value={query}
+                            value={situacao}
                             onChange={(e) => {
-                                setQuery(e.target.value);
+                                setSituacao(e.target.value);
                                 setPage(1);
                             }}
-                            placeholder="Buscar por CPF, nome ou contrato (textToSearch)..."
-                            className="input w-full pl-9"
-                            disabled={!canFetch}
+                            className={inputCls + " mt-1"}
+                            placeholder="Ex: 2,3,6"
                         />
+                        <div className="mt-1 text-xs text-muted-foreground">
+                            2=ATIVO • 3=INADIMPLENTE • 6=BLOQUEADO • 9=CANCELADO (etc)
+                        </div>
                     </div>
-                </div>
 
-                <div>
-                    <label className="text-xs text-muted-foreground">Situações (IDs separados por vírgula)</label>
-                    <input
-                        value={situacao}
-                        onChange={(e) => {
-                            setSituacao(e.target.value);
-                            setPage(1);
-                        }}
-                        className="input w-full"
-                        placeholder="Ex: 2,3,6"
-                        disabled={!canFetch}
-                    />
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        2=ATIVO • 3=INADIMPLENTE • 6=BLOQUEADO • 9=CANCELADO (etc)
+                    <div className="lg:col-span-2 flex items-end">
+                        <button
+                            onClick={() => {
+                                setPage(1);
+                                loadContracts();
+                            }}
+                            className={btnOutline + " w-full"}
+                        >
+                            <IconSearch className="size-4" />
+                            Buscar
+                        </button>
                     </div>
-                </div>
-
-                <div className="flex items-end gap-2">
-                    <button
-                        onClick={() => {
-                            setPage(1);
-                            loadContracts();
-                        }}
-                        className={btnOutline + " w-full"}
-                        disabled={!canFetch}
-                    >
-                        <IconSearch className="size-4" />
-                        Buscar
-                    </button>
                 </div>
             </div>
 
             {/* Estado */}
             {loading && (
-                <div className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <div className="mb-4 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
                     Carregando contratos…
                 </div>
             )}
             {error && (
-                <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-200">
+                <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-200">
                     {error}
                 </div>
             )}
 
             {/* Lista */}
             {!hasResults && !loading ? (
-                <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                    Nenhum contrato retornado. Dica: preencha um CPF ou parte do nome/contrato em “textToSearch”.
+                <div className="rounded-2xl border bg-card/60 p-5 text-sm text-muted-foreground">
+                    Nenhum contrato retornado. Dica: busque por CPF (somente números), parte do nome ou contrato em “textToSearch”.
                 </div>
             ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -855,19 +926,20 @@ export default function AssociadosGeralPage() {
                 </div>
             )}
 
-            {/* Paginação (simples) */}
+            {/* Paginação */}
             <Pager
                 page={page}
                 onPrev={() => {
                     setPage((p) => Math.max(1, p - 1));
+                    // garante usar a nova page
                     setTimeout(loadContracts, 0);
                 }}
                 onNext={() => {
                     setPage((p) => p + 1);
                     setTimeout(loadContracts, 0);
                 }}
-                disabledPrev={page <= 1 || !canFetch}
-                disabledNext={!canFetch}
+                disabledPrev={page <= 1 || loading}
+                disabledNext={loading}
             />
 
             {/* Drawer */}
