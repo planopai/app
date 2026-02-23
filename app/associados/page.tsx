@@ -19,6 +19,7 @@ import {
     IconAlertTriangle,
     IconCopy,
     IconInfoCircle,
+    IconUser,
 } from "@tabler/icons-react";
 
 /* =========================
@@ -35,19 +36,13 @@ const btnBase =
 
 const btnOutline = btnBase + " border border-primary text-primary hover:bg-primary/5 active:bg-primary/10";
 const btnNeutral = btnBase + " border border-muted text-foreground hover:bg-muted/40 active:bg-muted/50";
-const btnDanger =
-    btnBase +
-    " border border-red-300 text-red-700 hover:bg-red-50 active:bg-red-100 " +
-    "dark:border-red-900/50 dark:text-red-200 dark:hover:bg-red-900/20";
-
 const badge = "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold";
+
 const inputCls =
     "w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none " +
     "focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition";
 
 const cardCls = "rounded-2xl border bg-card shadow-sm";
-const sectionTitle = "text-sm font-semibold";
-const kvGrid = "grid gap-3 sm:grid-cols-2";
 
 /* =========================
    Types
@@ -131,13 +126,6 @@ function fmtDate(v: any) {
     return s;
 }
 
-function parseDateMaybe(v: any): number | null {
-    if (!v) return null;
-    const d = new Date(String(v));
-    const t = d.getTime();
-    return Number.isFinite(t) ? t : null;
-}
-
 function safeText(v: any) {
     if (v === null || v === undefined) return "-";
     const s = String(v).trim();
@@ -203,30 +191,6 @@ function useDebounced<T>(value: T, delayMs: number) {
     return debounced;
 }
 
-function uniqSorted(list: string[]) {
-    const s = new Set(list.filter(Boolean).map((x) => x.trim()).filter(Boolean));
-    return Array.from(s).sort((a, b) => a.localeCompare(b, "pt-BR"));
-}
-
-/* =========================
-   Situações (ID)
-========================= */
-const SITUACOES: { id: number; label: string }[] = [
-    { id: 2, label: "Ativo" },
-    { id: 3, label: "Inadimplente" },
-    { id: 6, label: "Bloqueado" },
-    { id: 9, label: "Cancelado" },
-    { id: 1, label: "Pré-cadastro" },
-    { id: 4, label: "Transferido" },
-    { id: 5, label: "Em reabilitação" },
-    { id: 7, label: "Quitado/Isento" },
-    { id: 8, label: "Pré-cancelado" },
-];
-
-function toSituacaoCsv(ids: number[]) {
-    return ids.join(",");
-}
-
 function parseXPagination(headers: Headers): PaginationInfo | null {
     const raw = headers.get("x-pagination") || headers.get("X-Pagination");
     if (!raw) return null;
@@ -249,6 +213,32 @@ function parseXPagination(headers: Headers): PaginationInfo | null {
 }
 
 /* =========================
+   Helpers (Beneficiário / Dependentes)
+========================= */
+function pickTitular(benef: any) {
+    if (!benef) return null;
+    if (Array.isArray(benef)) return benef[0] ?? null;
+    if (typeof benef === "object") return benef;
+    return null;
+}
+
+function guessDependentes(benef: any): any[] {
+    if (!benef) return [];
+    const obj = Array.isArray(benef) ? benef[0] : benef;
+    if (!obj || typeof obj !== "object") return [];
+    const candidates = ["beneficiarios", "listaBeneficiarios", "dependentes", "itens", "items", "Beneficiarios"];
+    for (const k of candidates) {
+        const v = (obj as any)[k];
+        if (Array.isArray(v)) return v;
+    }
+    return [];
+}
+
+function getDepCpf(dep: any) {
+    return onlyDigits(dep?.cpf || dep?.CPF || dep?.Cpf || dep?.cpf_cnpj || dep?.cpfCnpj || "");
+}
+
+/* =========================
    Modal (centralizado)
 ========================= */
 function Modal({
@@ -257,12 +247,14 @@ function Modal({
     subtitle,
     onClose,
     children,
+    maxWidth = "max-w-5xl",
 }: {
     open: boolean;
     title: string;
     subtitle?: React.ReactNode;
     onClose: () => void;
     children: React.ReactNode;
+    maxWidth?: string;
 }) {
     useEffect(() => {
         if (!open) return;
@@ -288,7 +280,7 @@ function Modal({
         <div className="fixed inset-0 z-50">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
             <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
-                <div className="w-full max-w-5xl rounded-3xl border bg-background shadow-2xl">
+                <div className={`w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
                     <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
                         <div className="min-w-0">
                             <div className="truncate text-lg font-bold">{title}</div>
@@ -307,39 +299,128 @@ function Modal({
 }
 
 /* =========================
-   Helpers para render Beneficiário
+   Access Modal (Titular / Dependente)
 ========================= */
-function pickTitular(benef: any) {
-    if (!benef) return null;
-    if (Array.isArray(benef)) return benef[0] ?? null;
-    if (typeof benef === "object") return benef;
-    return null;
-}
+function AccessModal({
+    open,
+    onClose,
+    title,
+    initialCpf,
+    initialEmail,
+    initialTelefone,
+    requireCpfEditable,
+    onSave,
+}: {
+    open: boolean;
+    onClose: () => void;
+    title: string;
+    initialCpf: string;
+    initialEmail?: string;
+    initialTelefone?: string;
+    requireCpfEditable?: boolean; // dependente: true
+    onSave: (payload: { cpf: string; senha: string; email: string; telefone: string }) => Promise<void>;
+}) {
+    const [cpf, setCpf] = useState(initialCpf);
+    const [email, setEmail] = useState(initialEmail || "");
+    const [telefone, setTelefone] = useState(initialTelefone || "");
+    const [senha, setSenha] = useState("");
+    const [saving, setSaving] = useState(false);
 
-function guessDependentes(benef: any): any[] {
-    if (!benef) return [];
-    const obj = Array.isArray(benef) ? benef[0] : benef;
-    if (!obj || typeof obj !== "object") return [];
-    // tentativas comuns
-    const candidates = ["beneficiarios", "listaBeneficiarios", "dependentes", "itens", "items", "Beneficiarios"];
-    for (const k of candidates) {
-        const v = (obj as any)[k];
-        if (Array.isArray(v)) return v;
+    useEffect(() => {
+        if (!open) return;
+        setCpf(initialCpf);
+        setEmail(initialEmail || "");
+        setTelefone(initialTelefone || "");
+        setSenha("");
+    }, [open, initialCpf, initialEmail, initialTelefone]);
+
+    const cpfDigits = useMemo(() => onlyDigits(cpf), [cpf]);
+
+    async function handleSave() {
+        const cpfOk = cpfDigits.length === 11;
+        if (!cpfOk) return toastMessage("warn", "CPF inválido (precisa ter 11 dígitos).");
+        if (senha.trim().length < 6) return toastMessage("warn", "Senha muito curta (mín. 6).");
+
+        try {
+            setSaving(true);
+            await onSave({ cpf: cpfDigits, senha, email: email.trim(), telefone: telefone.trim() });
+            onClose();
+        } finally {
+            setSaving(false);
+        }
     }
-    return [];
+
+    return (
+        <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-xl">
+            <div className="grid gap-3">
+                <div className={cardCls + " p-4"}>
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                        <IconLock className="size-5 text-muted-foreground" />
+                        Criar / Atualizar acesso
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                        Informe os dados e defina a senha. (A senha precisa ter no mínimo 6 caracteres.)
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                        <div className="grid gap-1">
+                            <label className="text-xs text-muted-foreground">CPF</label>
+                            <input
+                                className={inputCls}
+                                value={cpf}
+                                onChange={(e) => setCpf(e.target.value)}
+                                placeholder="000.000.000-00"
+                                inputMode="numeric"
+                                disabled={!requireCpfEditable}
+                            />
+                            {!requireCpfEditable ? (
+                                <div className="text-xs text-muted-foreground">CPF do titular já definido.</div>
+                            ) : (
+                                <div className="text-xs text-muted-foreground">Obrigatório para criar o acesso do dependente.</div>
+                            )}
+                        </div>
+
+                        <div className="grid gap-1">
+                            <label className="text-xs text-muted-foreground">E-mail</label>
+                            <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@dominio.com" inputMode="email" />
+                        </div>
+
+                        <div className="grid gap-1">
+                            <label className="text-xs text-muted-foreground">Telefone</label>
+                            <input className={inputCls} value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" inputMode="tel" />
+                        </div>
+
+                        <div className="grid gap-1">
+                            <label className="text-xs text-muted-foreground">Senha</label>
+                            <input className={inputCls} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Digite uma senha" type="password" />
+                        </div>
+
+                        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                            <button className={btnNeutral + " w-full sm:w-auto"} onClick={onClose} disabled={saving}>
+                                Cancelar
+                            </button>
+                            <button className={btnOutline + " w-full sm:w-auto"} onClick={handleSave} disabled={saving}>
+                                <IconShieldLock className="size-4" />
+                                {saving ? "Salvando..." : "Salvar acesso"}
+                            </button>
+                        </div>
+
+                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <IconInfoCircle className="size-4 shrink-0 mt-[1px]" />
+                            <span>Depois, você pode usar “Resetar senha” no titular (quando existir acesso) para gerar senha temporária.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Modal>
+    );
 }
 
 /* =========================
    Lista (tabela) - desktop
    Lista (cards) - mobile
 ========================= */
-function ContractsTable({
-    items,
-    onOpen,
-}: {
-    items: Contract[];
-    onOpen: (c: Contract) => void;
-}) {
+function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Contract) => void }) {
     return (
         <div className={cardCls + " overflow-hidden"}>
             {/* Desktop table */}
@@ -509,48 +590,29 @@ function Pager({
 }
 
 /* =========================
-   Detail Modal content
+   Detail (somente resumo + dependentes + criar acesso)
 ========================= */
 function DetailModalContent({
     contract,
     detail,
     loading,
     onReload,
-    onUpsertAccess,
-    onResetAccess,
+    onOpenTitularAccess,
+    onOpenDepAccess,
 }: {
     contract: Contract | null;
     detail: ContractDetail | null;
     loading: boolean;
     onReload: () => void;
-    onUpsertAccess: (payload: { cpf: string; senha: string; email: string; telefone: string }) => Promise<void>;
-    onResetAccess: (cpf: string) => Promise<void>;
+    onOpenTitularAccess: () => void;
+    onOpenDepAccess: (dep: any) => void;
 }) {
     const cpfDigits = useMemo(() => onlyDigits(contract?.cpf_cnpj || ""), [contract?.cpf_cnpj]);
-    const contas = useMemo(() => normalizeContasPayload(detail?.contas_receber), [detail?.contas_receber]);
     const local = detail?.local_auth ?? null;
     const hasAccess = !!local;
 
     const titular = useMemo(() => pickTitular(detail?.beneficiario), [detail?.beneficiario]);
     const dependentes = useMemo(() => guessDependentes(detail?.beneficiario), [detail?.beneficiario]);
-
-    const [editAccess, setEditAccess] = useState(false);
-    const [senha, setSenha] = useState("");
-    const [email, setEmail] = useState("");
-    const [telefone, setTelefone] = useState("");
-
-    useEffect(() => {
-        // sempre que trocar de beneficiário/detalhe, reseta o editor
-        setEditAccess(false);
-        setSenha("");
-        if (detail?.local_auth) {
-            setEmail(detail.local_auth.email || "");
-            setTelefone(detail.local_auth.telefone || "");
-        } else {
-            setEmail("");
-            setTelefone("");
-        }
-    }, [detail?.local_auth, contract?.id]);
 
     return (
         <div className="grid gap-4">
@@ -587,29 +649,56 @@ function DetailModalContent({
                 </div>
             </div>
 
-            {loading ? (
-                <div className="rounded-2xl border bg-muted/30 px-3 py-2 text-sm">Carregando detalhes…</div>
-            ) : null}
+            {loading ? <div className="rounded-2xl border bg-muted/30 px-3 py-2 text-sm">Carregando detalhes…</div> : null}
 
-            {/* Resumo do contrato */}
+            {/* Resumo do Plano (igual estilo da imagem) */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                         <div className="text-base font-semibold">Resumo do Plano</div>
-                        <div className="mt-1 text-sm text-muted-foreground">
+                        <div className="mt-2 text-sm text-muted-foreground grid gap-1.5">
                             <div>
                                 <span className="font-medium text-foreground">Plano:</span> {safeText(contract?.plano)}
                                 {contract?.cobertura ? ` • ${safeText(contract?.cobertura)}` : ""}
                             </div>
-                            <div className="mt-0.5">
+                            <div>
                                 <span className="font-medium text-foreground">Cidade:</span> {safeText(contract?.cidade)} •{" "}
                                 <span className="font-medium text-foreground">Últ. pagamento:</span>{" "}
                                 {contract?.dataultimopagamento ? fmtDate(contract.dataultimopagamento) : "-"}
                             </div>
+
+                            <div className="pt-2 grid gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <IconMail className="size-4" />
+                                    <span className="font-medium text-foreground">Email:</span> {safeText(local?.email)}
+                                    {local?.email_verificado ? (
+                                        <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
+                                            verificado
+                                        </span>
+                                    ) : null}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <IconPhone className="size-4" />
+                                    <span className="font-medium text-foreground">Telefone:</span> {safeText(local?.telefone)}
+                                    {local?.telefone_verificado ? (
+                                        <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
+                                            verificado
+                                        </span>
+                                    ) : null}
+                                </div>
+
+                                <div>
+                                    <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDate(local.ultimo_login) : "-"}
+                                </div>
+                                <div>
+                                    <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDate(local.bloqueado_ate) : "-"}
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:justify-end">
                         <span
                             className={
                                 badge +
@@ -621,7 +710,7 @@ function DetailModalContent({
                         >
                             {hasAccess ? (
                                 <>
-                                    <IconCheck className="size-3" /> Acesso existe
+                                    <IconCheck className="size-3" /> Com acesso
                                 </>
                             ) : (
                                 <>
@@ -630,256 +719,101 @@ function DetailModalContent({
                             )}
                         </span>
 
-                        <button className={btnOutline} onClick={() => setEditAccess((v) => !v)}>
+                        <button className={btnOutline} onClick={onOpenTitularAccess}>
                             <IconLock className="size-4" />
                             Criar acesso
                         </button>
                     </div>
                 </div>
-
-                {/* Editor de acesso */}
-                {editAccess ? (
-                    <div className="mt-4 grid gap-3">
-                        <div className={kvGrid}>
-                            <div className="grid gap-1">
-                                <label className="text-xs text-muted-foreground">E-mail</label>
-                                <input value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="email@dominio.com" />
-                            </div>
-                            <div className="grid gap-1">
-                                <label className="text-xs text-muted-foreground">Telefone (DDD + número)</label>
-                                <input value={telefone} onChange={(e) => setTelefone(e.target.value)} className={inputCls} placeholder="(11) 99999-9999" />
-                            </div>
-                        </div>
-
-                        <div className={kvGrid}>
-                            <div className="grid gap-1">
-                                <label className="text-xs text-muted-foreground">Nova senha (mín. 6)</label>
-                                <input value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} placeholder="Digite uma senha" type="password" />
-                            </div>
-                            <div className="flex items-end gap-2">
-                                <button
-                                    className={btnOutline + " w-full"}
-                                    onClick={() => onUpsertAccess({ cpf: cpfDigits, senha, email, telefone })}
-                                    disabled={!cpfDigits || senha.trim().length < 6}
-                                >
-                                    <IconShieldLock className="size-4" />
-                                    Salvar
-                                </button>
-                                <button className={btnNeutral + " w-full"} onClick={() => onResetAccess(cpfDigits)} disabled={!cpfDigits || !hasAccess}>
-                                    <IconLock className="size-4" />
-                                    Resetar senha
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                            <IconInfoCircle className="size-4 shrink-0 mt-[1px]" />
-                            <span>Reset envia uma senha temporária para o e-mail cadastrado no acesso.</span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <IconMail className="size-4" />
-                            <span className="font-medium text-foreground">Email:</span> {safeText(local?.email)}
-                            {local?.email_verificado ? (
-                                <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
-                                    verificado
-                                </span>
-                            ) : null}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <IconPhone className="size-4" />
-                            <span className="font-medium text-foreground">Telefone:</span> {safeText(local?.telefone)}
-                            {local?.telefone_verificado ? (
-                                <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
-                                    verificado
-                                </span>
-                            ) : null}
-                        </div>
-                        <div>
-                            <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDate(local.ultimo_login) : "-"}
-                        </div>
-                        <div>
-                            <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDate(local.bloqueado_ate) : "-"}
-                        </div>
-                    </div>
-                )}
             </div>
 
-            {/* Beneficiário (organizado) */}
-            <div className={cardCls + " p-4"}>
-                <div className="flex items-center gap-2">
-                    <IconFileText className="size-5 text-muted-foreground" />
-                    <div className="text-base font-semibold">Dados do Beneficiário (Unypax)</div>
+            {/* Dependentes + criar acesso */}
+            <div className={cardCls + " overflow-hidden"}>
+                <div className="border-b bg-muted/20 px-4 py-3 text-sm font-semibold flex items-center gap-2">
+                    <IconUser className="size-4 text-muted-foreground" />
+                    Dependentes
                 </div>
 
-                {!titular ? (
-                    <div className="mt-3 rounded-2xl border bg-background p-3 text-sm text-muted-foreground">
-                        Nenhum dado de beneficiário retornado.
-                        <details className="mt-2">
-                            <summary className="cursor-pointer font-semibold">Ver bruto</summary>
-                            <pre className="mt-2 max-h-[280px] overflow-auto rounded-2xl border bg-muted/20 p-3 text-xs">
-                                {JSON.stringify(detail?.beneficiario ?? null, null, 2)}
-                            </pre>
-                        </details>
-                    </div>
-                ) : (
-                    <div className="mt-3 grid gap-4">
-                        <div className={cardCls + " p-4 bg-background"}>
-                            <div className="text-sm font-semibold mb-2">Titular</div>
-                            <div className={kvGrid + " text-sm"}>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Nome</div>
-                                    <div className="font-medium">{safeText(titular.nome)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Contrato</div>
-                                    <div className="font-medium">{safeText(titular.numeroContrato || titular.contrato || titular.contrato_numero)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Plano / Cobertura</div>
-                                    <div className="font-medium">{safeText(titular.planoCobertura || titular.planoCoberturaId || titular.planoCoberturaNome || titular.planoCobertura)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Situação</div>
-                                    <div className="font-medium">{safeText(titular.contratoSituacao || titular.situacao)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">CPF</div>
-                                    <div className="font-medium">{safeText(titular.cpf)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Nascimento</div>
-                                    <div className="font-medium">{safeText(titular.dataNascimento)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Celular</div>
-                                    <div className="font-medium">{safeText(titular.celular)}</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-muted-foreground">Telefone</div>
-                                    <div className="font-medium">{safeText(titular.telefone)}</div>
-                                </div>
-                                <div className="sm:col-span-2">
-                                    <div className="text-xs text-muted-foreground">Endereço</div>
-                                    <div className="font-medium">
-                                        {[
-                                            titular.endereco || titular.endereço,
-                                            titular.enderecoNumero,
-                                            titular.enderecoBairro,
-                                            titular.enderecoComplemento,
-                                            titular.enderecoCidade,
-                                            titular.enderecoUF,
-                                            titular.enderecoCEP,
-                                        ]
-                                            .filter(Boolean)
-                                            .map((x: any) => String(x).trim())
-                                            .filter(Boolean)
-                                            .join(" • ") || "-"}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <details className="mt-3">
-                                <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">Ver JSON bruto</summary>
-                                <pre className="mt-2 max-h-[260px] overflow-auto rounded-2xl border bg-muted/20 p-3 text-xs">
-                                    {JSON.stringify(detail?.beneficiario ?? null, null, 2)}
-                                </pre>
-                            </details>
+                <div className="p-4">
+                    {dependentes.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">
+                            Nenhum dependente retornado.
+                            {!titular ? (
+                                <div className="mt-2 text-xs text-muted-foreground">Obs.: o backend não retornou “beneficiario” (Unypax).</div>
+                            ) : null}
                         </div>
+                    ) : (
+                        <>
+                            {/* Desktop */}
+                            <div className="hidden md:block overflow-auto rounded-2xl border bg-background">
+                                <table className="w-full text-sm">
+                                    <thead className="border-b bg-muted/30">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Nome</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Nascimento</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Tipo</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">CPF</th>
+                                            <th className="px-3 py-2 text-right whitespace-nowrap">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {dependentes.map((d: any, idx: number) => {
+                                            const nome = safeText(d.Nome || d.nome);
+                                            const nasc = safeText(d.DataNascimento || d.dataNascimento);
+                                            const tipo = safeText(d.Tipo || d.tipo);
+                                            const cpf = getDepCpf(d);
 
-                        {/* Dependentes, se existirem */}
-                        {dependentes.length > 0 ? (
-                            <div className={cardCls + " overflow-hidden"}>
-                                <div className="border-b bg-muted/20 px-4 py-3 text-sm font-semibold">Beneficiários / Dependentes</div>
-                                <div className="overflow-auto">
-                                    <table className="w-full text-sm">
-                                        <thead className="border-b bg-muted/10">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left whitespace-nowrap">Tipo</th>
-                                                <th className="px-3 py-2 text-left whitespace-nowrap">Nome</th>
-                                                <th className="px-3 py-2 text-left whitespace-nowrap">Nascimento</th>
-                                                <th className="px-3 py-2 text-left whitespace-nowrap">Sexo</th>
-                                                <th className="px-3 py-2 text-left whitespace-nowrap">Telefone</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {dependentes.map((d: any, idx: number) => (
+                                            return (
                                                 <tr key={idx} className="border-b last:border-0">
-                                                    <td className="px-3 py-2">{safeText(d.Tipo || d.tipo)}</td>
-                                                    <td className="px-3 py-2">{safeText(d.Nome || d.nome)}</td>
-                                                    <td className="px-3 py-2">{safeText(d.DataNascimento || d.dataNascimento)}</td>
-                                                    <td className="px-3 py-2">{safeText(d.Sexo || d.sexo)}</td>
-                                                    <td className="px-3 py-2">{safeText(d.Telefone || d.telefone)}</td>
+                                                    <td className="px-3 py-2 font-medium">{nome}</td>
+                                                    <td className="px-3 py-2">{nasc}</td>
+                                                    <td className="px-3 py-2">{tipo}</td>
+                                                    <td className="px-3 py-2">{cpf ? cpf : <span className="text-muted-foreground">—</span>}</td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
+                                                            <IconLock className="size-4" />
+                                                            Criar acesso
+                                                        </button>
+                                                    </td>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
                             </div>
-                        ) : null}
-                    </div>
-                )}
-            </div>
 
-            {/* Contas a receber */}
-            <div className={cardCls + " p-4"}>
-                <div className="flex items-center gap-2">
-                    <IconCash className="size-5 text-muted-foreground" />
-                    <div className="text-base font-semibold">Contas a Receber (Unypax)</div>
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">Itens retornados do SearchAsync de contas a receber.</div>
+                            {/* Mobile */}
+                            <div className="md:hidden grid gap-2">
+                                {dependentes.map((d: any, idx: number) => {
+                                    const nome = safeText(d.Nome || d.nome);
+                                    const nasc = safeText(d.DataNascimento || d.dataNascimento);
+                                    const tipo = safeText(d.Tipo || d.tipo);
+                                    const cpf = getDepCpf(d);
 
-                {contas.length === 0 ? (
-                    <div className="mt-3 rounded-2xl border bg-background p-3 text-sm text-muted-foreground">
-                        Nenhuma conta a receber retornada para este contrato (ou o endpoint retornou outro formato).
-                        <details className="mt-2">
-                            <summary className="cursor-pointer font-semibold">Ver bruto</summary>
-                            <pre className="mt-2 max-h-[220px] overflow-auto rounded-2xl border bg-muted/20 p-3 text-xs">
-                                {JSON.stringify(detail?.contas_receber ?? null, null, 2)}
-                            </pre>
-                        </details>
-                    </div>
-                ) : (
-                    <div className="mt-3 overflow-auto rounded-2xl border bg-background">
-                        <table className="w-full text-sm">
-                            <thead className="border-b bg-muted/30">
-                                <tr>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">ID</th>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">Situação</th>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">Parcela</th>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">Vencimento</th>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">Valor</th>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">Cobrança</th>
-                                    <th className="px-3 py-2 text-left whitespace-nowrap">Linha digitável</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {contas.map((c) => (
-                                    <tr key={c.id} className="border-b last:border-0">
-                                        <td className="px-3 py-2">{c.id}</td>
-                                        <td className="px-3 py-2">{safeText(c.situacao)}</td>
-                                        <td className="px-3 py-2">{safeText(c.parcela)}</td>
-                                        <td className="px-3 py-2">{c.dataVencimento ? fmtDate(c.dataVencimento) : "-"}</td>
-                                        <td className="px-3 py-2">{fmtMoneyBR(c.valor)}</td>
-                                        <td className="px-3 py-2">{safeText(c.cobranca)}</td>
-                                        <td className="px-3 py-2">
-                                            {c.linhaDigitavel ? (
-                                                <button className={btnNeutral + " py-1 px-2 text-xs"} onClick={() => copyToClipboard(String(c.linhaDigitavel))}>
-                                                    <IconCopy className="size-4" />
-                                                    Copiar
+                                    return (
+                                        <div key={idx} className="rounded-2xl border bg-background p-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="font-semibold truncate">{nome}</div>
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        {tipo} • Nasc: {nasc}
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        <span className="font-medium text-foreground">CPF:</span> {cpf || "—"}
+                                                    </div>
+                                                </div>
+                                                <button className={btnOutline + " shrink-0 py-1.5"} onClick={() => onOpenDepAccess(d)}>
+                                                    <IconLock className="size-4" />
+                                                    Criar
                                                 </button>
-                                            ) : (
-                                                "-"
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -889,18 +823,13 @@ function DetailModalContent({
    Page principal
 ========================= */
 export default function AssociadosGeralPage() {
-    // filtros
+    // busca (ÚNICO filtro)
     const [query, setQuery] = useState("");
     const debouncedQuery = useDebounced(query, 350);
 
-    const [situacoesSel, setSituacoesSel] = useState<number[]>([2, 3, 6, 7, 8, 9, 1, 4, 5]);
-    const [fCidade, setFCidade] = useState<string>("");
-    const [fPlano, setFPlano] = useState<string>("");
-    const [sortBy, setSortBy] = useState<"nome" | "ult_pagto" | "contrato">("nome");
-
     // paginação
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
+    const [pageSize] = useState(10);
     const [pagination, setPagination] = useState<PaginationInfo | null>(null);
 
     // lista
@@ -913,6 +842,14 @@ export default function AssociadosGeralPage() {
     const [selected, setSelected] = useState<Contract | null>(null);
     const [detail, setDetail] = useState<ContractDetail | null>(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
+
+    // modal acesso (titular/dependente)
+    const [accessOpen, setAccessOpen] = useState(false);
+    const [accessTitle, setAccessTitle] = useState("Criar acesso");
+    const [accessCpf, setAccessCpf] = useState("");
+    const [accessEmail, setAccessEmail] = useState("");
+    const [accessTelefone, setAccessTelefone] = useState("");
+    const [accessCpfEditable, setAccessCpfEditable] = useState(false);
 
     // headers
     const headers = useMemo(() => ({ "Content-Type": "application/json" } as Record<string, string>), []);
@@ -939,7 +876,8 @@ export default function AssociadosGeralPage() {
                 url.searchParams.set("op", "contracts");
                 url.searchParams.set("page", String(nextPage));
                 url.searchParams.set("pageSize", String(pageSize));
-                url.searchParams.set("situacao", toSituacaoCsv(situacoesSel));
+
+                // ✅ sem filtro de situação/cidade/plano/ordenar: só busca
                 url.searchParams.set("textToSearch", (debouncedQuery || "").trim());
 
                 const res = await fetch(url.toString(), {
@@ -955,15 +893,8 @@ export default function AssociadosGeralPage() {
                 setContracts(normalizeContractsPayload(data));
 
                 const xp = parseXPagination(res.headers);
-                if (xp) {
-                    setPagination(xp);
-                } else {
-                    // fallback mínimo (se o backend não mandar X-Pagination)
-                    setPagination({
-                        pageNumber: nextPage,
-                        pageSize,
-                    });
-                }
+                if (xp) setPagination(xp);
+                else setPagination({ pageNumber: nextPage, pageSize });
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
                 setError(e?.message || "Falha ao carregar.");
@@ -973,7 +904,7 @@ export default function AssociadosGeralPage() {
                 setLoading(false);
             }
         },
-        [debouncedQuery, headers, page, pageSize, situacoesSel]
+        [debouncedQuery, headers, page, pageSize]
     );
 
     // ✅ ao abrir a página, já carrega tudo
@@ -982,11 +913,11 @@ export default function AssociadosGeralPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // recarrega quando filtros principais mudam
+    // recarrega quando texto de busca muda
     useEffect(() => {
         loadContracts({ resetPage: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedQuery, situacoesSel, pageSize]);
+    }, [debouncedQuery]);
 
     // recarrega quando página muda
     useEffect(() => {
@@ -1076,6 +1007,7 @@ export default function AssociadosGeralPage() {
         [headers, reloadDetail]
     );
 
+    // (mantido, caso você use depois — não aparece na UI)
     const resetAccess = useCallback(
         async (cpf: string) => {
             if (!cpf || cpf.length !== 11) return toastMessage("warn", "CPF inválido.");
@@ -1106,36 +1038,31 @@ export default function AssociadosGeralPage() {
         [headers, reloadDetail]
     );
 
-    // dropdowns locais a partir do resultado atual
-    const cidades = useMemo(() => uniqSorted(contracts.map((c) => c.cidade || "")), [contracts]);
-    const planos = useMemo(() => uniqSorted(contracts.map((c) => c.plano || "")), [contracts]);
+    const openTitularAccess = useCallback(() => {
+        const cpf = onlyDigits(selected?.cpf_cnpj || "");
+        const local = detail?.local_auth ?? null;
 
-    // filtro local + ordenação
-    const filteredContracts = useMemo(() => {
-        let list = contracts.slice();
+        setAccessTitle("Criar acesso (Titular)");
+        setAccessCpf(cpf);
+        setAccessEmail(local?.email || "");
+        setAccessTelefone(local?.telefone || "");
+        setAccessCpfEditable(false);
+        setAccessOpen(true);
+    }, [detail?.local_auth, selected?.cpf_cnpj]);
 
-        if (fCidade) list = list.filter((c) => (c.cidade || "").trim() === fCidade);
-        if (fPlano) list = list.filter((c) => (c.plano || "").trim() === fPlano);
+    const openDepAccess = useCallback((dep: any) => {
+        const nome = safeText(dep?.Nome || dep?.nome || "Dependente");
+        const cpf = getDepCpf(dep);
 
-        list.sort((a, b) => {
-            if (sortBy === "nome") return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
-            if (sortBy === "contrato")
-                return String(a.contrato_numero || a.contrato || "").localeCompare(String(b.contrato_numero || b.contrato || ""), "pt-BR");
-            const ta = parseDateMaybe(a.dataultimopagamento) ?? 0;
-            const tb = parseDateMaybe(b.dataultimopagamento) ?? 0;
-            return tb - ta;
-        });
+        setAccessTitle(`Criar acesso (${nome})`);
+        setAccessCpf(cpf); // pode estar vazio
+        setAccessEmail("");
+        setAccessTelefone("");
+        setAccessCpfEditable(true); // dependente precisa poder digitar CPF se não tiver
+        setAccessOpen(true);
+    }, []);
 
-        return list;
-    }, [contracts, fCidade, fPlano, sortBy]);
-
-    const hasResults = filteredContracts.length > 0;
-
-    const situacoesLabel = useMemo(() => {
-        if (situacoesSel.length === SITUACOES.length) return "Todas";
-        const labels = SITUACOES.filter((s) => situacoesSel.includes(s.id)).map((s) => s.label);
-        return labels.length ? labels.join(", ") : "Nenhuma";
-    }, [situacoesSel]);
+    const hasResults = contracts.length > 0;
 
     return (
         <div className="mx-auto w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-5">
@@ -1143,7 +1070,7 @@ export default function AssociadosGeralPage() {
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Associados — Consulta Geral</h1>
-                    <p className="text-sm text-muted-foreground">Unypax (contratos/financeiro) + banco local (acesso do app).</p>
+                    <p className="text-sm text-muted-foreground">Unypax (contratos) + banco local (acesso do app).</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1154,109 +1081,17 @@ export default function AssociadosGeralPage() {
                 </div>
             </div>
 
-            {/* Filtros (tudo em selects, como você pediu) */}
+            {/* ✅ Só a busca (removendo todo o resto) */}
             <div className={cardCls + " p-4 mb-4"}>
-                <div className="grid gap-3 lg:grid-cols-12">
-                    <div className="lg:col-span-5">
-                        <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
-                        <div className="relative mt-1">
-                            <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Digite aqui…" className={inputCls + " pl-9"} />
-                        </div>
-                    </div>
-
-                    <div className="lg:col-span-3">
-                        <label className="text-xs text-muted-foreground">Situação</label>
-                        {/* select multiple (nativo, simples e confiável) */}
-                        <select
-                            multiple
-                            value={situacoesSel.map(String)}
-                            onChange={(e) => {
-                                const values = Array.from(e.target.selectedOptions).map((o) => Number(o.value)).filter((n) => Number.isFinite(n));
-                                setSituacoesSel(values.length ? values : []);
-                                setPage(1);
-                            }}
-                            className={inputCls + " mt-1 h-[44px] sm:h-[120px]"}
-                            title="Segure Ctrl (Windows) / Cmd (Mac) para selecionar múltiplos"
-                        >
-                            {SITUACOES.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                    {s.label}
-                                </option>
-                            ))}
-                        </select>
-                        <div className="mt-1 text-xs text-muted-foreground">Selecionado: {situacoesLabel}</div>
-                    </div>
-
-                    <div className="lg:col-span-2">
-                        <label className="text-xs text-muted-foreground">Cidade</label>
-                        <select className={inputCls + " mt-1"} value={fCidade} onChange={(e) => setFCidade(e.target.value)}>
-                            <option value="">Todas</option>
-                            {cidades.map((c) => (
-                                <option key={c} value={c}>
-                                    {c}
-                                </option>
-                            ))}
-                        </select>
-
-                        <label className="text-xs text-muted-foreground mt-3 block">Plano</label>
-                        <select className={inputCls + " mt-1"} value={fPlano} onChange={(e) => setFPlano(e.target.value)}>
-                            <option value="">Todos</option>
-                            {planos.map((p) => (
-                                <option key={p} value={p}>
-                                    {p}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="lg:col-span-2">
-                        <label className="text-xs text-muted-foreground">Ordenar</label>
-                        <select className={inputCls + " mt-1"} value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
-                            <option value="nome">Nome (A→Z)</option>
-                            <option value="ult_pagto">Últ. pagamento (mais recente)</option>
-                            <option value="contrato">Contrato</option>
-                        </select>
-
-                        <label className="text-xs text-muted-foreground mt-3 block">Itens por página</label>
-                        <select
-                            className={inputCls + " mt-1"}
-                            value={String(pageSize)}
-                            onChange={(e) => {
-                                const n = Number(e.target.value);
-                                setPageSize(Number.isFinite(n) ? n : 10);
-                                setPage(1);
-                            }}
-                        >
-                            {[10, 20, 50, 100].map((n) => (
-                                <option key={n} value={n}>
-                                    {n}
-                                </option>
-                            ))}
-                        </select>
-
-                        <div className="mt-3 flex gap-2">
-                            <button
-                                type="button"
-                                className={btnNeutral + " w-full"}
-                                onClick={() => {
-                                    setQuery("");
-                                    setFCidade("");
-                                    setFPlano("");
-                                    setSortBy("nome");
-                                    setSituacoesSel([2, 3, 6, 7, 8, 9, 1, 4, 5]);
-                                    setPage(1);
-                                    // já recarrega automaticamente pelos efeitos
-                                }}
-                            >
-                                Limpar
-                            </button>
-                            <button type="button" className={btnOutline + " w-full"} onClick={() => loadContracts({ resetPage: true })}>
-                                <IconSearch className="size-4" />
-                                Buscar
-                            </button>
-                        </div>
-                    </div>
+                <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
+                <div className="relative mt-1">
+                    <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Digite aqui…"
+                        className={inputCls + " pl-9"}
+                    />
                 </div>
             </div>
 
@@ -1268,16 +1103,16 @@ export default function AssociadosGeralPage() {
                 </div>
             ) : null}
 
-            {/* Lista (estilo tabela) */}
+            {/* Lista */}
             {!hasResults && !loading ? (
                 <div className={cardCls + " p-5 text-sm text-muted-foreground"}>
                     Nenhum contrato retornado. Dica: busque por CPF (somente números), parte do nome ou contrato.
                 </div>
             ) : (
-                <ContractsTable items={filteredContracts} onOpen={openDetail} />
+                <ContractsTable items={contracts} onOpen={openDetail} />
             )}
 
-            {/* Paginação + total (embaixo) */}
+            {/* Paginação + total */}
             <Pager
                 page={pagination?.pageNumber ?? page}
                 pageCount={pagination?.pageCount}
@@ -1290,7 +1125,7 @@ export default function AssociadosGeralPage() {
                 onNext={() => setPage((p) => p + 1)}
             />
 
-            {/* Modal central de detalhes */}
+            {/* Modal central de detalhes (somente resumo + dependentes) */}
             <Modal
                 open={modalOpen}
                 onClose={() => setModalOpen(false)}
@@ -1316,10 +1151,22 @@ export default function AssociadosGeralPage() {
                     detail={detail}
                     loading={loadingDetail}
                     onReload={reloadDetail}
-                    onUpsertAccess={upsertAccess}
-                    onResetAccess={resetAccess}
+                    onOpenTitularAccess={openTitularAccess}
+                    onOpenDepAccess={openDepAccess}
                 />
             </Modal>
+
+            {/* Modal de criar acesso (titular/dependente) */}
+            <AccessModal
+                open={accessOpen}
+                onClose={() => setAccessOpen(false)}
+                title={accessTitle}
+                initialCpf={accessCpf}
+                initialEmail={accessEmail}
+                initialTelefone={accessTelefone}
+                requireCpfEditable={accessCpfEditable}
+                onSave={upsertAccess}
+            />
         </div>
     );
 }
