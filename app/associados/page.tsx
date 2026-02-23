@@ -9,7 +9,6 @@ import {
     IconUserCircle,
     IconId,
     IconFileText,
-    IconCash,
     IconLock,
     IconMail,
     IconPhone,
@@ -74,19 +73,6 @@ type LocalAuth = {
     ultimo_login: string | null;
 } | null;
 
-type ContasReceberItem = {
-    id: number;
-    situacao: "P" | "B" | "C" | string;
-    parcela?: string;
-    valor?: number;
-    dataVencimento?: string;
-    dataEmissao?: string;
-    tipo?: string;
-    cobranca?: string;
-    linhaDigitavel?: string;
-    nossoNumero?: string;
-};
-
 type ContractDetail = {
     ok: boolean;
     local_auth: LocalAuth;
@@ -106,30 +92,43 @@ type PaginationInfo = {
 };
 
 /* =========================
+   Beneficiário model (API)
+========================= */
+type BeneficiarioApi = {
+    Tipo?: "T" | "D" | "A" | "P" | string;
+    Nome?: string;
+    DataNascimento?: string;
+    Sexo?: "F" | "M" | "N" | string;
+    Telefone?: string;
+};
+
+/* =========================
    Utils
 ========================= */
 function onlyDigits(v: string) {
     return (v || "").replace(/\D+/g, "");
 }
 
-function fmtMoneyBR(v: any) {
-    const n = Number(v);
-    if (!isFinite(n)) return "-";
-    return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function safeText(v: any) {
+    if (v === null || v === undefined) return "-";
+    const s = String(v).trim();
+    return s ? s : "-";
 }
 
-function fmtDate(v: any) {
+function fmtDateBR(v: any) {
+    if (!v) return "-";
+    const s = String(v);
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString("pt-BR");
+    return s;
+}
+
+function fmtDateTimeBR(v: any) {
     if (!v) return "-";
     const s = String(v);
     const d = new Date(s);
     if (!isNaN(d.getTime())) return d.toLocaleString("pt-BR");
     return s;
-}
-
-function safeText(v: any) {
-    if (v === null || v === undefined) return "-";
-    const s = String(v).trim();
-    return s ? s : "-";
 }
 
 function statusBadgeSituacao(situacao?: string) {
@@ -159,13 +158,6 @@ function normalizeContractsPayload(data: any): Contract[] {
     if (raw && Array.isArray(raw.data)) return raw.data as Contract[];
     if (raw && Array.isArray(raw.items)) return raw.items as Contract[];
     if (Array.isArray(data)) return data as Contract[];
-    return [];
-}
-
-function normalizeContasPayload(raw: any): ContasReceberItem[] {
-    if (Array.isArray(raw)) return raw as any;
-    if (raw && Array.isArray(raw.items)) return raw.items;
-    if (raw && Array.isArray(raw.data)) return raw.data;
     return [];
 }
 
@@ -212,30 +204,92 @@ function parseXPagination(headers: Headers): PaginationInfo | null {
     }
 }
 
-/* =========================
-   Helpers (Beneficiário / Dependentes)
-========================= */
-function pickTitular(benef: any) {
-    if (!benef) return null;
-    if (Array.isArray(benef)) return benef[0] ?? null;
-    if (typeof benef === "object") return benef;
-    return null;
+function isValidEmail(email: string) {
+    const e = (email || "").trim().toLowerCase();
+    if (!e) return false;
+    // validação básica no front (o PHP valida no servidor)
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
-function guessDependentes(benef: any): any[] {
-    if (!benef) return [];
-    const obj = Array.isArray(benef) ? benef[0] : benef;
-    if (!obj || typeof obj !== "object") return [];
-    const candidates = ["beneficiarios", "listaBeneficiarios", "dependentes", "itens", "items", "Beneficiarios"];
-    for (const k of candidates) {
-        const v = (obj as any)[k];
-        if (Array.isArray(v)) return v;
+function isValidTelefoneBR(telefone: string) {
+    const t = onlyDigits(telefone);
+    return t.length === 10 || t.length === 11;
+}
+
+/* =========================
+   Beneficiário parsing (Unypax)
+   - você disse que a API traz lista com Tipo/Nome/DataNascimento/Sexo/Telefone
+   - esse helper tenta achar essa lista em vários formatos possíveis
+========================= */
+function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
+    if (!payload) return [];
+
+    // caso já venha array direto
+    if (Array.isArray(payload) && payload.every((x) => x && typeof x === "object")) {
+        // se for array de objetos e tiver Tipo/Nome etc, já serve
+        const hasFields = payload.some((x) => "Tipo" in x || "Nome" in x || "DataNascimento" in x);
+        if (hasFields) return payload as BeneficiarioApi[];
     }
+
+    // caso venha objeto com lista dentro
+    if (typeof payload === "object") {
+        const candidates = [
+            "ListaBeneficiarios",
+            "listaBeneficiarios",
+            "Beneficiarios",
+            "beneficiarios",
+            "items",
+            "itens",
+            "data",
+            "Data",
+        ];
+
+        for (const k of candidates) {
+            const v = (payload as any)[k];
+            if (Array.isArray(v)) {
+                const hasFields = v.some((x) => x && typeof x === "object" && ("Tipo" in x || "Nome" in x || "DataNascimento" in x));
+                if (hasFields) return v as BeneficiarioApi[];
+            }
+        }
+
+        // fallback: varrer 1 nível
+        for (const key of Object.keys(payload)) {
+            const v = (payload as any)[key];
+            if (Array.isArray(v)) {
+                const hasFields = v.some((x) => x && typeof x === "object" && ("Tipo" in x || "Nome" in x || "DataNascimento" in x));
+                if (hasFields) return v as BeneficiarioApi[];
+            }
+        }
+    }
+
     return [];
 }
 
-function getDepCpf(dep: any) {
-    return onlyDigits(dep?.cpf || dep?.CPF || dep?.Cpf || dep?.cpf_cnpj || dep?.cpfCnpj || "");
+function pickTitularFromList(list: BeneficiarioApi[]) {
+    const t = list.find((b) => String(b?.Tipo || "").toUpperCase() === "T");
+    return t || null;
+}
+
+function pickDependentesFromList(list: BeneficiarioApi[]) {
+    // dependentes: Tipo D, mas você também tem A e P (agregado/pet) — vamos listar tudo que NÃO for T
+    return list.filter((b) => String(b?.Tipo || "").toUpperCase() !== "T");
+}
+
+function sexoLabel(s: any) {
+    const v = String(s || "").toUpperCase();
+    if (v === "F") return "Feminino";
+    if (v === "M") return "Masculino";
+    if (v === "N") return "Não informado";
+    return safeText(s);
+}
+
+function tipoLabel(t: any) {
+    const v = String(t || "").toUpperCase();
+    if (v === "T") return "Titular";
+    if (v === "D") return "Dependente";
+    if (v === "A") return "Agregado";
+    if (v === "P") return "Pet";
+    return safeText(t);
 }
 
 /* =========================
@@ -300,6 +354,8 @@ function Modal({
 
 /* =========================
    Access Modal (Titular / Dependente)
+   - validações iguais ao PHP:
+     CPF 11, senha >= 6, email válido obrigatório, telefone 10/11 obrigatório
 ========================= */
 function AccessModal({
     open,
@@ -308,7 +364,7 @@ function AccessModal({
     initialCpf,
     initialEmail,
     initialTelefone,
-    requireCpfEditable,
+    cpfEditable,
     onSave,
 }: {
     open: boolean;
@@ -317,7 +373,7 @@ function AccessModal({
     initialCpf: string;
     initialEmail?: string;
     initialTelefone?: string;
-    requireCpfEditable?: boolean; // dependente: true
+    cpfEditable: boolean;
     onSave: (payload: { cpf: string; senha: string; email: string; telefone: string }) => Promise<void>;
 }) {
     const [cpf, setCpf] = useState(initialCpf);
@@ -335,15 +391,24 @@ function AccessModal({
     }, [open, initialCpf, initialEmail, initialTelefone]);
 
     const cpfDigits = useMemo(() => onlyDigits(cpf), [cpf]);
+    const telDigits = useMemo(() => onlyDigits(telefone), [telefone]);
+
+    const cpfOk = cpfDigits.length === 11;
+    const emailOk = isValidEmail(email);
+    const telOk = isValidTelefoneBR(telefone);
+    const senhaOk = senha.trim().length >= 6;
+
+    const canSave = cpfOk && emailOk && telOk && senhaOk && !saving;
 
     async function handleSave() {
-        const cpfOk = cpfDigits.length === 11;
         if (!cpfOk) return toastMessage("warn", "CPF inválido (precisa ter 11 dígitos).");
-        if (senha.trim().length < 6) return toastMessage("warn", "Senha muito curta (mín. 6).");
+        if (!emailOk) return toastMessage("warn", "Informe um e-mail válido.");
+        if (!telOk) return toastMessage("warn", "Informe um telefone válido com DDD (10 ou 11 dígitos).");
+        if (!senhaOk) return toastMessage("warn", "Senha muito curta (mín. 6).");
 
         try {
             setSaving(true);
-            await onSave({ cpf: cpfDigits, senha, email: email.trim(), telefone: telefone.trim() });
+            await onSave({ cpf: cpfDigits, senha, email: email.trim(), telefone: telDigits });
             onClose();
         } finally {
             setSaving(false);
@@ -352,63 +417,58 @@ function AccessModal({
 
     return (
         <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-xl">
-            <div className="grid gap-3">
-                <div className={cardCls + " p-4"}>
-                    <div className="text-sm font-semibold flex items-center gap-2">
-                        <IconLock className="size-5 text-muted-foreground" />
-                        Criar / Atualizar acesso
+            <div className={cardCls + " p-4"}>
+                <div className="text-sm font-semibold flex items-center gap-2">
+                    <IconLock className="size-5 text-muted-foreground" />
+                    Criar / Atualizar acesso
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                    <div className="grid gap-1">
+                        <label className="text-xs text-muted-foreground">CPF</label>
+                        <input
+                            className={inputCls}
+                            value={cpf}
+                            onChange={(e) => setCpf(e.target.value)}
+                            placeholder="000.000.000-00"
+                            inputMode="numeric"
+                            disabled={!cpfEditable}
+                        />
+                        <div className="text-xs text-muted-foreground">
+                            {cpfEditable ? "Obrigatório (dependente não vem com CPF na API)." : "CPF do titular já definido."}
+                        </div>
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        Informe os dados e defina a senha. (A senha precisa ter no mínimo 6 caracteres.)
+
+                    <div className="grid gap-1">
+                        <label className="text-xs text-muted-foreground">E-mail</label>
+                        <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@dominio.com" inputMode="email" />
+                        {!emailOk && email.trim() ? <div className="text-xs text-red-600">E-mail inválido.</div> : null}
                     </div>
 
-                    <div className="mt-4 grid gap-3">
-                        <div className="grid gap-1">
-                            <label className="text-xs text-muted-foreground">CPF</label>
-                            <input
-                                className={inputCls}
-                                value={cpf}
-                                onChange={(e) => setCpf(e.target.value)}
-                                placeholder="000.000.000-00"
-                                inputMode="numeric"
-                                disabled={!requireCpfEditable}
-                            />
-                            {!requireCpfEditable ? (
-                                <div className="text-xs text-muted-foreground">CPF do titular já definido.</div>
-                            ) : (
-                                <div className="text-xs text-muted-foreground">Obrigatório para criar o acesso do dependente.</div>
-                            )}
-                        </div>
+                    <div className="grid gap-1">
+                        <label className="text-xs text-muted-foreground">Telefone (DDD + número)</label>
+                        <input className={inputCls} value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" inputMode="tel" />
+                        {!telOk && onlyDigits(telefone).length > 0 ? <div className="text-xs text-red-600">Telefone inválido.</div> : null}
+                    </div>
 
-                        <div className="grid gap-1">
-                            <label className="text-xs text-muted-foreground">E-mail</label>
-                            <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@dominio.com" inputMode="email" />
-                        </div>
+                    <div className="grid gap-1">
+                        <label className="text-xs text-muted-foreground">Senha</label>
+                        <input className={inputCls} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Digite uma senha" type="password" />
+                    </div>
 
-                        <div className="grid gap-1">
-                            <label className="text-xs text-muted-foreground">Telefone</label>
-                            <input className={inputCls} value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" inputMode="tel" />
-                        </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <button className={btnNeutral + " w-full sm:w-auto"} onClick={onClose} disabled={saving}>
+                            Cancelar
+                        </button>
+                        <button className={btnOutline + " w-full sm:w-auto"} onClick={handleSave} disabled={!canSave}>
+                            <IconShieldLock className="size-4" />
+                            {saving ? "Salvando..." : "Salvar acesso"}
+                        </button>
+                    </div>
 
-                        <div className="grid gap-1">
-                            <label className="text-xs text-muted-foreground">Senha</label>
-                            <input className={inputCls} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Digite uma senha" type="password" />
-                        </div>
-
-                        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                            <button className={btnNeutral + " w-full sm:w-auto"} onClick={onClose} disabled={saving}>
-                                Cancelar
-                            </button>
-                            <button className={btnOutline + " w-full sm:w-auto"} onClick={handleSave} disabled={saving}>
-                                <IconShieldLock className="size-4" />
-                                {saving ? "Salvando..." : "Salvar acesso"}
-                            </button>
-                        </div>
-
-                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                            <IconInfoCircle className="size-4 shrink-0 mt-[1px]" />
-                            <span>Depois, você pode usar “Resetar senha” no titular (quando existir acesso) para gerar senha temporária.</span>
-                        </div>
+                    <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                        <IconInfoCircle className="size-4 shrink-0 mt-[1px]" />
+                        <span>Validações do formulário seguem exatamente as regras do seu PHP (email e telefone obrigatórios).</span>
                     </div>
                 </div>
             </div>
@@ -417,13 +477,11 @@ function AccessModal({
 }
 
 /* =========================
-   Lista (tabela) - desktop
-   Lista (cards) - mobile
+   Lista contratos
 ========================= */
 function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Contract) => void }) {
     return (
         <div className={cardCls + " overflow-hidden"}>
-            {/* Desktop table */}
             <div className="hidden md:block">
                 <table className="w-full text-sm">
                     <thead className="border-b bg-muted/30">
@@ -447,9 +505,7 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                                         </div>
                                         <div className="min-w-0">
                                             <div className="truncate font-semibold">{safeText(c.nome)}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                Últ. pagto: {c.dataultimopagamento ? fmtDate(c.dataultimopagamento) : "-"}
-                                            </div>
+                                            <div className="text-xs text-muted-foreground">Últ. pagto: {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}</div>
                                         </div>
                                     </div>
                                 </td>
@@ -477,7 +533,6 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                 </table>
             </div>
 
-            {/* Mobile list */}
             <div className="md:hidden">
                 <div className="divide-y">
                     {items.map((c) => (
@@ -503,8 +558,7 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                                         </div>
                                         <div className="mt-0.5">
                                             <span className="font-medium text-foreground">Cidade:</span> {safeText(c.cidade)} •{" "}
-                                            <span className="font-medium text-foreground">Últ. pagto:</span>{" "}
-                                            {c.dataultimopagamento ? fmtDate(c.dataultimopagamento) : "-"}
+                                            <span className="font-medium text-foreground">Últ. pagto:</span> {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
                                         </div>
                                     </div>
 
@@ -529,7 +583,7 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
 }
 
 /* =========================
-   Pager + resumo (total etc)
+   Pager
 ========================= */
 function Pager({
     page,
@@ -590,7 +644,7 @@ function Pager({
 }
 
 /* =========================
-   Detail (somente resumo + dependentes + criar acesso)
+   Detail (Resumo + Dependentes)
 ========================= */
 function DetailModalContent({
     contract,
@@ -605,18 +659,18 @@ function DetailModalContent({
     loading: boolean;
     onReload: () => void;
     onOpenTitularAccess: () => void;
-    onOpenDepAccess: (dep: any) => void;
+    onOpenDepAccess: (dep: BeneficiarioApi) => void;
 }) {
     const cpfDigits = useMemo(() => onlyDigits(contract?.cpf_cnpj || ""), [contract?.cpf_cnpj]);
     const local = detail?.local_auth ?? null;
     const hasAccess = !!local;
 
-    const titular = useMemo(() => pickTitular(detail?.beneficiario), [detail?.beneficiario]);
-    const dependentes = useMemo(() => guessDependentes(detail?.beneficiario), [detail?.beneficiario]);
+    const beneficiarios = useMemo(() => extractBeneficiariosList(detail?.beneficiario), [detail?.beneficiario]);
+    const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
+    const dependentes = useMemo(() => pickDependentesFromList(beneficiarios), [beneficiarios]);
 
     return (
         <div className="grid gap-4">
-            {/* header actions */}
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
@@ -637,12 +691,7 @@ function DetailModalContent({
                         <IconRefresh className="size-4" />
                         Atualizar
                     </button>
-                    <button
-                        className={btnNeutral}
-                        onClick={() => cpfDigits && copyToClipboard(cpfDigits)}
-                        disabled={!cpfDigits}
-                        title="Copiar CPF (somente números)"
-                    >
+                    <button className={btnNeutral} onClick={() => cpfDigits && copyToClipboard(cpfDigits)} disabled={!cpfDigits} title="Copiar CPF (somente números)">
                         <IconCopy className="size-4" />
                         Copiar CPF
                     </button>
@@ -651,11 +700,12 @@ function DetailModalContent({
 
             {loading ? <div className="rounded-2xl border bg-muted/30 px-3 py-2 text-sm">Carregando detalhes…</div> : null}
 
-            {/* Resumo do Plano (igual estilo da imagem) */}
+            {/* Resumo (igual estilo sua imagem) */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                         <div className="text-base font-semibold">Resumo do Plano</div>
+
                         <div className="mt-2 text-sm text-muted-foreground grid gap-1.5">
                             <div>
                                 <span className="font-medium text-foreground">Plano:</span> {safeText(contract?.plano)}
@@ -663,8 +713,7 @@ function DetailModalContent({
                             </div>
                             <div>
                                 <span className="font-medium text-foreground">Cidade:</span> {safeText(contract?.cidade)} •{" "}
-                                <span className="font-medium text-foreground">Últ. pagamento:</span>{" "}
-                                {contract?.dataultimopagamento ? fmtDate(contract.dataultimopagamento) : "-"}
+                                <span className="font-medium text-foreground">Últ. pagamento:</span> {contract?.dataultimopagamento ? fmtDateTimeBR(contract.dataultimopagamento) : "-"}
                             </div>
 
                             <div className="pt-2 grid gap-2">
@@ -689,12 +738,20 @@ function DetailModalContent({
                                 </div>
 
                                 <div>
-                                    <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDate(local.ultimo_login) : "-"}
+                                    <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
                                 </div>
                                 <div>
-                                    <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDate(local.bloqueado_ate) : "-"}
+                                    <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
                                 </div>
                             </div>
+
+                            {/* info de titular vindo da lista (quando existir) */}
+                            {titular ? (
+                                <div className="pt-2 text-xs text-muted-foreground">
+                                    <span className="font-medium text-foreground">Titular (Unypax):</span> {safeText(titular.Nome)} • Nasc:{" "}
+                                    {fmtDateBR(titular.DataNascimento)} • Sexo: {sexoLabel(titular.Sexo)} • Tel: {safeText(titular.Telefone)}
+                                </div>
+                            ) : null}
                         </div>
                     </div>
 
@@ -727,89 +784,71 @@ function DetailModalContent({
                 </div>
             </div>
 
-            {/* Dependentes + criar acesso */}
+            {/* Dependentes */}
             <div className={cardCls + " overflow-hidden"}>
                 <div className="border-b bg-muted/20 px-4 py-3 text-sm font-semibold flex items-center gap-2">
                     <IconUser className="size-4 text-muted-foreground" />
-                    Dependentes
+                    Beneficiários (Dependentes / Agregados / Pet)
                 </div>
 
                 <div className="p-4">
                     {dependentes.length === 0 ? (
-                        <div className="text-sm text-muted-foreground">
-                            Nenhum dependente retornado.
-                            {!titular ? (
-                                <div className="mt-2 text-xs text-muted-foreground">Obs.: o backend não retornou “beneficiario” (Unypax).</div>
-                            ) : null}
-                        </div>
+                        <div className="text-sm text-muted-foreground">Nenhum dependente retornado.</div>
                     ) : (
                         <>
-                            {/* Desktop */}
                             <div className="hidden md:block overflow-auto rounded-2xl border bg-background">
                                 <table className="w-full text-sm">
                                     <thead className="border-b bg-muted/30">
                                         <tr>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Tipo</th>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Nome</th>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Nascimento</th>
-                                            <th className="px-3 py-2 text-left whitespace-nowrap">Tipo</th>
-                                            <th className="px-3 py-2 text-left whitespace-nowrap">CPF</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Sexo</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Telefone</th>
                                             <th className="px-3 py-2 text-right whitespace-nowrap">Ação</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {dependentes.map((d: any, idx: number) => {
-                                            const nome = safeText(d.Nome || d.nome);
-                                            const nasc = safeText(d.DataNascimento || d.dataNascimento);
-                                            const tipo = safeText(d.Tipo || d.tipo);
-                                            const cpf = getDepCpf(d);
-
-                                            return (
-                                                <tr key={idx} className="border-b last:border-0">
-                                                    <td className="px-3 py-2 font-medium">{nome}</td>
-                                                    <td className="px-3 py-2">{nasc}</td>
-                                                    <td className="px-3 py-2">{tipo}</td>
-                                                    <td className="px-3 py-2">{cpf ? cpf : <span className="text-muted-foreground">—</span>}</td>
-                                                    <td className="px-3 py-2 text-right">
-                                                        <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
-                                                            <IconLock className="size-4" />
-                                                            Criar acesso
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                        {dependentes.map((d, idx) => (
+                                            <tr key={idx} className="border-b last:border-0">
+                                                <td className="px-3 py-2">{tipoLabel(d.Tipo)}</td>
+                                                <td className="px-3 py-2 font-medium">{safeText(d.Nome)}</td>
+                                                <td className="px-3 py-2">{fmtDateBR(d.DataNascimento)}</td>
+                                                <td className="px-3 py-2">{sexoLabel(d.Sexo)}</td>
+                                                <td className="px-3 py-2">{safeText(d.Telefone)}</td>
+                                                <td className="px-3 py-2 text-right">
+                                                    <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
+                                                        <IconLock className="size-4" />
+                                                        Criar acesso
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
                                     </tbody>
                                 </table>
                             </div>
 
-                            {/* Mobile */}
                             <div className="md:hidden grid gap-2">
-                                {dependentes.map((d: any, idx: number) => {
-                                    const nome = safeText(d.Nome || d.nome);
-                                    const nasc = safeText(d.DataNascimento || d.dataNascimento);
-                                    const tipo = safeText(d.Tipo || d.tipo);
-                                    const cpf = getDepCpf(d);
-
-                                    return (
-                                        <div key={idx} className="rounded-2xl border bg-background p-3">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <div className="font-semibold truncate">{nome}</div>
-                                                    <div className="mt-1 text-xs text-muted-foreground">
-                                                        {tipo} • Nasc: {nasc}
-                                                    </div>
-                                                    <div className="mt-1 text-xs text-muted-foreground">
-                                                        <span className="font-medium text-foreground">CPF:</span> {cpf || "—"}
-                                                    </div>
+                                {dependentes.map((d, idx) => (
+                                    <div key={idx} className="rounded-2xl border bg-background p-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <div className="text-xs text-muted-foreground">{tipoLabel(d.Tipo)}</div>
+                                                <div className="font-semibold truncate">{safeText(d.Nome)}</div>
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    Nasc: {fmtDateBR(d.DataNascimento)} • Sexo: {sexoLabel(d.Sexo)}
                                                 </div>
-                                                <button className={btnOutline + " shrink-0 py-1.5"} onClick={() => onOpenDepAccess(d)}>
-                                                    <IconLock className="size-4" />
-                                                    Criar
-                                                </button>
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    <span className="font-medium text-foreground">Tel:</span> {safeText(d.Telefone)}
+                                                </div>
                                             </div>
+                                            <button className={btnOutline + " shrink-0 py-1.5"} onClick={() => onOpenDepAccess(d)}>
+                                                <IconLock className="size-4" />
+                                                Criar
+                                            </button>
                                         </div>
-                                    );
-                                })}
+                                    </div>
+                                ))}
                             </div>
                         </>
                     )}
@@ -843,7 +882,7 @@ export default function AssociadosGeralPage() {
     const [detail, setDetail] = useState<ContractDetail | null>(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
 
-    // modal acesso (titular/dependente)
+    // modal acesso
     const [accessOpen, setAccessOpen] = useState(false);
     const [accessTitle, setAccessTitle] = useState("Criar acesso");
     const [accessCpf, setAccessCpf] = useState("");
@@ -876,8 +915,6 @@ export default function AssociadosGeralPage() {
                 url.searchParams.set("op", "contracts");
                 url.searchParams.set("page", String(nextPage));
                 url.searchParams.set("pageSize", String(pageSize));
-
-                // ✅ sem filtro de situação/cidade/plano/ordenar: só busca
                 url.searchParams.set("textToSearch", (debouncedQuery || "").trim());
 
                 const res = await fetch(url.toString(), {
@@ -907,19 +944,16 @@ export default function AssociadosGeralPage() {
         [debouncedQuery, headers, page, pageSize]
     );
 
-    // ✅ ao abrir a página, já carrega tudo
     useEffect(() => {
         loadContracts({ resetPage: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // recarrega quando texto de busca muda
     useEffect(() => {
         loadContracts({ resetPage: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedQuery]);
 
-    // recarrega quando página muda
     useEffect(() => {
         loadContracts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -983,6 +1017,8 @@ export default function AssociadosGeralPage() {
         async (payload: { cpf: string; senha: string; email: string; telefone: string }) => {
             if (!payload.cpf || payload.cpf.length !== 11) return toastMessage("warn", "CPF inválido.");
             if ((payload.senha || "").trim().length < 6) return toastMessage("warn", "Senha muito curta (mín. 6).");
+            if (!payload.email || !isValidEmail(payload.email)) return toastMessage("warn", "Informe um e-mail válido.");
+            if (!payload.telefone || !isValidTelefoneBR(payload.telefone)) return toastMessage("warn", "Informe um telefone válido com DDD.");
 
             try {
                 const url = new URL(ENDPOINT);
@@ -1007,37 +1043,6 @@ export default function AssociadosGeralPage() {
         [headers, reloadDetail]
     );
 
-    // (mantido, caso você use depois — não aparece na UI)
-    const resetAccess = useCallback(
-        async (cpf: string) => {
-            if (!cpf || cpf.length !== 11) return toastMessage("warn", "CPF inválido.");
-            if (!confirm("Confirmar reset? Será gerada uma senha temporária e enviada por e-mail.")) return;
-
-            try {
-                const url = new URL(ENDPOINT);
-                url.searchParams.set("op", "reset_access");
-
-                const res = await fetch(url.toString(), {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({ cpf }),
-                    cache: "no-store",
-                });
-
-                const data = await safeJson(res);
-                if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao resetar.");
-
-                const temp = data?.temp_password ? `\n\nSenha temporária: ${data.temp_password}` : "";
-                toastMessage("ok", `Reset concluído. Email: ${data?.email || "-"}.${temp}`);
-
-                await reloadDetail();
-            } catch (e: any) {
-                toastMessage("err", e?.message || "Erro ao resetar senha.");
-            }
-        },
-        [headers, reloadDetail]
-    );
-
     const openTitularAccess = useCallback(() => {
         const cpf = onlyDigits(selected?.cpf_cnpj || "");
         const local = detail?.local_auth ?? null;
@@ -1050,15 +1055,14 @@ export default function AssociadosGeralPage() {
         setAccessOpen(true);
     }, [detail?.local_auth, selected?.cpf_cnpj]);
 
-    const openDepAccess = useCallback((dep: any) => {
-        const nome = safeText(dep?.Nome || dep?.nome || "Dependente");
-        const cpf = getDepCpf(dep);
+    const openDepAccess = useCallback((dep: BeneficiarioApi) => {
+        const nome = safeText(dep?.Nome || "Beneficiário");
 
         setAccessTitle(`Criar acesso (${nome})`);
-        setAccessCpf(cpf); // pode estar vazio
+        setAccessCpf(""); // dependente não vem com CPF -> digita no modal
         setAccessEmail("");
-        setAccessTelefone("");
-        setAccessCpfEditable(true); // dependente precisa poder digitar CPF se não tiver
+        setAccessTelefone(dep?.Telefone || "");
+        setAccessCpfEditable(true);
         setAccessOpen(true);
     }, []);
 
@@ -1066,7 +1070,6 @@ export default function AssociadosGeralPage() {
 
     return (
         <div className="mx-auto w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-5">
-            {/* Topbar */}
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Associados — Consulta Geral</h1>
@@ -1081,21 +1084,15 @@ export default function AssociadosGeralPage() {
                 </div>
             </div>
 
-            {/* ✅ Só a busca (removendo todo o resto) */}
+            {/* Só a busca */}
             <div className={cardCls + " p-4 mb-4"}>
                 <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
                 <div className="relative mt-1">
                     <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Digite aqui…"
-                        className={inputCls + " pl-9"}
-                    />
+                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Digite aqui…" className={inputCls + " pl-9"} />
                 </div>
             </div>
 
-            {/* Estado */}
             {loading ? <div className="mb-4 rounded-xl border bg-muted/30 px-3 py-2 text-sm">Carregando contratos…</div> : null}
             {error ? (
                 <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-200">
@@ -1103,7 +1100,6 @@ export default function AssociadosGeralPage() {
                 </div>
             ) : null}
 
-            {/* Lista */}
             {!hasResults && !loading ? (
                 <div className={cardCls + " p-5 text-sm text-muted-foreground"}>
                     Nenhum contrato retornado. Dica: busque por CPF (somente números), parte do nome ou contrato.
@@ -1112,7 +1108,6 @@ export default function AssociadosGeralPage() {
                 <ContractsTable items={contracts} onOpen={openDetail} />
             )}
 
-            {/* Paginação + total */}
             <Pager
                 page={pagination?.pageNumber ?? page}
                 pageCount={pagination?.pageCount}
@@ -1125,7 +1120,6 @@ export default function AssociadosGeralPage() {
                 onNext={() => setPage((p) => p + 1)}
             />
 
-            {/* Modal central de detalhes (somente resumo + dependentes) */}
             <Modal
                 open={modalOpen}
                 onClose={() => setModalOpen(false)}
@@ -1156,7 +1150,6 @@ export default function AssociadosGeralPage() {
                 />
             </Modal>
 
-            {/* Modal de criar acesso (titular/dependente) */}
             <AccessModal
                 open={accessOpen}
                 onClose={() => setAccessOpen(false)}
@@ -1164,7 +1157,7 @@ export default function AssociadosGeralPage() {
                 initialCpf={accessCpf}
                 initialEmail={accessEmail}
                 initialTelefone={accessTelefone}
-                requireCpfEditable={accessCpfEditable}
+                cpfEditable={accessCpfEditable}
                 onSave={upsertAccess}
             />
         </div>
