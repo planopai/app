@@ -288,7 +288,10 @@ function pickTitularFromList(list: BeneficiarioApi[]) {
 }
 
 function pickDependentesFromList(list: BeneficiarioApi[]) {
-    return list.filter((b: any) => String(b?.Tipo ?? b?.tipo ?? "").toUpperCase() !== "T");
+    return list.filter((b: any) => {
+        const tipo = String(b?.Tipo ?? b?.tipo ?? "").toUpperCase();
+        return tipo === "D" || tipo === "A" || tipo === "P";
+    });
 }
 
 function sexoLabel(s: any) {
