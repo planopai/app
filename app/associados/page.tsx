@@ -317,63 +317,78 @@ function tipoLabel(t: any) {
    ✅ Performance: listeners só quando open.
 ========================= */
 function Modal({
-    open,
-    title,
-    subtitle,
-    onClose,
-    children,
-    maxWidth = "max-w-5xl",
-    hideHeader = false,
+  open,
+  title,
+  subtitle,
+  onClose,
+  children,
+  maxWidth = "max-w-5xl",
+  hideHeader = false,
 }: {
-    open: boolean;
-    title?: string;
-    subtitle?: React.ReactNode;
-    onClose: () => void;
-    children: React.ReactNode;
-    maxWidth?: string;
-    hideHeader?: boolean;
+  open: boolean;
+  title?: string;
+  subtitle?: React.ReactNode;
+  onClose: () => void;
+  children: React.ReactNode;
+  maxWidth?: string;
+  hideHeader?: boolean;
 }) {
-    useEffect(() => {
-        if (!open) return;
+  useEffect(() => {
+    if (!open) return;
 
-        const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-        window.addEventListener("keydown", onEsc);
+    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onEsc);
 
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
-        return () => {
-            window.removeEventListener("keydown", onEsc);
-            document.body.style.overflow = prev;
-        };
-    }, [open, onClose]);
+    return () => {
+      window.removeEventListener("keydown", onEsc);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
 
-    if (!open) return null;
+  if (!open) return null;
 
-    return (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
-            <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
-            <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
-                <div className={`w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
-                    {!hideHeader ? (
-                        <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-                            <div className="min-w-0">
-                                <div className="truncate text-lg font-bold">{title}</div>
-                                {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
-                            </div>
-                            <button className={btnNeutral} onClick={onClose} title="Fechar">
-                                <IconX className="size-4" />
-                                Fechar
-                            </button>
-                        </div>
-                    ) : null}
+  return (
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+      {/* backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
 
-                    {/* Por quê: quando hideHeader=true, o conteúdo controla o topo e evita duplicação */}
-                    <div className="max-h-[80vh] overflow-y-auto p-4">{children}</div>
-                </div>
+      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
+        {/* modal box */}
+        <div className={`relative w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
+          {/* ✅ botão fechar SEMPRE presente */}
+          <button
+            type="button"
+            onClick={onClose}
+            className={
+              btnNeutral +
+              " absolute right-3 top-3 z-10 !px-3 !py-2"
+            }
+            title="Fechar"
+          >
+            <IconX className="size-4" />
+            <span className="hidden sm:inline">Fechar</span>
+          </button>
+
+          {!hideHeader ? (
+            <div className="flex items-start justify-between gap-3 border-b px-4 py-3 pr-16">
+              <div className="min-w-0">
+                <div className="truncate text-lg font-bold">{title}</div>
+                {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
+              </div>
+              {/* (o botão já está absoluto acima, então não precisa duplicar aqui) */}
             </div>
+          ) : null}
+
+          <div className="max-h-[80vh] overflow-y-auto p-4">
+            {children}
+          </div>
         </div>
-    );
+      </div>
+    </div>
+  );
 }
 
 /* =========================
