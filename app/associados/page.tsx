@@ -682,6 +682,11 @@ function Pager({
 
 /* =========================
    Detail (Resumo + Dependentes)
+   ✅ Sem duplicação no topo
+   ✅ Responsivo (ações empilham no mobile)
+   ✅ Mantém: Atualizar / Copiar CPF dentro do conteúdo
+   => IMPORTANTE: no <Modal ... /> remova o subtitle (ou deixe vazio),
+      porque esse componente já renderiza o topo.
 ========================= */
 function DetailModalContent({
     contract,
@@ -699,11 +704,15 @@ function DetailModalContent({
     onOpenDepAccess: (dep: BeneficiarioApi) => void;
 }) {
     const cpfDigits = useMemo(() => onlyDigits(contract?.cpf_cnpj || ""), [contract?.cpf_cnpj]);
+
     const local = detail?.local_auth ?? null;
     const hasAccess = !!local;
 
     const beneficiarios = useMemo(() => {
-        const raw = (detail as any)?.beneficiario ?? (detail as any)?.beneficiarios ?? (detail as any)?.ListaBeneficiarios;
+        const raw =
+            (detail as any)?.beneficiario ??
+            (detail as any)?.beneficiarios ??
+            (detail as any)?.ListaBeneficiarios;
 
         // ✅ se a API veio como array de “titulares”, pega o primeiro item como envelope
         const normalizedRaw = Array.isArray(raw) ? raw[0] : raw;
@@ -711,54 +720,89 @@ function DetailModalContent({
         // ✅ tenta extrair lista de dentro do envelope
         return extractBeneficiariosList(normalizedRaw);
     }, [detail]);
+
     const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
     const dependentes = useMemo(() => pickDependentesFromList(beneficiarios), [beneficiarios]);
 
+    const headerLine = useMemo(() => {
+        const cpf = safeText(contract?.cpf_cnpj);
+        const contrato = safeText(contract?.contrato_numero || contract?.contrato);
+        const situacao = safeText(contract?.situacao);
+        return { cpf, contrato, situacao };
+    }, [contract?.cpf_cnpj, contract?.contrato_numero, contract?.contrato, contract?.situacao]);
+
     return (
         <div className="grid gap-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                        <IconId className="size-4" />
-                        {safeText(contract?.cpf_cnpj)}
-                    </span>
-                    <span className="text-muted-foreground">•</span>
-                    <span className="inline-flex items-center gap-1">
-                        <IconFileText className="size-4" />
-                        {safeText(contract?.contrato_numero || contract?.contrato)}
-                    </span>
-                    <span className="text-muted-foreground">•</span>
-                    <span className={statusBadgeSituacao(contract?.situacao)}>{safeText(contract?.situacao)}</span>
+            {/* Topo (único) - Identificação + Ações */}
+            <div className={cardCls + " p-4"}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                        <div className="text-base font-semibold truncate">
+                            {safeText(contract?.nome) !== "-" ? safeText(contract?.nome) : "Detalhes do Associado"}
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                                <IconId className="size-4" />
+                                {headerLine.cpf}
+                            </span>
+
+                            <span className="text-muted-foreground">•</span>
+
+                            <span className="inline-flex items-center gap-1">
+                                <IconFileText className="size-4" />
+                                {headerLine.contrato}
+                            </span>
+
+                            <span className="text-muted-foreground">•</span>
+
+                            <span className={statusBadgeSituacao(contract?.situacao)}>{headerLine.situacao}</span>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                        <button className={btnNeutral + " w-full sm:w-auto"} onClick={onReload} disabled={loading}>
+                            <IconRefresh className="size-4" />
+                            Atualizar
+                        </button>
+
+                        <button
+                            className={btnNeutral + " w-full sm:w-auto"}
+                            onClick={() => cpfDigits && copyToClipboard(cpfDigits)}
+                            disabled={!cpfDigits}
+                            title="Copiar CPF (somente números)"
+                        >
+                            <IconCopy className="size-4" />
+                            Copiar CPF
+                        </button>
+                    </div>
                 </div>
 
-                <div className="flex gap-2">
-                    <button className={btnNeutral} onClick={onReload}>
-                        <IconRefresh className="size-4" />
-                        Atualizar
-                    </button>
-                    <button className={btnNeutral} onClick={() => cpfDigits && copyToClipboard(cpfDigits)} disabled={!cpfDigits} title="Copiar CPF (somente números)">
-                        <IconCopy className="size-4" />
-                        Copiar CPF
-                    </button>
-                </div>
+                {loading ? (
+                    <div className="mt-3 rounded-2xl border bg-muted/30 px-3 py-2 text-sm">
+                        Carregando detalhes…
+                    </div>
+                ) : null}
             </div>
 
-            {loading ? <div className="rounded-2xl border bg-muted/30 px-3 py-2 text-sm">Carregando detalhes…</div> : null}
-
-            {/* Resumo (igual estilo sua imagem) */}
+            {/* Resumo do Plano */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                         <div className="text-base font-semibold">Resumo do Plano</div>
 
-                        <div className="mt-2 text-sm text-muted-foreground grid gap-1.5">
+                        <div className="mt-2 grid gap-1.5 text-sm text-muted-foreground">
                             <div>
-                                <span className="font-medium text-foreground">Plano:</span> {safeText(contract?.plano)}
+                                <span className="font-medium text-foreground">Plano:</span>{" "}
+                                {safeText(contract?.plano)}
                                 {contract?.cobertura ? ` • ${safeText(contract?.cobertura)}` : ""}
                             </div>
+
                             <div>
-                                <span className="font-medium text-foreground">Cidade:</span> {safeText(contract?.cidade)} •{" "}
-                                <span className="font-medium text-foreground">Últ. pagamento:</span> {contract?.dataultimopagamento ? fmtDateTimeBR(contract.dataultimopagamento) : "-"}
+                                <span className="font-medium text-foreground">Cidade:</span>{" "}
+                                {safeText(contract?.cidade)} •{" "}
+                                <span className="font-medium text-foreground">Últ. pagamento:</span>{" "}
+                                {contract?.dataultimopagamento ? fmtDateTimeBR(contract.dataultimopagamento) : "-"}
                             </div>
 
                             <div className="pt-2 grid gap-2">
@@ -766,7 +810,12 @@ function DetailModalContent({
                                     <IconMail className="size-4" />
                                     <span className="font-medium text-foreground">Email:</span> {safeText(local?.email)}
                                     {local?.email_verificado ? (
-                                        <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
+                                        <span
+                                            className={
+                                                badge +
+                                                " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+                                            }
+                                        >
                                             verificado
                                         </span>
                                     ) : null}
@@ -776,31 +825,40 @@ function DetailModalContent({
                                     <IconPhone className="size-4" />
                                     <span className="font-medium text-foreground">Telefone:</span> {safeText(local?.telefone)}
                                     {local?.telefone_verificado ? (
-                                        <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
+                                        <span
+                                            className={
+                                                badge +
+                                                " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+                                            }
+                                        >
                                             verificado
                                         </span>
                                     ) : null}
                                 </div>
 
                                 <div>
-                                    <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
+                                    <span className="font-medium text-foreground">Último login:</span>{" "}
+                                    {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
                                 </div>
+
                                 <div>
-                                    <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
+                                    <span className="font-medium text-foreground">Bloqueado até:</span>{" "}
+                                    {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
                                 </div>
                             </div>
 
-                            {/* info de titular vindo da lista (quando existir) */}
+                            {/* Info do titular vindo da lista (quando existir) */}
                             {titular ? (
                                 <div className="pt-2 text-xs text-muted-foreground">
-                                    <span className="font-medium text-foreground">Titular (Unypax):</span> {safeText(titular.Nome)} • Nasc:{" "}
-                                    {fmtDateBR(titular.DataNascimento)} • Sexo: {sexoLabel(titular.Sexo)} • Tel: {safeText(titular.Telefone)}
+                                    <span className="font-medium text-foreground">Titular (Unypax):</span>{" "}
+                                    {safeText(titular.Nome)} • Nasc: {fmtDateBR(titular.DataNascimento)} • Sexo:{" "}
+                                    {sexoLabel(titular.Sexo)} • Tel: {safeText(titular.Telefone)}
                                 </div>
                             ) : null}
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 sm:justify-end">
+                    <div className="flex flex-col gap-2 sm:items-end">
                         <span
                             className={
                                 badge +
@@ -821,7 +879,7 @@ function DetailModalContent({
                             )}
                         </span>
 
-                        <button className={btnOutline} onClick={onOpenTitularAccess}>
+                        <button className={btnOutline + " w-full sm:w-auto"} onClick={onOpenTitularAccess}>
                             <IconLock className="size-4" />
                             Criar acesso
                         </button>
@@ -841,6 +899,7 @@ function DetailModalContent({
                         <div className="text-sm text-muted-foreground">Nenhum dependente retornado.</div>
                     ) : (
                         <>
+                            {/* Desktop */}
                             <div className="hidden md:block overflow-auto rounded-2xl border bg-background">
                                 <table className="w-full text-sm">
                                     <thead className="border-b bg-muted/30">
@@ -857,10 +916,18 @@ function DetailModalContent({
                                         {dependentes.map((d, idx) => (
                                             <tr key={idx} className="border-b last:border-0">
                                                 <td className="px-3 py-2">{tipoLabel(d.Tipo)}</td>
-                                                <td className="px-3 py-2 font-medium">{safeText((d as any).Nome ?? (d as any).nome)}</td>
-                                                <td className="px-3 py-2">{fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento)}</td>
-                                                <td className="px-3 py-2">{sexoLabel((d as any).Sexo ?? (d as any).sexo)}</td>
-                                                <td className="px-3 py-2">{safeText((d as any).Telefone ?? (d as any).telefone)}</td>
+                                                <td className="px-3 py-2 font-medium">
+                                                    {safeText((d as any).Nome ?? (d as any).nome)}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento)}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {sexoLabel((d as any).Sexo ?? (d as any).sexo)}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {safeText((d as any).Telefone ?? (d as any).telefone)}
+                                                </td>
                                                 <td className="px-3 py-2 text-right">
                                                     <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
                                                         <IconLock className="size-4" />
@@ -873,20 +940,26 @@ function DetailModalContent({
                                 </table>
                             </div>
 
+                            {/* Mobile */}
                             <div className="md:hidden grid gap-2">
                                 {dependentes.map((d, idx) => (
                                     <div key={idx} className="rounded-2xl border bg-background p-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
                                                 <div className="text-xs text-muted-foreground">{tipoLabel(d.Tipo)}</div>
-                                                <div className="font-semibold truncate">{safeText(d.Nome)}</div>
-                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                    Nasc: {fmtDateBR(d.DataNascimento)} • Sexo: {sexoLabel(d.Sexo)}
+                                                <div className="font-semibold truncate">
+                                                    {safeText((d as any).Nome ?? (d as any).nome ?? d.Nome)}
                                                 </div>
                                                 <div className="mt-1 text-xs text-muted-foreground">
-                                                    <span className="font-medium text-foreground">Tel:</span> {safeText(d.Telefone)}
+                                                    Nasc: {fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento ?? d.DataNascimento)} •{" "}
+                                                    Sexo: {sexoLabel((d as any).Sexo ?? (d as any).sexo ?? d.Sexo)}
+                                                </div>
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    <span className="font-medium text-foreground">Tel:</span>{" "}
+                                                    {safeText((d as any).Telefone ?? (d as any).telefone ?? d.Telefone)}
                                                 </div>
                                             </div>
+
                                             <button className={btnOutline + " shrink-0 py-1.5"} onClick={() => onOpenDepAccess(d)}>
                                                 <IconLock className="size-4" />
                                                 Criar
