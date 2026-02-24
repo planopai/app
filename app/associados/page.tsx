@@ -224,39 +224,56 @@ function isValidTelefoneBR(telefone: string) {
 function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
     if (!payload) return [];
 
+    // ✅ MUITO COMUM: vir embrulhado em { data: ... } ou { Data: ... }
+    const root = (payload?.data ?? payload?.Data ?? payload);
+
     // caso já venha array direto
-    if (Array.isArray(payload) && payload.every((x) => x && typeof x === "object")) {
-        // se for array de objetos e tiver Tipo/Nome etc, já serve
-        const hasFields = payload.some((x) => "Tipo" in x || "Nome" in x || "DataNascimento" in x);
-        if (hasFields) return payload as BeneficiarioApi[];
+    if (Array.isArray(root) && root.every((x) => x && typeof x === "object")) {
+        const hasFields = root.some((x) => "Tipo" in x || "Nome" in x || "DataNascimento" in x || "tipo" in x || "nome" in x);
+        if (hasFields) return root as BeneficiarioApi[];
     }
 
     // caso venha objeto com lista dentro
-    if (typeof payload === "object") {
+    if (root && typeof root === "object") {
         const candidates = [
+            // ✅ nomes mais comuns
             "ListaBeneficiarios",
             "listaBeneficiarios",
             "Beneficiarios",
             "beneficiarios",
+
+            // ✅ alguns retornos usam items/itens
             "items",
             "itens",
+
+            // ✅ alguns retornos repetem data aqui dentro também
             "data",
             "Data",
         ];
 
         for (const k of candidates) {
-            const v = (payload as any)[k];
+            const v = (root as any)[k];
             if (Array.isArray(v)) {
-                const hasFields = v.some((x) => x && typeof x === "object" && ("Tipo" in x || "Nome" in x || "DataNascimento" in x));
+                const hasFields = v.some(
+                    (x) =>
+                        x &&
+                        typeof x === "object" &&
+                        ("Tipo" in x || "Nome" in x || "DataNascimento" in x || "tipo" in x || "nome" in x)
+                );
                 if (hasFields) return v as BeneficiarioApi[];
             }
         }
 
         // fallback: varrer 1 nível
-        for (const key of Object.keys(payload)) {
-            const v = (payload as any)[key];
+        for (const key of Object.keys(root)) {
+            const v = (root as any)[key];
             if (Array.isArray(v)) {
-                const hasFields = v.some((x) => x && typeof x === "object" && ("Tipo" in x || "Nome" in x || "DataNascimento" in x));
+                const hasFields = v.some(
+                    (x) =>
+                        x &&
+                        typeof x === "object" &&
+                        ("Tipo" in x || "Nome" in x || "DataNascimento" in x || "tipo" in x || "nome" in x)
+                );
                 if (hasFields) return v as BeneficiarioApi[];
             }
         }
@@ -266,13 +283,12 @@ function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
 }
 
 function pickTitularFromList(list: BeneficiarioApi[]) {
-    const t = list.find((b) => String(b?.Tipo || "").toUpperCase() === "T");
+    const t = list.find((b: any) => String(b?.Tipo ?? b?.tipo ?? "").toUpperCase() === "T");
     return t || null;
 }
 
 function pickDependentesFromList(list: BeneficiarioApi[]) {
-    // dependentes: Tipo D, mas você também tem A e P (agregado/pet) — vamos listar tudo que NÃO for T
-    return list.filter((b) => String(b?.Tipo || "").toUpperCase() !== "T");
+    return list.filter((b: any) => String(b?.Tipo ?? b?.tipo ?? "").toUpperCase() !== "T");
 }
 
 function sexoLabel(s: any) {
@@ -665,7 +681,10 @@ function DetailModalContent({
     const local = detail?.local_auth ?? null;
     const hasAccess = !!local;
 
-    const beneficiarios = useMemo(() => extractBeneficiariosList(detail?.beneficiario), [detail?.beneficiario]);
+    const beneficiarios = useMemo(
+        () => extractBeneficiariosList(detail?.beneficiario ?? (detail as any)?.beneficiarios ?? (detail as any)?.ListaBeneficiarios),
+        [detail]
+    );
     const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
     const dependentes = useMemo(() => pickDependentesFromList(beneficiarios), [beneficiarios]);
 
@@ -812,10 +831,10 @@ function DetailModalContent({
                                         {dependentes.map((d, idx) => (
                                             <tr key={idx} className="border-b last:border-0">
                                                 <td className="px-3 py-2">{tipoLabel(d.Tipo)}</td>
-                                                <td className="px-3 py-2 font-medium">{safeText(d.Nome)}</td>
-                                                <td className="px-3 py-2">{fmtDateBR(d.DataNascimento)}</td>
-                                                <td className="px-3 py-2">{sexoLabel(d.Sexo)}</td>
-                                                <td className="px-3 py-2">{safeText(d.Telefone)}</td>
+                                                <td className="px-3 py-2 font-medium">{safeText((d as any).Nome ?? (d as any).nome)}</td>
+                                                <td className="px-3 py-2">{fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento)}</td>
+                                                <td className="px-3 py-2">{sexoLabel((d as any).Sexo ?? (d as any).sexo)}</td>
+                                                <td className="px-3 py-2">{safeText((d as any).Telefone ?? (d as any).telefone)}</td>
                                                 <td className="px-3 py-2 text-right">
                                                     <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
                                                         <IconLock className="size-4" />
