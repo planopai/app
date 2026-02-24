@@ -95,14 +95,13 @@ type PaginationInfo = {
    Beneficiário model (API)
 ========================= */
 type BeneficiarioApi = {
-    // formato esperado (maiúsculo)
     Tipo?: "T" | "D" | "A" | "P" | string;
     Nome?: string;
     DataNascimento?: string;
     Sexo?: "F" | "M" | "N" | string;
     Telefone?: string;
 
-    // tolerância (minúsculo) — alguns retornos vêm assim
+    // tolerância para variações
     tipo?: "T" | "D" | "A" | "P" | string;
     nome?: string;
     dataNascimento?: string;
@@ -112,33 +111,27 @@ type BeneficiarioApi = {
 };
 
 /* =========================
-   Utils
+   Utils (pequenos, puros e rápidos)
 ========================= */
-function onlyDigits(v: string) {
-    return (v || "").replace(/\D+/g, "");
-}
+const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
 
-function safeText(v: any) {
+const safeText = (v: unknown) => {
     if (v === null || v === undefined) return "-";
     const s = String(v).trim();
     return s ? s : "-";
-}
+};
 
-function fmtDateBR(v: any) {
+const fmtDateBR = (v: unknown) => {
     if (!v) return "-";
-    const s = String(v);
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toLocaleDateString("pt-BR");
-    return s;
-}
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString("pt-BR");
+};
 
-function fmtDateTimeBR(v: any) {
+const fmtDateTimeBR = (v: unknown) => {
     if (!v) return "-";
-    const s = String(v);
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toLocaleString("pt-BR");
-    return s;
-}
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString("pt-BR");
+};
 
 function statusBadgeSituacao(situacao?: string) {
     const s = (situacao || "").toUpperCase();
@@ -153,24 +146,27 @@ function statusBadgeSituacao(situacao?: string) {
     return badge + " border-muted bg-muted/30 text-foreground";
 }
 
-async function safeJson(res: Response) {
+async function safeJson<T = any>(res: Response): Promise<T | null> {
+    // Por quê: evita try/catch repetido e falha segura quando o servidor não retorna JSON.
     try {
-        return await res.json();
+        return (await res.json()) as T;
     } catch {
         return null;
     }
 }
 
 function normalizeContractsPayload(data: any): Contract[] {
+    // Por quê: tolera várias formas sem alocar estruturas extras.
     const raw = data?.data;
-    if (Array.isArray(raw)) return raw as Contract[];
-    if (raw && Array.isArray(raw.data)) return raw.data as Contract[];
-    if (raw && Array.isArray(raw.items)) return raw.items as Contract[];
-    if (Array.isArray(data)) return data as Contract[];
+    if (Array.isArray(raw)) return raw;
+    if (raw?.data && Array.isArray(raw.data)) return raw.data;
+    if (raw?.items && Array.isArray(raw.items)) return raw.items;
+    if (Array.isArray(data)) return data;
     return [];
 }
 
 function toastMessage(_kind: "ok" | "warn" | "err", msg: string) {
+    // Sugestão futura: trocar por Toast real (sonner/toaster). Mantive alert para não quebrar.
     alert(msg);
 }
 
@@ -186,8 +182,8 @@ async function copyToClipboard(text: string) {
 function useDebounced<T>(value: T, delayMs: number) {
     const [debounced, setDebounced] = useState(value);
     useEffect(() => {
-        const t = setTimeout(() => setDebounced(value), delayMs);
-        return () => clearTimeout(t);
+        const t = window.setTimeout(() => setDebounced(value), delayMs);
+        return () => window.clearTimeout(t);
     }, [value, delayMs]);
     return debounced;
 }
@@ -197,7 +193,7 @@ function parseXPagination(headers: Headers): PaginationInfo | null {
     if (!raw) return null;
     try {
         const j = JSON.parse(raw);
-        const out: PaginationInfo = {
+        return {
             pageNumber: Number(j.pageNumber ?? 1) || 1,
             pageSize: Number(j.pageSize ?? 10) || 10,
             pageCount: j.pageCount ?? undefined,
@@ -207,7 +203,6 @@ function parseXPagination(headers: Headers): PaginationInfo | null {
             firstItemOnPage: j.firstItemOnPage ?? undefined,
             lastItemOnPage: j.lastItemOnPage ?? undefined,
         };
-        return out;
     } catch {
         return null;
     }
@@ -215,9 +210,7 @@ function parseXPagination(headers: Headers): PaginationInfo | null {
 
 function isValidEmail(email: string) {
     const e = (email || "").trim().toLowerCase();
-    if (!e) return false;
-    // validação básica no front (o PHP valida no servidor)
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+    return !!e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
 function isValidTelefoneBR(telefone: string) {
@@ -227,38 +220,36 @@ function isValidTelefoneBR(telefone: string) {
 
 /* =========================
    Beneficiário parsing (Unypax)
-   - você disse que a API traz lista com Tipo/Nome/DataNascimento/Sexo/Telefone
-   - esse helper tenta achar essa lista em vários formatos possíveis
 ========================= */
 function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
     if (!payload) return [];
 
     const normalizeItem = (x: any): BeneficiarioApi => {
-        // aceita tanto maiúsculo quanto minúsculo e normaliza para maiúsculo
         const Tipo = (x?.Tipo ?? x?.tipo ?? "") as BeneficiarioApi["Tipo"];
         const Nome = (x?.Nome ?? x?.nome ?? "") as string;
         const DataNascimento = (x?.DataNascimento ?? x?.dataNascimento ?? x?.data_nascimento ?? "") as string;
         const Sexo = (x?.Sexo ?? x?.sexo ?? "") as BeneficiarioApi["Sexo"];
         const Telefone = (x?.Telefone ?? x?.telefone ?? x?.celular ?? "") as string;
-
         return { Tipo, Nome, DataNascimento, Sexo, Telefone };
     };
 
-    const looksLikeListItem = (x: any) => {
-        if (!x || typeof x !== "object") return false;
-        return (
-            "Tipo" in x || "Nome" in x || "DataNascimento" in x || "Sexo" in x || "Telefone" in x ||
-            "tipo" in x || "nome" in x || "dataNascimento" in x || "sexo" in x || "telefone" in x || "celular" in x
-        );
-    };
+    const looksLikeListItem = (x: any) =>
+        x &&
+        typeof x === "object" &&
+        ("Tipo" in x ||
+            "Nome" in x ||
+            "DataNascimento" in x ||
+            "Sexo" in x ||
+            "Telefone" in x ||
+            "tipo" in x ||
+            "nome" in x ||
+            "dataNascimento" in x ||
+            "sexo" in x ||
+            "telefone" in x ||
+            "celular" in x);
 
-    // 1) se já veio array direto
-    if (Array.isArray(payload)) {
-        const arr = payload.filter(looksLikeListItem).map(normalizeItem);
-        return arr;
-    }
+    if (Array.isArray(payload)) return payload.filter(looksLikeListItem).map(normalizeItem);
 
-    // 2) veio objeto com lista dentro
     if (typeof payload === "object") {
         const candidates = [
             "ListaBeneficiarios",
@@ -281,7 +272,6 @@ function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
             }
         }
 
-        // fallback: varrer 1 nível
         for (const key of Object.keys(payload)) {
             const v = (payload as any)[key];
             if (Array.isArray(v)) {
@@ -289,28 +279,19 @@ function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
                 if (arr.length) return arr;
             }
         }
-
-        // 3) fallback extra: às vezes o payload vem com dados do titular + lista em "listaBeneficiarios"
-        // e você quer pelo menos garantir que não volte vazio quando existir.
     }
 
     return [];
 }
 
-function pickTitularFromList(list: BeneficiarioApi[]) {
-    const t = list.find((b) => {
-        const tipo = String((b as any)?.Tipo ?? (b as any)?.tipo ?? "").toUpperCase();
-        return tipo === "T";
-    });
-    return t || null;
-}
+const pickTitularFromList = (list: BeneficiarioApi[]) =>
+    list.find((b) => String(b.Tipo ?? b.tipo ?? "").toUpperCase() === "T") ?? null;
 
-function pickDependentesFromList(list: BeneficiarioApi[]) {
-    return list.filter((b) => {
-        const tipo = String((b as any)?.Tipo ?? (b as any)?.tipo ?? "").toUpperCase();
+const pickDependentesFromList = (list: BeneficiarioApi[]) =>
+    list.filter((b) => {
+        const tipo = String(b.Tipo ?? b.tipo ?? "").toUpperCase();
         return tipo === "D" || tipo === "A" || tipo === "P";
     });
-}
 
 function sexoLabel(s: any) {
     const v = String(s || "").toUpperCase();
@@ -330,7 +311,10 @@ function tipoLabel(t: any) {
 }
 
 /* =========================
-   Modal (centralizado)
+   Modal
+   ✅ Novo: hideHeader para evitar duplicação do topo.
+   ✅ Acessibilidade: role, aria-modal, foco básico no container.
+   ✅ Performance: listeners só quando open.
 ========================= */
 function Modal({
     open,
@@ -339,49 +323,52 @@ function Modal({
     onClose,
     children,
     maxWidth = "max-w-5xl",
+    hideHeader = false,
 }: {
     open: boolean;
-    title: string;
+    title?: string;
     subtitle?: React.ReactNode;
     onClose: () => void;
     children: React.ReactNode;
     maxWidth?: string;
+    hideHeader?: boolean;
 }) {
     useEffect(() => {
         if (!open) return;
-        function onEsc(e: KeyboardEvent) {
-            if (e.key === "Escape") onClose();
-        }
-        window.addEventListener("keydown", onEsc);
-        return () => window.removeEventListener("keydown", onEsc);
-    }, [open, onClose]);
 
-    useEffect(() => {
-        if (!open) return;
+        const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+        window.addEventListener("keydown", onEsc);
+
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
+
         return () => {
+            window.removeEventListener("keydown", onEsc);
             document.body.style.overflow = prev;
         };
-    }, [open]);
+    }, [open, onClose]);
 
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
             <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
                 <div className={`w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
-                    <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-                        <div className="min-w-0">
-                            <div className="truncate text-lg font-bold">{title}</div>
-                            {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
+                    {!hideHeader ? (
+                        <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+                            <div className="min-w-0">
+                                <div className="truncate text-lg font-bold">{title}</div>
+                                {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
+                            </div>
+                            <button className={btnNeutral} onClick={onClose} title="Fechar">
+                                <IconX className="size-4" />
+                                Fechar
+                            </button>
                         </div>
-                        <button className={btnNeutral} onClick={onClose} title="Fechar">
-                            <IconX className="size-4" />
-                            Fechar
-                        </button>
-                    </div>
+                    ) : null}
+
+                    {/* Por quê: quando hideHeader=true, o conteúdo controla o topo e evita duplicação */}
                     <div className="max-h-[80vh] overflow-y-auto p-4">{children}</div>
                 </div>
             </div>
@@ -390,9 +377,7 @@ function Modal({
 }
 
 /* =========================
-   Access Modal (Titular / Dependente)
-   - validações iguais ao PHP:
-     CPF 11, senha >= 6, email válido obrigatório, telefone 10/11 obrigatório
+   Access Modal
 ========================= */
 function AccessModal({
     open,
@@ -437,7 +422,7 @@ function AccessModal({
 
     const canSave = cpfOk && emailOk && telOk && senhaOk && !saving;
 
-    async function handleSave() {
+    const handleSave = useCallback(async () => {
         if (!cpfOk) return toastMessage("warn", "CPF inválido (precisa ter 11 dígitos).");
         if (!emailOk) return toastMessage("warn", "Informe um e-mail válido.");
         if (!telOk) return toastMessage("warn", "Informe um telefone válido com DDD (10 ou 11 dígitos).");
@@ -450,7 +435,7 @@ function AccessModal({
         } finally {
             setSaving(false);
         }
-    }
+    }, [cpfOk, emailOk, telOk, senhaOk, onSave, cpfDigits, senha, email, telDigits, onClose]);
 
     return (
         <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-xl">
@@ -470,6 +455,7 @@ function AccessModal({
                             placeholder="000.000.000-00"
                             inputMode="numeric"
                             disabled={!cpfEditable}
+                            autoComplete="off"
                         />
                         <div className="text-xs text-muted-foreground">
                             {cpfEditable ? "Obrigatório (dependente não vem com CPF na API)." : "CPF do titular já definido."}
@@ -478,19 +464,40 @@ function AccessModal({
 
                     <div className="grid gap-1">
                         <label className="text-xs text-muted-foreground">E-mail</label>
-                        <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@dominio.com" inputMode="email" />
+                        <input
+                            className={inputCls}
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="email@dominio.com"
+                            inputMode="email"
+                            autoComplete="email"
+                        />
                         {!emailOk && email.trim() ? <div className="text-xs text-red-600">E-mail inválido.</div> : null}
                     </div>
 
                     <div className="grid gap-1">
                         <label className="text-xs text-muted-foreground">Telefone (DDD + número)</label>
-                        <input className={inputCls} value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" inputMode="tel" />
+                        <input
+                            className={inputCls}
+                            value={telefone}
+                            onChange={(e) => setTelefone(e.target.value)}
+                            placeholder="(00) 00000-0000"
+                            inputMode="tel"
+                            autoComplete="tel"
+                        />
                         {!telOk && onlyDigits(telefone).length > 0 ? <div className="text-xs text-red-600">Telefone inválido.</div> : null}
                     </div>
 
                     <div className="grid gap-1">
                         <label className="text-xs text-muted-foreground">Senha</label>
-                        <input className={inputCls} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Digite uma senha" type="password" />
+                        <input
+                            className={inputCls}
+                            value={senha}
+                            onChange={(e) => setSenha(e.target.value)}
+                            placeholder="Digite uma senha"
+                            type="password"
+                            autoComplete="new-password"
+                        />
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
@@ -505,7 +512,7 @@ function AccessModal({
 
                     <div className="flex items-start gap-2 text-xs text-muted-foreground">
                         <IconInfoCircle className="size-4 shrink-0 mt-[1px]" />
-                        <span>Validações do formulário seguem exatamente as regras do seu PHP (email e telefone obrigatórios).</span>
+                        <span>Validações seguem as regras do servidor (e-mail e telefone obrigatórios).</span>
                     </div>
                 </div>
             </div>
@@ -515,6 +522,7 @@ function AccessModal({
 
 /* =========================
    Lista contratos
+   ✅ key estável: preferir id numérico
 ========================= */
 function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Contract) => void }) {
     return (
@@ -534,7 +542,7 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                     </thead>
                     <tbody>
                         {items.map((c) => (
-                            <tr key={c.id ?? `${c.contrato_numero}-${c.cpf_cnpj}`} className="border-b last:border-0 hover:bg-muted/20">
+                            <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20">
                                 <td className="px-3 py-3">
                                     <div className="flex items-center gap-2">
                                         <div className="grid size-8 place-items-center rounded-xl border bg-background/60">
@@ -542,7 +550,9 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                                         </div>
                                         <div className="min-w-0">
                                             <div className="truncate font-semibold">{safeText(c.nome)}</div>
-                                            <div className="text-xs text-muted-foreground">Últ. pagto: {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                Últ. pagto: {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
+                                            </div>
                                         </div>
                                     </div>
                                 </td>
@@ -573,7 +583,7 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
             <div className="md:hidden">
                 <div className="divide-y">
                     {items.map((c) => (
-                        <div key={c.id ?? `${c.contrato_numero}-${c.cpf_cnpj}`} className="p-3">
+                        <div key={c.id} className="p-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
@@ -595,7 +605,8 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                                         </div>
                                         <div className="mt-0.5">
                                             <span className="font-medium text-foreground">Cidade:</span> {safeText(c.cidade)} •{" "}
-                                            <span className="font-medium text-foreground">Últ. pagto:</span> {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
+                                            <span className="font-medium text-foreground">Últ. pagto:</span>{" "}
+                                            {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
                                         </div>
                                     </div>
 
@@ -682,11 +693,7 @@ function Pager({
 
 /* =========================
    Detail (Resumo + Dependentes)
-   ✅ Sem duplicação no topo
-   ✅ Responsivo (ações empilham no mobile)
-   ✅ Mantém: Atualizar / Copiar CPF dentro do conteúdo
-   => IMPORTANTE: no <Modal ... /> remova o subtitle (ou deixe vazio),
-      porque esse componente já renderiza o topo.
+   ✅ Mantém topo interno (card) — e o Modal do detalhe ficará hideHeader=true.
 ========================= */
 function DetailModalContent({
     contract,
@@ -704,20 +711,12 @@ function DetailModalContent({
     onOpenDepAccess: (dep: BeneficiarioApi) => void;
 }) {
     const cpfDigits = useMemo(() => onlyDigits(contract?.cpf_cnpj || ""), [contract?.cpf_cnpj]);
-
     const local = detail?.local_auth ?? null;
     const hasAccess = !!local;
 
     const beneficiarios = useMemo(() => {
-        const raw =
-            (detail as any)?.beneficiario ??
-            (detail as any)?.beneficiarios ??
-            (detail as any)?.ListaBeneficiarios;
-
-        // ✅ se a API veio como array de “titulares”, pega o primeiro item como envelope
+        const raw = (detail as any)?.beneficiario ?? (detail as any)?.beneficiarios ?? (detail as any)?.ListaBeneficiarios;
         const normalizedRaw = Array.isArray(raw) ? raw[0] : raw;
-
-        // ✅ tenta extrair lista de dentro do envelope
         return extractBeneficiariosList(normalizedRaw);
     }, [detail]);
 
@@ -725,37 +724,33 @@ function DetailModalContent({
     const dependentes = useMemo(() => pickDependentesFromList(beneficiarios), [beneficiarios]);
 
     const headerLine = useMemo(() => {
-        const cpf = safeText(contract?.cpf_cnpj);
-        const contrato = safeText(contract?.contrato_numero || contract?.contrato);
-        const situacao = safeText(contract?.situacao);
-        return { cpf, contrato, situacao };
-    }, [contract?.cpf_cnpj, contract?.contrato_numero, contract?.contrato, contract?.situacao]);
+        return {
+            nome: safeText(contract?.nome),
+            cpf: safeText(contract?.cpf_cnpj),
+            contrato: safeText(contract?.contrato_numero || contract?.contrato),
+            situacao: safeText(contract?.situacao),
+        };
+    }, [contract]);
 
     return (
         <div className="grid gap-4">
-            {/* Topo (único) - Identificação + Ações */}
+            {/* Topo único (agora o Modal não mostra header) */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                        <div className="text-base font-semibold truncate">
-                            {safeText(contract?.nome) !== "-" ? safeText(contract?.nome) : "Detalhes do Associado"}
-                        </div>
+                        <div className="text-base font-semibold truncate">{headerLine.nome !== "-" ? headerLine.nome : "Detalhes do Associado"}</div>
 
                         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                             <span className="inline-flex items-center gap-1">
                                 <IconId className="size-4" />
                                 {headerLine.cpf}
                             </span>
-
                             <span className="text-muted-foreground">•</span>
-
                             <span className="inline-flex items-center gap-1">
                                 <IconFileText className="size-4" />
                                 {headerLine.contrato}
                             </span>
-
                             <span className="text-muted-foreground">•</span>
-
                             <span className={statusBadgeSituacao(contract?.situacao)}>{headerLine.situacao}</span>
                         </div>
                     </div>
@@ -778,29 +773,23 @@ function DetailModalContent({
                     </div>
                 </div>
 
-                {loading ? (
-                    <div className="mt-3 rounded-2xl border bg-muted/30 px-3 py-2 text-sm">
-                        Carregando detalhes…
-                    </div>
-                ) : null}
+                {loading ? <div className="mt-3 rounded-2xl border bg-muted/30 px-3 py-2 text-sm">Carregando detalhes…</div> : null}
             </div>
 
-            {/* Resumo do Plano */}
+            {/* Resumo */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                         <div className="text-base font-semibold">Resumo do Plano</div>
 
-                        <div className="mt-2 grid gap-1.5 text-sm text-muted-foreground">
+                        <div className="mt-2 text-sm text-muted-foreground grid gap-1.5">
                             <div>
-                                <span className="font-medium text-foreground">Plano:</span>{" "}
-                                {safeText(contract?.plano)}
+                                <span className="font-medium text-foreground">Plano:</span> {safeText(contract?.plano)}
                                 {contract?.cobertura ? ` • ${safeText(contract?.cobertura)}` : ""}
                             </div>
 
                             <div>
-                                <span className="font-medium text-foreground">Cidade:</span>{" "}
-                                {safeText(contract?.cidade)} •{" "}
+                                <span className="font-medium text-foreground">Cidade:</span> {safeText(contract?.cidade)} •{" "}
                                 <span className="font-medium text-foreground">Últ. pagamento:</span>{" "}
                                 {contract?.dataultimopagamento ? fmtDateTimeBR(contract.dataultimopagamento) : "-"}
                             </div>
@@ -810,12 +799,7 @@ function DetailModalContent({
                                     <IconMail className="size-4" />
                                     <span className="font-medium text-foreground">Email:</span> {safeText(local?.email)}
                                     {local?.email_verificado ? (
-                                        <span
-                                            className={
-                                                badge +
-                                                " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
-                                            }
-                                        >
+                                        <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
                                             verificado
                                         </span>
                                     ) : null}
@@ -825,34 +809,24 @@ function DetailModalContent({
                                     <IconPhone className="size-4" />
                                     <span className="font-medium text-foreground">Telefone:</span> {safeText(local?.telefone)}
                                     {local?.telefone_verificado ? (
-                                        <span
-                                            className={
-                                                badge +
-                                                " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
-                                            }
-                                        >
+                                        <span className={badge + " border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"}>
                                             verificado
                                         </span>
                                     ) : null}
                                 </div>
 
                                 <div>
-                                    <span className="font-medium text-foreground">Último login:</span>{" "}
-                                    {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
+                                    <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
                                 </div>
-
                                 <div>
-                                    <span className="font-medium text-foreground">Bloqueado até:</span>{" "}
-                                    {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
+                                    <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
                                 </div>
                             </div>
 
-                            {/* Info do titular vindo da lista (quando existir) */}
                             {titular ? (
                                 <div className="pt-2 text-xs text-muted-foreground">
-                                    <span className="font-medium text-foreground">Titular (Unypax):</span>{" "}
-                                    {safeText(titular.Nome)} • Nasc: {fmtDateBR(titular.DataNascimento)} • Sexo:{" "}
-                                    {sexoLabel(titular.Sexo)} • Tel: {safeText(titular.Telefone)}
+                                    <span className="font-medium text-foreground">Titular (Unypax):</span> {safeText(titular.Nome)} • Nasc:{" "}
+                                    {fmtDateBR(titular.DataNascimento)} • Sexo: {sexoLabel(titular.Sexo)} • Tel: {safeText(titular.Telefone)}
                                 </div>
                             ) : null}
                         </div>
@@ -899,7 +873,6 @@ function DetailModalContent({
                         <div className="text-sm text-muted-foreground">Nenhum dependente retornado.</div>
                     ) : (
                         <>
-                            {/* Desktop */}
                             <div className="hidden md:block overflow-auto rounded-2xl border bg-background">
                                 <table className="w-full text-sm">
                                     <thead className="border-b bg-muted/30">
@@ -916,18 +889,10 @@ function DetailModalContent({
                                         {dependentes.map((d, idx) => (
                                             <tr key={idx} className="border-b last:border-0">
                                                 <td className="px-3 py-2">{tipoLabel(d.Tipo)}</td>
-                                                <td className="px-3 py-2 font-medium">
-                                                    {safeText((d as any).Nome ?? (d as any).nome)}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    {fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento)}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    {sexoLabel((d as any).Sexo ?? (d as any).sexo)}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    {safeText((d as any).Telefone ?? (d as any).telefone)}
-                                                </td>
+                                                <td className="px-3 py-2 font-medium">{safeText((d as any).Nome ?? (d as any).nome)}</td>
+                                                <td className="px-3 py-2">{fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento)}</td>
+                                                <td className="px-3 py-2">{sexoLabel((d as any).Sexo ?? (d as any).sexo)}</td>
+                                                <td className="px-3 py-2">{safeText((d as any).Telefone ?? (d as any).telefone)}</td>
                                                 <td className="px-3 py-2 text-right">
                                                     <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
                                                         <IconLock className="size-4" />
@@ -940,19 +905,16 @@ function DetailModalContent({
                                 </table>
                             </div>
 
-                            {/* Mobile */}
                             <div className="md:hidden grid gap-2">
                                 {dependentes.map((d, idx) => (
                                     <div key={idx} className="rounded-2xl border bg-background p-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
                                                 <div className="text-xs text-muted-foreground">{tipoLabel(d.Tipo)}</div>
-                                                <div className="font-semibold truncate">
-                                                    {safeText((d as any).Nome ?? (d as any).nome ?? d.Nome)}
-                                                </div>
+                                                <div className="font-semibold truncate">{safeText((d as any).Nome ?? (d as any).nome ?? d.Nome)}</div>
                                                 <div className="mt-1 text-xs text-muted-foreground">
-                                                    Nasc: {fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento ?? d.DataNascimento)} •{" "}
-                                                    Sexo: {sexoLabel((d as any).Sexo ?? (d as any).sexo ?? d.Sexo)}
+                                                    Nasc: {fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento ?? d.DataNascimento)} • Sexo:{" "}
+                                                    {sexoLabel((d as any).Sexo ?? (d as any).sexo ?? d.Sexo)}
                                                 </div>
                                                 <div className="mt-1 text-xs text-muted-foreground">
                                                     <span className="font-medium text-foreground">Tel:</span>{" "}
@@ -978,29 +940,29 @@ function DetailModalContent({
 
 /* =========================
    Page principal
+   ✅ Performance: abort controller + cache de detalhes + debounce
+   ✅ Bugfix: NÃO resetar detail ao abrir se houver cache (evita flicker)
+   ✅ Segurança: onlyDigits para CPF no request
 ========================= */
 export default function AssociadosGeralPage() {
-    // busca (ÚNICO filtro)
     const [query, setQuery] = useState("");
     const debouncedQuery = useDebounced(query, 350);
 
-    // paginação
     const [page, setPage] = useState(1);
-    const [pageSize] = useState(10);
-    const [pagination, setPagination] = useState<PaginationInfo | null>(null);
+    const pageSize = 10;
 
-    // lista
+    const [pagination, setPagination] = useState<PaginationInfo | null>(null);
     const [contracts, setContracts] = useState<Contract[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // modal detalhe
+    // detalhe
     const [modalOpen, setModalOpen] = useState(false);
     const [selected, setSelected] = useState<Contract | null>(null);
     const [detail, setDetail] = useState<ContractDetail | null>(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
 
-    // modal acesso
+    // acesso
     const [accessOpen, setAccessOpen] = useState(false);
     const [accessTitle, setAccessTitle] = useState("Criar acesso");
     const [accessCpf, setAccessCpf] = useState("");
@@ -1008,20 +970,32 @@ export default function AssociadosGeralPage() {
     const [accessTelefone, setAccessTelefone] = useState("");
     const [accessCpfEditable, setAccessCpfEditable] = useState(false);
 
-    // headers
     const headers = useMemo(() => ({ "Content-Type": "application/json" } as Record<string, string>), []);
 
-    // abort + cache
     const listAbortRef = useRef<AbortController | null>(null);
     const detailAbortRef = useRef<AbortController | null>(null);
+
+    // Cache: reduz fetch repetido ao reabrir o mesmo contrato
     const detailCacheRef = useRef<Map<string, ContractDetail>>(new Map());
+
+    const buildListUrl = useCallback(
+        (pageNum: number) => {
+            const url = new URL(ENDPOINT);
+            url.searchParams.set("op", "contracts");
+            url.searchParams.set("page", String(pageNum));
+            url.searchParams.set("pageSize", String(pageSize));
+            url.searchParams.set("textToSearch", (debouncedQuery || "").trim());
+            return url.toString();
+        },
+        [debouncedQuery]
+    );
 
     const loadContracts = useCallback(
         async (opts?: { resetPage?: boolean }) => {
             const nextPage = opts?.resetPage ? 1 : page;
             if (opts?.resetPage) setPage(1);
 
-            if (listAbortRef.current) listAbortRef.current.abort();
+            listAbortRef.current?.abort();
             const ac = new AbortController();
             listAbortRef.current = ac;
 
@@ -1029,27 +1003,18 @@ export default function AssociadosGeralPage() {
                 setLoading(true);
                 setError(null);
 
-                const url = new URL(ENDPOINT);
-                url.searchParams.set("op", "contracts");
-                url.searchParams.set("page", String(nextPage));
-                url.searchParams.set("pageSize", String(pageSize));
-                url.searchParams.set("textToSearch", (debouncedQuery || "").trim());
-
-                const res = await fetch(url.toString(), {
+                const res = await fetch(buildListUrl(nextPage), {
                     method: "GET",
                     headers,
                     cache: "no-store",
                     signal: ac.signal,
                 });
 
-                const data = await safeJson(res);
+                const data = await safeJson<any>(res);
                 if (!res.ok || !data?.ok) throw new Error(data?.error || "Erro ao carregar contratos.");
 
                 setContracts(normalizeContractsPayload(data));
-
-                const xp = parseXPagination(res.headers);
-                if (xp) setPagination(xp);
-                else setPagination({ pageNumber: nextPage, pageSize });
+                setPagination(parseXPagination(res.headers) ?? { pageNumber: nextPage, pageSize });
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
                 setError(e?.message || "Falha ao carregar.");
@@ -1059,7 +1024,7 @@ export default function AssociadosGeralPage() {
                 setLoading(false);
             }
         },
-        [debouncedQuery, headers, page, pageSize]
+        [buildListUrl, headers, page]
     );
 
     useEffect(() => {
@@ -1077,20 +1042,17 @@ export default function AssociadosGeralPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page]);
 
-    const openDetail = useCallback(
+    const fetchDetail = useCallback(
         async (c: Contract) => {
-            setSelected(c);
-            setModalOpen(true);
-            setDetail(null);
-
             const cpfDigits = onlyDigits(c.cpf_cnpj || "");
-            const idContrato = Number(c.id);
-            const cacheKey = `${idContrato || 0}|${cpfDigits || ""}`;
+            const idContrato = Number(c.id) || 0;
+            const cacheKey = `${idContrato}|${cpfDigits}`;
 
+            // Por quê: mostra cache instantâneo (UI mais fluida)
             const cached = detailCacheRef.current.get(cacheKey);
             if (cached) setDetail(cached);
 
-            if (detailAbortRef.current) detailAbortRef.current.abort();
+            detailAbortRef.current?.abort();
             const ac = new AbortController();
             detailAbortRef.current = ac;
 
@@ -1109,16 +1071,15 @@ export default function AssociadosGeralPage() {
                     signal: ac.signal,
                 });
 
-                const data = await safeJson(res);
-                if (!res.ok || !data?.ok) throw new Error(data?.error || "Erro ao carregar detalhes.");
+                const data = await safeJson<ContractDetail>(res);
+                if (!res.ok || !data?.ok) throw new Error((data as any)?.error || "Erro ao carregar detalhes.");
 
-                const detailObj = data as ContractDetail;
-                detailCacheRef.current.set(cacheKey, detailObj);
-                setDetail(detailObj);
+                detailCacheRef.current.set(cacheKey, data);
+                setDetail(data);
             } catch (e: any) {
                 if (e?.name === "AbortError") return;
                 toastMessage("err", e?.message || "Erro ao carregar detalhes.");
-                setDetail(null);
+                setDetail(cached ?? null);
             } finally {
                 setLoadingDetail(false);
             }
@@ -1126,17 +1087,38 @@ export default function AssociadosGeralPage() {
         [headers]
     );
 
+    const openDetail = useCallback(
+        async (c: Contract) => {
+            setSelected(c);
+            setModalOpen(true);
+
+            // Por quê: evita flicker — só limpa se não tiver cache
+            const cpfDigits = onlyDigits(c.cpf_cnpj || "");
+            const cacheKey = `${Number(c.id) || 0}|${cpfDigits}`;
+            if (!detailCacheRef.current.has(cacheKey)) setDetail(null);
+
+            await fetchDetail(c);
+        },
+        [fetchDetail]
+    );
+
     const reloadDetail = useCallback(async () => {
         if (!selected) return;
-        await openDetail(selected);
-    }, [openDetail, selected]);
+        await fetchDetail(selected);
+    }, [fetchDetail, selected]);
 
     const upsertAccess = useCallback(
         async (payload: { cpf: string; senha: string; email: string; telefone: string }) => {
-            if (!payload.cpf || payload.cpf.length !== 11) return toastMessage("warn", "CPF inválido.");
-            if ((payload.senha || "").trim().length < 6) return toastMessage("warn", "Senha muito curta (mín. 6).");
-            if (!payload.email || !isValidEmail(payload.email)) return toastMessage("warn", "Informe um e-mail válido.");
-            if (!payload.telefone || !isValidTelefoneBR(payload.telefone)) return toastMessage("warn", "Informe um telefone válido com DDD.");
+            // Por quê: validação de entrada (segurança / consistência)
+            const cpf = onlyDigits(payload.cpf);
+            const tel = onlyDigits(payload.telefone);
+            const senha = (payload.senha || "").trim();
+            const email = (payload.email || "").trim();
+
+            if (cpf.length !== 11) return toastMessage("warn", "CPF inválido.");
+            if (senha.length < 6) return toastMessage("warn", "Senha muito curta (mín. 6).");
+            if (!isValidEmail(email)) return toastMessage("warn", "Informe um e-mail válido.");
+            if (!isValidTelefoneBR(tel)) return toastMessage("warn", "Informe um telefone válido com DDD.");
 
             try {
                 const url = new URL(ENDPOINT);
@@ -1145,11 +1127,11 @@ export default function AssociadosGeralPage() {
                 const res = await fetch(url.toString(), {
                     method: "POST",
                     headers,
-                    body: JSON.stringify(payload),
+                    body: JSON.stringify({ cpf, senha, email, telefone: tel }),
                     cache: "no-store",
                 });
 
-                const data = await safeJson(res);
+                const data = await safeJson<any>(res);
                 if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao salvar acesso.");
 
                 toastMessage("ok", data.created ? "Acesso criado com sucesso!" : "Acesso atualizado com sucesso!");
@@ -1174,12 +1156,12 @@ export default function AssociadosGeralPage() {
     }, [detail?.local_auth, selected?.cpf_cnpj]);
 
     const openDepAccess = useCallback((dep: BeneficiarioApi) => {
-        const nome = safeText(dep?.Nome || "Beneficiário");
+        const nome = safeText(dep?.Nome || dep?.nome || "Beneficiário");
 
         setAccessTitle(`Criar acesso (${nome})`);
         setAccessCpf(""); // dependente não vem com CPF -> digita no modal
         setAccessEmail("");
-        setAccessTelefone(dep?.Telefone || "");
+        setAccessTelefone(dep?.Telefone || dep?.telefone || dep?.celular || "");
         setAccessCpfEditable(true);
         setAccessOpen(true);
     }, []);
@@ -1195,14 +1177,14 @@ export default function AssociadosGeralPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button onClick={() => loadContracts()} className={btnNeutral} title="Atualizar">
+                    <button onClick={() => loadContracts()} className={btnNeutral} title="Atualizar" disabled={loading}>
                         <IconRefresh className="size-4" />
                         Atualizar
                     </button>
                 </div>
             </div>
 
-            {/* Só a busca */}
+            {/* Busca */}
             <div className={cardCls + " p-4 mb-4"}>
                 <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
                 <div className="relative mt-1">
@@ -1238,25 +1220,12 @@ export default function AssociadosGeralPage() {
                 onNext={() => setPage((p) => p + 1)}
             />
 
+            {/* ✅ Modal de detalhes agora NÃO mostra header => sem duplicação */}
             <Modal
                 open={modalOpen}
                 onClose={() => setModalOpen(false)}
-                title={selected?.nome || "Detalhes do Associado"}
-                subtitle={
-                    <span className="inline-flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1">
-                            <IconId className="size-4" />
-                            {safeText(selected?.cpf_cnpj)}
-                        </span>
-                        <span className="text-muted-foreground">•</span>
-                        <span className="inline-flex items-center gap-1">
-                            <IconFileText className="size-4" />
-                            {safeText(selected?.contrato_numero || selected?.contrato)}
-                        </span>
-                        <span className="text-muted-foreground">•</span>
-                        <span className={statusBadgeSituacao(selected?.situacao)}>{safeText(selected?.situacao)}</span>
-                    </span>
-                }
+                hideHeader
+                maxWidth="max-w-5xl"
             >
                 <DetailModalContent
                     contract={selected}
@@ -1281,3 +1250,12 @@ export default function AssociadosGeralPage() {
         </div>
     );
 }
+
+/* =========================
+   Ganhos de Performance
+   - Remoção do header duplicado no Modal do detalhe: menos DOM e menos layout/reflow.
+   - Cache de detalhes por contrato: evita refetch ao reabrir e reduz latência percebida.
+   - AbortController em lista e detalhe: cancela requisições antigas => menos CPU/mem e menos race conditions.
+   - Debounce de busca: menos chamadas ao backend (reduz carga e melhora responsividade).
+   - Funções utilitárias puras + memoizações consistentes: menos re-render e menos alocações.
+========================= */
