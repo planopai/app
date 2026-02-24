@@ -702,10 +702,15 @@ function DetailModalContent({
     const local = detail?.local_auth ?? null;
     const hasAccess = !!local;
 
-    const beneficiarios = useMemo(
-        () => extractBeneficiariosList(detail?.beneficiario ?? (detail as any)?.beneficiarios ?? (detail as any)?.ListaBeneficiarios),
-        [detail]
-    );
+    const beneficiarios = useMemo(() => {
+        const raw = (detail as any)?.beneficiario ?? (detail as any)?.beneficiarios ?? (detail as any)?.ListaBeneficiarios;
+
+        // ✅ se a API veio como array de “titulares”, pega o primeiro item como envelope
+        const normalizedRaw = Array.isArray(raw) ? raw[0] : raw;
+
+        // ✅ tenta extrair lista de dentro do envelope
+        return extractBeneficiariosList(normalizedRaw);
+    }, [detail]);
     const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
     const dependentes = useMemo(() => pickDependentesFromList(beneficiarios), [beneficiarios]);
 
