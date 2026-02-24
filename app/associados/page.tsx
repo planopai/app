@@ -95,11 +95,20 @@ type PaginationInfo = {
    Beneficiário model (API)
 ========================= */
 type BeneficiarioApi = {
+    // formato esperado (maiúsculo)
     Tipo?: "T" | "D" | "A" | "P" | string;
     Nome?: string;
     DataNascimento?: string;
     Sexo?: "F" | "M" | "N" | string;
     Telefone?: string;
+
+    // tolerância (minúsculo) — alguns retornos vêm assim
+    tipo?: "T" | "D" | "A" | "P" | string;
+    nome?: string;
+    dataNascimento?: string;
+    sexo?: "F" | "M" | "N" | string;
+    telefone?: string;
+    celular?: string;
 };
 
 /* =========================
@@ -224,72 +233,81 @@ function isValidTelefoneBR(telefone: string) {
 function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
     if (!payload) return [];
 
-    // ✅ MUITO COMUM: vir embrulhado em { data: ... } ou { Data: ... }
-    const root = (payload?.data ?? payload?.Data ?? payload);
+    const normalizeItem = (x: any): BeneficiarioApi => {
+        // aceita tanto maiúsculo quanto minúsculo e normaliza para maiúsculo
+        const Tipo = (x?.Tipo ?? x?.tipo ?? "") as BeneficiarioApi["Tipo"];
+        const Nome = (x?.Nome ?? x?.nome ?? "") as string;
+        const DataNascimento = (x?.DataNascimento ?? x?.dataNascimento ?? x?.data_nascimento ?? "") as string;
+        const Sexo = (x?.Sexo ?? x?.sexo ?? "") as BeneficiarioApi["Sexo"];
+        const Telefone = (x?.Telefone ?? x?.telefone ?? x?.celular ?? "") as string;
 
-    // caso já venha array direto
-    if (Array.isArray(root) && root.every((x) => x && typeof x === "object")) {
-        const hasFields = root.some((x) => "Tipo" in x || "Nome" in x || "DataNascimento" in x || "tipo" in x || "nome" in x);
-        if (hasFields) return root as BeneficiarioApi[];
+        return { Tipo, Nome, DataNascimento, Sexo, Telefone };
+    };
+
+    const looksLikeListItem = (x: any) => {
+        if (!x || typeof x !== "object") return false;
+        return (
+            "Tipo" in x || "Nome" in x || "DataNascimento" in x || "Sexo" in x || "Telefone" in x ||
+            "tipo" in x || "nome" in x || "dataNascimento" in x || "sexo" in x || "telefone" in x || "celular" in x
+        );
+    };
+
+    // 1) se já veio array direto
+    if (Array.isArray(payload)) {
+        const arr = payload.filter(looksLikeListItem).map(normalizeItem);
+        return arr;
     }
 
-    // caso venha objeto com lista dentro
-    if (root && typeof root === "object") {
+    // 2) veio objeto com lista dentro
+    if (typeof payload === "object") {
         const candidates = [
-            // ✅ nomes mais comuns
             "ListaBeneficiarios",
             "listaBeneficiarios",
+            "ListaBeneficiário",
+            "listaBeneficiário",
             "Beneficiarios",
             "beneficiarios",
-
-            // ✅ alguns retornos usam items/itens
             "items",
             "itens",
-
-            // ✅ alguns retornos repetem data aqui dentro também
             "data",
             "Data",
         ];
 
         for (const k of candidates) {
-            const v = (root as any)[k];
+            const v = (payload as any)?.[k];
             if (Array.isArray(v)) {
-                const hasFields = v.some(
-                    (x) =>
-                        x &&
-                        typeof x === "object" &&
-                        ("Tipo" in x || "Nome" in x || "DataNascimento" in x || "tipo" in x || "nome" in x)
-                );
-                if (hasFields) return v as BeneficiarioApi[];
+                const arr = v.filter(looksLikeListItem).map(normalizeItem);
+                if (arr.length) return arr;
             }
         }
 
         // fallback: varrer 1 nível
-        for (const key of Object.keys(root)) {
-            const v = (root as any)[key];
+        for (const key of Object.keys(payload)) {
+            const v = (payload as any)[key];
             if (Array.isArray(v)) {
-                const hasFields = v.some(
-                    (x) =>
-                        x &&
-                        typeof x === "object" &&
-                        ("Tipo" in x || "Nome" in x || "DataNascimento" in x || "tipo" in x || "nome" in x)
-                );
-                if (hasFields) return v as BeneficiarioApi[];
+                const arr = v.filter(looksLikeListItem).map(normalizeItem);
+                if (arr.length) return arr;
             }
         }
+
+        // 3) fallback extra: às vezes o payload vem com dados do titular + lista em "listaBeneficiarios"
+        // e você quer pelo menos garantir que não volte vazio quando existir.
     }
 
     return [];
 }
 
 function pickTitularFromList(list: BeneficiarioApi[]) {
-    const t = list.find((b: any) => String(b?.Tipo ?? b?.tipo ?? "").toUpperCase() === "T");
+    const t = list.find((b) => {
+        const tipo = String((b as any)?.Tipo ?? (b as any)?.tipo ?? "").toUpperCase();
+        return tipo === "T";
+    });
     return t || null;
 }
 
 function pickDependentesFromList(list: BeneficiarioApi[]) {
-    return list.filter((b: any) => {
-        const tipo = String(b?.Tipo ?? b?.tipo ?? "").toUpperCase();
+    return list.filter((b) => {
+        const tipo = String((b as any)?.Tipo ?? (b as any)?.tipo ?? "").toUpperCase();
         return tipo === "D" || tipo === "A" || tipo === "P";
     });
 }
