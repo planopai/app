@@ -36,9 +36,17 @@ type DashboardResp = {
     resultados: Resultado[];
 };
 
+type PoolStatsResp = {
+    ok: boolean;
+    eligible_total: number;
+    only_active_text?: string;
+};
+
 type ApiResp<T = any> = { ok: boolean } & T;
 
-const API_URL = process.env.NEXT_PUBLIC_SORTEIOS_API_URL || "https://api.planoassistencialintegrado.com.br/sorteios.php";
+const API_URL =
+    process.env.NEXT_PUBLIC_SORTEIOS_API_URL ||
+    "https://api.planoassistencialintegrado.com.br/sorteios.php";
 
 function toLocalInputValue(mysqlDatetime: string) {
     if (!mysqlDatetime) return "";
@@ -97,6 +105,9 @@ export default function SorteiosAdminPage() {
     const [dash, setDash] = useState<DashboardResp | null>(null);
     const sorteio = dash?.sorteio ?? null;
 
+    // ✅ total elegível (titulares ATIVOS e EM DIA) no momento atual
+    const [eligibleTotalNow, setEligibleTotalNow] = useState<number | null>(null);
+
     // form
     const [titulo, setTitulo] = useState("Sorteio");
     const [descricao, setDescricao] = useState("");
@@ -110,6 +121,23 @@ export default function SorteiosAdminPage() {
             .map((s) => s.trim())
             .filter(Boolean);
     }, [premiosText]);
+
+    async function loadEligibleTotal() {
+        try {
+            const r = await apiJson<PoolStatsResp>(
+                `${API_URL}?op=admin_pool_stats&only_active_text=ATIVO`,
+                "GET"
+            );
+            if (r?.ok) {
+                const n = Number(r.eligible_total);
+                setEligibleTotalNow(Number.isFinite(n) ? n : 0);
+            } else {
+                setEligibleTotalNow(null);
+            }
+        } catch {
+            setEligibleTotalNow(null);
+        }
+    }
 
     async function loadDashboard() {
         setLoading(true);
@@ -138,6 +166,9 @@ export default function SorteiosAdminPage() {
                 .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
                 .map((p) => p.nome);
             setPremiosText(premiosDb.join("\n"));
+
+            // ✅ carrega o total elegível agora (somente número)
+            await loadEligibleTotal();
         } catch (e: any) {
             setDash(null);
             setErrorMsg(e?.message || "Falha ao carregar");
@@ -168,7 +199,8 @@ export default function SorteiosAdminPage() {
                 "POST",
                 payload
             );
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar sorteio");
+            if (!r?.ok)
+                throw new Error((r as any)?.error || "Falha ao salvar sorteio");
             await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao salvar");
@@ -202,7 +234,8 @@ export default function SorteiosAdminPage() {
                 "POST",
                 { sorteio_id: sidFinal, premios: premiosList }
             );
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar prêmios");
+            if (!r?.ok)
+                throw new Error((r as any)?.error || "Falha ao salvar prêmios");
 
             await loadDashboard();
         } catch (e: any) {
@@ -225,8 +258,10 @@ export default function SorteiosAdminPage() {
                 "POST",
                 { sorteio_id: sid, force: force ? 1 : 0, only_active_text: "ATIVO" }
             );
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao executar sorteio");
-            await loadDashboard();
+            if (!r?.ok)
+                throw new Error((r as any)?.error || "Falha ao executar sorteio");
+
+            await loadDashboard(); // atualiza também o eligibleTotalNow
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao executar");
         } finally {
@@ -242,7 +277,9 @@ export default function SorteiosAdminPage() {
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                         Carregando admin de sorteios…
                     </h1>
-                    <p className="mt-2 text-gray-600 dark:text-gray-300">Aguarde um instante.</p>
+                    <p className="mt-2 text-gray-600 dark:text-gray-300">
+                        Aguarde um instante.
+                    </p>
                 </div>
             </main>
         );
@@ -348,16 +385,28 @@ export default function SorteiosAdminPage() {
                                 </div>
                                 <div className="mt-1 text-sm text-gray-900 dark:text-gray-100">
                                     <div>
-                                        <span className="font-semibold">ID:</span> {sorteio?.id ?? "—"}
+                                        <span className="font-semibold">ID:</span>{" "}
+                                        {sorteio?.id ?? "—"}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Status:</span> {sorteio?.status ?? "—"}
+                                        <span className="font-semibold">Status:</span>{" "}
+                                        {sorteio?.status ?? "—"}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Agendado:</span> {formatBR(sorteio?.scheduled_at)}
+                                        <span className="font-semibold">Agendado:</span>{" "}
+                                        {formatBR(sorteio?.scheduled_at)}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Executado:</span> {formatBR(sorteio?.executed_at)}
+                                        <span className="font-semibold">Executado:</span>{" "}
+                                        {formatBR(sorteio?.executed_at)}
+                                    </div>
+
+                                    {/* ✅ Somente o número total elegível agora */}
+                                    <div className="mt-2">
+                                        <span className="font-semibold">
+                                            Titulares ativos e em dia (agora):
+                                        </span>{" "}
+                                        {eligibleTotalNow === null ? "—" : eligibleTotalNow}
                                     </div>
                                 </div>
                             </div>
@@ -452,8 +501,12 @@ export default function SorteiosAdminPage() {
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                                 {(dash?.resultados || []).length === 0 ? (
                                     <tr>
-                                        <td colSpan={3} className="px-6 py-6 text-sm text-gray-600 dark:text-gray-300">
-                                            Nenhum resultado ainda. Execute o sorteio ou aguarde o agendamento.
+                                        <td
+                                            colSpan={3}
+                                            className="px-6 py-6 text-sm text-gray-600 dark:text-gray-300"
+                                        >
+                                            Nenhum resultado ainda. Execute o sorteio ou aguarde o
+                                            agendamento.
                                         </td>
                                     </tr>
                                 ) : (
@@ -476,7 +529,8 @@ export default function SorteiosAdminPage() {
                     </div>
 
                     <div className="px-5 py-4 text-xs text-gray-500 dark:text-gray-400">
-                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando executado)
+                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando
+                        executado)
                     </div>
                 </section>
             </div>
