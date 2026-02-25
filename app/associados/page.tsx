@@ -1081,12 +1081,9 @@ export default function AssociadosGeralPage() {
 
             // "Plano" do usuário = cobertura (BÁSICO/LIGHT/PADRÃO OURO…)
             // tentamos enviar como cobertura e como plano (backend pode aceitar um deles)
-            if (appliedPlano) {
-                url.searchParams.set("cobertura", appliedPlano);
-                url.searchParams.set("plano", appliedPlano);
-            }
+            if (appliedPlano) url.searchParams.set("plano", appliedPlano);
 
-            if (appliedSituacao) url.searchParams.set("situacao", appliedSituacao);
+            if (appliedSituacao) url.searchParams.set("situacaoText", appliedSituacao);
 
             return url.toString();
         },
