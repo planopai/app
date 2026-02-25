@@ -38,7 +38,7 @@ const items = [
     {
         title: "Sorteios",
         href: "/sorteios",
-        desc: "Organize e realize novos sorteios entre os associados.",
+        desc: "Realize novos sorteios entre os associados.",
         icon: IconGift,
     },
 ];
