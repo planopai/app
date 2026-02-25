@@ -1,24 +1,18 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Sorteio = {
     id: number;
     titulo: string;
     descricao: string | null;
-    scheduled_at: string; // "YYYY-MM-DD HH:MM:SS"
+    scheduled_at: string;
     executed_at: string | null;
     status: "draft" | "scheduled" | "running" | "done" | "canceled";
     winners_count?: number | null;
 };
 
-type Premio = {
-    id: number;
-    nome: string;
-    ordem: number;
-    created_at?: string;
-};
-
+type Premio = { id: number; nome: string; ordem: number; created_at?: string };
 type Resultado = {
     id?: number;
     cpf: string;
@@ -29,17 +23,15 @@ type Resultado = {
     ordem?: number;
 };
 
-type DashboardResp = {
-    ok: boolean;
-    sorteio: Sorteio | null;
-    premios: Premio[];
-    resultados: Resultado[];
-};
+type DashboardResp = { ok: boolean; sorteio: Sorteio | null; premios: Premio[]; resultados: Resultado[] };
 
 type PoolStatsResp = {
     ok: boolean;
     eligible_total: number;
     only_active_text?: string;
+    calculated_at?: string;
+    took_ms?: number;
+    cached_ttl_s?: number;
 };
 
 type ApiResp<T = any> = { ok: boolean } & T;
@@ -52,8 +44,7 @@ function toLocalInputValue(mysqlDatetime: string) {
     if (!mysqlDatetime) return "";
     const [d, t] = mysqlDatetime.split(" ");
     if (!d || !t) return "";
-    const hhmm = t.slice(0, 5);
-    return `${d}T${hhmm}`;
+    return `${d}T${t.slice(0, 5)}`;
 }
 
 function fromLocalInputValue(v: string) {
@@ -71,45 +62,48 @@ function formatBR(mysqlDatetime?: string | null) {
     return dt.toLocaleString("pt-BR");
 }
 
-async function apiJson<T = any>(url: string, method: "GET" | "POST", body?: any): Promise<T> {
+async function apiJson<T = any>(url: string, method: "GET" | "POST", body?: any, signal?: AbortSignal): Promise<T> {
     const res = await fetch(url, {
         method,
+        signal,
         credentials: "include",
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
+        cache: "no-store",
     });
 
     const txt = await res.text();
-    let data: any = null;
+    let data: any;
     try {
         data = JSON.parse(txt);
     } catch {
         data = { ok: false, error: "Resposta inválida do servidor", raw: txt };
     }
 
-    if (!res.ok) {
-        throw new Error(data?.error || `Erro HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(data?.error || `Erro HTTP ${res.status}`);
     return data as T;
 }
 
 export default function SorteiosAdminPage() {
-    const [loading, setLoading] = useState(true);
+    const [loadingDash, setLoadingDash] = useState(true);
     const [busy, setBusy] = useState(false);
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     const [dash, setDash] = useState<DashboardResp | null>(null);
     const sorteio = dash?.sorteio ?? null;
 
-    // ✅ só o total elegível “agora”
-    const [eligibleTotalNow, setEligibleTotalNow] = useState<number | null>(null);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+    // stats separado
+    const [stats, setStats] = useState<PoolStatsResp | null>(null);
+    const [loadingStats, setLoadingStats] = useState(false);
+    const statsAbortRef = useRef<AbortController | null>(null);
 
     // form
     const [titulo, setTitulo] = useState("Sorteio");
     const [descricao, setDescricao] = useState("");
     const [status, setStatus] = useState<Sorteio["status"]>("draft");
     const [scheduledAtInput, setScheduledAtInput] = useState("");
-    const [premiosText, setPremiosText] = useState<string>("");
+    const [premiosText, setPremiosText] = useState("");
 
     const premiosList = useMemo(() => {
         return premiosText
@@ -118,22 +112,10 @@ export default function SorteiosAdminPage() {
             .filter(Boolean);
     }, [premiosText]);
 
-    async function loadEligibleTotal() {
-        try {
-            const r = await apiJson<PoolStatsResp>(
-                `${API_URL}?op=admin_pool_stats&only_active_text=ATIVO`,
-                "GET"
-            );
-            if (r?.ok) setEligibleTotalNow(Number(r.eligible_total ?? 0));
-            else setEligibleTotalNow(null);
-        } catch {
-            setEligibleTotalNow(null);
-        }
-    }
-
-    async function loadDashboard() {
-        setLoading(true);
+    const loadDashboard = useCallback(async () => {
+        setLoadingDash(true);
         setErrorMsg(null);
+
         try {
             const data = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard`, "GET");
             setDash(data);
@@ -154,21 +136,47 @@ export default function SorteiosAdminPage() {
             const premiosDb = (data?.premios || [])
                 .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
                 .map((p) => p.nome);
-            setPremiosText(premiosDb.join("\n"));
 
-            await loadEligibleTotal();
+            setPremiosText(premiosDb.join("\n"));
         } catch (e: any) {
             setDash(null);
-            setErrorMsg(e?.message || "Falha ao carregar");
+            setErrorMsg(e?.message || "Falha ao carregar dashboard");
         } finally {
-            setLoading(false);
+            setLoadingDash(false);
         }
-    }
+    }, []);
+
+    const loadStats = useCallback(async () => {
+        // cancela a requisição anterior (se clicarem várias vezes)
+        statsAbortRef.current?.abort();
+        const ac = new AbortController();
+        statsAbortRef.current = ac;
+
+        setLoadingStats(true);
+        try {
+            const r = await apiJson<PoolStatsResp>(
+                `${API_URL}?op=admin_pool_stats&only_active_text=ATIVO&_=${Date.now()}`,
+                "GET",
+                undefined,
+                ac.signal
+            );
+            setStats(r?.ok ? r : null);
+        } catch (e: any) {
+            if (e?.name === "AbortError") return;
+            setStats(null);
+        } finally {
+            setLoadingStats(false);
+        }
+    }, []);
 
     useEffect(() => {
         loadDashboard();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [loadDashboard]);
+
+    useEffect(() => {
+        // carrega stats DEPOIS, sem travar a UI
+        loadStats();
+    }, [loadStats]);
 
     async function saveSorteio() {
         setBusy(true);
@@ -184,6 +192,7 @@ export default function SorteiosAdminPage() {
 
             const r = await apiJson<ApiResp>(`${API_URL}?op=admin_save_sorteio`, "POST", payload);
             if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar sorteio");
+
             await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao salvar");
@@ -213,6 +222,7 @@ export default function SorteiosAdminPage() {
             });
 
             if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar prêmios");
+
             await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao salvar prêmios");
@@ -236,7 +246,10 @@ export default function SorteiosAdminPage() {
             });
 
             if (!r?.ok) throw new Error((r as any)?.error || "Falha ao executar sorteio");
+
             await loadDashboard();
+            // stats pode ter mudado dependendo de horário; recarrega
+            loadStats();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao executar");
         } finally {
@@ -244,14 +257,12 @@ export default function SorteiosAdminPage() {
         }
     }
 
-    if (loading) {
+    if (loadingDash) {
         return (
             <main className="min-h-[70vh] grid place-items-center px-4">
                 <div className="text-center">
                     <div className="mb-4 inline-flex h-12 w-12 animate-spin items-center justify-center rounded-full border-4 border-gray-300 border-t-emerald-600" />
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        Carregando admin de sorteios…
-                    </h1>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Carregando admin de sorteios…</h1>
                     <p className="mt-2 text-gray-600 dark:text-gray-300">Aguarde um instante.</p>
                 </div>
             </main>
@@ -264,18 +275,26 @@ export default function SorteiosAdminPage() {
                 <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Sorteios (Admin)</h1>
-                        <p className="mt-2 text-gray-700 dark:text-gray-200">
-                            Cadastre prêmios, agende data/hora e execute o sorteio.
-                        </p>
+                        <p className="mt-2 text-gray-700 dark:text-gray-200">Cadastre prêmios, agende data/hora e execute o sorteio.</p>
                     </div>
 
-                    <button
-                        onClick={loadDashboard}
-                        disabled={busy}
-                        className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                    >
-                        Atualizar
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={loadDashboard}
+                            disabled={busy}
+                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                            Atualizar dashboard
+                        </button>
+                        <button
+                            onClick={loadStats}
+                            disabled={busy || loadingStats}
+                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                            title="Recalcula (ou pega cache) do total elegível"
+                        >
+                            {loadingStats ? "Calculando…" : "Atualizar elegíveis"}
+                        </button>
+                    </div>
                 </header>
 
                 {errorMsg ? (
@@ -287,9 +306,7 @@ export default function SorteiosAdminPage() {
                 {/* Config */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                            Configuração do sorteio
-                        </h2>
+                        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Configuração do sorteio</h2>
                     </div>
 
                     <div className="p-5 space-y-4">
@@ -315,16 +332,12 @@ export default function SorteiosAdminPage() {
                                     <option value="scheduled">Agendado</option>
                                     <option value="canceled">Cancelado</option>
                                 </select>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    Dica: use <b>Agendado</b> para o CRON executar automaticamente.
-                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Dica: use <b>Agendado</b> para o CRON executar automaticamente.</p>
                             </div>
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                Descrição (opcional)
-                            </label>
+                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">Descrição (opcional)</label>
                             <textarea
                                 value={descricao}
                                 onChange={(e) => setDescricao(e.target.value)}
@@ -335,9 +348,7 @@ export default function SorteiosAdminPage() {
 
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                    Data/Hora do sorteio
-                                </label>
+                                <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">Data/Hora do sorteio</label>
                                 <input
                                     type="datetime-local"
                                     value={scheduledAtInput}
@@ -348,36 +359,24 @@ export default function SorteiosAdminPage() {
 
                             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/30">
                                 <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">Situação atual</div>
-                                <div className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                                    <div>
-                                        <span className="font-semibold">ID:</span> {sorteio?.id ?? "—"}
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold">Status:</span> {sorteio?.status ?? "—"}
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold">Agendado:</span> {formatBR(sorteio?.scheduled_at)}
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold">Executado:</span> {formatBR(sorteio?.executed_at)}
-                                    </div>
+                                <div className="mt-1 text-sm text-gray-900 dark:text-gray-100 space-y-1">
+                                    <div><span className="font-semibold">ID:</span> {sorteio?.id ?? "—"}</div>
+                                    <div><span className="font-semibold">Status:</span> {sorteio?.status ?? "—"}</div>
+                                    <div><span className="font-semibold">Agendado:</span> {formatBR(sorteio?.scheduled_at)}</div>
+                                    <div><span className="font-semibold">Executado:</span> {formatBR(sorteio?.executed_at)}</div>
 
-                                    {/* ✅ SOMENTE O NÚMERO */}
-                                    <div className="mt-2">
+                                    <div className="pt-2">
                                         <span className="font-semibold">Titulares ativos e em dia (agora):</span>{" "}
-                                        {eligibleTotalNow === null ? "—" : eligibleTotalNow}
+                                        {loadingStats ? "Calculando…" : (stats?.ok ? stats.eligible_total : "—")}
                                     </div>
-                                </div>
 
-                                <div className="mt-3">
-                                    <button
-                                        onClick={loadEligibleTotal}
-                                        disabled={busy}
-                                        className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                        title="Atualiza o total elegível considerando a data/hora atual"
-                                    >
-                                        Atualizar total elegível
-                                    </button>
+                                    {stats?.ok ? (
+                                        <div className="text-xs text-gray-600 dark:text-gray-300">
+                                            {stats.calculated_at ? <>Calculado em <b>{new Date(stats.calculated_at).toLocaleString("pt-BR")}</b>. </> : null}
+                                            {typeof stats.took_ms === "number" ? <>Tempo: <b>{stats.took_ms}ms</b>. </> : null}
+                                            {typeof stats.cached_ttl_s === "number" ? <>Cache TTL: <b>{stats.cached_ttl_s}s</b>.</> : null}
+                                        </div>
+                                    ) : null}
                                 </div>
                             </div>
                         </div>
