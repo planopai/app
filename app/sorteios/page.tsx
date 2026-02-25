@@ -41,7 +41,6 @@ type ApiResp<T = any> = { ok: boolean } & T;
 const API_URL = process.env.NEXT_PUBLIC_SORTEIOS_API_URL || "/sorteios.php";
 
 function toLocalInputValue(mysqlDatetime: string) {
-    // "YYYY-MM-DD HH:MM:SS" -> "YYYY-MM-DDTHH:MM"
     if (!mysqlDatetime) return "";
     const [d, t] = mysqlDatetime.split(" ");
     if (!d || !t) return "";
@@ -50,7 +49,6 @@ function toLocalInputValue(mysqlDatetime: string) {
 }
 
 function fromLocalInputValue(v: string) {
-    // "YYYY-MM-DDTHH:MM" -> "YYYY-MM-DD HH:MM:00"
     if (!v) return "";
     const [d, t] = v.split("T");
     if (!d || !t) return "";
@@ -59,7 +57,6 @@ function fromLocalInputValue(v: string) {
 
 function formatBR(mysqlDatetime?: string | null) {
     if (!mysqlDatetime) return "-";
-    // tenta parsear "YYYY-MM-DD HH:MM:SS"
     const s = mysqlDatetime.replace(" ", "T");
     const dt = new Date(s);
     if (Number.isNaN(dt.getTime())) return mysqlDatetime;
@@ -95,13 +92,8 @@ async function apiJson<T = any>(
 export default function SorteiosAdminPage() {
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    // auth
-    const [adminPassword, setAdminPassword] = useState("");
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [authError, setAuthError] = useState<string | null>(null);
-
-    // dashboard
     const [dash, setDash] = useState<DashboardResp | null>(null);
     const sorteio = dash?.sorteio ?? null;
 
@@ -109,11 +101,10 @@ export default function SorteiosAdminPage() {
     const [titulo, setTitulo] = useState("Sorteio");
     const [descricao, setDescricao] = useState("");
     const [status, setStatus] = useState<Sorteio["status"]>("draft");
-    const [scheduledAtInput, setScheduledAtInput] = useState(""); // datetime-local
-    const [premiosText, setPremiosText] = useState<string>(""); // 1 por linha
+    const [scheduledAtInput, setScheduledAtInput] = useState("");
+    const [premiosText, setPremiosText] = useState<string>("");
 
     const premiosList = useMemo(() => {
-        // de textarea -> lista limpa
         return premiosText
             .split("\n")
             .map((s) => s.trim())
@@ -122,7 +113,7 @@ export default function SorteiosAdminPage() {
 
     async function loadDashboard() {
         setLoading(true);
-        setAuthError(null);
+        setErrorMsg(null);
         try {
             const data = await apiJson<DashboardResp>(
                 `${API_URL}?op=admin_dashboard`,
@@ -136,75 +127,33 @@ export default function SorteiosAdminPage() {
                 setStatus(data.sorteio.status);
                 setScheduledAtInput(toLocalInputValue(data.sorteio.scheduled_at || ""));
             } else {
-                // defaults
                 setTitulo("Sorteio");
                 setDescricao("");
                 setStatus("draft");
                 const in1h = new Date(Date.now() + 60 * 60 * 1000);
-                const iso = in1h.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
-                setScheduledAtInput(iso);
+                setScheduledAtInput(in1h.toISOString().slice(0, 16));
             }
 
-            // prêmios do banco -> textarea
             const premiosDb = (data?.premios || [])
                 .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
                 .map((p) => p.nome);
             setPremiosText(premiosDb.join("\n"));
-
-            setIsAdmin(true);
         } catch (e: any) {
-            setIsAdmin(false);
             setDash(null);
-            setAuthError(e?.message || "Não autorizado");
+            setErrorMsg(e?.message || "Falha ao carregar");
         } finally {
             setLoading(false);
         }
     }
 
     useEffect(() => {
-        // tenta carregar (se já tiver sessão admin)
         loadDashboard();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    async function doLogin() {
-        setBusy(true);
-        setAuthError(null);
-        try {
-            const r = await apiJson<ApiResp>(
-                `${API_URL}?op=admin_login`,
-                "POST",
-                { senha: adminPassword }
-            );
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha no login");
-            setAdminPassword("");
-            await loadDashboard();
-        } catch (e: any) {
-            setAuthError(e?.message || "Falha no login");
-            setIsAdmin(false);
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    async function doLogout() {
-        setBusy(true);
-        try {
-            await apiJson<ApiResp>(`${API_URL}?op=admin_logout`, "POST", {});
-            setIsAdmin(false);
-            setDash(null);
-            setAuthError("Sessão encerrada.");
-        } catch (e: any) {
-            setAuthError(e?.message || "Falha ao sair");
-        } finally {
-            setBusy(false);
-        }
-    }
-
     async function saveSorteio() {
         setBusy(true);
-        setAuthError(null);
-
+        setErrorMsg(null);
         try {
             const payload: any = {
                 id: sorteio?.id ?? undefined,
@@ -222,7 +171,7 @@ export default function SorteiosAdminPage() {
             if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar sorteio");
             await loadDashboard();
         } catch (e: any) {
-            setAuthError(e?.message || "Falha ao salvar");
+            setErrorMsg(e?.message || "Falha ao salvar");
         } finally {
             setBusy(false);
         }
@@ -230,29 +179,22 @@ export default function SorteiosAdminPage() {
 
     async function savePremios() {
         setBusy(true);
-        setAuthError(null);
+        setErrorMsg(null);
 
         try {
-            const sid = sorteio?.id;
-            if (!sid) {
-                // cria sorteio primeiro se não existe
+            // garante sorteio criado
+            if (!sorteio?.id) {
                 await saveSorteio();
             }
 
-            // reload para garantir id
-            const sid2 = dash?.sorteio?.id || sorteio?.id;
-            const finalId = sid2;
+            // recarrega para ter id
+            const d2 = await apiJson<DashboardResp>(
+                `${API_URL}?op=admin_dashboard`,
+                "GET"
+            );
+            setDash(d2);
 
-            if (!finalId) {
-                // tenta pegar do servidor (pós save)
-                const d2 = await apiJson<DashboardResp>(
-                    `${API_URL}?op=admin_dashboard`,
-                    "GET"
-                );
-                setDash(d2);
-            }
-
-            const sidFinal = finalId || (dash?.sorteio?.id ?? 0);
+            const sidFinal = d2?.sorteio?.id ?? 0;
             if (!sidFinal) throw new Error("Crie o sorteio antes de salvar prêmios.");
 
             const r = await apiJson<ApiResp>(
@@ -264,7 +206,7 @@ export default function SorteiosAdminPage() {
 
             await loadDashboard();
         } catch (e: any) {
-            setAuthError(e?.message || "Falha ao salvar prêmios");
+            setErrorMsg(e?.message || "Falha ao salvar prêmios");
         } finally {
             setBusy(false);
         }
@@ -272,11 +214,12 @@ export default function SorteiosAdminPage() {
 
     async function runNow(force = false) {
         setBusy(true);
-        setAuthError(null);
+        setErrorMsg(null);
 
         try {
             const sid = sorteio?.id;
             if (!sid) throw new Error("Crie o sorteio antes de sortear.");
+
             const r = await apiJson<ApiResp>(
                 `${API_URL}?op=admin_run`,
                 "POST",
@@ -285,7 +228,7 @@ export default function SorteiosAdminPage() {
             if (!r?.ok) throw new Error((r as any)?.error || "Falha ao executar sorteio");
             await loadDashboard();
         } catch (e: any) {
-            setAuthError(e?.message || "Falha ao executar");
+            setErrorMsg(e?.message || "Falha ao executar");
         } finally {
             setBusy(false);
         }
@@ -299,59 +242,7 @@ export default function SorteiosAdminPage() {
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                         Carregando admin de sorteios…
                     </h1>
-                    <p className="mt-2 text-gray-600 dark:text-gray-300">
-                        Aguarde um instante.
-                    </p>
-                </div>
-            </main>
-        );
-    }
-
-    if (!isAdmin) {
-        return (
-            <main className="min-h-[70vh] grid place-items-center px-4 font-[Nunito]">
-                <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                        Admin do Sorteio
-                    </h1>
-                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                        Faça login (fase de teste).
-                    </p>
-
-                    <div className="mt-4 space-y-2">
-                        <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                            Senha admin
-                        </label>
-                        <input
-                            value={adminPassword}
-                            onChange={(e) => setAdminPassword(e.target.value)}
-                            type="password"
-                            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            placeholder="Digite a senha"
-                        />
-                    </div>
-
-                    {authError ? (
-                        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-                            {authError}
-                        </div>
-                    ) : null}
-
-                    <button
-                        onClick={doLogin}
-                        disabled={busy || !adminPassword}
-                        className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {busy ? "Entrando..." : "Entrar"}
-                    </button>
-
-                    <button
-                        onClick={loadDashboard}
-                        disabled={busy}
-                        className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                    >
-                        Tentar novamente
-                    </button>
+                    <p className="mt-2 text-gray-600 dark:text-gray-300">Aguarde um instante.</p>
                 </div>
             </main>
         );
@@ -370,31 +261,22 @@ export default function SorteiosAdminPage() {
                         </p>
                     </div>
 
-                    <div className="flex gap-2">
-                        <button
-                            onClick={loadDashboard}
-                            disabled={busy}
-                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                        >
-                            Atualizar
-                        </button>
-                        <button
-                            onClick={doLogout}
-                            disabled={busy}
-                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                        >
-                            Sair
-                        </button>
-                    </div>
+                    <button
+                        onClick={loadDashboard}
+                        disabled={busy}
+                        className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                        Atualizar
+                    </button>
                 </header>
 
-                {authError ? (
+                {errorMsg ? (
                     <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-                        {authError}
+                        {errorMsg}
                     </div>
                 ) : null}
 
-                {/* CARD: Sorteio */}
+                {/* Config */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -444,7 +326,6 @@ export default function SorteiosAdminPage() {
                                 onChange={(e) => setDescricao(e.target.value)}
                                 rows={3}
                                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                                placeholder="Texto que pode aparecer no futuro..."
                             />
                         </div>
 
@@ -459,9 +340,6 @@ export default function SorteiosAdminPage() {
                                     onChange={(e) => setScheduledAtInput(e.target.value)}
                                     className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                                 />
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    O sistema usa esse horário para executar (via <b>cron_tick</b>).
-                                </p>
                             </div>
 
                             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/30">
@@ -470,20 +348,16 @@ export default function SorteiosAdminPage() {
                                 </div>
                                 <div className="mt-1 text-sm text-gray-900 dark:text-gray-100">
                                     <div>
-                                        <span className="font-semibold">ID:</span>{" "}
-                                        {sorteio?.id ?? "—"}
+                                        <span className="font-semibold">ID:</span> {sorteio?.id ?? "—"}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Status:</span>{" "}
-                                        {sorteio?.status ?? "—"}
+                                        <span className="font-semibold">Status:</span> {sorteio?.status ?? "—"}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Agendado:</span>{" "}
-                                        {formatBR(sorteio?.scheduled_at)}
+                                        <span className="font-semibold">Agendado:</span> {formatBR(sorteio?.scheduled_at)}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Executado:</span>{" "}
-                                        {formatBR(sorteio?.executed_at)}
+                                        <span className="font-semibold">Executado:</span> {formatBR(sorteio?.executed_at)}
                                     </div>
                                 </div>
                             </div>
@@ -518,7 +392,7 @@ export default function SorteiosAdminPage() {
                     </div>
                 </section>
 
-                {/* CARD: Prêmios */}
+                {/* Prêmios */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -532,7 +406,7 @@ export default function SorteiosAdminPage() {
                             onChange={(e) => setPremiosText(e.target.value)}
                             rows={8}
                             className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            placeholder={"Ex:\nTV 50\"\nAirfryer\nVale-compras R$ 200"}
+                            placeholder={'Ex:\nTV 50"\nAirfryer\nVale-compras R$ 200'}
                         />
 
                         <div className="flex items-center justify-between gap-2">
@@ -548,15 +422,10 @@ export default function SorteiosAdminPage() {
                                 {busy ? "Salvando..." : "Salvar prêmios"}
                             </button>
                         </div>
-
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                            Dica: a quantidade de prêmios define quantos ganhadores terão (1 por
-                            prêmio).
-                        </div>
                     </div>
                 </section>
 
-                {/* CARD: Resultados */}
+                {/* Resultados */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -579,15 +448,12 @@ export default function SorteiosAdminPage() {
                                     </th>
                                 </tr>
                             </thead>
+
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                                 {(dash?.resultados || []).length === 0 ? (
                                     <tr>
-                                        <td
-                                            colSpan={3}
-                                            className="px-6 py-6 text-sm text-gray-600 dark:text-gray-300"
-                                        >
-                                            Nenhum resultado ainda. Execute o sorteio ou aguarde o
-                                            agendamento.
+                                        <td colSpan={3} className="px-6 py-6 text-sm text-gray-600 dark:text-gray-300">
+                                            Nenhum resultado ainda. Execute o sorteio ou aguarde o agendamento.
                                         </td>
                                     </tr>
                                 ) : (
@@ -610,8 +476,7 @@ export default function SorteiosAdminPage() {
                     </div>
 
                     <div className="px-5 py-4 text-xs text-gray-500 dark:text-gray-400">
-                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando
-                        executado)
+                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando executado)
                     </div>
                 </section>
             </div>
