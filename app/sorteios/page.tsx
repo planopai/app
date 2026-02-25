@@ -71,11 +71,7 @@ function formatBR(mysqlDatetime?: string | null) {
     return dt.toLocaleString("pt-BR");
 }
 
-async function apiJson<T = any>(
-    url: string,
-    method: "GET" | "POST",
-    body?: any
-): Promise<T> {
+async function apiJson<T = any>(url: string, method: "GET" | "POST", body?: any): Promise<T> {
     const res = await fetch(url, {
         method,
         credentials: "include",
@@ -105,7 +101,7 @@ export default function SorteiosAdminPage() {
     const [dash, setDash] = useState<DashboardResp | null>(null);
     const sorteio = dash?.sorteio ?? null;
 
-    // ✅ total elegível (titulares ATIVOS e EM DIA) no momento atual
+    // ✅ só o total elegível “agora”
     const [eligibleTotalNow, setEligibleTotalNow] = useState<number | null>(null);
 
     // form
@@ -128,12 +124,8 @@ export default function SorteiosAdminPage() {
                 `${API_URL}?op=admin_pool_stats&only_active_text=ATIVO`,
                 "GET"
             );
-            if (r?.ok) {
-                const n = Number(r.eligible_total);
-                setEligibleTotalNow(Number.isFinite(n) ? n : 0);
-            } else {
-                setEligibleTotalNow(null);
-            }
+            if (r?.ok) setEligibleTotalNow(Number(r.eligible_total ?? 0));
+            else setEligibleTotalNow(null);
         } catch {
             setEligibleTotalNow(null);
         }
@@ -143,10 +135,7 @@ export default function SorteiosAdminPage() {
         setLoading(true);
         setErrorMsg(null);
         try {
-            const data = await apiJson<DashboardResp>(
-                `${API_URL}?op=admin_dashboard`,
-                "GET"
-            );
+            const data = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard`, "GET");
             setDash(data);
 
             if (data?.sorteio) {
@@ -167,7 +156,6 @@ export default function SorteiosAdminPage() {
                 .map((p) => p.nome);
             setPremiosText(premiosDb.join("\n"));
 
-            // ✅ carrega o total elegível agora (somente número)
             await loadEligibleTotal();
         } catch (e: any) {
             setDash(null);
@@ -194,13 +182,8 @@ export default function SorteiosAdminPage() {
                 status,
             };
 
-            const r = await apiJson<ApiResp>(
-                `${API_URL}?op=admin_save_sorteio`,
-                "POST",
-                payload
-            );
-            if (!r?.ok)
-                throw new Error((r as any)?.error || "Falha ao salvar sorteio");
+            const r = await apiJson<ApiResp>(`${API_URL}?op=admin_save_sorteio`, "POST", payload);
+            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar sorteio");
             await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao salvar");
@@ -214,29 +197,22 @@ export default function SorteiosAdminPage() {
         setErrorMsg(null);
 
         try {
-            // garante sorteio criado
             if (!sorteio?.id) {
                 await saveSorteio();
             }
 
-            // recarrega para ter id
-            const d2 = await apiJson<DashboardResp>(
-                `${API_URL}?op=admin_dashboard`,
-                "GET"
-            );
+            const d2 = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard`, "GET");
             setDash(d2);
 
             const sidFinal = d2?.sorteio?.id ?? 0;
             if (!sidFinal) throw new Error("Crie o sorteio antes de salvar prêmios.");
 
-            const r = await apiJson<ApiResp>(
-                `${API_URL}?op=admin_set_premios`,
-                "POST",
-                { sorteio_id: sidFinal, premios: premiosList }
-            );
-            if (!r?.ok)
-                throw new Error((r as any)?.error || "Falha ao salvar prêmios");
+            const r = await apiJson<ApiResp>(`${API_URL}?op=admin_set_premios`, "POST", {
+                sorteio_id: sidFinal,
+                premios: premiosList,
+            });
 
+            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar prêmios");
             await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao salvar prêmios");
@@ -253,15 +229,14 @@ export default function SorteiosAdminPage() {
             const sid = sorteio?.id;
             if (!sid) throw new Error("Crie o sorteio antes de sortear.");
 
-            const r = await apiJson<ApiResp>(
-                `${API_URL}?op=admin_run`,
-                "POST",
-                { sorteio_id: sid, force: force ? 1 : 0, only_active_text: "ATIVO" }
-            );
-            if (!r?.ok)
-                throw new Error((r as any)?.error || "Falha ao executar sorteio");
+            const r = await apiJson<ApiResp>(`${API_URL}?op=admin_run`, "POST", {
+                sorteio_id: sid,
+                force: force ? 1 : 0,
+                only_active_text: "ATIVO",
+            });
 
-            await loadDashboard(); // atualiza também o eligibleTotalNow
+            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao executar sorteio");
+            await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao executar");
         } finally {
@@ -277,9 +252,7 @@ export default function SorteiosAdminPage() {
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                         Carregando admin de sorteios…
                     </h1>
-                    <p className="mt-2 text-gray-600 dark:text-gray-300">
-                        Aguarde um instante.
-                    </p>
+                    <p className="mt-2 text-gray-600 dark:text-gray-300">Aguarde um instante.</p>
                 </div>
             </main>
         );
@@ -290,9 +263,7 @@ export default function SorteiosAdminPage() {
             <div className="mx-auto max-w-5xl space-y-6">
                 <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-                            Sorteios (Admin)
-                        </h1>
+                        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Sorteios (Admin)</h1>
                         <p className="mt-2 text-gray-700 dark:text-gray-200">
                             Cadastre prêmios, agende data/hora e execute o sorteio.
                         </p>
@@ -324,9 +295,7 @@ export default function SorteiosAdminPage() {
                     <div className="p-5 space-y-4">
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                    Título
-                                </label>
+                                <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">Título</label>
                                 <input
                                     value={titulo}
                                     onChange={(e) => setTitulo(e.target.value)}
@@ -336,9 +305,7 @@ export default function SorteiosAdminPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                    Status
-                                </label>
+                                <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">Status</label>
                                 <select
                                     value={status}
                                     onChange={(e) => setStatus(e.target.value as any)}
@@ -380,34 +347,37 @@ export default function SorteiosAdminPage() {
                             </div>
 
                             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/30">
-                                <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                                    Situação atual
-                                </div>
+                                <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">Situação atual</div>
                                 <div className="mt-1 text-sm text-gray-900 dark:text-gray-100">
                                     <div>
-                                        <span className="font-semibold">ID:</span>{" "}
-                                        {sorteio?.id ?? "—"}
+                                        <span className="font-semibold">ID:</span> {sorteio?.id ?? "—"}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Status:</span>{" "}
-                                        {sorteio?.status ?? "—"}
+                                        <span className="font-semibold">Status:</span> {sorteio?.status ?? "—"}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Agendado:</span>{" "}
-                                        {formatBR(sorteio?.scheduled_at)}
+                                        <span className="font-semibold">Agendado:</span> {formatBR(sorteio?.scheduled_at)}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Executado:</span>{" "}
-                                        {formatBR(sorteio?.executed_at)}
+                                        <span className="font-semibold">Executado:</span> {formatBR(sorteio?.executed_at)}
                                     </div>
 
-                                    {/* ✅ Somente o número total elegível agora */}
+                                    {/* ✅ SOMENTE O NÚMERO */}
                                     <div className="mt-2">
-                                        <span className="font-semibold">
-                                            Titulares ativos e em dia (agora):
-                                        </span>{" "}
+                                        <span className="font-semibold">Titulares ativos e em dia (agora):</span>{" "}
                                         {eligibleTotalNow === null ? "—" : eligibleTotalNow}
                                     </div>
+                                </div>
+
+                                <div className="mt-3">
+                                    <button
+                                        onClick={loadEligibleTotal}
+                                        disabled={busy}
+                                        className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                        title="Atualiza o total elegível considerando a data/hora atual"
+                                    >
+                                        Atualizar total elegível
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -444,9 +414,7 @@ export default function SorteiosAdminPage() {
                 {/* Prêmios */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                            Prêmios (1 por linha)
-                        </h2>
+                        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Prêmios (1 por linha)</h2>
                     </div>
 
                     <div className="p-5 space-y-3">
@@ -477,9 +445,7 @@ export default function SorteiosAdminPage() {
                 {/* Resultados */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                            Resultados
-                        </h2>
+                        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Resultados</h2>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -501,26 +467,16 @@ export default function SorteiosAdminPage() {
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                                 {(dash?.resultados || []).length === 0 ? (
                                     <tr>
-                                        <td
-                                            colSpan={3}
-                                            className="px-6 py-6 text-sm text-gray-600 dark:text-gray-300"
-                                        >
-                                            Nenhum resultado ainda. Execute o sorteio ou aguarde o
-                                            agendamento.
+                                        <td colSpan={3} className="px-6 py-6 text-sm text-gray-600 dark:text-gray-300">
+                                            Nenhum resultado ainda. Execute o sorteio ou aguarde o agendamento.
                                         </td>
                                     </tr>
                                 ) : (
                                     (dash?.resultados || []).map((r, idx) => (
                                         <tr key={`${r.premio_id}-${idx}`} className="h-12">
-                                            <td className="px-6 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                                {r.premio_nome}
-                                            </td>
-                                            <td className="px-6 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                                {r.nome}
-                                            </td>
-                                            <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-200">
-                                                {r.cpf}
-                                            </td>
+                                            <td className="px-6 py-3 text-sm text-gray-900 dark:text-gray-100">{r.premio_nome}</td>
+                                            <td className="px-6 py-3 text-sm text-gray-900 dark:text-gray-100">{r.nome}</td>
+                                            <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-200">{r.cpf}</td>
                                         </tr>
                                     ))
                                 )}
@@ -529,8 +485,7 @@ export default function SorteiosAdminPage() {
                     </div>
 
                     <div className="px-5 py-4 text-xs text-gray-500 dark:text-gray-400">
-                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando
-                        executado)
+                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando executado)
                     </div>
                 </section>
             </div>
