@@ -40,7 +40,7 @@ type ApiResp<T = any> = { ok: boolean; error?: string } & T;
 // ✅ ajuste este caminho para onde você salvou o PHP:
 const API_URL =
     process.env.NEXT_PUBLIC_SORTEIOS_API_URL ||
-    "https://api.planoassistencialintegrado.com.br/api/php/sorteios.php";
+    "https://api.planoassistencialintegrado.com.br/sorteios.php";
 
 function toLocalInputValue(mysqlDatetime: string) {
     if (!mysqlDatetime) return "";
