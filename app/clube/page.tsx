@@ -7,9 +7,16 @@ import {
     IconSend,
     IconStethoscope,
     IconChevronRight,
+    IconUserStar,
 } from "@tabler/icons-react";
 
 const items = [
+    {
+        title: "Associados",
+        href: "/associados",
+        desc: "Verifique contratos, situações e acessos.",
+        icon: IconUserStar,
+    },
     {
         title: "Parceiros",
         href: "/parceiros",
@@ -44,8 +51,11 @@ export default function ClubePage() {
                 <div className="flex size-10 items-center justify-center rounded-xl border bg-background/70">
                     <IconGift className="size-6 text-primary" />
                 </div>
+
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Clube PAI</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">
+                        Clube PAI
+                    </h1>
                     <p className="mt-1 text-sm text-muted-foreground">
                         Acesso rápido aos módulos administrativos e benefícios do clube.
                     </p>
@@ -64,12 +74,19 @@ export default function ClubePage() {
                             <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
                                 <Icon className="size-6 text-primary" />
                             </div>
+
                             <div className="flex-1">
                                 <div className="flex items-center justify-between gap-3">
-                                    <h3 className="text-base font-semibold leading-tight">{title}</h3>
+                                    <h3 className="text-base font-semibold leading-tight">
+                                        {title}
+                                    </h3>
+
                                     <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
                                 </div>
-                                <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {desc}
+                                </p>
                             </div>
                         </div>
                     </Link>
