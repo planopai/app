@@ -9,7 +9,6 @@ type Sorteio = {
     scheduled_at: string;
     executed_at: string | null;
     status: "draft" | "scheduled" | "running" | "done" | "canceled";
-    winners_count?: number | null;
 };
 
 type Premio = { id: number; nome: string; ordem: number; created_at?: string };
@@ -23,22 +22,25 @@ type Resultado = {
     ordem?: number;
 };
 
-type DashboardResp = { ok: boolean; sorteio: Sorteio | null; premios: Premio[]; resultados: Resultado[] };
+type DashboardResp = { ok: boolean; sorteio: Sorteio | null; premios: Premio[]; resultados: Resultado[]; error?: string };
 
 type PoolStatsResp = {
     ok: boolean;
-    eligible_total: number;
-    only_active_text?: string;
+    eligible_total?: number;
     calculated_at?: string;
     took_ms?: number;
     cached_ttl_s?: number;
+    diag?: any;
+    error?: string;
+    detail?: string;
 };
 
-type ApiResp<T = any> = { ok: boolean } & T;
+type ApiResp<T = any> = { ok: boolean; error?: string } & T;
 
+// ✅ ajuste este caminho para onde você salvou o PHP:
 const API_URL =
     process.env.NEXT_PUBLIC_SORTEIOS_API_URL ||
-    "https://api.planoassistencialintegrado.com.br/sorteios.php";
+    "https://api.planoassistencialintegrado.com.br/api/php/sorteios.php";
 
 function toLocalInputValue(mysqlDatetime: string) {
     if (!mysqlDatetime) return "";
@@ -93,12 +95,10 @@ export default function SorteiosAdminPage() {
 
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    // stats separado
     const [stats, setStats] = useState<PoolStatsResp | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
     const statsAbortRef = useRef<AbortController | null>(null);
 
-    // form
     const [titulo, setTitulo] = useState("Sorteio");
     const [descricao, setDescricao] = useState("");
     const [status, setStatus] = useState<Sorteio["status"]>("draft");
@@ -117,7 +117,9 @@ export default function SorteiosAdminPage() {
         setErrorMsg(null);
 
         try {
-            const data = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard`, "GET");
+            const data = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard&_=${Date.now()}`, "GET");
+            if (!data?.ok) throw new Error(data?.error || "Dashboard retornou ok=false");
+
             setDash(data);
 
             if (data?.sorteio) {
@@ -147,36 +149,34 @@ export default function SorteiosAdminPage() {
     }, []);
 
     const loadStats = useCallback(async () => {
-        // cancela a requisição anterior (se clicarem várias vezes)
         statsAbortRef.current?.abort();
         const ac = new AbortController();
         statsAbortRef.current = ac;
 
         setLoadingStats(true);
+        setErrorMsg(null);
+
         try {
-            const r = await apiJson<PoolStatsResp>(
-                `${API_URL}?op=admin_pool_stats&only_active_text=ATIVO&_=${Date.now()}`,
-                "GET",
-                undefined,
-                ac.signal
-            );
-            setStats(r?.ok ? r : null);
+            const r = await apiJson<PoolStatsResp>(`${API_URL}?op=admin_pool_stats&_=${Date.now()}`, "GET", undefined, ac.signal);
+
+            if (!r?.ok) {
+                setStats(r || null);
+                setErrorMsg(r?.error || "Falha ao calcular elegíveis");
+                return;
+            }
+
+            setStats(r);
         } catch (e: any) {
             if (e?.name === "AbortError") return;
             setStats(null);
+            setErrorMsg(e?.message || "Falha ao calcular elegíveis");
         } finally {
             setLoadingStats(false);
         }
     }, []);
 
-    useEffect(() => {
-        loadDashboard();
-    }, [loadDashboard]);
-
-    useEffect(() => {
-        // carrega stats DEPOIS, sem travar a UI
-        loadStats();
-    }, [loadStats]);
+    useEffect(() => { loadDashboard(); }, [loadDashboard]);
+    useEffect(() => { loadStats(); }, [loadStats]);
 
     async function saveSorteio() {
         setBusy(true);
@@ -191,7 +191,7 @@ export default function SorteiosAdminPage() {
             };
 
             const r = await apiJson<ApiResp>(`${API_URL}?op=admin_save_sorteio`, "POST", payload);
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar sorteio");
+            if (!r?.ok) throw new Error(r?.error || "Falha ao salvar sorteio");
 
             await loadDashboard();
         } catch (e: any) {
@@ -206,11 +206,11 @@ export default function SorteiosAdminPage() {
         setErrorMsg(null);
 
         try {
-            if (!sorteio?.id) {
-                await saveSorteio();
-            }
+            if (!sorteio?.id) await saveSorteio();
 
-            const d2 = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard`, "GET");
+            const d2 = await apiJson<DashboardResp>(`${API_URL}?op=admin_dashboard&_=${Date.now()}`, "GET");
+            if (!d2?.ok) throw new Error(d2?.error || "Falha ao recarregar dashboard");
+
             setDash(d2);
 
             const sidFinal = d2?.sorteio?.id ?? 0;
@@ -221,8 +221,7 @@ export default function SorteiosAdminPage() {
                 premios: premiosList,
             });
 
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao salvar prêmios");
-
+            if (!r?.ok) throw new Error(r?.error || "Falha ao salvar prêmios");
             await loadDashboard();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao salvar prêmios");
@@ -242,13 +241,11 @@ export default function SorteiosAdminPage() {
             const r = await apiJson<ApiResp>(`${API_URL}?op=admin_run`, "POST", {
                 sorteio_id: sid,
                 force: force ? 1 : 0,
-                only_active_text: "ATIVO",
             });
 
-            if (!r?.ok) throw new Error((r as any)?.error || "Falha ao executar sorteio");
+            if (!r?.ok) throw new Error(r?.error || "Falha ao executar sorteio");
 
             await loadDashboard();
-            // stats pode ter mudado dependendo de horário; recarrega
             loadStats();
         } catch (e: any) {
             setErrorMsg(e?.message || "Falha ao executar");
@@ -300,6 +297,11 @@ export default function SorteiosAdminPage() {
                 {errorMsg ? (
                     <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
                         {errorMsg}
+                        {stats?.diag ? (
+                            <pre className="mt-3 overflow-auto rounded-xl bg-white/60 p-3 text-xs text-gray-800 dark:bg-black/30 dark:text-gray-100">
+                                {JSON.stringify(stats.diag, null, 2)}
+                            </pre>
+                        ) : null}
                     </div>
                 ) : null}
 
@@ -317,7 +319,6 @@ export default function SorteiosAdminPage() {
                                     value={titulo}
                                     onChange={(e) => setTitulo(e.target.value)}
                                     className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                                    placeholder="Ex: Sorteio de Março"
                                 />
                             </div>
 
@@ -332,7 +333,6 @@ export default function SorteiosAdminPage() {
                                     <option value="scheduled">Agendado</option>
                                     <option value="canceled">Cancelado</option>
                                 </select>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Dica: use <b>Agendado</b> para o CRON executar automaticamente.</p>
                             </div>
                         </div>
 
@@ -367,7 +367,7 @@ export default function SorteiosAdminPage() {
 
                                     <div className="pt-2">
                                         <span className="font-semibold">Titulares ativos e em dia (agora):</span>{" "}
-                                        {loadingStats ? "Calculando…" : (stats?.ok ? stats.eligible_total : "—")}
+                                        {loadingStats ? "Calculando…" : (stats?.ok ? (stats.eligible_total ?? "—") : "—")}
                                     </div>
 
                                     {stats?.ok ? (
@@ -385,7 +385,7 @@ export default function SorteiosAdminPage() {
                             <button
                                 onClick={saveSorteio}
                                 disabled={busy}
-                                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                             >
                                 {busy ? "Salvando..." : "Salvar sorteio"}
                             </button>
@@ -393,7 +393,7 @@ export default function SorteiosAdminPage() {
                             <button
                                 onClick={() => runNow(false)}
                                 disabled={busy || !sorteio?.id}
-                                className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                             >
                                 Executar agora
                             </button>
@@ -401,8 +401,7 @@ export default function SorteiosAdminPage() {
                             <button
                                 onClick={() => runNow(true)}
                                 disabled={busy || !sorteio?.id}
-                                className="inline-flex items-center justify-center rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/40 dark:text-red-200 dark:hover:bg-red-950/30"
-                                title="Apaga resultados e sorteia novamente"
+                                className="inline-flex items-center justify-center rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/40 dark:text-red-200 dark:hover:bg-red-950/30"
                             >
                                 Re-sortear (FORCE)
                             </button>
@@ -422,7 +421,6 @@ export default function SorteiosAdminPage() {
                             onChange={(e) => setPremiosText(e.target.value)}
                             rows={8}
                             className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            placeholder={'Ex:\nTV 50"\nAirfryer\nVale-compras R$ 200'}
                         />
 
                         <div className="flex items-center justify-between gap-2">
@@ -433,7 +431,7 @@ export default function SorteiosAdminPage() {
                             <button
                                 onClick={savePremios}
                                 disabled={busy}
-                                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                             >
                                 {busy ? "Salvando..." : "Salvar prêmios"}
                             </button>
@@ -451,15 +449,9 @@ export default function SorteiosAdminPage() {
                         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                             <thead className="bg-gray-50 dark:bg-gray-800/50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                                        Prêmio
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                                        Associado(a)
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                                        CPF
-                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Prêmio</th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Associado(a)</th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">CPF</th>
                                 </tr>
                             </thead>
 
@@ -484,7 +476,7 @@ export default function SorteiosAdminPage() {
                     </div>
 
                     <div className="px-5 py-4 text-xs text-gray-500 dark:text-gray-400">
-                        Exibido em: <b>{formatBR(sorteio?.executed_at || null)}</b> (quando executado)
+                        Executado em: <b>{formatBR(sorteio?.executed_at || null)}</b>
                     </div>
                 </section>
             </div>
