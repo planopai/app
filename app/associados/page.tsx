@@ -19,6 +19,8 @@ import {
     IconCopy,
     IconInfoCircle,
     IconUser,
+    IconFilter,
+    IconEraser,
 } from "@tabler/icons-react";
 
 /* =========================
@@ -41,6 +43,10 @@ const inputCls =
     "w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none " +
     "focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition";
 
+const selectCls =
+    "w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none " +
+    "focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition";
+
 const cardCls = "rounded-2xl border bg-card shadow-sm";
 
 /* =========================
@@ -60,6 +66,12 @@ type Contract = {
     celularTitular?: string;
     foneTitular?: string;
     dataultimopagamento?: string;
+
+    // 🔎 possíveis flags vindas da API (tolerância)
+    has_access?: boolean | number | string;
+    tem_acesso?: boolean | number | string;
+    acesso?: boolean | number | string;
+    local_auth?: any;
 };
 
 type LocalAuth = {
@@ -111,9 +123,10 @@ type BeneficiarioApi = {
 };
 
 /* =========================
-   Utils (pequenos, puros e rápidos)
+   Utils
 ========================= */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
+const toUpperTrim = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
 const safeText = (v: unknown) => {
     if (v === null || v === undefined) return "-";
@@ -146,8 +159,36 @@ function statusBadgeSituacao(situacao?: string) {
     return badge + " border-muted bg-muted/30 text-foreground";
 }
 
+function accessBadge(hasAccess: boolean) {
+    return (
+        badge +
+        " " +
+        (hasAccess
+            ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
+            : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200")
+    );
+}
+
+function inferHasAccessFromListItem(c: Contract): boolean {
+    const anyC: any = c as any;
+
+    const raw =
+        anyC?.has_access ??
+        anyC?.tem_acesso ??
+        anyC?.acesso ??
+        (anyC?.local_auth ? 1 : 0);
+
+    // se nada existir e local_auth também não existir, raw vira 0
+    if (raw === undefined || raw === null) return false;
+
+    if (typeof raw === "boolean") return raw;
+    if (typeof raw === "number") return raw > 0;
+
+    const s = String(raw).trim().toLowerCase();
+    return s === "1" || s === "true" || s === "sim" || s === "yes" || s === "ok";
+}
+
 async function safeJson<T = any>(res: Response): Promise<T | null> {
-    // Por quê: evita try/catch repetido e falha segura quando o servidor não retorna JSON.
     try {
         return (await res.json()) as T;
     } catch {
@@ -156,7 +197,6 @@ async function safeJson<T = any>(res: Response): Promise<T | null> {
 }
 
 function normalizeContractsPayload(data: any): Contract[] {
-    // Por quê: tolera várias formas sem alocar estruturas extras.
     const raw = data?.data;
     if (Array.isArray(raw)) return raw;
     if (raw?.data && Array.isArray(raw.data)) return raw.data;
@@ -166,7 +206,6 @@ function normalizeContractsPayload(data: any): Contract[] {
 }
 
 function toastMessage(_kind: "ok" | "warn" | "err", msg: string) {
-    // Sugestão futura: trocar por Toast real (sonner/toaster). Mantive alert para não quebrar.
     alert(msg);
 }
 
@@ -312,83 +351,66 @@ function tipoLabel(t: any) {
 
 /* =========================
    Modal
-   ✅ Novo: hideHeader para evitar duplicação do topo.
-   ✅ Acessibilidade: role, aria-modal, foco básico no container.
-   ✅ Performance: listeners só quando open.
 ========================= */
 function Modal({
-  open,
-  title,
-  subtitle,
-  onClose,
-  children,
-  maxWidth = "max-w-5xl",
-  hideHeader = false,
+    open,
+    title,
+    subtitle,
+    onClose,
+    children,
+    maxWidth = "max-w-5xl",
+    hideHeader = false,
 }: {
-  open: boolean;
-  title?: string;
-  subtitle?: React.ReactNode;
-  onClose: () => void;
-  children: React.ReactNode;
-  maxWidth?: string;
-  hideHeader?: boolean;
+    open: boolean;
+    title?: string;
+    subtitle?: React.ReactNode;
+    onClose: () => void;
+    children: React.ReactNode;
+    maxWidth?: string;
+    hideHeader?: boolean;
 }) {
-  useEffect(() => {
-    if (!open) return;
+    useEffect(() => {
+        if (!open) return;
 
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onEsc);
+        const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+        window.addEventListener("keydown", onEsc);
 
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
 
-    return () => {
-      window.removeEventListener("keydown", onEsc);
-      document.body.style.overflow = prev;
-    };
-  }, [open, onClose]);
+        return () => {
+            window.removeEventListener("keydown", onEsc);
+            document.body.style.overflow = prev;
+        };
+    }, [open, onClose]);
 
-  if (!open) return null;
+    if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
-      {/* backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+    return (
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+            <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
 
-      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
-        {/* modal box */}
-        <div className={`relative w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
-          {/* ✅ botão fechar SEMPRE presente */}
-          <button
-            type="button"
-            onClick={onClose}
-            className={
-              btnNeutral +
-              " absolute right-3 top-3 z-10 !px-3 !py-2"
-            }
-            title="Fechar"
-          >
-            <IconX className="size-4" />
-            <span className="hidden sm:inline">Fechar</span>
-          </button>
+            <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
+                <div className={`relative w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
+                    <button type="button" onClick={onClose} className={btnNeutral + " absolute right-3 top-3 z-10 !px-3 !py-2"} title="Fechar">
+                        <IconX className="size-4" />
+                        <span className="hidden sm:inline">Fechar</span>
+                    </button>
 
-          {!hideHeader ? (
-            <div className="flex items-start justify-between gap-3 border-b px-4 py-3 pr-16">
-              <div className="min-w-0">
-                <div className="truncate text-lg font-bold">{title}</div>
-                {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
-              </div>
-              {/* (o botão já está absoluto acima, então não precisa duplicar aqui) */}
+                    {!hideHeader ? (
+                        <div className="flex items-start justify-between gap-3 border-b px-4 py-3 pr-16">
+                            <div className="min-w-0">
+                                <div className="truncate text-lg font-bold">{title}</div>
+                                {subtitle ? <div className="mt-1 text-sm text-muted-foreground">{subtitle}</div> : null}
+                            </div>
+                        </div>
+                    ) : null}
+
+                    <div className="max-h-[80vh] overflow-y-auto p-4">{children}</div>
+                </div>
             </div>
-          ) : null}
-
-          <div className="max-h-[80vh] overflow-y-auto p-4">
-            {children}
-          </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
 
 /* =========================
@@ -537,9 +559,14 @@ function AccessModal({
 
 /* =========================
    Lista contratos
-   ✅ key estável: preferir id numérico
 ========================= */
-function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Contract) => void }) {
+function ContractsTable({
+    items,
+    onOpen,
+}: {
+    items: Contract[];
+    onOpen: (c: Contract) => void;
+}) {
     return (
         <div className={cardCls + " overflow-hidden"}>
             <div className="hidden md:block">
@@ -556,89 +583,121 @@ function ContractsTable({ items, onOpen }: { items: Contract[]; onOpen: (c: Cont
                         </tr>
                     </thead>
                     <tbody>
-                        {items.map((c) => (
-                            <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20">
-                                <td className="px-3 py-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="grid size-8 place-items-center rounded-xl border bg-background/60">
-                                            <IconUserCircle className="size-5 text-muted-foreground" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="truncate font-semibold">{safeText(c.nome)}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                Últ. pagto: {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
+                        {items.map((c) => {
+                            const hasAccess = inferHasAccessFromListItem(c);
+                            return (
+                                <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20">
+                                    <td className="px-3 py-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="grid size-8 place-items-center rounded-xl border bg-background/60">
+                                                <IconUserCircle className="size-5 text-muted-foreground" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="truncate font-semibold">{safeText(c.nome)}</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    Últ. pagto: {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </td>
-                                <td className="px-3 py-3">{safeText(c.cpf_cnpj)}</td>
-                                <td className="px-3 py-3">{safeText(c.contrato_numero || c.contrato)}</td>
-                                <td className="px-3 py-3">
-                                    <div className="font-medium">{safeText(c.plano)}</div>
-                                    <div className="text-xs text-muted-foreground">{c.cobertura ? safeText(c.cobertura) : ""}</div>
-                                </td>
-                                <td className="px-3 py-3">{safeText(c.cidade)}</td>
-                                <td className="px-3 py-3">
-                                    <span className={statusBadgeSituacao(c.situacao)}>
-                                        <IconShieldLock className="size-3" />
-                                        {safeText(c.situacao)}
-                                    </span>
-                                </td>
-                                <td className="px-3 py-3 text-right">
-                                    <button className={btnOutline} onClick={() => onOpen(c)}>
-                                        Ver detalhes
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
+                                    </td>
+                                    <td className="px-3 py-3">{safeText(c.cpf_cnpj)}</td>
+                                    <td className="px-3 py-3">{safeText(c.contrato_numero || c.contrato)}</td>
+                                    <td className="px-3 py-3">
+                                        <div className="font-medium">{safeText(c.plano)}</div>
+                                        <div className="text-xs text-muted-foreground">{c.cobertura ? safeText(c.cobertura) : ""}</div>
+                                    </td>
+                                    <td className="px-3 py-3">{safeText(c.cidade)}</td>
+                                    <td className="px-3 py-3">
+                                        <div className="flex flex-wrap gap-2">
+                                            <span className={statusBadgeSituacao(c.situacao)}>
+                                                <IconShieldLock className="size-3" />
+                                                {safeText(c.situacao)}
+                                            </span>
+
+                                            <span className={accessBadge(hasAccess)}>
+                                                {hasAccess ? (
+                                                    <>
+                                                        <IconCheck className="size-3" /> Com acesso
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <IconAlertTriangle className="size-3" /> Sem acesso
+                                                    </>
+                                                )}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="px-3 py-3 text-right">
+                                        <button className={btnOutline} onClick={() => onOpen(c)}>
+                                            Ver detalhes
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
 
             <div className="md:hidden">
                 <div className="divide-y">
-                    {items.map((c) => (
-                        <div key={c.id} className="p-3">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <div className="grid size-9 place-items-center rounded-xl border bg-background/60">
-                                            <IconUserCircle className="size-5 text-muted-foreground" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="truncate font-semibold">{safeText(c.nome)}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {safeText(c.cpf_cnpj)} • Contrato {safeText(c.contrato_numero || c.contrato)}
+                    {items.map((c) => {
+                        const hasAccess = inferHasAccessFromListItem(c);
+                        return (
+                            <div key={c.id} className="p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <div className="grid size-9 place-items-center rounded-xl border bg-background/60">
+                                                <IconUserCircle className="size-5 text-muted-foreground" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="truncate font-semibold">{safeText(c.nome)}</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {safeText(c.cpf_cnpj)} • Contrato {safeText(c.contrato_numero || c.contrato)}
+                                                </div>
                                             </div>
                                         </div>
+
+                                        <div className="mt-2 text-xs text-muted-foreground">
+                                            <div>
+                                                <span className="font-medium text-foreground">Plano:</span> {safeText(c.plano)}
+                                                {c.cobertura ? ` • ${safeText(c.cobertura)}` : ""}
+                                            </div>
+                                            <div className="mt-0.5">
+                                                <span className="font-medium text-foreground">Cidade:</span> {safeText(c.cidade)} •{" "}
+                                                <span className="font-medium text-foreground">Últ. pagto:</span>{" "}
+                                                {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            <span className={statusBadgeSituacao(c.situacao)}>
+                                                <IconShieldLock className="size-3" />
+                                                {safeText(c.situacao)}
+                                            </span>
+
+                                            <span className={accessBadge(hasAccess)}>
+                                                {hasAccess ? (
+                                                    <>
+                                                        <IconCheck className="size-3" /> Com acesso
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <IconAlertTriangle className="size-3" /> Sem acesso
+                                                    </>
+                                                )}
+                                            </span>
+                                        </div>
                                     </div>
 
-                                    <div className="mt-2 text-xs text-muted-foreground">
-                                        <div>
-                                            <span className="font-medium text-foreground">Plano:</span> {safeText(c.plano)}
-                                            {c.cobertura ? ` • ${safeText(c.cobertura)}` : ""}
-                                        </div>
-                                        <div className="mt-0.5">
-                                            <span className="font-medium text-foreground">Cidade:</span> {safeText(c.cidade)} •{" "}
-                                            <span className="font-medium text-foreground">Últ. pagto:</span>{" "}
-                                            {c.dataultimopagamento ? fmtDateTimeBR(c.dataultimopagamento) : "-"}
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-2">
-                                        <span className={statusBadgeSituacao(c.situacao)}>
-                                            <IconShieldLock className="size-3" />
-                                            {safeText(c.situacao)}
-                                        </span>
-                                    </div>
+                                    <button className={btnOutline + " shrink-0"} onClick={() => onOpen(c)}>
+                                        Ver detalhes
+                                    </button>
                                 </div>
-
-                                <button className={btnOutline + " shrink-0"} onClick={() => onOpen(c)}>
-                                    Ver detalhes
-                                </button>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>
@@ -707,8 +766,7 @@ function Pager({
 }
 
 /* =========================
-   Detail (Resumo + Dependentes)
-   ✅ Mantém topo interno (card) — e o Modal do detalhe ficará hideHeader=true.
+   Detail
 ========================= */
 function DetailModalContent({
     contract,
@@ -749,7 +807,6 @@ function DetailModalContent({
 
     return (
         <div className="grid gap-4">
-            {/* Topo único (agora o Modal não mostra header) */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
@@ -791,7 +848,6 @@ function DetailModalContent({
                 {loading ? <div className="mt-3 rounded-2xl border bg-muted/30 px-3 py-2 text-sm">Carregando detalhes…</div> : null}
             </div>
 
-            {/* Resumo */}
             <div className={cardCls + " p-4"}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
@@ -831,10 +887,12 @@ function DetailModalContent({
                                 </div>
 
                                 <div>
-                                    <span className="font-medium text-foreground">Último login:</span> {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
+                                    <span className="font-medium text-foreground">Último login:</span>{" "}
+                                    {local?.ultimo_login ? fmtDateTimeBR(local.ultimo_login) : "-"}
                                 </div>
                                 <div>
-                                    <span className="font-medium text-foreground">Bloqueado até:</span> {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
+                                    <span className="font-medium text-foreground">Bloqueado até:</span>{" "}
+                                    {local?.bloqueado_ate ? fmtDateTimeBR(local.bloqueado_ate) : "-"}
                                 </div>
                             </div>
 
@@ -848,15 +906,7 @@ function DetailModalContent({
                     </div>
 
                     <div className="flex flex-col gap-2 sm:items-end">
-                        <span
-                            className={
-                                badge +
-                                " " +
-                                (hasAccess
-                                    ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
-                                    : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200")
-                            }
-                        >
+                        <span className={accessBadge(hasAccess)}>
                             {hasAccess ? (
                                 <>
                                     <IconCheck className="size-3" /> Com acesso
@@ -876,7 +926,6 @@ function DetailModalContent({
                 </div>
             </div>
 
-            {/* Dependentes */}
             <div className={cardCls + " overflow-hidden"}>
                 <div className="border-b bg-muted/20 px-4 py-3 text-sm font-semibold flex items-center gap-2">
                     <IconUser className="size-4 text-muted-foreground" />
@@ -954,14 +1003,22 @@ function DetailModalContent({
 }
 
 /* =========================
-   Page principal
-   ✅ Performance: abort controller + cache de detalhes + debounce
-   ✅ Bugfix: NÃO resetar detail ao abrir se houver cache (evita flicker)
-   ✅ Segurança: onlyDigits para CPF no request
+   Page principal (com filtros)
 ========================= */
 export default function AssociadosGeralPage() {
+    // busca (digitando)
     const [query, setQuery] = useState("");
     const debouncedQuery = useDebounced(query, 350);
+
+    // filtros (selecionando)
+    const [draftCidade, setDraftCidade] = useState("");
+    const [draftPlano, setDraftPlano] = useState("");
+    const [draftSituacao, setDraftSituacao] = useState("");
+
+    // filtros aplicados (clicou Filtrar)
+    const [appliedCidade, setAppliedCidade] = useState("");
+    const [appliedPlano, setAppliedPlano] = useState("");
+    const [appliedSituacao, setAppliedSituacao] = useState("");
 
     const [page, setPage] = useState(1);
     const pageSize = 10;
@@ -990,8 +1047,36 @@ export default function AssociadosGeralPage() {
     const listAbortRef = useRef<AbortController | null>(null);
     const detailAbortRef = useRef<AbortController | null>(null);
 
-    // Cache: reduz fetch repetido ao reabrir o mesmo contrato
+    // Cache de detalhes
     const detailCacheRef = useRef<Map<string, ContractDetail>>(new Map());
+
+    // opções dos selects (populadas do que vier da API na listagem)
+    const cidadeOptions = useMemo(() => {
+        const set = new Set<string>();
+        for (const c of contracts) {
+            const v = String(c.cidade ?? "").trim();
+            if (v) set.add(v);
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    }, [contracts]);
+
+    const planoOptions = useMemo(() => {
+        const set = new Set<string>();
+        for (const c of contracts) {
+            const v = String(c.plano ?? "").trim();
+            if (v) set.add(v);
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    }, [contracts]);
+
+    const situacaoOptions = useMemo(() => {
+        const set = new Set<string>();
+        for (const c of contracts) {
+            const v = String(c.situacao ?? "").trim();
+            if (v) set.add(v);
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    }, [contracts]);
 
     const buildListUrl = useCallback(
         (pageNum: number) => {
@@ -999,10 +1084,18 @@ export default function AssociadosGeralPage() {
             url.searchParams.set("op", "contracts");
             url.searchParams.set("page", String(pageNum));
             url.searchParams.set("pageSize", String(pageSize));
+
+            // busca
             url.searchParams.set("textToSearch", (debouncedQuery || "").trim());
+
+            // filtros aplicados (se o backend suportar, ele vai filtrar; se não suportar, não quebra)
+            if (appliedCidade) url.searchParams.set("cidade", appliedCidade);
+            if (appliedPlano) url.searchParams.set("plano", appliedPlano);
+            if (appliedSituacao) url.searchParams.set("situacao", appliedSituacao);
+
             return url.toString();
         },
-        [debouncedQuery]
+        [debouncedQuery, appliedCidade, appliedPlano, appliedSituacao]
     );
 
     const loadContracts = useCallback(
@@ -1042,20 +1135,43 @@ export default function AssociadosGeralPage() {
         [buildListUrl, headers, page]
     );
 
+    // inicial
     useEffect(() => {
         loadContracts({ resetPage: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // busca (debounced) => recarrega
     useEffect(() => {
         loadContracts({ resetPage: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedQuery]);
 
+    // paginação => recarrega
     useEffect(() => {
         loadContracts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page]);
+
+    // filtro aplicado => recarrega
+    useEffect(() => {
+        loadContracts({ resetPage: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [appliedCidade, appliedPlano, appliedSituacao]);
+
+    // fallback: caso o backend NÃO filtre, filtramos no front (na página atual)
+    const filteredContracts = useMemo(() => {
+        const cCity = toUpperTrim(appliedCidade);
+        const cPlan = toUpperTrim(appliedPlano);
+        const cSit = toUpperTrim(appliedSituacao);
+
+        return contracts.filter((c) => {
+            if (cCity && toUpperTrim(c.cidade) !== cCity) return false;
+            if (cPlan && toUpperTrim(c.plano) !== cPlan) return false;
+            if (cSit && toUpperTrim(c.situacao) !== cSit) return false;
+            return true;
+        });
+    }, [contracts, appliedCidade, appliedPlano, appliedSituacao]);
 
     const fetchDetail = useCallback(
         async (c: Contract) => {
@@ -1063,7 +1179,6 @@ export default function AssociadosGeralPage() {
             const idContrato = Number(c.id) || 0;
             const cacheKey = `${idContrato}|${cpfDigits}`;
 
-            // Por quê: mostra cache instantâneo (UI mais fluida)
             const cached = detailCacheRef.current.get(cacheKey);
             if (cached) setDetail(cached);
 
@@ -1107,7 +1222,6 @@ export default function AssociadosGeralPage() {
             setSelected(c);
             setModalOpen(true);
 
-            // Por quê: evita flicker — só limpa se não tiver cache
             const cpfDigits = onlyDigits(c.cpf_cnpj || "");
             const cacheKey = `${Number(c.id) || 0}|${cpfDigits}`;
             if (!detailCacheRef.current.has(cacheKey)) setDetail(null);
@@ -1124,7 +1238,6 @@ export default function AssociadosGeralPage() {
 
     const upsertAccess = useCallback(
         async (payload: { cpf: string; senha: string; email: string; telefone: string }) => {
-            // Por quê: validação de entrada (segurança / consistência)
             const cpf = onlyDigits(payload.cpf);
             const tel = onlyDigits(payload.telefone);
             const senha = (payload.senha || "").trim();
@@ -1174,14 +1287,32 @@ export default function AssociadosGeralPage() {
         const nome = safeText(dep?.Nome || dep?.nome || "Beneficiário");
 
         setAccessTitle(`Criar acesso (${nome})`);
-        setAccessCpf(""); // dependente não vem com CPF -> digita no modal
+        setAccessCpf("");
         setAccessEmail("");
         setAccessTelefone(dep?.Telefone || dep?.telefone || dep?.celular || "");
         setAccessCpfEditable(true);
         setAccessOpen(true);
     }, []);
 
-    const hasResults = contracts.length > 0;
+    const totalContratos = pagination?.totalItemCount ?? 0;
+    const hasResults = filteredContracts.length > 0;
+
+    const applyFilters = useCallback(() => {
+        setAppliedCidade(draftCidade);
+        setAppliedPlano(draftPlano);
+        setAppliedSituacao(draftSituacao);
+        setPage(1);
+    }, [draftCidade, draftPlano, draftSituacao]);
+
+    const clearFilters = useCallback(() => {
+        setDraftCidade("");
+        setDraftPlano("");
+        setDraftSituacao("");
+        setAppliedCidade("");
+        setAppliedPlano("");
+        setAppliedSituacao("");
+        setPage(1);
+    }, []);
 
     return (
         <div className="mx-auto w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-5">
@@ -1199,12 +1330,98 @@ export default function AssociadosGeralPage() {
                 </div>
             </div>
 
-            {/* Busca */}
+            {/* Busca + Filtros (select) */}
             <div className={cardCls + " p-4 mb-4"}>
-                <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
-                <div className="relative mt-1">
-                    <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Digite aqui…" className={inputCls + " pl-9"} />
+                <div className="grid gap-3 lg:grid-cols-12">
+                    {/* Busca */}
+                    <div className="lg:col-span-5">
+                        <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
+                        <div className="relative mt-1">
+                            <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Digite aqui…"
+                                className={inputCls + " pl-9"}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Cidade */}
+                    <div className="lg:col-span-2">
+                        <label className="text-xs text-muted-foreground">Cidade</label>
+                        <select className={selectCls + " mt-1"} value={draftCidade} onChange={(e) => setDraftCidade(e.target.value)}>
+                            <option value="">Todas</option>
+                            {cidadeOptions.map((c) => (
+                                <option key={c} value={c}>
+                                    {c}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Plano */}
+                    <div className="lg:col-span-2">
+                        <label className="text-xs text-muted-foreground">Plano</label>
+                        <select className={selectCls + " mt-1"} value={draftPlano} onChange={(e) => setDraftPlano(e.target.value)}>
+                            <option value="">Todos</option>
+                            {planoOptions.map((p) => (
+                                <option key={p} value={p}>
+                                    {p}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Situação */}
+                    <div className="lg:col-span-2">
+                        <label className="text-xs text-muted-foreground">Situação</label>
+                        <select className={selectCls + " mt-1"} value={draftSituacao} onChange={(e) => setDraftSituacao(e.target.value)}>
+                            <option value="">Todas</option>
+                            {situacaoOptions.map((s) => (
+                                <option key={s} value={s}>
+                                    {s}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Botões */}
+                    <div className="lg:col-span-1 flex items-end gap-2">
+                        <button onClick={applyFilters} className={btnOutline + " w-full"} disabled={loading} title="Aplicar filtros">
+                            <IconFilter className="size-4" />
+                            Filtrar
+                        </button>
+                        <button onClick={clearFilters} className={btnNeutral} disabled={loading} title="Limpar filtros">
+                            <IconEraser className="size-4" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* resumo filtros */}
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className={badge + " border-muted bg-muted/20"}>
+                        Total contratos: <span className="font-semibold text-foreground ml-1">{totalContratos || "-"}</span>
+                    </span>
+
+                    {(appliedCidade || appliedPlano || appliedSituacao) ? (
+                        <span className={badge + " border-muted bg-muted/20"}>
+                            Filtros:{" "}
+                            <span className="font-semibold text-foreground ml-1">
+                                {appliedCidade ? `Cidade=${appliedCidade}` : ""}
+                                {appliedCidade && appliedPlano ? " • " : ""}
+                                {appliedPlano ? `Plano=${appliedPlano}` : ""}
+                                {(appliedCidade || appliedPlano) && appliedSituacao ? " • " : ""}
+                                {appliedSituacao ? `Situação=${appliedSituacao}` : ""}
+                            </span>
+                        </span>
+                    ) : (
+                        <span className={badge + " border-muted bg-muted/20"}>Filtros: <span className="font-semibold text-foreground ml-1">Nenhum</span></span>
+                    )}
+
+                    <span className={badge + " border-muted bg-muted/20"}>
+                        Nesta página: <span className="font-semibold text-foreground ml-1">{filteredContracts.length}</span>
+                    </span>
                 </div>
             </div>
 
@@ -1217,10 +1434,10 @@ export default function AssociadosGeralPage() {
 
             {!hasResults && !loading ? (
                 <div className={cardCls + " p-5 text-sm text-muted-foreground"}>
-                    Nenhum contrato retornado. Dica: busque por CPF (somente números), parte do nome ou contrato.
+                    Nenhum contrato retornado com os filtros atuais.
                 </div>
             ) : (
-                <ContractsTable items={contracts} onOpen={openDetail} />
+                <ContractsTable items={filteredContracts} onOpen={openDetail} />
             )}
 
             <Pager
@@ -1235,13 +1452,7 @@ export default function AssociadosGeralPage() {
                 onNext={() => setPage((p) => p + 1)}
             />
 
-            {/* ✅ Modal de detalhes agora NÃO mostra header => sem duplicação */}
-            <Modal
-                open={modalOpen}
-                onClose={() => setModalOpen(false)}
-                hideHeader
-                maxWidth="max-w-5xl"
-            >
+            <Modal open={modalOpen} onClose={() => setModalOpen(false)} hideHeader maxWidth="max-w-5xl">
                 <DetailModalContent
                     contract={selected}
                     detail={detail}
@@ -1265,12 +1476,3 @@ export default function AssociadosGeralPage() {
         </div>
     );
 }
-
-/* =========================
-   Ganhos de Performance
-   - Remoção do header duplicado no Modal do detalhe: menos DOM e menos layout/reflow.
-   - Cache de detalhes por contrato: evita refetch ao reabrir e reduz latência percebida.
-   - AbortController em lista e detalhe: cancela requisições antigas => menos CPU/mem e menos race conditions.
-   - Debounce de busca: menos chamadas ao backend (reduz carga e melhora responsividade).
-   - Funções utilitárias puras + memoizações consistentes: menos re-render e menos alocações.
-========================= */

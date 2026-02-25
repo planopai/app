@@ -14,31 +14,31 @@ const items = [
     {
         title: "Associados",
         href: "/associados",
-        desc: "Verifique contratos, situações e acessos.",
+        desc: "Contratos e Acessos",
         icon: IconUserStar,
     },
     {
         title: "Parceiros",
         href: "/parceiros",
-        desc: "Adicione, exclua ou atualize a lista de parceiros.",
+        desc: "Lista de Parceiros",
         icon: IconUsersGroup,
     },
     {
         title: "Enviar Notícias",
         href: "/noticias",
-        desc: "Envie novidades para os associados.",
+        desc: "Novidades Para Os Associados",
         icon: IconSend,
     },
     {
         title: "Médicos Parceiros",
         href: "/medicos",
-        desc: "Adicione, exclua ou atualize a lista de médicos parceiros.",
+        desc: "Lista de Médicos Parceiros",
         icon: IconStethoscope,
     },
     {
         title: "Sorteios",
         href: "/sorteios",
-        desc: "Realize novos sorteios entre os associados.",
+        desc: "Realize Novos Sorteios",
         icon: IconGift,
     },
 ];
