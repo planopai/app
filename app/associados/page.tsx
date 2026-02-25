@@ -1133,55 +1133,21 @@ export default function AssociadosGeralPage() {
     // ✅ carrega todas as opções de filtros varrendo todas as páginas
     const loadFilterOptions = useCallback(async () => {
         setLoadingFilters(true);
-
-        const cidades = new Set<string>();
-        const planos = new Set<string>(); // aqui guardamos cobertura ou plano
-        const situacoes = new Set<string>();
-
-        let pageNum = 1;
-        const hardLimit = 500;
-
         try {
-            for (let i = 0; i < hardLimit; i++) {
-                const url = new URL(ENDPOINT);
-                url.searchParams.set("op", "contracts");
-                url.searchParams.set("page", String(pageNum));
-                url.searchParams.set("pageSize", "200");
+            const url = new URL(ENDPOINT);
+            url.searchParams.set("op", "filter_options");
 
-                const res = await fetch(url.toString(), {
-                    method: "GET",
-                    headers,
-                    cache: "no-store",
-                });
-
-                const data = await safeJson<any>(res);
-                if (!res.ok || !data?.ok) break;
-
-                const items = normalizeContractsPayload(data);
-                if (!items.length) break;
-
-                for (const c of items) {
-                    const city = String(c.cidade ?? "").trim();
-                    if (city) cidades.add(city);
-
-                    const planLike = String((c.cobertura ?? c.plano) ?? "").trim();
-                    if (planLike) planos.add(planLike);
-
-                    const sit = String(c.situacao ?? "").trim();
-                    if (sit) situacoes.add(sit);
-                }
-
-                const pag = parseXPagination(res.headers);
-                if (!pag?.hasNextPage) break;
-
-                pageNum = (pag.pageNumber || pageNum) + 1;
-            }
+            const res = await fetch(url.toString(), { method: "GET", headers, cache: "no-store" });
+            const data = await safeJson<any>(res);
+            if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao carregar filtros");
 
             setFilterOptions({
-                cidades: Array.from(cidades).sort((a, b) => a.localeCompare(b, "pt-BR")),
-                planos: Array.from(planos).sort((a, b) => a.localeCompare(b, "pt-BR")),
-                situacoes: Array.from(situacoes).sort((a, b) => a.localeCompare(b, "pt-BR")),
+                cidades: Array.isArray(data.cidades) ? data.cidades : [],
+                planos: Array.isArray(data.planos) ? data.planos : [],
+                situacoes: Array.isArray(data.situacoes) ? data.situacoes : [],
             });
+        } catch (e: any) {
+            toastMessage("err", e?.message || "Erro ao carregar filtros");
         } finally {
             setLoadingFilters(false);
         }
