@@ -172,13 +172,8 @@ function accessBadge(hasAccess: boolean) {
 function inferHasAccessFromListItem(c: Contract): boolean {
     const anyC: any = c as any;
 
-    const raw =
-        anyC?.has_access ??
-        anyC?.tem_acesso ??
-        anyC?.acesso ??
-        (anyC?.local_auth ? 1 : 0);
+    const raw = anyC?.has_access ?? anyC?.tem_acesso ?? anyC?.acesso ?? (anyC?.local_auth ? 1 : 0);
 
-    // se nada existir e local_auth também não existir, raw vira 0
     if (raw === undefined || raw === null) return false;
 
     if (typeof raw === "boolean") return raw;
@@ -392,7 +387,12 @@ function Modal({
 
             <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-6">
                 <div className={`relative w-full ${maxWidth} rounded-3xl border bg-background shadow-2xl`}>
-                    <button type="button" onClick={onClose} className={btnNeutral + " absolute right-3 top-3 z-10 !px-3 !py-2"} title="Fechar">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className={btnNeutral + " absolute right-3 top-3 z-10 !px-3 !py-2"}
+                        title="Fechar"
+                    >
                         <IconX className="size-4" />
                         <span className="hidden sm:inline">Fechar</span>
                     </button>
@@ -835,8 +835,10 @@ function DetailModalContent({
 
                         <button
                             className={btnNeutral + " w-full sm:w-auto"}
-                            onClick={() => cpfDigits && copyToClipboard(cpfDigits)}
-                            disabled={!cpfDigits}
+                            onClick={() => {
+                                if (cpfDigits.length > 0) copyToClipboard(cpfDigits);
+                            }}
+                            disabled={cpfDigits.length === 0}
                             title="Copiar CPF (somente números)"
                         >
                             <IconCopy className="size-4" />
@@ -1028,6 +1030,15 @@ export default function AssociadosGeralPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // ✅ opções globais dos filtros (não dependem só da página atual)
+    const [filterOptions, setFilterOptions] = useState<{
+        cidades: string[];
+        planos: string[]; // usamos "cobertura" quando existir
+        situacoes: string[];
+    }>({ cidades: [], planos: [], situacoes: [] });
+
+    const [loadingFilters, setLoadingFilters] = useState(false);
+
     // detalhe
     const [modalOpen, setModalOpen] = useState(false);
     const [selected, setSelected] = useState<Contract | null>(null);
@@ -1050,33 +1061,10 @@ export default function AssociadosGeralPage() {
     // Cache de detalhes
     const detailCacheRef = useRef<Map<string, ContractDetail>>(new Map());
 
-    // opções dos selects (populadas do que vier da API na listagem)
-    const cidadeOptions = useMemo(() => {
-        const set = new Set<string>();
-        for (const c of contracts) {
-            const v = String(c.cidade ?? "").trim();
-            if (v) set.add(v);
-        }
-        return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-    }, [contracts]);
-
-    const planoOptions = useMemo(() => {
-        const set = new Set<string>();
-        for (const c of contracts) {
-            const v = String(c.plano ?? "").trim();
-            if (v) set.add(v);
-        }
-        return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-    }, [contracts]);
-
-    const situacaoOptions = useMemo(() => {
-        const set = new Set<string>();
-        for (const c of contracts) {
-            const v = String(c.situacao ?? "").trim();
-            if (v) set.add(v);
-        }
-        return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-    }, [contracts]);
+    // ✅ selects agora usam as opções globais
+    const cidadeOptions = useMemo(() => filterOptions.cidades, [filterOptions.cidades]);
+    const planoOptions = useMemo(() => filterOptions.planos, [filterOptions.planos]);
+    const situacaoOptions = useMemo(() => filterOptions.situacoes, [filterOptions.situacoes]);
 
     const buildListUrl = useCallback(
         (pageNum: number) => {
@@ -1088,9 +1076,16 @@ export default function AssociadosGeralPage() {
             // busca
             url.searchParams.set("textToSearch", (debouncedQuery || "").trim());
 
-            // filtros aplicados (se o backend suportar, ele vai filtrar; se não suportar, não quebra)
+            // filtros aplicados (se o backend suportar, ele filtra; se não suportar, o fallback do front garante)
             if (appliedCidade) url.searchParams.set("cidade", appliedCidade);
-            if (appliedPlano) url.searchParams.set("plano", appliedPlano);
+
+            // "Plano" do usuário = cobertura (BÁSICO/LIGHT/PADRÃO OURO…)
+            // tentamos enviar como cobertura e como plano (backend pode aceitar um deles)
+            if (appliedPlano) {
+                url.searchParams.set("cobertura", appliedPlano);
+                url.searchParams.set("plano", appliedPlano);
+            }
+
             if (appliedSituacao) url.searchParams.set("situacao", appliedSituacao);
 
             return url.toString();
@@ -1135,9 +1130,67 @@ export default function AssociadosGeralPage() {
         [buildListUrl, headers, page]
     );
 
+    // ✅ carrega todas as opções de filtros varrendo todas as páginas
+    const loadFilterOptions = useCallback(async () => {
+        setLoadingFilters(true);
+
+        const cidades = new Set<string>();
+        const planos = new Set<string>(); // aqui guardamos cobertura ou plano
+        const situacoes = new Set<string>();
+
+        let pageNum = 1;
+        const hardLimit = 500;
+
+        try {
+            for (let i = 0; i < hardLimit; i++) {
+                const url = new URL(ENDPOINT);
+                url.searchParams.set("op", "contracts");
+                url.searchParams.set("page", String(pageNum));
+                url.searchParams.set("pageSize", "200");
+
+                const res = await fetch(url.toString(), {
+                    method: "GET",
+                    headers,
+                    cache: "no-store",
+                });
+
+                const data = await safeJson<any>(res);
+                if (!res.ok || !data?.ok) break;
+
+                const items = normalizeContractsPayload(data);
+                if (!items.length) break;
+
+                for (const c of items) {
+                    const city = String(c.cidade ?? "").trim();
+                    if (city) cidades.add(city);
+
+                    const planLike = String((c.cobertura ?? c.plano) ?? "").trim();
+                    if (planLike) planos.add(planLike);
+
+                    const sit = String(c.situacao ?? "").trim();
+                    if (sit) situacoes.add(sit);
+                }
+
+                const pag = parseXPagination(res.headers);
+                if (!pag?.hasNextPage) break;
+
+                pageNum = (pag.pageNumber || pageNum) + 1;
+            }
+
+            setFilterOptions({
+                cidades: Array.from(cidades).sort((a, b) => a.localeCompare(b, "pt-BR")),
+                planos: Array.from(planos).sort((a, b) => a.localeCompare(b, "pt-BR")),
+                situacoes: Array.from(situacoes).sort((a, b) => a.localeCompare(b, "pt-BR")),
+            });
+        } finally {
+            setLoadingFilters(false);
+        }
+    }, [headers]);
+
     // inicial
     useEffect(() => {
         loadContracts({ resetPage: true });
+        loadFilterOptions();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -1167,7 +1220,11 @@ export default function AssociadosGeralPage() {
 
         return contracts.filter((c) => {
             if (cCity && toUpperTrim(c.cidade) !== cCity) return false;
-            if (cPlan && toUpperTrim(c.plano) !== cPlan) return false;
+
+            // ✅ "Plano" do filtro = cobertura quando existir; senão plano
+            const planLike = toUpperTrim(c.cobertura ?? c.plano);
+            if (cPlan && planLike !== cPlan) return false;
+
             if (cSit && toUpperTrim(c.situacao) !== cSit) return false;
             return true;
         });
@@ -1327,6 +1384,11 @@ export default function AssociadosGeralPage() {
                         <IconRefresh className="size-4" />
                         Atualizar
                     </button>
+
+                    <button onClick={() => loadFilterOptions()} className={btnNeutral} title="Atualizar filtros" disabled={loadingFilters || loading}>
+                        <IconRefresh className="size-4" />
+                        Filtros
+                    </button>
                 </div>
             </div>
 
@@ -1338,19 +1400,19 @@ export default function AssociadosGeralPage() {
                         <label className="text-xs text-muted-foreground">Buscar (CPF, nome ou contrato)</label>
                         <div className="relative mt-1">
                             <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                            <input
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Digite aqui…"
-                                className={inputCls + " pl-9"}
-                            />
+                            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Digite aqui…" className={inputCls + " pl-9"} />
                         </div>
                     </div>
 
                     {/* Cidade */}
                     <div className="lg:col-span-2">
                         <label className="text-xs text-muted-foreground">Cidade</label>
-                        <select className={selectCls + " mt-1"} value={draftCidade} onChange={(e) => setDraftCidade(e.target.value)}>
+                        <select
+                            className={selectCls + " mt-1"}
+                            value={draftCidade}
+                            onChange={(e) => setDraftCidade(e.target.value)}
+                            disabled={loading || loadingFilters}
+                        >
                             <option value="">Todas</option>
                             {cidadeOptions.map((c) => (
                                 <option key={c} value={c}>
@@ -1360,10 +1422,15 @@ export default function AssociadosGeralPage() {
                         </select>
                     </div>
 
-                    {/* Plano */}
+                    {/* Plano (na prática: cobertura) */}
                     <div className="lg:col-span-2">
                         <label className="text-xs text-muted-foreground">Plano</label>
-                        <select className={selectCls + " mt-1"} value={draftPlano} onChange={(e) => setDraftPlano(e.target.value)}>
+                        <select
+                            className={selectCls + " mt-1"}
+                            value={draftPlano}
+                            onChange={(e) => setDraftPlano(e.target.value)}
+                            disabled={loading || loadingFilters}
+                        >
                             <option value="">Todos</option>
                             {planoOptions.map((p) => (
                                 <option key={p} value={p}>
@@ -1376,7 +1443,12 @@ export default function AssociadosGeralPage() {
                     {/* Situação */}
                     <div className="lg:col-span-2">
                         <label className="text-xs text-muted-foreground">Situação</label>
-                        <select className={selectCls + " mt-1"} value={draftSituacao} onChange={(e) => setDraftSituacao(e.target.value)}>
+                        <select
+                            className={selectCls + " mt-1"}
+                            value={draftSituacao}
+                            onChange={(e) => setDraftSituacao(e.target.value)}
+                            disabled={loading || loadingFilters}
+                        >
                             <option value="">Todas</option>
                             {situacaoOptions.map((s) => (
                                 <option key={s} value={s}>
@@ -1404,7 +1476,7 @@ export default function AssociadosGeralPage() {
                         Total contratos: <span className="font-semibold text-foreground ml-1">{totalContratos || "-"}</span>
                     </span>
 
-                    {(appliedCidade || appliedPlano || appliedSituacao) ? (
+                    {appliedCidade || appliedPlano || appliedSituacao ? (
                         <span className={badge + " border-muted bg-muted/20"}>
                             Filtros:{" "}
                             <span className="font-semibold text-foreground ml-1">
@@ -1416,12 +1488,20 @@ export default function AssociadosGeralPage() {
                             </span>
                         </span>
                     ) : (
-                        <span className={badge + " border-muted bg-muted/20"}>Filtros: <span className="font-semibold text-foreground ml-1">Nenhum</span></span>
+                        <span className={badge + " border-muted bg-muted/20"}>
+                            Filtros: <span className="font-semibold text-foreground ml-1">Nenhum</span>
+                        </span>
                     )}
 
                     <span className={badge + " border-muted bg-muted/20"}>
                         Nesta página: <span className="font-semibold text-foreground ml-1">{filteredContracts.length}</span>
                     </span>
+
+                    {loadingFilters ? (
+                        <span className={badge + " border-muted bg-muted/20"}>
+                            Carregando opções dos filtros…
+                        </span>
+                    ) : null}
                 </div>
             </div>
 
@@ -1433,9 +1513,7 @@ export default function AssociadosGeralPage() {
             ) : null}
 
             {!hasResults && !loading ? (
-                <div className={cardCls + " p-5 text-sm text-muted-foreground"}>
-                    Nenhum contrato retornado com os filtros atuais.
-                </div>
+                <div className={cardCls + " p-5 text-sm text-muted-foreground"}>Nenhum contrato retornado com os filtros atuais.</div>
             ) : (
                 <ContractsTable items={filteredContracts} onOpen={openDetail} />
             )}

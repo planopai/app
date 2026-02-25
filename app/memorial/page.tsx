@@ -12,27 +12,27 @@ import {
 
 const items = [
     {
-        title: "Velório Online / Painel",
+        title: "Painel",
         href: "/atendimento",
-        desc: "Personalize o painel e crie o Velório Online.",
+        desc: "Personalize o Painel",
         icon: IconHeadset,
     },
     {
         title: "Compartilhamento",
         href: "/salas",
-        desc: "Compartilhe o acesso ao Velório Online",
+        desc: "Acesso Ao Velório Online",
         icon: IconDoor,
     },
     {
         title: "Segurança",
         href: "/seguranca",
-        desc: "Defina e atualize as senhas das salas.",
+        desc: "Senhas do Velório Online",
         icon: IconShieldLock,
     },
     {
         title: "Mensagens",
         href: "/mensagens",
-        desc: "Aprove, exclua e organize mensagens.",
+        desc: "Aprove e Exclua Mensagens",
         icon: IconMessage2,
     },
 ];
@@ -48,7 +48,7 @@ export default function MemorialPage() {
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Memorial</h1>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Acesso rápido aos módulos do Memorial.
+                        Painel / Velório Online / Compartilhamento
                     </p>
                 </div>
             </header>

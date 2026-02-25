@@ -14,13 +14,13 @@ const items = [
     {
         title: "Materiais de Assistência",
         href: "/assistencia",
-        desc: "Administre todos os materiais usados na assistência",
+        desc: "Materiais Usados Na Assistência",
         icon: IconHeadset,
     },
     {
         title: "Estoque Geral",
         href: "/geral",
-        desc: "Administre todos os materiais do estoque",
+        desc: "Administre Todo o Estoque",
         icon: IconDoor,
     },
 

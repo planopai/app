@@ -12,13 +12,13 @@ const items = [
     {
         title: "Usuários",
         href: "/usuarios",
-        desc: "Gerencie contas, perfis e status de acesso.",
+        desc: "Gerencie Usuários e Status de Acesso.",
         icon: IconUserCog,
     },
     {
         title: "Permissões",
         href: "/permissoes",
-        desc: "Defina papéis e controle o que cada usuário pode fazer.",
+        desc: "Controle As Pernmissçoes de Cada Usuário",
         icon: IconShieldLock,
     },
 ];
@@ -34,7 +34,7 @@ export default function AdministrativoPage() {
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Administrativo</h1>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Acesso rápido aos módulos de administração do sistema.
+                        Usuários / Permissões
                     </p>
                 </div>
             </header>
