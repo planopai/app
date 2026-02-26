@@ -18,7 +18,7 @@ const items = [
         icon: IconUserStar,
     },
     {
-        title: "Parceiros",
+        title: "Descontos",
         href: "/parceiros",
         desc: "Lista de Parceiros",
         icon: IconUsersGroup,
@@ -54,10 +54,10 @@ export default function ClubePage() {
 
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">
-                        Clube PAI
+                        Relacionamento
                     </h1>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Acesso rápido aos módulos administrativos e benefícios do clube.
+                        Gestão de Associados, Parceiros e Descontos
                     </p>
                 </div>
             </header>

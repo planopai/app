@@ -18,7 +18,7 @@ const items = [
     {
         title: "Permissões",
         href: "/permissoes",
-        desc: "Controle As Pernmissçoes de Cada Usuário",
+        desc: "Permissões de Cada Usuário",
         icon: IconShieldLock,
     },
 ];

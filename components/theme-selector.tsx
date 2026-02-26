@@ -27,7 +27,7 @@ const DEFAULT_THEMES = [
     value: "green",
   },
   {
-    name: "Amber",
+    name: "Laranja",
     value: "amber",
   },
 ];
@@ -38,14 +38,14 @@ const SCALED_THEMES = [
     value: "default-scaled",
   },
   {
-    name: "Azul",
+    name: "Padrão 02",
     value: "blue-scaled",
   },
 ];
 
 const MONO_THEMES = [
   {
-    name: "Mono",
+    name: "Personalizado",
     value: "mono-scaled",
   },
 ];
@@ -56,7 +56,7 @@ export function ThemeSelector() {
   return (
     <div className="flex items-center gap-2">
       <Label htmlFor="theme-selector" className="sr-only">
-        Theme
+        Tema
       </Label>
       <Select value={activeTheme} onValueChange={setActiveTheme}>
         <SelectTrigger
@@ -67,12 +67,12 @@ export function ThemeSelector() {
           <span className="text-muted-foreground hidden sm:block">
             Selecione um Tema:
           </span>
-          <span className="text-muted-foreground block sm:hidden">Theme</span>
+          <span className="text-muted-foreground block sm:hidden">Tema</span>
           <SelectValue placeholder="Select a theme" />
         </SelectTrigger>
         <SelectContent align="end">
           <SelectGroup>
-            <SelectLabel>Default</SelectLabel>
+            <SelectLabel>Padrão</SelectLabel>
             {DEFAULT_THEMES.map((theme) => (
               <SelectItem key={theme.name} value={theme.value}>
                 {theme.name}
@@ -81,7 +81,7 @@ export function ThemeSelector() {
           </SelectGroup>
           <SelectSeparator />
           <SelectGroup>
-            <SelectLabel>Scaled</SelectLabel>
+            <SelectLabel>Dimensionada</SelectLabel>
             {SCALED_THEMES.map((theme) => (
               <SelectItem key={theme.name} value={theme.value}>
                 {theme.name}
@@ -89,7 +89,7 @@ export function ThemeSelector() {
             ))}
           </SelectGroup>
           <SelectGroup>
-            <SelectLabel>Monospaced</SelectLabel>
+            <SelectLabel>Fonte Espçada</SelectLabel>
             {MONO_THEMES.map((theme) => (
               <SelectItem key={theme.name} value={theme.value}>
                 {theme.name}

@@ -1814,8 +1814,8 @@ export default function AcompanhamentoPage() {
     <div className="p-6">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Gestão de Atendimentos</h1>
-          <p className="text-sm text-muted-foreground">Cadastre, acompanhe e atualize o status dos atendimentos.</p>
+          <h1 className="text-2xl font-semibold">Atendimentos</h1>
+          <p className="text-sm text-muted-foreground">Cadastro, Edição e Etapas</p>
         </div>
         <button
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"

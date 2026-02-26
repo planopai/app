@@ -256,10 +256,11 @@ export default function HomePage() {
       </section>
 
       <section className="mt-6 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur">
-        <h4 className="mb-1 text-sm font-semibold">Dicas Rápidas Para Usuários</h4>
+        <h4 className="mb-1 text-sm font-semibold">Dicas Para Solução de Problemas No App</h4>
         <ul className="text-sm text-muted-foreground">
-          <li className="mb-1">• Reiniciar sua sessão pode corrigir eventuais problemas.</li>
-          <li>• Desative e ative novamente sua conexão para restaurar a estabilidade.</li>
+          <li className="mb-1">• Saia da Conta e Faça Login Novamente.</li>
+          <li>• Desative e Ative Novamente a Internet.</li>
+          <li>• Limpe o Cache do App</li>
         </ul>
       </section>
     </div>
