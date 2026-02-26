@@ -28,7 +28,7 @@ const items = [
     },
     {
         title: "Atendimentos",
-        href: "/atendimentos",
+        href: "/acompanhamento",
         icon: IconClipboardList,
     },
     {
