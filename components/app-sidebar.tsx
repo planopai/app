@@ -2,11 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { IconHelp } from "@tabler/icons-react";
+import { usePathname, useRouter } from "next/navigation";
+import { IconHelp, IconLogout } from "@tabler/icons-react";
 
-import { NavMain } from "@/components/nav-main";
-import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
@@ -20,8 +18,32 @@ import {
 
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { LINKS } from "@/app/_perms/links";
+import { NavUser } from "@/components/nav-user";
+
+/**
+ * Ajuste esperado do LINKS:
+ * LINKS: Array<{
+ *   slug: string;      // perm key
+ *   label: string;     // texto do menu
+ *   href: string;      // rota
+ *   Icon?: any;        // componente de ícone (Tabler/Lucide/etc)
+ *   group?: string;    // (opcional) categoria tipo "PRINCIPAL", "ESTUDO", ...
+ * }>
+ */
+
+type NavItem = {
+  name: string;
+  href: string;
+  icon?: React.ComponentType<{ className?: string; size?: number } | any>;
+};
+
+type NavGroup = {
+  category: string;
+  items: NavItem[];
+};
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname();
   const router = useRouter();
   const sidebar = useSidebar() as any;
   const { perms, has } = usePerms();
@@ -36,10 +58,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const handleNavigateMobile = React.useCallback(
     (href: string, e?: React.MouseEvent<HTMLAnchorElement>) => {
+      // permite abrir em nova aba/janela normalmente
       if (e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1) return;
+
       const isMobile: boolean =
         !!sidebar?.isMobile ||
-        (typeof window !== "undefined" && window.matchMedia?.("(max-width: 1024px)")?.matches) ||
+        (typeof window !== "undefined" &&
+          window.matchMedia?.("(max-width: 1024px)")?.matches) ||
         false;
 
       if (isMobile) {
@@ -50,6 +75,18 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     },
     [router, sidebar?.isMobile, closeMobileNow]
   );
+
+  const isActive = React.useCallback(
+    (href: string) => (href === "/" ? pathname === "/" : pathname?.startsWith(href)),
+    [pathname]
+  );
+
+  // 👇 seu logout real aqui (supabase / next-auth / api / etc)
+  async function logout() {
+    // ex: await supabase.auth.signOut()
+    closeMobileNow();
+    router.push("/auth");
+  }
 
   // Loading state
   if (perms == null) {
@@ -80,18 +117,28 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     );
   }
 
-  // Filtra os itens com base nas permissões
-  const visible = LINKS.filter(l => has(l.slug));
+  // 1) Filtra por permissão
+  const visible = LINKS.filter((l) => has(l.slug));
 
-  const navMain = visible.map(v => ({
-    title: v.label,
-    url: v.href,
-    icon: v.Icon,
-  }));
+  // 2) Agrupa por categoria (group), caindo em "MENU" se não existir
+  const groups: NavGroup[] = Object.values(
+    visible.reduce((acc, l) => {
+      const category = (l as any).group ?? "MENU";
+      acc[category] ??= { category, items: [] as NavItem[] };
+
+      acc[category].items.push({
+        name: l.label,
+        href: l.href,
+        icon: l.Icon,
+      });
+
+      return acc;
+    }, {} as Record<string, NavGroup>)
+  );
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      {/* Cabeçalho: logo */}
+      {/* HEADER (logo) */}
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -108,12 +155,43 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
 
-      {/* Menu principal */}
+      {/* CONTENT (menu com categorias, estilo do seu 1º sidebar) */}
       <SidebarContent>
-        <NavMain items={navMain} onNavigate={handleNavigateMobile} />
+        <div className="py-3">
+          {groups.map((group) => (
+            <div key={group.category} className="mb-5">
+              {/* Mostra o label da categoria quando não está colapsado (shadcn usa data-state) */}
+              <div className="px-3 mb-2">
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]/sidebar:hidden">
+                  {group.category}
+                </p>
+              </div>
 
-        {/* Rodapé visual de ajuda */}
-        <div className="mt-auto px-2">
+              <div className="space-y-1 px-2">
+                {group.items.map((item) => {
+                  const active = isActive(item.href);
+                  const Icon = item.icon;
+
+                  return (
+                    <SidebarMenu key={item.name}>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild tooltip={item.name} data-active={active}>
+                          <Link href={item.href} onClick={(e) => handleNavigateMobile(item.href, e)}>
+                            {Icon ? <Icon className="!size-5" /> : null}
+                            <span>{item.name}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* FOOTER dentro do content (ajuda + sair), igual seu padrão */}
+        <div className="mt-auto px-2 pb-2">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild>
@@ -123,11 +201,21 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={logout}
+                className="text-red-600 hover:text-red-700 data-[active=true]:text-red-700"
+              >
+                <IconLogout className="!size-5" />
+                <span>Sair</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </div>
       </SidebarContent>
 
-      {/* Usuário (opcional) */}
+      {/* USER */}
       <SidebarFooter>
         <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
       </SidebarFooter>
