@@ -37,7 +37,7 @@ type PoolStatsResp = {
 
 type ApiResp<T = any> = { ok: boolean; error?: string } & T;
 
-// ✅ ajuste este caminho para onde você salvou o PHP:
+// ✅ ajuste este caminho para onde você salvou o PHP atual:
 const API_URL =
     process.env.NEXT_PUBLIC_SORTEIOS_API_URL ||
     "https://api.planoassistencialintegrado.com.br/sorteios.php";
