@@ -137,9 +137,7 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold tracking-tight">Início</h1>
             </div>
 
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              Bem-vindo! Selecione Uma Opção Abaixo
-            </p>
+            
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-right shadow-sm dark:border-gray-800 dark:bg-gray-900">
