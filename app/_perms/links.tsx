@@ -8,7 +8,9 @@ import {
     IconFlower,
     IconReportAnalytics,
     IconSettings,
-    IconBuildingWarehouse, // ✅ estoque
+    IconBuildingWarehouse,
+    IconBriefcase, // Serviços Funerários
+    IconId,        // Plano
 } from "@tabler/icons-react";
 
 export type LinkItem = {
@@ -34,6 +36,20 @@ export const LINKS: LinkItem[] = [
         Icon: IconTimeline,
     },
 
+    // novos grupos (home)
+    {
+        slug: "servicos-funerarios",
+        label: "Serviços Funerários",
+        href: "/servicos-funerarios",
+        Icon: IconBriefcase,
+    },
+    {
+        slug: "plano",
+        label: "Plano",
+        href: "/plano",
+        Icon: IconId,
+    },
+
     // cards soltos (home)
     { slug: "memorial", label: "Memorial", href: "/memorial", Icon: IconBuildingSkyscraper },
     { slug: "clube", label: "Clube PAI", href: "/clube", Icon: IconUsersGroup },
@@ -44,11 +60,9 @@ export const LINKS: LinkItem[] = [
     { slug: "coroa-de-flores", label: "Coroa de Flores", href: "/coroa-de-flores", Icon: IconFlower },
     { slug: "relatorio", label: "Relatório", href: "/relatorio", Icon: IconReportAnalytics },
 
-    // ✅ ESTOQUE (novo)
+    // estoque
     { slug: "estoque", label: "Estoque", href: "/estoque", Icon: IconBuildingWarehouse },
 
     // administrativo
     { slug: "administrativo", label: "Administrativo", href: "/administrativo", Icon: IconSettings },
 ];
-
-// se quiser listar "inicio" também, adicione { slug:'inicio', label:'Início', href:'/inicio', Icon: ... }
