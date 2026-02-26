@@ -41,7 +41,6 @@ type AppUser = {
   name: string;
   email?: string;
   avatar?: string;
-  planLabel?: string; // ex: "Gratuito"
 };
 
 type MenuItem = {
@@ -60,17 +59,22 @@ const MENU_GROUPS: MenuGroup[] = [
   {
     category: "ATENDIMENTO",
     items: [
-      { slug: "quadro_atendimento", label: "Quadro de Atendimento", href: "/quadro-de-atendimento", Icon: IconClipboardList },
+      {
+        slug: "quadro_de_atendimento",
+        label: "Quadro de Atendimento",
+        href: "/quadro-atendimento",
+        Icon: IconClipboardList,
+      },
       { slug: "acompanhamento", label: "Acompanhamento", href: "/acompanhamento", Icon: IconActivity },
       { slug: "memorial", label: "Memorial", href: "/memorial", Icon: IconBooks },
       { slug: "obituario", label: "Obituário", href: "/obituario", Icon: IconFileInvoice },
-      { slug: "coroa_flores", label: "Coroa de Flores", href: "/coroa-de-flores", Icon: IconFlower },
+      { slug: "coroa_de_flores", label: "Coroa de Flores", href: "/coroa-de-flores", Icon: IconFlower },
     ],
   },
   {
     category: "ASSOCIADOS",
     items: [
-      { slug: "clube_pai", label: "Clube PAI", href: "/clube-pai", Icon: IconBuildingCommunity },
+      { slug: "relacionamento", label: "Relacionamento", href: "/clube", Icon: IconBuildingCommunity },
       { slug: "leads", label: "Leads", href: "/leads", Icon: IconUsersGroup },
     ],
   },
@@ -103,7 +107,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       name: "Tharles",
       email: "",
       avatar: "",
-      planLabel: "Gratuito",
     }),
     []
   );
@@ -137,6 +140,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     [pathname]
   );
 
+  // ✅ MESMA FUNÇÃO DO "SAIR" (dos 3 pontinhos), só que fora e escrito "Sair da Conta"
   async function logout() {
     // ex: await supabase.auth.signOut()
     closeMobileNow();
@@ -161,7 +165,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               {initialsFromName("Usuário")}
             </div>
             <div className="leading-tight group-data-[collapsible=icon]/sidebar:hidden">
-              <p className="text-[10px] uppercase text-muted-foreground">Carregando</p>
               <p className="text-[14px] font-semibold">Usuário</p>
             </div>
           </div>
@@ -184,7 +187,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      {/* HEADER: logo + user em cima (remove 3 pontinhos de baixo) */}
+      {/* HEADER: logo + user em cima (sem "Gratuito") */}
       <SidebarHeader className="px-3 pt-3">
         <div className="flex items-center justify-between gap-2 px-2 py-2">
           <Link href="/" onClick={(e) => handleNavigateMobile("/", e)} className="flex items-center">
@@ -203,7 +206,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </div>
 
           <div className="leading-tight group-data-[collapsible=icon]/sidebar:hidden">
-            <p className="text-[10px] uppercase text-muted-foreground">{user.planLabel ?? ""}</p>
             <p className="text-[14px] font-semibold">{user.name}</p>
           </div>
         </div>
@@ -258,7 +260,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           ))}
         </div>
 
-        {/* Ações do rodapé (ajuda + sair) com linha, igual seu padrão */}
+        {/* Ações do rodapé (ajuda + sair da conta) com linha */}
         <div className="mt-auto px-2 pb-2">
           <div className="mx-0 mb-3 border-t" />
 
@@ -275,11 +277,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuItem>
               <SidebarMenuButton
                 onClick={logout}
-                tooltip="Sair"
+                tooltip="Sair da Conta"
                 className="text-red-600 hover:bg-red-500/10 hover:text-red-700"
               >
                 <IconLogout className="!size-5" />
-                <span>Sair</span>
+                <span>Sair da Conta</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
