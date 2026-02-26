@@ -1,73 +1,68 @@
+// app/_perms/links.tsx
 import {
-    IconLayoutDashboard,
-    IconClipboardList,
-    IconFileText,
+    IconDeviceDesktopAnalytics,
+    IconTimeline,
     IconBuildingSkyscraper,
-    IconFlower,
-    IconBell,
-    IconUserStar,
+    IconFileText,
     IconUsersGroup,
-    IconSend,
-    IconStethoscope,
-    IconGift,
-    IconUserCog,
-    IconShieldLock,
+    IconFlower,
     IconReportAnalytics,
-    IconHeadset,
-    IconDoor,
+    IconSettings,
+    IconBuildingWarehouse,
+    IconBriefcase, // Serviços Funerários
+    IconId,        // Plano
 } from "@tabler/icons-react";
 
 export type LinkItem = {
-    slug: string;
-    title: string;
+    slug: string; // deve bater com permissoes.pagina no MySQL
+    label: string;
     href: string;
     Icon: any;
 };
 
-export type LinkGroup = {
-    category: string;
-    items: LinkItem[];
-};
-
-export const LINK_GROUPS: LinkGroup[] = [
+// defina aqui os itens visíveis na Home/Menu
+export const LINKS: LinkItem[] = [
+    // bloco de cima (home)
     {
-        category: "Serviços Funerários",
-        items: [
-            { slug: "quadro-acompanhamento", title: "Quadro de Acompanhamento", href: "/quadro-acompanhamento", Icon: IconLayoutDashboard },
-            { slug: "acompanhamento", title: "Atendimentos", href: "/acompanhamento", Icon: IconClipboardList },
-            { slug: "obituario", title: "Obituário", href: "/obituario", Icon: IconFileText },
-            { slug: "memorial", title: "Memorial", href: "/memorial", Icon: IconBuildingSkyscraper },
-            { slug: "coroa-de-flores", title: "Coroa de Flores", href: "/coroa-de-flores", Icon: IconFlower },
-            { slug: "avisos", title: "Avisos", href: "/avisos", Icon: IconBell },
-        ],
+        slug: "quadro-atendimento",
+        label: "Quadro de Atendimento",
+        href: "/quadro-acompanhamento",
+        Icon: IconDeviceDesktopAnalytics,
+    },
+    {
+        slug: "acompanhamento",
+        label: "Acompanhamento",
+        href: "/acompanhamento",
+        Icon: IconTimeline,
     },
 
+    // novos grupos (home)
     {
-        category: "Plano",
-        items: [
-            { slug: "associados", title: "Associados", href: "/associados", Icon: IconUserStar },
-            { slug: "parceiros", title: "Descontos", href: "/parceiros", Icon: IconUsersGroup },
-            { slug: "noticias", title: "Enviar Notícias", href: "/noticias", Icon: IconSend },
-            { slug: "medicos", title: "Médicos Parceiros", href: "/medicos", Icon: IconStethoscope },
-            { slug: "sorteios", title: "Sorteios", href: "/sorteios", Icon: IconGift },
-        ],
+        slug: "servicos-funerarios",
+        label: "Serviços Funerários",
+        href: "/servicos-funerarios",
+        Icon: IconBriefcase,
+    },
+    {
+        slug: "plano",
+        label: "Plano",
+        href: "/plano",
+        Icon: IconId,
     },
 
-    {
-        category: "Administrativo",
-        items: [
-            { slug: "usuarios", title: "Usuários", href: "/usuarios", Icon: IconUserCog },
-            { slug: "permissoes", title: "Permissões", href: "/permissoes", Icon: IconShieldLock },
-            { slug: "relatorio", title: "Relatório", href: "/relatorio", Icon: IconReportAnalytics },
-            { slug: "leads", title: "Leads", href: "/leads", Icon: IconUsersGroup },
-        ],
-    },
+    // cards soltos (home)
+    { slug: "memorial", label: "Memorial", href: "/memorial", Icon: IconBuildingSkyscraper },
+    { slug: "clube", label: "Clube PAI", href: "/clube", Icon: IconUsersGroup },
 
-    {
-        category: "Estoque",
-        items: [
-            { slug: "assistencia", title: "Materiais de Assistência", href: "/assistencia", Icon: IconHeadset },
-            { slug: "geral", title: "Estoque Geral", href: "/geral", Icon: IconDoor },
-        ],
-    },
+    // bloco de baixo (home)
+    { slug: "obituario", label: "Obituário", href: "/obituario", Icon: IconFileText },
+    { slug: "leads", label: "Leads", href: "/leads", Icon: IconUsersGroup },
+    { slug: "coroa-de-flores", label: "Coroa de Flores", href: "/coroa-de-flores", Icon: IconFlower },
+    { slug: "relatorio", label: "Relatório", href: "/relatorio", Icon: IconReportAnalytics },
+
+    // estoque
+    { slug: "estoque", label: "Estoque", href: "/estoque", Icon: IconBuildingWarehouse },
+
+    // administrativo
+    { slug: "administrativo", label: "Administrativo", href: "/administrativo", Icon: IconSettings },
 ];
