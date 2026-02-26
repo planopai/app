@@ -4,67 +4,105 @@ import Link from "next/link";
 import {
     IconBuildingSkyscraper,
     IconHeadset,
-    IconShieldLock,
-    IconMessage2,
     IconDoor,
-    IconChevronRight,
 } from "@tabler/icons-react";
 
+/* ========= Ícone padrão ========= */
+function QuickIcon({ children }: { children: React.ReactNode }) {
+    return (
+        <span
+            className="
+        grid h-11 w-11 place-items-center rounded-full
+        bg-sky-100 text-sky-700
+        transition-colors
+        group-hover:bg-sky-600 group-hover:text-white
+        dark:bg-sky-900/30 dark:text-sky-200
+        dark:group-hover:bg-sky-600
+      "
+        >
+            {children}
+        </span>
+    );
+}
+
+/* ========= ITENS ========= */
 const items = [
     {
         title: "Materiais de Assistência",
         href: "/assistencia",
-        desc: "Materiais Usados Na Assistência",
+        desc: "Materiais usados na assistência",
         icon: IconHeadset,
     },
     {
         title: "Estoque Geral",
         href: "/geral",
-        desc: "Administre Todo o Estoque",
+        desc: "Administre todo o estoque",
         icon: IconDoor,
     },
-
 ];
 
-export default function MemorialPage() {
+export default function EstoquePage() {
     return (
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-            {/* Cabeçalho */}
-            <header className="mb-6 flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl border bg-background/70">
-                    <IconBuildingSkyscraper className="size-6 text-primary" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Estoque</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Gerenciamento de Estoque.
-                    </p>
-                </div>
-            </header>
+        <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
+            <div className="mx-auto max-w-6xl px-5 py-5">
 
-            {/* Grid 4  */}
-            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {items.map(({ title, href, desc, icon: Icon }) => (
-                    <Link
-                        key={href}
-                        href={href}
-                        className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-                    >
-                        <div className="flex items-start gap-3">
-                            <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
-                                <Icon className="size-6 text-primary" />
-                            </div>
-                            <div className="flex-1">
-                                <div className="flex items-center justify-between gap-3">
-                                    <h3 className="text-base font-semibold leading-tight">{title}</h3>
-                                    <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
+                {/* HEADER */}
+                <header className="mb-5 flex items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                        <IconBuildingSkyscraper className="size-5 text-primary" />
+                    </div>
+
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">
+                            Estoque
+                        </h1>
+
+                        <p className="mt-1 text-[13px] text-muted-foreground">
+                            Gerenciamento de estoque
+                        </p>
+                    </div>
+                </header>
+
+                {/* ========= GRID PADRÃO APP ========= */}
+                <section>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                        {items.map(({ title, href, desc, icon: Icon }) => (
+                            <Link
+                                key={href}
+                                href={href}
+                                className="
+                  group flex flex-col items-center justify-center
+                  gap-2.5
+                  rounded-2xl
+                  border border-gray-200
+                  bg-white
+                  py-4 px-3
+                  shadow-sm
+                  transition-all
+                  hover:-translate-y-[1px]
+                  hover:shadow-md
+                  dark:border-gray-800 dark:bg-gray-900
+                "
+                            >
+                                <QuickIcon>
+                                    <Icon size={22} />
+                                </QuickIcon>
+
+                                <div className="text-center">
+                                    <p className="text-[13px] font-extrabold text-gray-900 dark:text-white leading-tight">
+                                        {title}
+                                    </p>
+
+                                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                        {desc}
+                                    </p>
                                 </div>
-                                <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
-                            </div>
-                        </div>
-                    </Link>
-                ))}
-            </section>
+                            </Link>
+                        ))}
+                    </div>
+                </section>
+
+            </div>
         </div>
     );
 }

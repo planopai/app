@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { Nunito } from "next/font/google";
 
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -12,7 +13,20 @@ import RegisterSW from "@/components/RegisterSW";
 import { PermsProvider } from "./_perms/PermsProvider";
 import { getInitialPerms } from "./_perms/getPermsServer";
 
-// Garante que o layout NUNCA seja estático (evita cache e flicker)
+/* ===========================
+   ✅ Fonte Nunito (GLOBAL)
+=========================== */
+const nunito = Nunito({
+  subsets: ["latin"],
+  weight: ["300", "400", "600", "700", "800", "900"],
+  variable: "--font-nunito",
+  display: "swap",
+});
+
+/* ===========================
+   Config Next
+=========================== */
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -48,17 +62,17 @@ export default async function RootLayout({
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
 
-  // Chave do usuário (cookie setado pelo seu backend)
   const uidCookie = cookieStore.get("pai_uid")?.value || null;
 
-  // SSR: pega permissões com os cookies da requisição
-  const initialPerms = await getInitialPerms(); // [] se não logado
+  const initialPerms = await getInitialPerms();
 
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html
+      lang="pt-BR"
+      suppressHydrationWarning
+      className={nunito.variable} // ✅ injeta variável CSS
+    >
       <head>
-        {/* PWA Essentials */}
-        {/* ✅ manter consistente com metadata.manifest */}
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#059de0" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -73,14 +87,12 @@ export default async function RootLayout({
 
       <body
         className={cn(
-          "bg-background overscroll-none font-sans antialiased",
+          "bg-background overscroll-none antialiased font-[var(--font-nunito)]", // ✅ NUNITO GLOBAL
           activeThemeValue ? `theme-${activeThemeValue}` : "",
           isScaled ? "theme-scaled" : ""
         )}
       >
-        {/* ✅ registra o SW sempre (sem isso, o app pode não abrir offline) */}
         <RegisterSW />
-
         <OneSignalInit />
 
         <ThemeProvider
@@ -91,13 +103,14 @@ export default async function RootLayout({
           enableColorScheme
         >
           <ActiveThemeProvider initialTheme={activeThemeValue}>
-            {/* key = uidCookie → se mudar de usuário, remonta tudo. */}
             <PermsProvider
               key={uidCookie ?? "nouid"}
               userKey={uidCookie}
               initialPerms={initialPerms}
             >
-              <AppShell hideOnRoutes={["/login"]}>{children}</AppShell>
+              <AppShell hideOnRoutes={["/login"]}>
+                {children}
+              </AppShell>
             </PermsProvider>
           </ActiveThemeProvider>
         </ThemeProvider>
