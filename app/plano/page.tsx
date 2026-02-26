@@ -72,9 +72,7 @@ export default function PlanoPage() {
                             Plano
                         </h1>
 
-                        <p className="mt-1 text-[13px] text-muted-foreground">
-                            Gestão do Plano e Benefícios
-                        </p>
+                        
                     </div>
                 </header>
 

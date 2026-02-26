@@ -79,9 +79,7 @@ export default function ServicosFunerariosPage() {
                             Serviços Funerários
                         </h1>
 
-                        <p className="mt-1 text-[13px] text-muted-foreground">
-                            Acesso rápido às rotinas operacionais
-                        </p>
+                        
                     </div>
                 </header>
 

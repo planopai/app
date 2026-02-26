@@ -68,9 +68,7 @@ export default function AdministrativoPage() {
                             Administrativo
                         </h1>
 
-                        <p className="mt-1 text-[13px] text-muted-foreground">
-                            Usuários / Permissões
-                        </p>
+                        
                     </div>
                 </header>
 

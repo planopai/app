@@ -32,25 +32,21 @@ const items = [
     {
         title: "Painel",
         href: "/atendimento",
-        desc: "Personalize o painel",
         icon: IconHeadset,
     },
     {
         title: "Compartilhamento",
         href: "/salas",
-        desc: "Acesso ao velório online",
         icon: IconDoor,
     },
     {
         title: "Segurança",
         href: "/seguranca",
-        desc: "Senhas do velório online",
         icon: IconShieldLock,
     },
     {
         title: "Mensagens",
         href: "/mensagens",
-        desc: "Aprove e exclua mensagens",
         icon: IconMessage2,
     },
 ];
@@ -71,16 +67,14 @@ export default function MemorialPage() {
                             Memorial
                         </h1>
 
-                        <p className="mt-1 text-[13px] text-muted-foreground">
-                            Painel • Velório Online • Compartilhamento
-                        </p>
+                        
                     </div>
                 </header>
 
                 {/* ========= QUICK MENU GRID ========= */}
                 <section>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                        {items.map(({ title, href, desc, icon: Icon }) => (
+                        {items.map(({ title, href, icon: Icon }) => (
                             <Link
                                 key={href}
                                 href={href}
@@ -102,15 +96,9 @@ export default function MemorialPage() {
                                     <Icon size={22} />
                                 </QuickIcon>
 
-                                <div className="text-center">
-                                    <p className="text-[13px] font-extrabold text-gray-900 dark:text-white leading-tight">
-                                        {title}
-                                    </p>
-
-                                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                        {desc}
-                                    </p>
-                                </div>
+                                <p className="text-center text-[13px] font-extrabold text-gray-900 dark:text-white leading-tight">
+                                    {title}
+                                </p>
                             </Link>
                         ))}
                     </div>
