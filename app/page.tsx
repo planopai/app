@@ -28,14 +28,14 @@ const shortcutsTop: Shortcut[] = [
   {
     title: "Quadro de Atendimento",
     href: "/quadro-atendimento",
-    desc: "Acompanhe o status dos atendimentos em tempo real.",
+    desc: "Status Dos Atendimentos",
     icon: IconDeviceDesktopAnalytics,
     slug: "quadro-atendimento",
   },
   {
     title: "Acompanhamento",
     href: "/acompanhamento",
-    desc: "Linha do tempo e progresso das etapas.",
+    desc: "Progresso Das Etapas.",
     icon: IconTimeline,
     slug: "acompanhamento",
   },
@@ -45,35 +45,35 @@ const shortcutsBottom: Shortcut[] = [
   {
     title: "Obituário",
     href: "/obituario",
-    desc: "Crie e exporte peças para redes sociais.",
+    desc: "Peças Para Redes Sociais",
     icon: IconFileText,
     slug: "obituario",
   },
   {
     title: "Leads",
     href: "/leads",
-    desc: "Pesquise, ordene e exporte contatos.",
+    desc: "Usuários do Velório Online",
     icon: IconUsersGroup,
     slug: "leads",
   },
   {
     title: "Coroa de Flores",
     href: "/coroa-de-flores",
-    desc: "Gerencie pedidos e catálogo de coroas.",
+    desc: "Visualize Os Pedidos",
     icon: IconFlower,
     slug: "coroa-de-flores",
   },
   {
     title: "Relatório",
     href: "/relatorio",
-    desc: "Indicadores, métricas e exportações.",
+    desc: "Indicadores e Métricas",
     icon: IconReportAnalytics,
     slug: "relatorio",
   },
   {
     title: "Estoque",
     href: "/estoque",
-    desc: "Controle geral do estoque",
+    desc: "Controle de Estoque",
     icon: IconReportAnalytics,
     slug: "estoque",
   },
@@ -156,7 +156,7 @@ export default function HomePage() {
             <h1 className="text-2xl font-bold tracking-tight">Início</h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Bem-vindo! Selecione um módulo abaixo para começar.
+            Bem-vindo! Selecione Uma Opção Abaixo
           </p>
         </div>
         <div className="rounded-xl border bg-card/60 px-4 py-2 text-right shadow-sm backdrop-blur">
@@ -203,7 +203,7 @@ export default function HomePage() {
                   <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Acesse Atendimento, Salas, Segurança e Mensagens.
+                  Painel, Velório Online e Mensagens
                 </p>
               </div>
             </div>
@@ -222,11 +222,11 @@ export default function HomePage() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold leading-tight">Clube PAI</h3>
+                  <h3 className="text-base font-semibold leading-tight">Relacionamento</h3>
                   <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Benefícios, parceiros e gestão do clube.
+                  Gestão de Parceiros e Noticias
                 </p>
               </div>
             </div>
