@@ -2,87 +2,107 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  IconHome,
-  IconDeviceDesktopAnalytics,
-  IconTimeline,
-  IconBuildingSkyscraper,
-  IconFileText,
-  IconUsersGroup,
-  IconFlower,
-  IconReportAnalytics,
-  IconChevronRight,
-} from "@tabler/icons-react";
-
+import { IconHome } from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
 
-type Shortcut = {
-  title: string;
+/* ========= Ações rápidas (mesmo padrão) ========= */
+function QuickIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="grid h-11 w-11 place-items-center rounded-full bg-sky-100 text-sky-700 transition-colors group-hover:bg-sky-600 group-hover:text-white sm:h-12 sm:w-12 dark:bg-sky-900/30 dark:text-sky-200 dark:group-hover:bg-sky-600 dark:group-hover:text-white">
+      {children}
+    </span>
+  );
+}
+
+type QuickAction = {
+  label: string;
   href: string;
-  desc: string;
-  icon: any;
   slug: string; // usado para checar permissão
+  icon: React.ReactNode;
 };
 
-const shortcutsTop: Shortcut[] = [
+const quickActions: QuickAction[] = [
   {
-    title: "Quadro de Atendimento",
-    href: "/quadro-atendimento",
-    desc: "Status Dos Atendimentos",
-    icon: IconDeviceDesktopAnalytics,
-    slug: "quadro-atendimento",
+    label: "Serviços Funerários",
+    href: "/servicos-funerarios",
+    slug: "servicos-funerarios",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M7 7h10M8.5 10h7M10 14h4"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M6 19V7a2 2 0 012-2h8a2 2 0 012 2v12"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M8 19h8"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
   },
   {
-    title: "Acompanhamento",
-    href: "/acompanhamento",
-    desc: "Progresso Das Etapas.",
-    icon: IconTimeline,
-    slug: "acompanhamento",
-  },
-];
-
-const shortcutsBottom: Shortcut[] = [
-  {
-    title: "Obituário",
-    href: "/obituario",
-    desc: "Peças Para Redes Sociais",
-    icon: IconFileText,
-    slug: "obituario",
-  },
-  {
-    title: "Leads",
-    href: "/leads",
-    desc: "Usuários do Velório Online",
-    icon: IconUsersGroup,
-    slug: "leads",
+    label: "Plano",
+    href: "/plano",
+    slug: "plano",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path d="M8 8h8M8 12h8M8 16h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
   },
   {
-    title: "Coroa de Flores",
-    href: "/coroa-de-flores",
-    desc: "Visualize Os Pedidos",
-    icon: IconFlower,
-    slug: "coroa-de-flores",
-  },
-  {
-    title: "Relatório",
-    href: "/relatorio",
-    desc: "Indicadores e Métricas",
-    icon: IconReportAnalytics,
-    slug: "relatorio",
-  },
-  {
-    title: "Estoque",
-    href: "/estoque",
-    desc: "Controle de Estoque",
-    icon: IconReportAnalytics,
-    slug: "estoque",
-  },
-  {
-    title: "Adnminitrativo",
+    label: "Administrativo",
     href: "/administrativo",
-    desc: "Controle de Estoque",
-    icon: IconReportAnalytics,
+    slug: "administrativo",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M4 20V9a2 2 0 012-2h12a2 2 0 012 2v11"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path d="M4 13h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    label: "Estoque",
+    href: "/estoque",
     slug: "estoque",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path d="M7 8l5 3 5-3" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M12 11v10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
   },
 ];
 
@@ -104,6 +124,7 @@ export default function HomePage() {
           })
           .replace(/\./g, ":")
       );
+
       const days = [
         "Domingo",
         "Segunda-feira",
@@ -113,12 +134,14 @@ export default function HomePage() {
         "Sexta-feira",
         "Sábado",
       ];
+
       setDateStr(
         `${days[dt.getDay()]}, ${String(dt.getDate()).padStart(2, "0")}/${String(
           dt.getMonth() + 1
         ).padStart(2, "0")}/${dt.getFullYear()}`
       );
     };
+
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
@@ -132,15 +155,13 @@ export default function HomePage() {
           <div className="animate-pulse h-8 w-40 rounded bg-muted" />
           <div className="animate-pulse h-10 w-32 rounded bg-muted" />
         </header>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="rounded-2xl border p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="h-11 w-11 rounded-xl border bg-muted" />
-                <div className="flex-1">
-                  <div className="h-4 w-40 rounded bg-muted" />
-                  <div className="mt-2 h-3 w-56 rounded bg-muted" />
-                </div>
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-full bg-muted" />
+                <div className="h-4 w-36 rounded bg-muted" />
               </div>
             </div>
           ))}
@@ -149,10 +170,7 @@ export default function HomePage() {
     );
   }
 
-  const top = shortcutsTop.filter((s) => has(s.slug));
-  const bottom = shortcutsBottom.filter((s) => has(s.slug));
-  const canMemorial = has("memorial");
-  const canClube = has("clube");
+  const actions = quickActions.filter((a) => has(a.slug));
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
@@ -162,101 +180,26 @@ export default function HomePage() {
             <IconHome className="size-6 text-primary" />
             <h1 className="text-2xl font-bold tracking-tight">Início</h1>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Bem-vindo! Selecione Uma Opção Abaixo
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Bem-vindo! Selecione Uma Opção Abaixo</p>
         </div>
+
         <div className="rounded-xl border bg-card/60 px-4 py-2 text-right shadow-sm backdrop-blur">
           <div className="text-base font-semibold">{now}</div>
           <div className="text-xs text-muted-foreground">{dateStr}</div>
         </div>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {top.map(({ title, href, desc, icon: Icon }) => (
+      {/* ========= 4 botões (ações rápidas) ========= */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {actions.map((a) => (
           <Link
-            key={href}
-            href={href}
-            className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+            key={a.href}
+            href={a.href}
+            className="group flex items-center gap-3 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
           >
-            <div className="flex items-start gap-3">
-              <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
-                <Icon className="size-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold leading-tight">{title}</h3>
-                  <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
-              </div>
-            </div>
-          </Link>
-        ))}
-
-        {/* Memorial (apenas se permitido) */}
-        {canMemorial && (
-          <Link
-            href="/memorial"
-            className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
-                <IconBuildingSkyscraper className="size-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold leading-tight">Memorial</h3>
-                  <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Painel, Velório Online e Mensagens
-                </p>
-              </div>
-            </div>
-          </Link>
-        )}
-
-        {/* Clube PAI (apenas se permitido) */}
-        {canClube && (
-          <Link
-            href="/clube"
-            className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
-                <IconUsersGroup className="size-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold leading-tight">Relacionamento</h3>
-                  <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Gestão de Parceiros e Noticias
-                </p>
-              </div>
-            </div>
-          </Link>
-        )}
-
-        {bottom.map(({ title, href, desc, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="group rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex size-11 items-center justify-center rounded-xl border bg-background/70">
-                <Icon className="size-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold leading-tight">{title}</h3>
-                  <IconChevronRight className="size-4 opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-80" />
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
-              </div>
+            <QuickIcon>{a.icon}</QuickIcon>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold sm:text-base">{a.label}</div>
             </div>
           </Link>
         ))}

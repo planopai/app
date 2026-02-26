@@ -3,11 +3,12 @@
 import React from "react";
 import Link from "next/link";
 import {
-    IconUserCog,
-    IconShieldLock,
-    IconSettings,
-    IconReportAnalytics,
-    IconUsersGroup,
+    IconLayoutDashboard,
+    IconClipboardList,
+    IconFileText,
+    IconBuildingSkyscraper,
+    IconFlower,
+    IconBell,
 } from "@tabler/icons-react";
 
 /* ========= Ações rápidas ========= */
@@ -21,39 +22,51 @@ function QuickIcon({ children }: { children: React.ReactNode }) {
 
 const items = [
     {
-        title: "Usuários",
-        href: "/usuarios",
-        icon: IconUserCog,
+        title: "Quadro de Acompanhamento",
+        href: "/quadro-acompanhamento",
+        icon: IconLayoutDashboard,
     },
     {
-        title: "Permissões",
-        href: "/permissoes",
-        icon: IconShieldLock,
+        title: "Atendimentos",
+        href: "/atendimentos",
+        icon: IconClipboardList,
     },
     {
-        title: "Relatório",
-        href: "/relatorio",
-        icon: IconReportAnalytics,
+        title: "Obituário",
+        href: "/obituario",
+        icon: IconFileText,
     },
     {
-        title: "Leads",
-        href: "/leads",
-        icon: IconUsersGroup,
+        title: "Memorial",
+        href: "/memorial",
+        icon: IconBuildingSkyscraper,
+    },
+    {
+        title: "Coroa de Flores",
+        href: "/coroa-de-flores",
+        icon: IconFlower,
+    },
+    {
+        title: "Avisos",
+        href: "/avisos",
+        icon: IconBell,
     },
 ];
 
-export default function AdministrativoPage() {
+export default function ServicosFunerariosPage() {
     return (
         <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
             {/* Cabeçalho */}
             <header className="mb-6 flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl border bg-background/70">
-                    <IconSettings className="size-6 text-primary" />
+                    <IconClipboardList className="size-6 text-primary" />
                 </div>
 
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Administrativo</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">Usuários / Permissões</p>
+                    <h1 className="text-2xl font-bold tracking-tight">Serviços Funerários</h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Acesso rápido às rotinas operacionais
+                    </p>
                 </div>
             </header>
 

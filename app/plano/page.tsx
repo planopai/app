@@ -1,13 +1,12 @@
 "use client";
 
-import React from "react";
 import Link from "next/link";
 import {
-    IconUserCog,
-    IconShieldLock,
-    IconSettings,
-    IconReportAnalytics,
+    IconGift,
     IconUsersGroup,
+    IconSend,
+    IconStethoscope,
+    IconUserStar,
 } from "@tabler/icons-react";
 
 /* ========= Ações rápidas ========= */
@@ -21,39 +20,46 @@ function QuickIcon({ children }: { children: React.ReactNode }) {
 
 const items = [
     {
-        title: "Usuários",
-        href: "/usuarios",
-        icon: IconUserCog,
+        title: "Associados",
+        href: "/associados",
+        icon: IconUserStar,
     },
     {
-        title: "Permissões",
-        href: "/permissoes",
-        icon: IconShieldLock,
-    },
-    {
-        title: "Relatório",
-        href: "/relatorio",
-        icon: IconReportAnalytics,
-    },
-    {
-        title: "Leads",
-        href: "/leads",
+        title: "Descontos",
+        href: "/parceiros",
         icon: IconUsersGroup,
+    },
+    {
+        title: "Enviar Notícias",
+        href: "/noticias",
+        icon: IconSend,
+    },
+    {
+        title: "Médicos Parceiros",
+        href: "/medicos",
+        icon: IconStethoscope,
+    },
+    {
+        title: "Sorteios",
+        href: "/sorteios",
+        icon: IconGift,
     },
 ];
 
-export default function AdministrativoPage() {
+export default function PlanoPage() {
     return (
         <div className="mx-auto w-full max-w-5xl p-4 sm:p-6">
             {/* Cabeçalho */}
             <header className="mb-6 flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl border bg-background/70">
-                    <IconSettings className="size-6 text-primary" />
+                    <IconGift className="size-6 text-primary" />
                 </div>
 
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Administrativo</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">Usuários / Permissões</p>
+                    <h1 className="text-2xl font-bold tracking-tight">Plano</h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Gestão do Plano e Benefícios
+                    </p>
                 </div>
             </header>
 
@@ -69,7 +75,9 @@ export default function AdministrativoPage() {
                             <Icon size={22} />
                         </QuickIcon>
 
-                        <span className="text-sm font-semibold sm:text-base">{title}</span>
+                        <span className="text-sm font-semibold sm:text-base">
+                            {title}
+                        </span>
                     </Link>
                 ))}
             </section>
