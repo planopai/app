@@ -58,57 +58,30 @@ export function AppSidebar(props: any) {
       </SidebarHeader>
 
       {/* ACCORDION */}
-      <SidebarContent className="px-2 space-y-2 overflow-hidden">
+      <SidebarContent className="px-2 space-y-4 overflow-hidden">
         {LINK_GROUPS.map(group => {
           const visibleItems = group.items.filter(i => has(i.slug));
           if (!visibleItems.length) return null;
 
-          const opened = openGroup === group.category;
-
           return (
             <div key={group.category}>
-              {/* CATEGORY */}
-              <button
-                onClick={() => toggle(group.category)}
-                className="flex w-full items-center justify-between px-3 py-2 text-xs font-bold uppercase opacity-70"
-              >
+              <p className="px-3 mb-1 text-xs font-bold uppercase opacity-60">
                 {group.category}
-                <IconChevronDown
-                  size={16}
-                  className={`transition ${opened ? "rotate-180" : ""}`}
-                />
-              </button>
+              </p>
 
-              {/* ITEMS */}
-              {opened && (
-                <div className="space-y-1 pl-2">
-                  {visibleItems.map(item => (
-                    <SidebarMenuButton
-                      key={item.href}
-                      onClick={() => navigate(item.href)}
-                      className="flex gap-3"
-                    >
-                      <item.Icon size={18} />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  ))}
-                </div>
-              )}
+              {visibleItems.map(item => (
+                <SidebarMenuButton
+                  key={item.href}
+                  onClick={() => navigate(item.href)}
+                  className="flex gap-3"
+                >
+                  <item.Icon size={18} />
+                  <span>{item.title}</span>
+                </SidebarMenuButton>
+              ))}
             </div>
           );
         })}
-
-        {/* HELP */}
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/help">
-                <IconHelp size={18} />
-                <span>Ajuda</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
       </SidebarContent>
 
       <SidebarFooter>
