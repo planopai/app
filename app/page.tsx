@@ -5,10 +5,10 @@ import Link from "next/link";
 import { IconHome } from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
 
-/* ========= Ações rápidas (mesmo padrão) ========= */
+/* ========= Ações rápidas (padrão do print no celular) ========= */
 function QuickIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="grid h-11 w-11 place-items-center rounded-full bg-sky-100 text-sky-700 transition-colors group-hover:bg-sky-600 group-hover:text-white sm:h-12 sm:w-12 dark:bg-sky-900/30 dark:text-sky-200 dark:group-hover:bg-sky-600 dark:group-hover:text-white">
+    <span className="grid h-14 w-14 place-items-center rounded-full bg-sky-100 text-sky-700 transition-colors group-hover:bg-sky-600 group-hover:text-white dark:bg-sky-900/30 dark:text-sky-200 dark:group-hover:bg-sky-600 dark:group-hover:text-white">
       {children}
     </span>
   );
@@ -17,7 +17,7 @@ function QuickIcon({ children }: { children: React.ReactNode }) {
 type QuickAction = {
   label: string;
   href: string;
-  slug: string; // usado para checar permissão
+  slug: string;
   icon: React.ReactNode;
 };
 
@@ -27,25 +27,15 @@ const quickActions: QuickAction[] = [
     href: "/servicos-funerarios",
     slug: "servicos-funerarios",
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path
-          d="M7 7h10M8.5 10h7M10 14h4"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M7 7h10M8.5 10h7M10 14h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         <path
           d="M6 19V7a2 2 0 012-2h8a2 2 0 012 2v12"
           stroke="currentColor"
           strokeWidth="1.8"
           strokeLinejoin="round"
         />
-        <path
-          d="M8 19h8"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
+        <path d="M8 19h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -54,7 +44,7 @@ const quickActions: QuickAction[] = [
     href: "/plano",
     slug: "plano",
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
           d="M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"
           stroke="currentColor"
@@ -70,7 +60,7 @@ const quickActions: QuickAction[] = [
     href: "/administrativo",
     slug: "administrativo",
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
           d="M4 20V9a2 2 0 012-2h12a2 2 0 012 2v11"
           stroke="currentColor"
@@ -92,7 +82,7 @@ const quickActions: QuickAction[] = [
     href: "/estoque",
     slug: "estoque",
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
           d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
           stroke="currentColor"
@@ -117,28 +107,16 @@ export default function HomePage() {
       const dt = new Date();
       setNow(
         dt
-          .toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          })
+          .toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
           .replace(/\./g, ":")
       );
 
-      const days = [
-        "Domingo",
-        "Segunda-feira",
-        "Terça-feira",
-        "Quarta-feira",
-        "Quinta-feira",
-        "Sexta-feira",
-        "Sábado",
-      ];
-
+      const days = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
       setDateStr(
-        `${days[dt.getDay()]}, ${String(dt.getDate()).padStart(2, "0")}/${String(
-          dt.getMonth() + 1
-        ).padStart(2, "0")}/${dt.getFullYear()}`
+        `${days[dt.getDay()]}, ${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(
+          2,
+          "0"
+        )}/${dt.getFullYear()}`
       );
     };
 
@@ -156,12 +134,12 @@ export default function HomePage() {
           <div className="animate-pulse h-10 w-32 rounded bg-muted" />
         </header>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-2xl border p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-full bg-muted" />
-                <div className="h-4 w-36 rounded bg-muted" />
+            <div key={i} className="rounded-2xl border bg-card/60 p-5 shadow-sm">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-14 w-14 rounded-full bg-muted" />
+                <div className="h-4 w-24 rounded bg-muted" />
               </div>
             </div>
           ))}
@@ -189,17 +167,17 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* ========= 4 botões (ações rápidas) ========= */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ========= Cards no padrão do print (mobile) ========= */}
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {actions.map((a) => (
           <Link
             key={a.href}
             href={a.href}
-            className="group flex items-center gap-3 rounded-2xl border bg-card/60 p-4 shadow-sm backdrop-blur transition hover:bg-primary/5"
+            className="group rounded-2xl border bg-card/60 p-5 shadow-sm backdrop-blur transition hover:bg-primary/5"
           >
-            <QuickIcon>{a.icon}</QuickIcon>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold sm:text-base">{a.label}</div>
+            <div className="flex flex-col items-center gap-3 text-center">
+              <QuickIcon>{a.icon}</QuickIcon>
+              <div className="text-base font-semibold leading-tight">{a.label}</div>
             </div>
           </Link>
         ))}
