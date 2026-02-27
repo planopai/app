@@ -35,12 +35,16 @@ function useIsMobile() {
   return isMobile;
 }
 
+type GroupKey = string;
+
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter();
   const pathname = usePathname();
   const sidebar = useSidebar() as any;
   const { perms, has } = usePerms();
   const isMobile = useIsMobile();
+
+  const isCollapsed = Boolean(sidebar?.state === "collapsed");
 
   const closeMobileNow = React.useCallback(() => {
     if (typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(false);
@@ -49,7 +53,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const handleNavigate = React.useCallback(
     (href: string, e?: React.MouseEvent) => {
-      // respeita nova aba etc
       // @ts-ignore
       if (e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1) return;
 
@@ -60,72 +63,62 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         return;
       }
 
-      // desktop pode navegar normal também, mas mantendo consistente:
       e?.preventDefault?.();
       router.push(href);
     },
     [router, isMobile, closeMobileNow]
   );
 
-  // ✅ quando colapsa para "icon", não renderizar títulos/categorias
-  const isCollapsed = Boolean(sidebar?.state === "collapsed");
+  /** Itens visíveis por permissão */
+  const visibleGroups = React.useMemo(() => {
+    return LINK_GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter((i) => has(i.slug)),
+    })).filter((g) => g.items.length > 0);
+  }, [has]);
 
-  // Grupo default: o que contém a rota atual, senão o primeiro
-  const defaultOpen = React.useMemo(() => {
-    const found =
-      LINK_GROUPS.find((g) => g.items.some((i) => i.href === pathname))?.category ??
-      LINK_GROUPS[0]?.category ??
-      null;
-    return found;
-  }, [pathname]);
+  /** Abre por padrão: grupo da rota atual + o próximo grupo (2 abertos) */
+  const defaultOpenTwo = React.useMemo((): GroupKey[] => {
+    if (!visibleGroups.length) return [];
 
-  // ✅ no desktop, sempre manter 1 aberto (nunca null)
-  const [openGroup, setOpenGroup] = React.useState<string | null>(defaultOpen);
+    const idx = visibleGroups.findIndex((g) => g.items.some((i) => i.href === pathname));
+    const first = (idx >= 0 ? visibleGroups[idx] : visibleGroups[0])?.category;
+    const second =
+      visibleGroups[(idx >= 0 ? idx + 1 : 1) % Math.max(visibleGroups.length, 1)]?.category;
+
+    const list = [first, second].filter(Boolean) as string[];
+    // garante 2 distintos (se só tiver 1 grupo)
+    return Array.from(new Set(list)).slice(0, 2);
+  }, [visibleGroups, pathname]);
+
+  /** ✅ Sempre 2 abertas (desktop e mobile) */
+  const [openGroups, setOpenGroups] = React.useState<GroupKey[]>(defaultOpenTwo);
 
   React.useEffect(() => {
-    if (!isMobile && !isCollapsed) setOpenGroup(defaultOpen);
-  }, [defaultOpen, isMobile, isCollapsed]);
+    if (!isCollapsed) setOpenGroups(defaultOpenTwo);
+  }, [defaultOpenTwo, isCollapsed]);
 
-  const toggle = (cat: string) => {
-    setOpenGroup((prev) => {
-      // ✅ se clicar no já aberto, NÃO fecha tudo: mantém aberto
-      if (prev === cat) return prev;
-      return cat;
+  const toggleGroup = (cat: GroupKey) => {
+    setOpenGroups((prev) => {
+      const isOpen = prev.includes(cat);
+
+      // ✅ nunca deixar tudo fechado — sempre pelo menos 2 se possível
+      if (isOpen) {
+        const next = prev.filter((x) => x !== cat);
+
+        // se sobrou 0 ou 1, reabre o próprio (mantém 2 abertas quando possível)
+        if (next.length < 2) return prev;
+
+        return next;
+      }
+
+      // abrir um novo: mantém no máximo 2 (tira o mais antigo)
+      if (prev.length >= 2) return [prev[1], cat];
+      return [...prev, cat];
     });
   };
 
-  // Loading state
-  if (perms == null) {
-    return (
-      <Sidebar collapsible="icon" {...props}>
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-                <Link href="/">
-                  <img
-                    src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
-                    alt="Logo PAI"
-                    className="h-8 w-auto"
-                  />
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-
-        <SidebarContent className="px-2 overflow-hidden">
-          <div className="p-3 text-sm opacity-60">Carregando…</div>
-        </SidebarContent>
-
-        <SidebarFooter>
-          <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
-        </SidebarFooter>
-      </Sidebar>
-    );
-  }
-
-  /** Render de item */
+  /** Render de item (com tooltip no colapsado) */
   const MenuItem = ({
     title,
     href,
@@ -140,53 +133,93 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return (
       <SidebarMenuButton
         asChild
+        title={title} // ✅ hover mostra nome no colapsado
         className={[
           "flex gap-3",
           active ? "bg-accent text-accent-foreground" : "",
         ].join(" ")}
-        title={title} // ✅ tooltip quando estiver colapsado
       >
         <Link href={href} onClick={(e) => handleNavigate(href, e)}>
           <Icon className="!size-5" />
-          {/* ✅ some texto quando colapsado */}
           {!isCollapsed && <span>{title}</span>}
         </Link>
       </SidebarMenuButton>
     );
   };
 
+  // Loading
+  if (perms == null) {
+    return (
+      <Sidebar collapsible="icon" {...props}>
+        <SidebarHeader>
+          {/* ✅ some logo quando colapsado */}
+          {!isCollapsed && (
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
+                  <Link href="/">
+                    <img
+                      src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+                      alt="Logo PAI"
+                      className="h-8 w-auto"
+                    />
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          )}
+        </SidebarHeader>
+
+        <SidebarContent className="px-2 overflow-hidden">
+          <div className="p-3 text-sm opacity-60">Carregando…</div>
+        </SidebarContent>
+
+        <SidebarFooter>
+          <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
+        </SidebarFooter>
+      </Sidebar>
+    );
+  }
+
+  /** Dedupe itens para modo colapsado (lista única) */
+  const collapsedItems = React.useMemo(() => {
+    const all = visibleGroups.flatMap((g) => g.items);
+    const dedup = all.filter((i, idx) => all.findIndex((x) => x.href === i.href) === idx);
+    return dedup;
+  }, [visibleGroups]);
+
   return (
     <Sidebar collapsible="icon" {...props}>
       {/* Header */}
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <Link href="/" onClick={(e) => handleNavigate("/", e)}>
-                <img
-                  src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
-                  alt="Logo PAI"
-                  className="h-8 w-auto"
-                />
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {/* ✅ some logo quando colapsado */}
+        {!isCollapsed && (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
+                <Link href="/" onClick={(e) => handleNavigate("/", e)}>
+                  <img
+                    src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+                    alt="Logo PAI"
+                    className="h-8 w-auto"
+                  />
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
       </SidebarHeader>
 
       <SidebarContent className="px-2 overflow-hidden">
-        {/* ✅ COLAPSADO: sem categorias, só itens (bem clean) */}
+        {/* ✅ COLAPSADO: só ícones, com tooltip via title */}
         {isCollapsed ? (
           <div className="space-y-2">
             <SidebarMenu className="space-y-1">
-              {LINK_GROUPS.flatMap((g) => g.items)
-                .filter((i, idx, arr) => arr.findIndex((x) => x.href === i.href) === idx) // dedupe
-                .filter((i) => has(i.slug))
-                .map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <MenuItem title={item.title} href={item.href} Icon={item.Icon} />
-                  </SidebarMenuItem>
-                ))}
+              {collapsedItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <MenuItem title={item.title} href={item.href} Icon={item.Icon} />
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
 
             <div className="mt-2 px-1">
@@ -203,35 +236,15 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </div>
           </div>
         ) : (
-          // ✅ ABERTO: Desktop sanfona (sempre 1 aberto) / Mobile grupos fixos
-          <div className={isMobile ? "space-y-4" : "space-y-2"}>
-            {LINK_GROUPS.map((group) => {
-              const visibleItems = group.items.filter((i) => has(i.slug));
-              if (!visibleItems.length) return null;
-
-              // MOBILE: tudo aberto
-              if (isMobile) {
-                return (
-                  <div key={group.category}>
-                    <p className="px-3 mb-1 text-xs font-bold uppercase opacity-60">{group.category}</p>
-                    <SidebarMenu className="space-y-1">
-                      {visibleItems.map((item) => (
-                        <SidebarMenuItem key={item.href}>
-                          <MenuItem title={item.title} href={item.href} Icon={item.Icon} />
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </div>
-                );
-              }
-
-              // DESKTOP: sanfona (sempre 1 aberto)
-              const opened = openGroup === group.category;
+          // ✅ ABERTO: PC e celular igual (sanfona), sempre 2 abertas
+          <div className={isMobile ? "pt-4 space-y-3" : "space-y-2"}>
+            {visibleGroups.map((group) => {
+              const opened = openGroups.includes(group.category);
 
               return (
                 <div key={group.category}>
                   <button
-                    onClick={() => toggle(group.category)}
+                    onClick={() => toggleGroup(group.category)}
                     className="flex w-full items-center justify-between px-3 py-2 text-xs font-bold uppercase opacity-70"
                     type="button"
                   >
@@ -241,7 +254,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
                   {opened && (
                     <SidebarMenu className="space-y-1 pl-1">
-                      {visibleItems.map((item) => (
+                      {group.items.map((item) => (
                         <SidebarMenuItem key={item.href}>
                           <MenuItem title={item.title} href={item.href} Icon={item.Icon} />
                         </SidebarMenuItem>
