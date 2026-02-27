@@ -1,7 +1,7 @@
 "use client";
+
 import React from "react";
 import Modal from "./Modal";
-import { wizardStepTitles } from "./constants";
 import type { Registro } from "./types";
 
 export default function InfoModal({
@@ -9,28 +9,33 @@ export default function InfoModal({
     setOpen,
     infoIdx,
     abrirWizard,
-    // novo:
     abrirAssinatura,
-    registro, // opcional: para mostrar “Baixar” quando já existir
+    registro,
+    // ✅ novo: títulos dinâmicos do wizard (de acordo com tipo: funerario/terceiro)
+    wizardStepTitles,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
     infoIdx: number | null;
+
     abrirWizard: (tipo: "novo" | "editar", idx?: number | null, grupoStep?: number | null) => void;
 
-    // novo:
     abrirAssinatura: (idx: number, tipo: "recebimento" | "requisicao") => void;
+
     registro?: Registro | null;
+
+    // ✅ IMPORTANTE: vem do AcompanhamentoPage (wizardStepTitlesForTipo)
+    wizardStepTitles: string[];
 }) {
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Info" maxWidth={410}>
             <h2 className="text-xl font-semibold">Informações do Registro</h2>
 
-            {/* Atalhos de edição por grupo (primeiro) */}
+            {/* Atalhos de edição por grupo (dinâmico por tipo) */}
             <div className="mt-4 grid gap-2">
-                {wizardStepTitles.map((t, i) => (
+                {(wizardStepTitles || []).map((t, i) => (
                     <button
-                        key={t}
+                        key={`${t}-${i}`}
                         className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
                         onClick={() => {
                             setOpen(false);
@@ -44,7 +49,7 @@ export default function InfoModal({
 
             <div className="my-4 h-px bg-slate-200" />
 
-            {/* AÇÕES DE ASSINATURA (agora abaixo) */}
+            {/* AÇÕES DE ASSINATURA */}
             <div className="grid gap-2">
                 <button
                     className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#059de0]/90"

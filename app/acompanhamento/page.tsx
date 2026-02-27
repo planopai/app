@@ -146,14 +146,21 @@ function resolveTipoFromRegistro(r?: Registro | null): TipoAtendimento {
 function getWizardConfig(tipo: TipoAtendimento) {
   if (tipo === "terceiro") {
     const wizardStepIndexes = [
-      [0, 1, 17],
-      [11, 12, 13, 19],
-      [14, 15, 16, 20],
+      // Atendimento (nome + contato)
+      [0, 1],
+
+      // Velório (local + datas + horários)
+      [18, 19, 20, 21, 22],
+
+      // Sepultamento (local)
+      [17],
     ];
+
     const wizardStepTitles = ["Atendimento", "Velório", "Sepultamento"];
     const obrigatorios: string[] = [];
     return { wizardStepIndexes, wizardStepTitles, obrigatorios, steps: stepsPadrao };
   }
+
   return {
     wizardStepIndexes: wizardStepIndexesPadrao as number[][],
     wizardStepTitles: wizardStepTitlesPadrao as string[],
@@ -1952,6 +1959,7 @@ export default function AcompanhamentoPage() {
         abrirWizard={abrirWizardFromInfo}
         abrirAssinatura={(idx, tipo) => abrirAssinaturaFromInfo(idx, tipo)}
         registro={registroInfo}
+        wizardStepTitles={wizardStepTitlesForTipo}
       />
 
       <SignatureModal
