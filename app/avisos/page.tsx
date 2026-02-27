@@ -5,30 +5,66 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import AvisosBox from "../acompanhamento/components/AvisosBox";
 import type { Aviso, Registro } from "../acompanhamento/components/types";
 import { jsonWith401, normalizarStatus } from "../acompanhamento/components/helpers";
-import { fases } from "../acompanhamento/components/constants";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
-function faseIndex(status: any) {
-    const st = String(status ?? "");
-    const idx = (fases as readonly string[]).indexOf(st);
-    return idx >= 0 ? idx : 999;
+/* =========================
+   ✅ MESMAS REGRAS DO QUADRO
+   (filtro + ordenação)
+   ========================= */
+
+// (iguais do Quadro)
+function isNao(v?: any) {
+    const s = String(v ?? "")
+        .trim()
+        .toLowerCase();
+    return s === "não" || s === "nao" || s === "n";
+}
+function isSim(v?: any) {
+    const s = String(v ?? "")
+        .trim()
+        .toLowerCase();
+    return s === "sim" || s === "s";
+}
+function isTerceiroRegistro(r: any) {
+    if (r?.tipo_atendimento === "terceiro") return true;
+    return isNao(r?.assistencia) && isNao(r?.tanato) && isNao(r?.ornamentacao);
+}
+
+// (igual do Quadro: usa data + hora_fim_velorio/hora_inicio_velorio)
+function parseRegistroDateTime(r: any) {
+    const d = String(r?.data ?? "").trim();
+    const h =
+        String(r?.hora_fim_velorio ?? "").trim() ||
+        String(r?.hora_inicio_velorio ?? "").trim() ||
+        "00:00";
+    if (!d) return 0;
+
+    const [yyyy, mm, dd] = d.split("-");
+    const iso = `${yyyy}-${mm}-${dd}T${h}:00`;
+    const ts = Date.parse(iso);
+    return Number.isNaN(ts) ? 0 : ts;
 }
 
 export default function AvisosPage() {
     const [avisos, setAvisos] = useState<Aviso[]>([]);
     const [registros, setRegistros] = useState<Registro[]>([]);
 
-    const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(
+        null
+    );
     const avisoInputRef = useRef<HTMLInputElement>(null);
 
     // ✅ buscar avisos
     const fetchAvisos = useCallback(async () => {
         try {
-            const r = await fetch(`${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`, {
-                credentials: "include",
-                cache: "no-store",
-            });
+            const r = await fetch(
+                `${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`,
+                {
+                    credentials: "include",
+                    cache: "no-store",
+                }
+            );
 
             if (r.status === 401) return;
 
@@ -44,10 +80,13 @@ export default function AvisosPage() {
     // ✅ buscar atendimentos (MESMA normalização do quadro)
     const fetchRegistros = useCallback(async () => {
         try {
-            const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`, {
-                credentials: "include",
-                cache: "no-store",
-            });
+            const r = await fetch(
+                `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
+                {
+                    credentials: "include",
+                    cache: "no-store",
+                }
+            );
 
             if (r.status === 401) return;
 
@@ -120,7 +159,10 @@ export default function AvisosPage() {
                 if (avisoInputRef.current) avisoInputRef.current.value = "";
                 fetchAvisos();
             } else {
-                setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao adicionar!", ok: false });
+                setAvisoMsg({
+                    text: res?.erro || res?.msg || "Erro ao adicionar!",
+                    ok: false,
+                });
             }
         } catch (e: any) {
             setAvisoMsg({ text: e?.message || "Erro ao adicionar!", ok: false });
@@ -141,7 +183,10 @@ export default function AvisosPage() {
                     setAvisoMsg({ text: "Aviso atualizado!", ok: true });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao editar!", ok: false });
+                    setAvisoMsg({
+                        text: res?.erro || res?.msg || "Erro ao editar!",
+                        ok: false,
+                    });
                 }
             } catch (e: any) {
                 setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
@@ -166,7 +211,10 @@ export default function AvisosPage() {
                     setAvisoMsg({ text: "Aviso excluído!", ok: true });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao excluir!", ok: false });
+                    setAvisoMsg({
+                        text: res?.erro || res?.msg || "Erro ao excluir!",
+                        ok: false,
+                    });
                 }
             } catch (e: any) {
                 setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
@@ -189,7 +237,10 @@ export default function AvisosPage() {
                     setAvisoMsg({ text: "Aviso finalizado!", ok: true });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao finalizar!", ok: false });
+                    setAvisoMsg({
+                        text: res?.erro || res?.msg || "Erro ao finalizar!",
+                        ok: false,
+                    });
                 }
             } catch (e: any) {
                 setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
@@ -222,35 +273,28 @@ export default function AvisosPage() {
         };
     }, [fetchAvisos, fetchRegistros]);
 
-    // ✅ aqui é onde você garante "MESMAS REGRAS" da lista do quadro:
-    // - ordenação por fase
-    // - filtros (exemplo: esconder fase11)
+    // ✅ AQUI: mesma lista do quadro (mesmo filtro + mesma ordenação)
     const registrosParaLista = useMemo(() => {
-        const base = [...registros];
+        const base = (registros || []).filter((r: any) => {
+            const status = normalizarStatus(r?.status);
 
-        // 🔧 ajuste aqui se o quadro faz isso:
-        // const filtrado = base.filter((r: any) => String(r?.status) !== "fase11");
-        const filtrado = base;
-
-        filtrado.sort((a: any, b: any) => {
-            const fa = faseIndex(a?.status);
-            const fb = faseIndex(b?.status);
-            if (fa !== fb) return fa - fb;
-
-            // desempate: nome do falecido
-            const na = String((a as any)?.falecido ?? "").toLowerCase();
-            const nb = String((b as any)?.falecido ?? "").toLowerCase();
-            if (na && nb && na !== nb) return na.localeCompare(nb);
-
-            return String(a?.id ?? "").localeCompare(String(b?.id ?? ""));
+            // mesma regra do quadro:
+            if (status === "fase11") return false;
+            if (isTerceiroRegistro(r)) return status !== "fase10";
+            if (!isSim(r?.assistencia)) return status !== "fase10";
+            return true;
         });
 
-        return filtrado;
+        const withTs = base.map((r: any) => ({ r, ts: parseRegistroDateTime(r) }));
+        withTs.sort((a, b) => b.ts - a.ts);
+        return withTs.map((x) => x.r) as Registro[];
     }, [registros]);
 
     const onAddObservacao = useCallback(
         async (registroId: string) => {
-            const r = registrosParaLista.find((x: any) => String(x?.id) === String(registroId));
+            const r = registrosParaLista.find(
+                (x: any) => String(x?.id) === String(registroId)
+            );
             const nome = String((r as any)?.falecido ?? "").trim();
 
             if (!nome) {
@@ -258,7 +302,10 @@ export default function AvisosPage() {
                 return;
             }
 
-            const obs = window.prompt(`Adicionar observação para: ${nome}\n\nDigite a observação:`, "");
+            const obs = window.prompt(
+                `Adicionar observação para: ${nome}\n\nDigite a observação:`,
+                ""
+            );
             if (!obs || !obs.trim()) return;
 
             // ✅ salvando como aviso (mensagem do plantão)
@@ -274,10 +321,16 @@ export default function AvisosPage() {
                     setAvisoMsg({ ok: true, text: "Observação adicionada como aviso!" });
                     fetchAvisos();
                 } else {
-                    setAvisoMsg({ ok: false, text: res?.erro || res?.msg || "Erro ao adicionar observação." });
+                    setAvisoMsg({
+                        ok: false,
+                        text: res?.erro || res?.msg || "Erro ao adicionar observação.",
+                    });
                 }
             } catch (e: any) {
-                setAvisoMsg({ ok: false, text: e?.message || "Erro ao adicionar observação." });
+                setAvisoMsg({
+                    ok: false,
+                    text: e?.message || "Erro ao adicionar observação.",
+                });
             }
         },
         [registrosParaLista, fetchAvisos]
@@ -293,7 +346,7 @@ export default function AvisosPage() {
 
             <AvisosBox
                 avisos={avisos}
-                registros={registrosParaLista} // ✅ usa a lista com mesmas regras
+                registros={registrosParaLista} // ✅ usa a lista com mesmas regras do quadro
                 onAddObservacao={onAddObservacao} // ✅ botão de add obs por falecido
                 avisoMsg={avisoMsg}
                 setAvisoMsg={setAvisoMsg}
