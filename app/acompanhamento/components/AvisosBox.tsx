@@ -22,10 +22,11 @@ function parseAvisoMensagem(raw: any): { tag: "Serviço" | "Geral"; text: string
 }
 
 function TagChip({ kind }: { kind: "Serviço" | "Geral" }) {
+    // ✅ MODIFICADO: Geral = vermelho | Serviço = amarelo
     const cls =
         kind === "Serviço"
-            ? "bg-sky-100 text-sky-800 border-sky-200"
-            : "bg-slate-100 text-slate-700 border-slate-200";
+            ? "bg-yellow-100 text-yellow-900 border-yellow-200"
+            : "bg-red-100 text-red-800 border-red-200";
 
     return (
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] ${cls}`}>
