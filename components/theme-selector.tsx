@@ -39,17 +39,7 @@ export function ThemeSelector() {
       </Label>
 
       <Select value={activeTheme} onValueChange={setActiveTheme}>
-        {/* Trigger compacto: só ícone + seta */}
-        <SelectTrigger
-          id="theme-selector"
-          size="sm"
-          className="w-auto gap-1 px-2 justify-center"
-          aria-label="Selecionar tema"
-          title="Selecionar tema"
-        >
-          <Palette className="h-4 w-4" />
-          <ChevronDown className="h-3 w-3 opacity-60" />
-        </SelectTrigger>
+        
 
         <SelectContent align="end">
           <SelectGroup>
