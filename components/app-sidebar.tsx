@@ -3,9 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { IconChevronDown, IconHelp } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconHelp,
+  IconLogout,
+} from "@tabler/icons-react";
 
-import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
@@ -35,6 +38,15 @@ function useIsMobile() {
   return isMobile;
 }
 
+function readCookie(name: string) {
+  if (typeof document === "undefined") return null;
+  const v = document.cookie
+    ?.split("; ")
+    .find((r) => r.startsWith(name + "="))
+    ?.split("=")[1];
+  return v ? decodeURIComponent(v) : null;
+}
+
 type GroupKey = string;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
@@ -56,18 +68,35 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       // @ts-ignore
       if (e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1) return;
 
+      e?.preventDefault?.();
+
       if (isMobile) {
-        e?.preventDefault?.();
         closeMobileNow();
         router.push(href);
         return;
       }
 
-      e?.preventDefault?.();
       router.push(href);
     },
     [router, isMobile, closeMobileNow]
   );
+
+  async function handleLogout(e?: React.MouseEvent) {
+    e?.preventDefault?.();
+    try {
+      await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
+    } catch {
+      // silencioso
+    } finally {
+      if (isMobile) closeMobileNow();
+      router.replace("/login");
+    }
+  }
+
+  /** Nome do usuário (cookie ou fallback) */
+  const displayName = React.useMemo(() => {
+    return readCookie("pai_name") || readCookie("pai_user") || "Usuário";
+  }, []);
 
   /** Itens visíveis por permissão */
   const visibleGroups = React.useMemo(() => {
@@ -77,44 +106,25 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     })).filter((g) => g.items.length > 0);
   }, [has]);
 
-  /** Abre por padrão: grupo da rota atual + o próximo grupo (2 abertos) */
-  const defaultOpenTwo = React.useMemo((): GroupKey[] => {
-    if (!visibleGroups.length) return [];
-
-    const idx = visibleGroups.findIndex((g) => g.items.some((i) => i.href === pathname));
-    const first = (idx >= 0 ? visibleGroups[idx] : visibleGroups[0])?.category;
-    const second =
-      visibleGroups[(idx >= 0 ? idx + 1 : 1) % Math.max(visibleGroups.length, 1)]?.category;
-
-    const list = [first, second].filter(Boolean) as string[];
-    // garante 2 distintos (se só tiver 1 grupo)
-    return Array.from(new Set(list)).slice(0, 2);
+  /** Abre por padrão: grupo da rota atual, senão primeiro */
+  const defaultOpenOne = React.useMemo((): GroupKey | null => {
+    if (!visibleGroups.length) return null;
+    const found = visibleGroups.find((g) => g.items.some((i) => i.href === pathname))?.category;
+    return found ?? visibleGroups[0]?.category ?? null;
   }, [visibleGroups, pathname]);
 
-  /** ✅ Sempre 2 abertas (desktop e mobile) */
-  const [openGroups, setOpenGroups] = React.useState<GroupKey[]>(defaultOpenTwo);
+  /** ✅ Sempre 1 aberto (nunca tudo fechado) */
+  const [openGroup, setOpenGroup] = React.useState<GroupKey | null>(defaultOpenOne);
 
   React.useEffect(() => {
-    if (!isCollapsed) setOpenGroups(defaultOpenTwo);
-  }, [defaultOpenTwo, isCollapsed]);
+    if (!isCollapsed) setOpenGroup(defaultOpenOne);
+  }, [defaultOpenOne, isCollapsed]);
 
   const toggleGroup = (cat: GroupKey) => {
-    setOpenGroups((prev) => {
-      const isOpen = prev.includes(cat);
-
-      // ✅ nunca deixar tudo fechado — sempre pelo menos 2 se possível
-      if (isOpen) {
-        const next = prev.filter((x) => x !== cat);
-
-        // se sobrou 0 ou 1, reabre o próprio (mantém 2 abertas quando possível)
-        if (next.length < 2) return prev;
-
-        return next;
-      }
-
-      // abrir um novo: mantém no máximo 2 (tira o mais antigo)
-      if (prev.length >= 2) return [prev[1], cat];
-      return [...prev, cat];
+    setOpenGroup((prev) => {
+      // se clicar no mesmo, mantém (não fecha tudo)
+      if (prev === cat) return prev;
+      return cat;
     });
   };
 
@@ -133,11 +143,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return (
       <SidebarMenuButton
         asChild
-        title={title} // ✅ hover mostra nome no colapsado
-        className={[
-          "flex gap-3",
-          active ? "bg-accent text-accent-foreground" : "",
-        ].join(" ")}
+        title={title} // ✅ tooltip quando colapsado
+        className={["flex gap-3", active ? "bg-accent text-accent-foreground" : ""].join(" ")}
       >
         <Link href={href} onClick={(e) => handleNavigate(href, e)}>
           <Icon className="!size-5" />
@@ -152,21 +159,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return (
       <Sidebar collapsible="icon" {...props}>
         <SidebarHeader>
-          {/* ✅ some logo quando colapsado */}
           {!isCollapsed && (
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-                  <Link href="/">
-                    <img
-                      src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
-                      alt="Logo PAI"
-                      className="h-8 w-auto"
-                    />
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
+            <div className="px-3 pt-2">
+              <img
+                src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+                alt="Logo PAI"
+                className="h-8 w-auto"
+              />
+              <div className="mt-3 border-t" />
+              <div className="py-3 text-sm font-semibold opacity-80">Carregando…</div>
+            </div>
           )}
         </SidebarHeader>
 
@@ -174,9 +176,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <div className="p-3 text-sm opacity-60">Carregando…</div>
         </SidebarContent>
 
-        <SidebarFooter>
-          <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
-        </SidebarFooter>
+        <SidebarFooter />
       </Sidebar>
     );
   }
@@ -184,36 +184,44 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   /** Dedupe itens para modo colapsado (lista única) */
   const collapsedItems = React.useMemo(() => {
     const all = visibleGroups.flatMap((g) => g.items);
-    const dedup = all.filter((i, idx) => all.findIndex((x) => x.href === i.href) === idx);
-    return dedup;
+    return all.filter((i, idx) => all.findIndex((x) => x.href === i.href) === idx);
   }, [visibleGroups]);
+
+  const logoNode = (
+    <img
+      src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+      alt="Logo PAI"
+      className="h-8 w-auto"
+    />
+  );
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      {/* Header */}
+      {/* HEADER: Logo + linha + nome */}
       <SidebarHeader>
-        {/* ✅ some logo quando colapsado */}
-        {!isCollapsed && (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-                <Link href="/" onClick={(e) => handleNavigate("/", e)}>
-                  <img
-                    src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
-                    alt="Logo PAI"
-                    className="h-8 w-auto"
-                  />
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        )}
+        <div className={["px-3", isMobile ? "pt-6" : "pt-2"].join(" ")}>
+          {/* ✅ some a logo quando colapsado */}
+          {!isCollapsed && (
+            <Link href="/" onClick={(e) => handleNavigate("/", e)} className="inline-flex">
+              {logoNode}
+            </Link>
+          )}
+
+          {!isCollapsed && <div className="mt-3 border-t" />}
+
+          {/* ✅ nome em cima (sem dropdown) */}
+          {!isCollapsed && (
+            <div className="py-3">
+              <div className="truncate text-sm font-semibold">{displayName}</div>
+            </div>
+          )}
+        </div>
       </SidebarHeader>
 
       <SidebarContent className="px-2 overflow-hidden">
-        {/* ✅ COLAPSADO: só ícones, com tooltip via title */}
+        {/* ✅ COLAPSADO: só ícones, sem categorias */}
         {isCollapsed ? (
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2">
             <SidebarMenu className="space-y-1">
               {collapsedItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
@@ -221,25 +229,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
-
-            <div className="mt-2 px-1">
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild title="Ajuda">
-                    <Link href="/help" onClick={(e) => handleNavigate("/help", e)}>
-                      <IconHelp className="!size-5" />
-                      {!isCollapsed && <span>Ajuda</span>}
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </div>
           </div>
         ) : (
-          // ✅ ABERTO: PC e celular igual (sanfona), sempre 2 abertas
+          // ✅ ABERTO: PC e celular iguais (sanfona), sempre 1 aberto
           <div className={isMobile ? "pt-4 space-y-3" : "space-y-2"}>
             {visibleGroups.map((group) => {
-              const opened = openGroups.includes(group.category);
+              const opened = openGroup === group.category;
 
               return (
                 <div key={group.category}>
@@ -264,26 +259,37 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 </div>
               );
             })}
-
-            {/* Ajuda */}
-            <div className="mt-4 px-1">
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <Link href="/help" onClick={(e) => handleNavigate("/help", e)}>
-                      <IconHelp className="!size-5" />
-                      <span>Ajuda</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </div>
           </div>
         )}
       </SidebarContent>
 
+      {/* FOOTER FIXO: Ajuda + Sair (sem 3 pontinhos) */}
       <SidebarFooter>
-        <NavUser user={{ name: "Usuário", email: "", avatar: "" }} />
+        <div className="px-2 pb-4">
+          <div className="border-t pt-3" />
+
+          <SidebarMenu className="space-y-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild title="Ajuda" className="flex gap-3">
+                <Link href="/help" onClick={(e) => handleNavigate("/help", e)}>
+                  <IconHelp className="!size-5" />
+                  {!isCollapsed && <span>Ajuda</span>}
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                title="Sair da Conta"
+                className="flex gap-3 text-red-600 hover:text-red-600"
+                onClick={handleLogout}
+              >
+                <IconLogout className="!size-5" />
+                {!isCollapsed && <span>Sair da Conta</span>}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

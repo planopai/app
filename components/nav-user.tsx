@@ -1,20 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { IconDotsVertical, IconLogout } from "@tabler/icons-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar";
+
+/**
+ * ✅ Novo NavUser (apenas exibe o nome, SEM dropdown)
+ * - A ação de sair agora fica fixa no SidebarFooter (AppSidebar)
+ * - Mantive compatibilidade com `user` pra não quebrar imports existentes
+ */
 
 type User = {
   name?: string;
@@ -31,67 +23,18 @@ function readCookie(name: string) {
   return v ? decodeURIComponent(v) : null;
 }
 
-export function NavUser({
-  user,
-  onLogout,
-}: {
-  user?: User;
-  onLogout?: () => Promise<void> | void;
-}) {
-  const router = useRouter();
-  const { isMobile } = useSidebar();
-
-  const [displayName, setDisplayName] = React.useState<string>(
-    user?.name || "Usuário"
-  );
+export function NavUser({ user }: { user?: User }) {
+  const [displayName, setDisplayName] = React.useState<string>(user?.name || "Usuário");
 
   React.useEffect(() => {
-    const fromCookie = readCookie("pai_name");
+    const fromCookie = readCookie("pai_name") || readCookie("pai_user");
     if (fromCookie) setDisplayName(fromCookie);
     else if (user?.name) setDisplayName(user.name);
   }, [user?.name]);
 
-  async function handleLogout() {
-    try {
-      if (onLogout) {
-        await onLogout();
-      } else {
-        await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
-      }
-    } catch {
-      // silencioso
-    } finally {
-      router.replace("/login");
-    }
-  }
-
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <span className="truncate font-medium">{displayName}</span>
-              <IconDotsVertical className="ml-auto size-4" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-
-          <DropdownMenuContent
-            className="min-w-40 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-              <IconLogout className="mr-2" />
-              Sair
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+    <div className="px-3 py-3">
+      <span className="truncate text-sm font-semibold">{displayName}</span>
+    </div>
   );
 }
