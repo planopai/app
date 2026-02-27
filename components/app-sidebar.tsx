@@ -3,11 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import {
-  IconChevronDown,
-  IconHelp,
-  IconLogout,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconHelp, IconLogout } from "@tabler/icons-react";
 
 import {
   Sidebar,
@@ -47,6 +43,21 @@ function readCookie(name: string) {
   return v ? decodeURIComponent(v) : null;
 }
 
+function capitalizeFirstLetter(s: string) {
+  const t = (s || "").trim();
+  if (!t) return "";
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function initialsFromName(name: string) {
+  const n = (name || "").trim();
+  if (!n) return "U";
+  const parts = n.split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? "U";
+  const second = parts.length > 1 ? parts[parts.length - 1]?.[0] : "";
+  return (first + second).toUpperCase();
+}
+
 type GroupKey = string;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
@@ -67,7 +78,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     (href: string, e?: React.MouseEvent) => {
       // @ts-ignore
       if (e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1) return;
-
       e?.preventDefault?.();
 
       if (isMobile) {
@@ -93,10 +103,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     }
   }
 
-  /** Nome do usuário (cookie ou fallback) */
+  /** Nome do usuário (cookie ou fallback) + garante primeira letra maiúscula */
   const displayName = React.useMemo(() => {
-    return readCookie("pai_name") || readCookie("pai_user") || "Usuário";
+    const raw = readCookie("pai_name") || readCookie("pai_user") || "Usuário";
+    // Se vier "tharles matheus" ou "tharles", vira "Tharles matheus" / "Tharles"
+    const cleaned = raw.trim().replace(/\s+/g, " ");
+    return cleaned
+      .split(" ")
+      .map((w, idx) => (idx === 0 ? capitalizeFirstLetter(w) : w))
+      .join(" ");
   }, []);
+
+  const badgeText = "USUÁRIO";
+  const userInitials = React.useMemo(() => initialsFromName(displayName), [displayName]);
 
   /** Itens visíveis por permissão */
   const visibleGroups = React.useMemo(() => {
@@ -122,8 +141,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const toggleGroup = (cat: GroupKey) => {
     setOpenGroup((prev) => {
-      // se clicar no mesmo, mantém (não fecha tudo)
-      if (prev === cat) return prev;
+      if (prev === cat) return prev; // não fecha tudo
       return cat;
     });
   };
@@ -143,7 +161,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     return (
       <SidebarMenuButton
         asChild
-        title={title} // ✅ tooltip quando colapsado
+        title={title} // ✅ tooltip no colapsado
         className={["flex gap-3", active ? "bg-accent text-accent-foreground" : ""].join(" ")}
       >
         <Link href={href} onClick={(e) => handleNavigate(href, e)}>
@@ -160,14 +178,24 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <Sidebar collapsible="icon" {...props}>
         <SidebarHeader>
           {!isCollapsed && (
-            <div className="px-3 pt-2">
+            <div className={["px-3", isMobile ? "pt-6" : "pt-3"].join(" ")}>
               <img
                 src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
                 alt="Logo PAI"
                 className="h-8 w-auto"
               />
-              <div className="mt-3 border-t" />
-              <div className="py-3 text-sm font-semibold opacity-80">Carregando…</div>
+              <div className="mt-4 border-t" />
+              <div className="mt-4 flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-muted text-sm font-extrabold">
+                  U
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    USUÁRIO
+                  </div>
+                  <div className="truncate text-sm font-semibold">Carregando…</div>
+                </div>
+              </div>
             </div>
           )}
         </SidebarHeader>
@@ -197,9 +225,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      {/* HEADER: Logo + linha + nome */}
+      {/* HEADER: Logo + linha + bloco do usuário (avatar + “USUÁRIO” + nome) */}
       <SidebarHeader>
-        <div className={["px-3", isMobile ? "pt-6" : "pt-2"].join(" ")}>
+        <div className={["px-3", isMobile ? "pt-6" : "pt-3"].join(" ")}>
           {/* ✅ some a logo quando colapsado */}
           {!isCollapsed && (
             <Link href="/" onClick={(e) => handleNavigate("/", e)} className="inline-flex">
@@ -207,12 +235,28 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </Link>
           )}
 
-          {!isCollapsed && <div className="mt-3 border-t" />}
+          {!isCollapsed && <div className="mt-4 border-t" />}
 
-          {/* ✅ nome em cima (sem dropdown) */}
+          {/* ✅ bloco de usuário estilo print */}
           {!isCollapsed && (
-            <div className="py-3">
-              <div className="truncate text-sm font-semibold">{displayName}</div>
+            <div className="mt-4 flex items-center gap-3">
+              <div
+                className={[
+                  "grid h-10 w-10 shrink-0 place-items-center rounded-full",
+                  "bg-sky-600 text-white",
+                  "text-sm font-extrabold",
+                ].join(" ")}
+                aria-label="Avatar do usuário"
+              >
+                {userInitials}
+              </div>
+
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {badgeText}
+                </div>
+                <div className="truncate text-sm font-semibold">{displayName}</div>
+              </div>
             </div>
           )}
         </div>
@@ -232,7 +276,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </div>
         ) : (
           // ✅ ABERTO: PC e celular iguais (sanfona), sempre 1 aberto
-          <div className={isMobile ? "pt-4 space-y-3" : "space-y-2"}>
+          <div className={isMobile ? "pt-5 space-y-3" : "mt-4 space-y-2"}>
             {visibleGroups.map((group) => {
               const opened = openGroup === group.category;
 
@@ -265,7 +309,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       {/* FOOTER FIXO: Ajuda + Sair (sem 3 pontinhos) */}
       <SidebarFooter>
-        <div className="px-2 pb-4">
+        <div className="px-2 pb-5">
           <div className="border-t pt-3" />
 
           <SidebarMenu className="space-y-1">
