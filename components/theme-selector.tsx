@@ -11,7 +11,7 @@ import {
   SelectSeparator,
   SelectTrigger,
 } from "@/components/ui/select";
-import { Palette, ChevronDown } from "lucide-react";
+import { Palette } from "lucide-react";
 
 const DEFAULT_THEMES = [
   { name: "Padrão", value: "default" },
@@ -25,9 +25,7 @@ const SCALED_THEMES = [
   { name: "Padrão 02", value: "blue-scaled" },
 ];
 
-const MONO_THEMES = [
-  { name: "Personalizado", value: "mono-scaled" },
-];
+const MONO_THEMES = [{ name: "Personalizado", value: "mono-scaled" }];
 
 export function ThemeSelector() {
   const { activeTheme, setActiveTheme } = useThemeConfig();
@@ -39,7 +37,16 @@ export function ThemeSelector() {
       </Label>
 
       <Select value={activeTheme} onValueChange={setActiveTheme}>
-        
+        {/* Trigger compacto: só ícone (a seta já vem do SelectTrigger) */}
+        <SelectTrigger
+          id="theme-selector"
+          size="sm"
+          className="w-auto px-2 justify-center"
+          aria-label="Selecionar tema"
+          title="Selecionar tema"
+        >
+          <Palette className="h-4 w-4" />
+        </SelectTrigger>
 
         <SelectContent align="end">
           <SelectGroup>
