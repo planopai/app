@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, ArrowLeft, Palette, ChevronDown } from "lucide-react";
+import { Home, ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,26 +16,13 @@ export function SiteHeader() {
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-
-        {/* Abrir/fechar sidebar */}
         <SidebarTrigger className="-ml-1" />
 
-        {/* Botão Home */}
+        {/* Home */}
         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-          <Link href="/" title="Início">
+          <Link href="/" aria-label="Início" title="Início">
             <Home className="h-4 w-4" />
           </Link>
-        </Button>
-
-        {/* Botão Voltar */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => router.back()}
-          title="Voltar"
-        >
-          <ArrowLeft className="h-4 w-4" />
         </Button>
 
         <Separator
@@ -45,17 +32,21 @@ export function SiteHeader() {
 
         <h1 className="text-base font-medium"></h1>
 
-        {/* Área direita */}
+        {/* Direita */}
         <div className="ml-auto flex items-center gap-2">
-
-          {/* Theme compacto (ícone + seta) */}
-          <Button variant="ghost" size="sm" className="gap-1">
-            <Palette className="h-4 w-4" />
-            <ChevronDown className="h-3 w-3 opacity-60" />
+          {/* Voltar do lado do Tema */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => router.back()}
+            aria-label="Voltar"
+            title="Voltar"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Button>
 
           <ThemeSelector />
-
           <ModeSwitcher />
         </div>
       </div>

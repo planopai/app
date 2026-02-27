@@ -10,88 +10,74 @@ import {
   SelectLabel,
   SelectSeparator,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
+import { Palette, ChevronDown } from "lucide-react";
 
 const DEFAULT_THEMES = [
-  {
-    name: "Padrão",
-    value: "default",
-  },
-  {
-    name: "Azul",
-    value: "blue",
-  },
-  {
-    name: "Verde",
-    value: "green",
-  },
-  {
-    name: "Laranja",
-    value: "amber",
-  },
+  { name: "Padrão", value: "default" },
+  { name: "Azul", value: "blue" },
+  { name: "Verde", value: "green" },
+  { name: "Laranja", value: "amber" },
 ];
 
 const SCALED_THEMES = [
-  {
-    name: "Padrão",
-    value: "default-scaled",
-  },
-  {
-    name: "Padrão 02",
-    value: "blue-scaled",
-  },
+  { name: "Padrão", value: "default-scaled" },
+  { name: "Padrão 02", value: "blue-scaled" },
 ];
 
 const MONO_THEMES = [
-  {
-    name: "Personalizado",
-    value: "mono-scaled",
-  },
+  { name: "Personalizado", value: "mono-scaled" },
 ];
 
 export function ThemeSelector() {
   const { activeTheme, setActiveTheme } = useThemeConfig();
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center">
       <Label htmlFor="theme-selector" className="sr-only">
         Tema
       </Label>
+
       <Select value={activeTheme} onValueChange={setActiveTheme}>
+        {/* Trigger compacto: só ícone + seta */}
         <SelectTrigger
           id="theme-selector"
           size="sm"
-          className="justify-start *:data-[slot=select-value]:w-12"
+          className="w-auto gap-1 px-2 justify-center"
+          aria-label="Selecionar tema"
+          title="Selecionar tema"
         >
-          <span className="text-muted-foreground hidden sm:block">
-            Selecione um Tema:
-          </span>
-          <span className="text-muted-foreground block sm:hidden">Tema</span>
-          <SelectValue placeholder="Select a theme" />
+          <Palette className="h-4 w-4" />
+          <ChevronDown className="h-3 w-3 opacity-60" />
         </SelectTrigger>
+
         <SelectContent align="end">
           <SelectGroup>
             <SelectLabel>Padrão</SelectLabel>
             {DEFAULT_THEMES.map((theme) => (
-              <SelectItem key={theme.name} value={theme.value}>
+              <SelectItem key={theme.value} value={theme.value}>
                 {theme.name}
               </SelectItem>
             ))}
           </SelectGroup>
+
           <SelectSeparator />
+
           <SelectGroup>
             <SelectLabel>Dimensionada</SelectLabel>
             {SCALED_THEMES.map((theme) => (
-              <SelectItem key={theme.name} value={theme.value}>
+              <SelectItem key={theme.value} value={theme.value}>
                 {theme.name}
               </SelectItem>
             ))}
           </SelectGroup>
+
+          <SelectSeparator />
+
           <SelectGroup>
-            <SelectLabel>Fonte Espçada</SelectLabel>
+            <SelectLabel>Fonte Espaçada</SelectLabel>
             {MONO_THEMES.map((theme) => (
-              <SelectItem key={theme.name} value={theme.value}>
+              <SelectItem key={theme.value} value={theme.value}>
                 {theme.name}
               </SelectItem>
             ))}
