@@ -173,18 +173,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* DICAS */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <h4 className="mb-2 text-[13px] font-extrabold">
-            Dicas Para Solução de Problemas No App
-          </h4>
-
-          <ul className="space-y-1 text-[13px] text-gray-600 dark:text-gray-300">
-            <li>• Saia da Conta e Faça Login Novamente.</li>
-            <li>• Desative e Ative Novamente a Internet.</li>
-            <li>• Limpe o Cache do App</li>
-          </ul>
-        </section>
+        
 
       </div>
     </div>
