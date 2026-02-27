@@ -34,7 +34,7 @@ export function SiteHeader() {
 
         {/* Direita */}
         <div className="ml-auto flex items-center gap-2">
-          {/* Voltar do lado do Tema */}
+          {/* Voltar */}
           <Button
             variant="ghost"
             size="icon"
@@ -45,6 +45,12 @@ export function SiteHeader() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
+
+          {/* Separador na direita (opcional) */}
+          <Separator
+            orientation="vertical"
+            className="mx-1 data-[orientation=vertical]:h-4"
+          />
 
           <ThemeSelector />
           <ModeSwitcher />
