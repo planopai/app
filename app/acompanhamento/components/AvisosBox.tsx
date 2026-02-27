@@ -4,8 +4,8 @@ import React, { useMemo, useState } from "react";
 import type { Aviso, Registro } from "./types";
 import TextFeedback from "./TextFeedback";
 
-const TAG_SERVICO = "[Serviço]";
-const TAG_GERAL = "[Geral]";
+const TAG_SERVICO = "Atendimento:";
+const TAG_GERAL = "Geral:";
 
 function startsWithFalecidoPrefix(s: string) {
     const t = (s || "").trim().toLowerCase();

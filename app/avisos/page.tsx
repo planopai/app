@@ -72,8 +72,8 @@ function parseRegistroDateTime(r: any) {
 /* =========================
    ✅ Tags de aviso
    ========================= */
-const TAG_SERVICO = "[Serviço]";
-const TAG_GERAL = "[Geral]";
+const TAG_SERVICO = "Atendimento:";
+const TAG_GERAL = "Geral:";
 
 function isServicoMsg(msg?: any) {
     const s = String(msg ?? "");
