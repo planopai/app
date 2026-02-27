@@ -1,40 +1,93 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { Aviso, Registro } from "./types";
 import TextFeedback from "./TextFeedback";
-import EditableText from "./EditableText";
 
 const TAG_SERVICO = "[Serviço]";
 const TAG_GERAL = "[Geral]";
 
-function getTagKind(msg?: any): "servico" | "geral" | "none" {
-    const s = String(msg ?? "");
-    if (s.startsWith(TAG_SERVICO)) return "servico";
-    if (s.startsWith(TAG_GERAL)) return "geral";
-    return "none";
+function parseAvisoMensagem(raw: any): { tag: "Serviço" | "Geral"; text: string } {
+    const s = String(raw ?? "").trim();
+
+    if (s.startsWith(TAG_SERVICO)) {
+        return { tag: "Serviço", text: s.slice(TAG_SERVICO.length).trim() };
+    }
+    if (s.startsWith(TAG_GERAL)) {
+        return { tag: "Geral", text: s.slice(TAG_GERAL.length).trim() };
+    }
+
+    // fallback (caso exista aviso antigo sem tag)
+    return { tag: "Geral", text: s };
 }
 
-function stripTag(msg?: any) {
-    const s = String(msg ?? "");
-    if (s.startsWith(TAG_SERVICO)) return s.slice(TAG_SERVICO.length).trim();
-    if (s.startsWith(TAG_GERAL)) return s.slice(TAG_GERAL.length).trim();
-    return s.trim();
-}
-
-function TagBadge({ kind }: { kind: "servico" | "geral" | "none" }) {
-    if (kind === "none") return null;
-
-    const label = kind === "servico" ? "Serviço" : "Geral";
+function TagChip({ kind }: { kind: "Serviço" | "Geral" }) {
     const cls =
-        kind === "servico"
-            ? "bg-sky-100 text-sky-700 border-sky-200"
+        kind === "Serviço"
+            ? "bg-sky-100 text-sky-800 border-sky-200"
             : "bg-slate-100 text-slate-700 border-slate-200";
 
     return (
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cls}`}>
-            {label}
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] ${cls}`}>
+            {kind}
         </span>
+    );
+}
+
+function Modal({
+    open,
+    title,
+    subtitle,
+    children,
+    onClose,
+    disableClose,
+}: {
+    open: boolean;
+    title: string;
+    subtitle?: string;
+    children: React.ReactNode;
+    onClose: () => void;
+    disableClose?: boolean;
+}) {
+    if (!open) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+            <div
+                className="absolute inset-0 bg-black/40"
+                onClick={disableClose ? undefined : onClose}
+                aria-hidden
+            />
+            <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-background shadow-2xl overflow-hidden">
+                <div className="border-b px-4 py-3 sm:px-5 sm:py-4 bg-muted/40">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <h3 className="text-base sm:text-lg font-semibold leading-tight break-words [overflow-wrap:anywhere]">
+                                {title}
+                            </h3>
+                            {subtitle ? (
+                                <p className="mt-1 text-[14px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                    {subtitle}
+                                </p>
+                            ) : null}
+                        </div>
+
+                        <button
+                            type="button"
+                            className="shrink-0 rounded-full border px-3 py-1.5 text-[14px] hover:bg-muted disabled:opacity-60"
+                            onClick={onClose}
+                            disabled={!!disableClose}
+                            aria-label="Fechar"
+                            title="Fechar"
+                        >
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+
+                <div className="px-4 py-4 sm:px-5 sm:py-5">{children}</div>
+            </div>
+        </div>
     );
 }
 
@@ -48,12 +101,9 @@ export default function AvisosBox({
     enviarAviso,
     editarAviso,
     excluirAviso,
-    finalizarAviso,
     avisoInputRef,
 }: {
     avisos: Aviso[];
-
-    // ✅ lista do quadro (filtrada/ordenada no page.tsx)
     registros: Registro[];
     onAddObservacao: (registroId: string) => void;
 
@@ -63,88 +113,106 @@ export default function AvisosBox({
     enviarAviso: () => Promise<void>;
     editarAviso: (id: number | string, mensagem: string) => Promise<void>;
     excluirAviso: (id: number | string) => Promise<void>;
-    finalizarAviso: (id: number | string) => Promise<void>;
 
     avisoInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
-    const regs = Array.isArray(registros) ? registros : [];
+    // -------- Modal edição de aviso ----------
+    const [editOpen, setEditOpen] = useState(false);
+    const [editLoading, setEditLoading] = useState(false);
+    const [editId, setEditId] = useState<number | string | null>(null);
+    const [editTag, setEditTag] = useState<"Serviço" | "Geral">("Geral");
+    const [editText, setEditText] = useState("");
+
     const avisosAtivos = useMemo(() => {
-        return (avisos ?? []).filter((a: any) => a?.finalizado !== 1);
+        return (avisos ?? []).filter((a: any) => Number(a?.finalizado ?? 0) !== 1);
     }, [avisos]);
 
+    const openEdit = (a: any) => {
+        const { tag, text } = parseAvisoMensagem(a?.mensagem);
+        setEditId(a?.id);
+        setEditTag(tag);
+        setEditText(text);
+        setEditOpen(true);
+    };
+
+    const closeEdit = () => {
+        if (editLoading) return;
+        setEditOpen(false);
+        setEditId(null);
+        setEditText("");
+    };
+
+    const submitEdit = async () => {
+        if (editId == null) return;
+
+        const t = editText.trim();
+        if (!t) {
+            setAvisoMsg({ ok: false, text: "Digite um texto para salvar." });
+            return;
+        }
+
+        setEditLoading(true);
+        try {
+            const prefix = editTag === "Serviço" ? TAG_SERVICO : TAG_GERAL;
+            await editarAviso(editId, `${prefix} ${t}`);
+            setAvisoMsg({ ok: true, text: "Aviso atualizado!" });
+            closeEdit();
+        } catch (e: any) {
+            setAvisoMsg({ ok: false, text: e?.message || "Erro ao editar!" });
+        } finally {
+            setEditLoading(false);
+        }
+    };
+
     return (
-        <section className="rounded-2xl border bg-card/60 p-4 sm:p-6 shadow-sm">
-            <div className="flex flex-col gap-1">
-                <h2 className="text-lg sm:text-xl font-semibold">Avisos do Plantão</h2>
-                <p className="text-sm text-muted-foreground">
-                    Adicione um aviso geral ou registre uma observação vinculada a um atendimento.
-                </p>
-            </div>
-
-            {/* ===== Atendimentos no Quadro ===== */}
-            <div className="mt-4 rounded-2xl border bg-background/60 p-3 sm:p-4">
-                <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">Atendimentos no Quadro</h3>
-                    <span className="text-xs text-muted-foreground">{regs.length} ativo(s)</span>
+        <section className="space-y-4">
+            {/* Atendimentos */}
+            <div className="rounded-2xl border bg-card/60 p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-semibold">Atendimentos</h2>
+                    <span className="text-sm text-muted-foreground">{registros?.length ?? 0} ativo(s)</span>
                 </div>
 
-                <div className="mt-3 max-h-[320px] overflow-y-auto pr-1">
-                    {regs.length === 0 ? (
-                        <div className="rounded-xl border bg-background p-3 text-sm text-muted-foreground">
-                            Nenhum atendimento ativo no quadro.
-                        </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {regs.map((r: any) => {
-                                const id = String(r?.id ?? "");
-                                const nome = String(r?.falecido ?? "").trim() || "Falecido(a) não informado";
-                                const status = String(r?.status ?? "").trim();
-
-                                return (
-                                    <div
-                                        key={id}
-                                        className="rounded-xl border bg-background p-3 sm:p-4"
-                                    >
-                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                            {/* Esquerda: Nome + Status */}
-                                            <div className="min-w-0">
-                                                <div className="text-sm sm:text-base font-semibold leading-snug break-words [overflow-wrap:anywhere]">
-                                                    {nome}
-                                                </div>
-                                                <div className="mt-1 text-xs sm:text-sm text-muted-foreground">
-                                                    Status: <span className="font-medium text-foreground/80">{status || "a definir"}</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Direita: Botão */}
-                                            <div className="shrink-0">
-                                                <button
-                                                    type="button"
-                                                    className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
-                                                    onClick={() => onAddObservacao(id)}
-                                                >
-                                                    Adicionar Observação
-                                                </button>
-                                            </div>
-                                        </div>
+                <div className="mt-3 space-y-2">
+                    {(registros ?? []).map((r: any) => (
+                        <div
+                            key={String(r?.id)}
+                            className="rounded-xl border bg-background/60 p-3 sm:p-4"
+                        >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                    <div className="font-semibold break-words [overflow-wrap:anywhere]">
+                                        {String(r?.falecido ?? "")}
                                     </div>
-                                );
-                            })}
+                                    <div className="mt-1 text-[14px] text-muted-foreground">
+                                        Status: {String(r?.status ?? "")}
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                                    onClick={() => onAddObservacao(String(r?.id))}
+                                >
+                                    Adicionar Observação
+                                </button>
+                            </div>
                         </div>
-                    )}
+                    ))}
                 </div>
             </div>
 
-            {/* ===== Input Aviso Geral ===== */}
-            <div className="mt-4 rounded-2xl border bg-background/60 p-3 sm:p-4">
-                <div className="text-sm font-semibold">Aviso Geral</div>
-                <div className="mt-3 flex flex-col sm:flex-row gap-2">
+            {/* Enviar Aviso Geral */}
+            <div className="rounded-2xl border bg-card/60 p-4 sm:p-5">
+                <h2 className="text-lg font-semibold">Aviso Geral</h2>
+
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <input
                         ref={avisoInputRef as React.RefObject<HTMLInputElement>}
                         type="text"
                         maxLength={255}
                         placeholder="Digite um aviso..."
-                        className="w-full flex-1 rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+                        className="w-full flex-1 rounded-xl border px-3 py-2 text-[16px]"
                         onKeyDown={(e) => {
                             if (e.key === "Enter") enviarAviso();
                         }}
@@ -152,91 +220,118 @@ export default function AvisosBox({
 
                     <button
                         type="button"
-                        className="w-full sm:w-auto rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                        className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
                         onClick={enviarAviso}
                     >
                         Enviar
                     </button>
                 </div>
 
-                <div className="mt-2">
-                    {avisoMsg && (
+                {avisoMsg ? (
+                    <div className="mt-2">
                         <TextFeedback kind={avisoMsg.ok ? "success" : "error"}>
                             {avisoMsg.text}
                         </TextFeedback>
+                    </div>
+                ) : null}
+            </div>
+
+            {/* Avisos */}
+            <div className="rounded-2xl border bg-card/60 p-4 sm:p-5">
+                <h2 className="text-lg font-semibold">Avisos Ativos</h2>
+
+                <div className="mt-3 space-y-2">
+                    {avisosAtivos.length === 0 ? (
+                        <div className="rounded-xl border bg-background/60 p-4 text-sm text-muted-foreground">
+                            Nenhum aviso no momento.
+                        </div>
+                    ) : (
+                        avisosAtivos.map((a: any) => {
+                            const { tag, text } = parseAvisoMensagem(a?.mensagem);
+                            const usuario = String(a?.usuario ?? "").trim();
+                            const criadoEm = a?.criado_em ? new Date(a.criado_em).toLocaleString() : "";
+
+                            return (
+                                <div key={String(a?.id)} className="rounded-xl border bg-background/60 p-3 sm:p-4">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <TagChip kind={tag} />
+                                        {usuario ? (
+                                            <span className="rounded-full border bg-muted/30 px-2 py-0.5 text-[12px]">
+                                                {usuario}
+                                            </span>
+                                        ) : null}
+
+                                        {criadoEm ? (
+                                            <span className="text-[12px] text-muted-foreground">{criadoEm}</span>
+                                        ) : null}
+                                    </div>
+
+                                    <div className="mt-2 text-[16px] leading-relaxed break-words [overflow-wrap:anywhere]">
+                                        {text}
+                                    </div>
+
+                                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                                        <button
+                                            type="button"
+                                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                                            onClick={() => openEdit(a)}
+                                        >
+                                            Editar
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                                            onClick={() => excluirAviso(a?.id)}
+                                        >
+                                            Excluir
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })
                     )}
                 </div>
             </div>
 
-            {/* ===== Lista de Avisos ===== */}
-            <div className="mt-4">
-                <div className="text-sm font-semibold">Avisos Ativos</div>
+            {/* Modal editar aviso */}
+            <Modal
+                open={editOpen}
+                title="Editar aviso"
+                subtitle={editTag ? `Tipo: ${editTag}` : undefined}
+                onClose={closeEdit}
+                disableClose={editLoading}
+            >
+                <label className="block text-[14px] font-medium text-muted-foreground">Texto</label>
+                <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={5}
+                    maxLength={255}
+                    className="mt-2 w-full rounded-xl border px-3 py-2 text-[16px] outline-none focus:ring-2 focus:ring-sky-200"
+                    placeholder="Digite o aviso..."
+                />
 
-                <ul className="mt-3 space-y-2">
-                    {avisosAtivos.length === 0 ? (
-                        <li className="rounded-xl border bg-background p-3 text-sm text-muted-foreground">
-                            Nenhum aviso no momento.
-                        </li>
-                    ) : (
-                        avisosAtivos.map((a: any) => {
-                            const kind = getTagKind(a?.mensagem);
-                            const msg = stripTag(a?.mensagem);
+                <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
+                    <button
+                        type="button"
+                        className="w-full sm:w-auto rounded-xl border px-4 py-2 text-[14px] hover:bg-muted disabled:opacity-60"
+                        onClick={closeEdit}
+                        disabled={editLoading}
+                    >
+                        Cancelar
+                    </button>
 
-                            return (
-                                <li
-                                    key={String(a?.id ?? Math.random())}
-                                    className="rounded-xl border bg-background p-3 sm:p-4"
-                                >
-                                    <div className="flex flex-col gap-2">
-                                        {/* Header */}
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <TagBadge kind={kind} />
-                                            {a?.usuario ? (
-                                                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px]">
-                                                    {a.usuario}
-                                                </span>
-                                            ) : null}
-
-                                            <span className="ml-auto text-[11px] text-muted-foreground">
-                                                {a?.criado_em ? new Date(a.criado_em).toLocaleString() : ""}
-                                            </span>
-                                        </div>
-
-                                        {/* Conteúdo */}
-                                        <div className="min-w-0">
-                                            <EditableText
-                                                text={msg}
-                                                onSave={(t) => {
-                                                    // mantém o prefixo ao salvar (pra não perder a tag)
-                                                    const prefix = kind === "servico" ? TAG_SERVICO : kind === "geral" ? TAG_GERAL : "";
-                                                    return editarAviso(a.id, prefix ? `${prefix} ${t}` : t);
-                                                }}
-                                                className="w-full"
-                                            />
-                                        </div>
-
-                                        {/* Ações */}
-                                        <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
-                                            <button
-                                                className="w-full sm:w-auto rounded-xl border px-3 py-2 text-sm hover:bg-muted"
-                                                onClick={() => excluirAviso(a.id)}
-                                            >
-                                                Excluir
-                                            </button>
-                                            <button
-                                                className="w-full sm:w-auto rounded-xl border px-3 py-2 text-sm hover:bg-muted"
-                                                onClick={() => finalizarAviso(a.id)}
-                                            >
-                                                Finalizar
-                                            </button>
-                                        </div>
-                                    </div>
-                                </li>
-                            );
-                        })
-                    )}
-                </ul>
-            </div>
+                    <button
+                        type="button"
+                        className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                        onClick={submitEdit}
+                        disabled={editLoading}
+                    >
+                        {editLoading ? "Salvando..." : "Salvar"}
+                    </button>
+                </div>
+            </Modal>
         </section>
     );
 }

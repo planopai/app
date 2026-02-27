@@ -42,7 +42,6 @@ function capStatus(s?: string) {
 
 /* =========================
    ✅ MESMAS REGRAS DO QUADRO
-   (filtro + ordenação)
    ========================= */
 function isNao(v?: any) {
     const s = String(v ?? "").trim().toLowerCase();
@@ -71,7 +70,7 @@ function parseRegistroDateTime(r: any) {
 }
 
 /* =========================
-   ✅ Tags (persistidas no backend, mas exibidas como badge)
+   ✅ Tags de aviso
    ========================= */
 const TAG_SERVICO = "[Serviço]";
 const TAG_GERAL = "[Geral]";
@@ -93,18 +92,16 @@ function normNome(s: string) {
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase()
-        .replace(/\s+/g, " ")
         .trim();
 }
 
 /* =========================
-   ✅ Modal bonitinho (responsivo)
+   ✅ Modal observação
    ========================= */
 function ObservacaoModal({
     open,
     onClose,
-    titulo,
-    subtitulo,
+    falecido,
     value,
     setValue,
     onSubmit,
@@ -112,8 +109,7 @@ function ObservacaoModal({
 }: {
     open: boolean;
     onClose: () => void;
-    titulo: string;
-    subtitulo?: string;
+    falecido: string;
     value: string;
     setValue: (v: string) => void;
     onSubmit: () => void;
@@ -128,28 +124,23 @@ function ObservacaoModal({
                 onClick={loading ? undefined : onClose}
                 aria-hidden
             />
-
-            <div className="relative z-10 w-full max-w-xl rounded-2xl border bg-background shadow-2xl overflow-hidden">
-                <div className="px-4 py-3 sm:px-5 sm:py-4 border-b bg-muted/40">
+            <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-background shadow-2xl overflow-hidden">
+                <div className="border-b px-4 py-3 sm:px-5 sm:py-4 bg-muted/40">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                            <h3 className="text-base sm:text-lg font-semibold leading-tight break-words [overflow-wrap:anywhere]">
-                                {titulo}
+                            <h3 className="text-base sm:text-lg font-semibold leading-tight">
+                                Adicionar Observação
                             </h3>
-                            {subtitulo ? (
-                                <p className="mt-1 text-sm text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                    {subtitulo}
-                                </p>
-                            ) : null}
+                            <p className="mt-1 text-[14px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                Falecido(a): {falecido}
+                            </p>
                         </div>
 
                         <button
                             type="button"
-                            className="shrink-0 rounded-full border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
+                            className="shrink-0 rounded-full border px-3 py-1.5 text-[14px] hover:bg-muted disabled:opacity-60"
                             onClick={onClose}
                             disabled={!!loading}
-                            aria-label="Fechar"
-                            title="Fechar"
                         >
                             Fechar
                         </button>
@@ -157,20 +148,22 @@ function ObservacaoModal({
                 </div>
 
                 <div className="px-4 py-4 sm:px-5 sm:py-5">
-                    <label className="block text-sm font-medium">Observação</label>
+                    <label className="block text-[14px] font-medium text-muted-foreground">
+                        Observação
+                    </label>
                     <textarea
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
                         rows={5}
                         maxLength={255}
-                        className="mt-2 w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+                        className="mt-2 w-full rounded-xl border px-3 py-2 text-[16px] outline-none focus:ring-2 focus:ring-sky-200"
                         placeholder="Digite a observação..."
                     />
 
                     <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
                         <button
                             type="button"
-                            className="w-full sm:w-auto rounded-xl border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            className="w-full sm:w-auto rounded-xl border px-4 py-2 text-[14px] hover:bg-muted disabled:opacity-60"
                             onClick={onClose}
                             disabled={!!loading}
                         >
@@ -179,17 +172,13 @@ function ObservacaoModal({
 
                         <button
                             type="button"
-                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
                             onClick={onSubmit}
                             disabled={!!loading}
                         >
                             {loading ? "Adicionando..." : "Adicionar"}
                         </button>
                     </div>
-
-                    <p className="mt-3 text-xs text-muted-foreground">
-                        Observações adicionadas aqui entram como <b>Serviço</b>.
-                    </p>
                 </div>
             </div>
         </div>
@@ -228,7 +217,7 @@ export default function AvisosPage() {
         }
     }, []);
 
-    // ✅ buscar atendimentos (normalização igual ao quadro)
+    // ✅ buscar atendimentos
     const fetchRegistros = useCallback(async () => {
         try {
             const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`, {
@@ -246,6 +235,32 @@ export default function AvisosPage() {
                     ...it,
                     id: it?.id != null ? String(it.id) : it.id,
                     status: normalizarStatus(it?.status) ?? it?.status,
+
+                    urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
+                    urna_produto_id: Number(it?.urna_produto_id ?? 0) || 0,
+                    urna_codigo_barras: String(it?.urna_codigo_barras ?? ""),
+
+                    roupa_deposito_nome: String(it?.roupa_deposito_nome ?? ""),
+                    roupa_produto_id: Number(it?.roupa_produto_id ?? 0) || 0,
+                    roupa_codigo_barras: String(it?.roupa_codigo_barras ?? ""),
+                    roupa_propria: Number(it?.roupa_propria ?? 0) || 0,
+
+                    invol_deposito_nome: String(it?.invol_deposito_nome ?? ""),
+                    invol_produto_id: Number(it?.invol_produto_id ?? 0) || 0,
+                    invol_codigo_barras: String(it?.invol_codigo_barras ?? ""),
+                    invol_item: String(it?.invol_item ?? ""),
+
+                    veu_deposito_nome: String(it?.veu_deposito_nome ?? ""),
+                    veu_produto_id: Number(it?.veu_produto_id ?? 0) || 0,
+                    veu_codigo_barras: String(it?.veu_codigo_barras ?? ""),
+                    veu_item: String(it?.veu_item ?? ""),
+
+                    cordao_deposito_nome: String(it?.cordao_deposito_nome ?? ""),
+                    cordao_produto_id: Number(it?.cordao_produto_id ?? 0) || 0,
+                    cordao_codigo_barras: String(it?.cordao_codigo_barras ?? ""),
+                    cordao_item: String(it?.cordao_item ?? ""),
+
+                    arrumacao_json: String(it?.arrumacao_json ?? ""),
                 }))
                 : [];
 
@@ -255,7 +270,7 @@ export default function AvisosPage() {
         }
     }, []);
 
-    // ✅ mesma lista do quadro
+    // ✅ mesma lista do quadro (filtro + ordenação)
     const registrosParaLista = useMemo(() => {
         const base = (registros || []).filter((r: any) => {
             const statusNorm = normalizarStatus(r?.status);
@@ -269,14 +284,13 @@ export default function AvisosPage() {
         const withTs = base.map((r: any) => ({ r, ts: parseRegistroDateTime(r) }));
         withTs.sort((a, b) => b.ts - a.ts);
 
-        // status -> nome real (só pra exibir)
         return withTs.map(({ r }) => ({
             ...r,
             status: capStatus(r?.status),
         })) as Registro[];
     }, [registros]);
 
-    // ✅ nomes ativos (pra esconder avisos Serviço quando atendimento some)
+    // ✅ nomes ativos (pra esconder Serviço quando o atendimento some)
     const nomesAtivos = useMemo(() => {
         const set = new Set<string>();
         for (const r of registrosParaLista as any[]) {
@@ -286,7 +300,7 @@ export default function AvisosPage() {
         return set;
     }, [registrosParaLista]);
 
-    // ✅ avisos filtrados: Serviço só aparece se ainda existir no quadro
+    // ✅ avisos filtrados (Serviço só aparece se falecido ainda estiver no quadro)
     const avisosParaExibir = useMemo(() => {
         const arr = Array.isArray(avisos) ? avisos : [];
         return arr.filter((a) => {
@@ -294,12 +308,12 @@ export default function AvisosPage() {
             if (!isServicoMsg(msg)) return true;
 
             const nome = extractServicoNome(msg);
-            if (!nome) return true; // se não conseguiu ler, não some
+            if (!nome) return true;
             return nomesAtivos.has(normNome(nome));
         });
     }, [avisos, nomesAtivos]);
 
-    // ✅ enviar aviso Geral
+    // ✅ enviar aviso "Geral"
     const enviarAviso = useCallback(async () => {
         const val = (avisoInputRef.current?.value ?? "").trim();
         if (!val) {
@@ -330,23 +344,15 @@ export default function AvisosPage() {
 
     const editarAviso = useCallback(
         async (id: number | string, mensagem: string) => {
-            try {
-                const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ id, mensagem }),
-                });
+            const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ id, mensagem }),
+            });
 
-                if (res?.sucesso) {
-                    setAvisoMsg({ text: "Aviso atualizado!", ok: true });
-                    fetchAvisos();
-                } else {
-                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao editar!", ok: false });
-                }
-            } catch (e: any) {
-                setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
-            }
+            if (!res?.sucesso) throw new Error(res?.erro || res?.msg || "Erro ao editar!");
+            fetchAvisos();
         },
         [fetchAvisos]
     );
@@ -376,29 +382,6 @@ export default function AvisosPage() {
         [fetchAvisos]
     );
 
-    const finalizarAviso = useCallback(
-        async (id: number | string) => {
-            try {
-                const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ id, finalizar: true }),
-                });
-
-                if (res?.sucesso) {
-                    setAvisoMsg({ text: "Aviso finalizado!", ok: true });
-                    fetchAvisos();
-                } else {
-                    setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao finalizar!", ok: false });
-                }
-            } catch (e: any) {
-                setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
-            }
-        },
-        [fetchAvisos]
-    );
-
     useEffect(() => {
         fetchAvisos();
         fetchRegistros();
@@ -423,7 +406,7 @@ export default function AvisosPage() {
         };
     }, [fetchAvisos, fetchRegistros]);
 
-    // ✅ abre modal ao clicar em “Adicionar Observação”
+    // ✅ abrir modal observação
     const onAddObservacao = useCallback(
         async (registroId: string) => {
             const r = (registrosParaLista as any[]).find((x) => String(x?.id) === String(registroId));
@@ -461,7 +444,6 @@ export default function AvisosPage() {
             return;
         }
 
-        // se o atendimento sumiu enquanto o modal estava aberto, não adiciona
         if (!nomesAtivos.has(normNome(nome))) {
             setAvisoMsg({
                 ok: false,
@@ -483,7 +465,7 @@ export default function AvisosPage() {
             });
 
             if (res?.sucesso) {
-                setAvisoMsg({ ok: true, text: "Observação adicionada!" }); // ✅ sem “Geral/Serviço” aqui
+                setAvisoMsg({ ok: true, text: "Observação adicionada!" });
                 closeObs();
                 fetchAvisos();
             } else {
@@ -497,17 +479,10 @@ export default function AvisosPage() {
     }, [obsFalecido, obsTexto, nomesAtivos, closeObs, fetchAvisos]);
 
     return (
-        <div className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6">
-            <header className="mb-4 sm:mb-6 rounded-2xl border bg-card/60 p-4 sm:p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                        <h1 className="text-xl sm:text-2xl font-semibold">Avisos</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Geral (avisos livres) e Serviço (observações vinculadas ao atendimento).
-                        </p>
-                    </div>
-                </div>
-            </header>
+        <div className="mx-auto w-full max-w-6xl p-3 sm:p-6 space-y-4">
+            <div className="rounded-2xl border bg-card/60 p-4 sm:p-6">
+                <h1 className="text-xl sm:text-2xl font-semibold">Avisos</h1>
+            </div>
 
             <AvisosBox
                 avisos={avisosParaExibir}
@@ -518,15 +493,13 @@ export default function AvisosPage() {
                 enviarAviso={enviarAviso}
                 editarAviso={editarAviso}
                 excluirAviso={excluirAviso}
-                finalizarAviso={finalizarAviso}
                 avisoInputRef={avisoInputRef}
             />
 
             <ObservacaoModal
                 open={obsOpen}
                 onClose={closeObs}
-                titulo="Adicionar Observação"
-                subtitulo={obsFalecido ? `Falecido(a): ${obsFalecido}` : undefined}
+                falecido={obsFalecido}
                 value={obsTexto}
                 setValue={setObsTexto}
                 onSubmit={submitObs}
