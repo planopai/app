@@ -7,12 +7,32 @@ import TextFeedback from "./TextFeedback";
 const TAG_SERVICO = "[Serviço]";
 const TAG_GERAL = "[Geral]";
 
+function startsWithFalecidoPrefix(s: string) {
+    const t = (s || "").trim().toLowerCase();
+    // aceita: "Falecido(a):", "Falecido:", "Falecida:", etc
+    return (
+        t.startsWith("falecido(a):") ||
+        t.startsWith("falecido:") ||
+        t.startsWith("falecida:") ||
+        t.startsWith("falecidos(a):") ||
+        t.startsWith("falecidos:")
+    );
+}
+
 function parseAvisoMensagem(raw: any): { tag: "Serviço" | "Geral"; text: string } {
     const s = String(raw ?? "").trim();
 
+    // ✅ Serviço: tag explícita do sistema
     if (s.startsWith(TAG_SERVICO)) {
         return { tag: "Serviço", text: s.slice(TAG_SERVICO.length).trim() };
     }
+
+    // ✅ Serviço: mensagens antigas vindas da aba INFO (começam com "Falecido(a): ...")
+    if (startsWithFalecidoPrefix(s)) {
+        return { tag: "Serviço", text: s };
+    }
+
+    // ✅ Geral
     if (s.startsWith(TAG_GERAL)) {
         return { tag: "Geral", text: s.slice(TAG_GERAL.length).trim() };
     }
@@ -22,7 +42,7 @@ function parseAvisoMensagem(raw: any): { tag: "Serviço" | "Geral"; text: string
 }
 
 function TagChip({ kind }: { kind: "Serviço" | "Geral" }) {
-    // ✅ MODIFICADO: Geral = vermelho | Serviço = amarelo
+    // ✅ Geral = vermelho | Serviço = amarelo
     const cls =
         kind === "Serviço"
             ? "bg-yellow-100 text-yellow-900 border-yellow-200"
@@ -154,8 +174,14 @@ export default function AvisosBox({
 
         setEditLoading(true);
         try {
-            const prefix = editTag === "Serviço" ? TAG_SERVICO : TAG_GERAL;
-            await editarAviso(editId, `${prefix} ${t}`);
+            // ✅ Se o texto já começa com "Falecido(a):", manter assim (continua sendo Serviço pelo parser)
+            // Caso contrário, mantém tags [Serviço]/[Geral] quando editar.
+            const mensagem =
+                startsWithFalecidoPrefix(t)
+                    ? t
+                    : `${editTag === "Serviço" ? TAG_SERVICO : TAG_GERAL} ${t}`;
+
+            await editarAviso(editId, mensagem);
             setAvisoMsg({ ok: true, text: "Aviso atualizado!" });
             closeEdit();
         } catch (e: any) {
