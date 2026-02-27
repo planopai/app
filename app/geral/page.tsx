@@ -3987,10 +3987,8 @@ export default function Page() {
                 <Card className="p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
-                            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Admin do Estoque</h1>
-                            <p className="mt-1 text-sm text-slate-600">
-                                Entrada (aba própria), Saída e Transferência (dentro de Movimentação), Estoque por depósito (com filtro de Alertas), Histórico e Avançado.
-                            </p>
+                            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Administração do Estoque</h1>
+                            
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : "—"}</b>
                             </p>
@@ -4037,7 +4035,7 @@ export default function Page() {
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Saída</p>
-                                    <p className="mt-1 text-xs text-slate-600">Selecione solicitante, depósito, destino, produto e quantidade.</p>
+                                    
                                     <div className="mt-3">
                                         <Button onClick={() => setSaidaOpen(true)} type="button">
                                             Abrir Saída
@@ -4047,7 +4045,7 @@ export default function Page() {
 
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Transferência</p>
-                                    <p className="mt-1 text-xs text-slate-600">Move quantidade de origem para destino com validação de saldo.</p>
+                                    
                                     <div className="mt-3">
                                         <Button onClick={() => setTrfOpen(true)} type="button">
                                             Abrir Transferência
@@ -4057,7 +4055,7 @@ export default function Page() {
 
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                                     <p className="text-sm font-semibold text-slate-900">Histórico</p>
-                                    <p className="mt-1 text-xs text-slate-600">Auditoria: entradas/saídas/transferências e cadastros.</p>
+                                    
                                     <div className="mt-3">
                                         <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
                                             Ver Histórico
@@ -4066,11 +4064,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-                                Dica: na Entrada/Saída/Transferência você pode usar <b>câmera</b> para ler o código de barras.
-                                <br />
-                                NOVO: em <b>Saída</b> e <b>Transferência</b>, após o scan aparece um <b>popup</b> com o produto, saldo e seleção de quantidade (OK adiciona na lista).
-                            </div>
+                            
                         </Card>
                     ) : null}
 
@@ -4080,11 +4074,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Leia/digite o código de barras. Se não existir, cadastre o produto. Pode montar lista de vários itens.
-                                        <br />
-                                        NOVO: filtro de <b>depósito</b> + <b>fabricante</b> e barra de pesquisa para listar produtos filtrados.
-                                    </p>
+                                    
                                 </div>
                                 <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
                                     Abrir Entrada
@@ -4099,7 +4089,7 @@ export default function Page() {
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Busca por nome/código/categoria/fabricante e filtro.</p>
+                                    
                                 </div>
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
 
@@ -4770,7 +4760,7 @@ export default function Page() {
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
-                                    <p className="mt-1 text-sm text-slate-600">Auditoria de movimentações (Entrada/Saída/Transferência + Cadastro).</p>
+                                    
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
@@ -4914,9 +4904,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        Ações administrativas em popups (mais organizado).
-                                    </p>
+                                    
                                 </div>
 
                                 <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">

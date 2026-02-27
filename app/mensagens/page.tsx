@@ -632,9 +632,7 @@ export default function MensagensPage() {
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                     <h1 className="text-2xl font-bold leading-tight">Filtro de Mensagens Recebidas</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Selecione a sala e gerencie as mensagens recebidas e aprovadas.
-                    </p>
+                    
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={loadMessages} className={btn} title="Atualizar">

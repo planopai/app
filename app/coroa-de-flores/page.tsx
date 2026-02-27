@@ -470,9 +470,7 @@ export default function Page() {
             <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-6">
                 <div>
                     <h1 className="text-xl font-semibold">Pedidos — Coroas de Flores</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Pesquise, filtre, visualize e gerencie pedidos do WooCommerce.
-                    </p>
+                    
                 </div>
                 <button
                     className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"

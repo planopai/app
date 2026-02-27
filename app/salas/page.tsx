@@ -81,9 +81,7 @@ export default function AcessoCompartilhamentoPage() {
             {/* Título */}
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Acesso e Compartilhamento</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                    Entre nas salas ou gere rapidamente um link de WhatsApp com a senha atual.
-                </p>
+                
             </header>
 
             {/* Grid de Salas */}

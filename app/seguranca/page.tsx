@@ -131,9 +131,7 @@ export default function SegurancaPage() {
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Definição de Senhas</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Gerencie as senhas das salas com segurança e praticidade.
-                    </p>
+                    
                 </div>
                 <div className="flex items-center gap-2">
                     {/* Gerar Aleatória — agora com primary outline */}
@@ -164,9 +162,7 @@ export default function SegurancaPage() {
                         />
                     ))}
                 </div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    A senha definida será aplicada para a sala selecionada.
-                </p>
+                
             </div>
 
             {/* Card: Nova senha */}
@@ -285,10 +281,7 @@ export default function SegurancaPage() {
                 </div>
             </div>
 
-            <div className="mt-4 text-xs text-muted-foreground">
-                <p>• Se o PHP estiver em outro domínio, use um proxy em <b>/api/php/admin</b> para evitar CORS.</p>
-                <p>• Em produção, prefira HTTPS para todas as chamadas.</p>
-            </div>
+            
         </div>
     );
 }

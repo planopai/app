@@ -245,9 +245,7 @@ export default function LeadsPage() {
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold">Leads Sistema Velório Online</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Busque, ordene, selecione e exporte os leads capturados.
-                    </p>
+                    
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={load} className={btnNeutral} title="Atualizar">

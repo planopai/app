@@ -617,19 +617,13 @@ export default function MateriaisAdminPage() {
 
                     {view === "materiais" ? (
                         <>
-                            <p className="text-sm text-muted-foreground">
-                                Categorias, itens e subitens ({stats.cats} / {stats.itens} / {stats.subs})
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                                Proxy: <span className="font-mono">{endpoint}</span>
-                            </p>
+                            
+                            
                         </>
                     ) : (
                         <>
-                            <p className="text-sm text-muted-foreground">Conferências registradas (observações e não conformidades).</p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                                Proxy: <span className="font-mono">{endpoint}</span>
-                            </p>
+                            
+                            
                         </>
                     )}
                 </div>
