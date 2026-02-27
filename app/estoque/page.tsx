@@ -30,13 +30,13 @@ const items = [
     {
         title: "Materiais de Assistência",
         href: "/assistencia",
-        desc: "Materiais usados na assistência",
+        
         icon: IconHeadset,
     },
     {
         title: "Estoque Geral",
         href: "/geral",
-        desc: "Administre todo o estoque",
+        
         icon: IconDoor,
     },
 ];
@@ -57,16 +57,14 @@ export default function EstoquePage() {
                             Estoque
                         </h1>
 
-                        <p className="mt-1 text-[13px] text-muted-foreground">
-                            Gerenciamento de estoque
-                        </p>
+                        
                     </div>
                 </header>
 
                 {/* ========= GRID PADRÃO APP ========= */}
                 <section>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                        {items.map(({ title, href, desc, icon: Icon }) => (
+                        {items.map(({ title, href, icon: Icon }) => (
                             <Link
                                 key={href}
                                 href={href}
@@ -93,9 +91,7 @@ export default function EstoquePage() {
                                         {title}
                                     </p>
 
-                                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                        {desc}
-                                    </p>
+                                    
                                 </div>
                             </Link>
                         ))}
