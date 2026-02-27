@@ -20,7 +20,7 @@ import {
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
-import AvisosBox from "./components/AvisosBox";
+
 import Wizard from "./components/Wizard";
 import MateriaisModal from "./components/MateriaisModal";
 import ArrumacaoModal from "./components/ArrumacaoModal";
@@ -1834,16 +1834,7 @@ export default function AcompanhamentoPage() {
 
       <TabelaAtendimentos registros={registros} onAcao={(id) => abrirPopupAcaoPorId(id)} onInfo={(id) => abrirInfoPorId(id)} />
 
-      <AvisosBox
-        avisos={avisos}
-        avisoMsg={avisoMsg}
-        setAvisoMsg={setAvisoMsg}
-        enviarAviso={enviarAviso}
-        editarAviso={editarAviso}
-        excluirAviso={excluirAviso}
-        finalizarAviso={finalizarAviso}
-        avisoInputRef={avisoInputRef}
-      />
+      
 
       <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
         <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>

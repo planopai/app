@@ -1338,8 +1338,8 @@ export default function AssociadosGeralPage() {
         <div className="mx-auto w-full max-w-6xl px-3 sm:px-6 lg:px-8 py-5">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Associados — Consulta Geral</h1>
-                    <p className="text-sm text-muted-foreground">Unypax (contratos) + banco local (acesso do app).</p>
+                    <h1 className="text-2xl font-bold tracking-tight">Associados</h1>
+                    
                 </div>
 
                 <div className="flex items-center gap-2">
