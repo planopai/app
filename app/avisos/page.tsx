@@ -9,29 +9,53 @@ import { jsonWith401, normalizarStatus } from "../acompanhamento/components/help
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
 /* =========================
+   ✅ Status (nome real)
+   ========================= */
+function capStatus(s?: string) {
+    switch (normalizarStatus(s)) {
+        case "fase01":
+            return "Removendo";
+        case "fase02":
+            return "Aguardando Procedimento";
+        case "fase03":
+            return "Preparando";
+        case "fase04":
+            return "Aguardando Ornamentação";
+        case "fase05":
+            return "Ornamentando";
+        case "fase06":
+            return "Corpo Pronto";
+        case "fase07":
+            return "Transportando P/ Velório";
+        case "fase08":
+            return "Velando";
+        case "fase09":
+            return "Transportando P/ Sepultamento";
+        case "fase10":
+            return "Sepultamento Concluído";
+        case "fase11":
+            return "Material Recolhido";
+        default:
+            return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+    }
+}
+
+/* =========================
    ✅ MESMAS REGRAS DO QUADRO
    (filtro + ordenação)
    ========================= */
-
-// (iguais do Quadro)
 function isNao(v?: any) {
-    const s = String(v ?? "")
-        .trim()
-        .toLowerCase();
+    const s = String(v ?? "").trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
 function isSim(v?: any) {
-    const s = String(v ?? "")
-        .trim()
-        .toLowerCase();
+    const s = String(v ?? "").trim().toLowerCase();
     return s === "sim" || s === "s";
 }
 function isTerceiroRegistro(r: any) {
     if (r?.tipo_atendimento === "terceiro") return true;
     return isNao(r?.assistencia) && isNao(r?.tanato) && isNao(r?.ornamentacao);
 }
-
-// (igual do Quadro: usa data + hora_fim_velorio/hora_inicio_velorio)
 function parseRegistroDateTime(r: any) {
     const d = String(r?.data ?? "").trim();
     const h =
@@ -46,6 +70,144 @@ function parseRegistroDateTime(r: any) {
     return Number.isNaN(ts) ? 0 : ts;
 }
 
+/* =========================
+   ✅ Tags de aviso
+   ========================= */
+const TAG_SERVICO = "[Serviço]";
+const TAG_GERAL = "[Geral]";
+
+function isServicoMsg(msg?: any) {
+    const s = String(msg ?? "");
+    return s.startsWith(TAG_SERVICO);
+}
+function isGeralMsg(msg?: any) {
+    const s = String(msg ?? "");
+    return s.startsWith(TAG_GERAL);
+}
+
+/**
+ * Para vincular ao atendimento sem mexer no backend:
+ * - Mensagem de Serviço fica: "[Serviço] NOME: observação..."
+ * - Quando o atendimento some (nome não está mais na lista), escondemos o aviso.
+ */
+function extractServicoNome(msg?: string) {
+    const s = String(msg ?? "");
+    if (!s.startsWith(TAG_SERVICO)) return "";
+    const rest = s.slice(TAG_SERVICO.length).trim(); // "NOME: obs"
+    const idx = rest.indexOf(":");
+    const nome = (idx >= 0 ? rest.slice(0, idx) : rest).trim();
+    return nome;
+}
+
+function normNome(s: string) {
+    return s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+}
+
+/* =========================
+   ✅ Modal bonitinho
+   ========================= */
+function ObservacaoModal({
+    open,
+    onClose,
+    titulo,
+    subtitulo,
+    value,
+    setValue,
+    onSubmit,
+    loading,
+}: {
+    open: boolean;
+    onClose: () => void;
+    titulo: string;
+    subtitulo?: string;
+    value: string;
+    setValue: (v: string) => void;
+    onSubmit: () => void;
+    loading?: boolean;
+}) {
+    if (!open) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+            <div
+                className="absolute inset-0 bg-black/40"
+                onClick={loading ? undefined : onClose}
+                aria-hidden
+            />
+
+            <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-white shadow-2xl overflow-hidden">
+                <div className="px-4 py-3 sm:px-5 sm:py-4 border-b bg-slate-50">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <h3 className="text-base sm:text-lg font-semibold leading-tight break-words [overflow-wrap:anywhere]">
+                                {titulo}
+                            </h3>
+                            {subtitulo ? (
+                                <p className="mt-1 text-sm text-slate-600 break-words [overflow-wrap:anywhere]">
+                                    {subtitulo}
+                                </p>
+                            ) : null}
+                        </div>
+
+                        <button
+                            type="button"
+                            className="shrink-0 rounded-full border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-60"
+                            onClick={onClose}
+                            disabled={!!loading}
+                            aria-label="Fechar"
+                            title="Fechar"
+                        >
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+
+                <div className="px-4 py-4 sm:px-5 sm:py-5">
+                    <label className="block text-sm font-medium text-slate-700">
+                        Observação
+                    </label>
+                    <textarea
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        rows={4}
+                        maxLength={255}
+                        className="mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+                        placeholder="Digite a observação..."
+                    />
+
+                    <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
+                        <button
+                            type="button"
+                            className="w-full sm:w-auto rounded-xl border px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                            onClick={onClose}
+                            disabled={!!loading}
+                        >
+                            Cancelar
+                        </button>
+
+                        <button
+                            type="button"
+                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                            onClick={onSubmit}
+                            disabled={!!loading}
+                        >
+                            {loading ? "Adicionando..." : "Adicionar"}
+                        </button>
+                    </div>
+
+                    <p className="mt-3 text-xs text-slate-500">
+                        * Observações adicionadas aqui entram como <b>Serviço</b>.
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function AvisosPage() {
     const [avisos, setAvisos] = useState<Aviso[]>([]);
     const [registros, setRegistros] = useState<Registro[]>([]);
@@ -55,17 +217,20 @@ export default function AvisosPage() {
     );
     const avisoInputRef = useRef<HTMLInputElement>(null);
 
+    // modal obs
+    const [obsOpen, setObsOpen] = useState(false);
+    const [obsLoading, setObsLoading] = useState(false);
+    const [obsRegistroId, setObsRegistroId] = useState<string | null>(null);
+    const [obsFalecido, setObsFalecido] = useState<string>("");
+    const [obsTexto, setObsTexto] = useState<string>("");
+
     // ✅ buscar avisos
     const fetchAvisos = useCallback(async () => {
         try {
             const r = await fetch(
                 `${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`,
-                {
-                    credentials: "include",
-                    cache: "no-store",
-                }
+                { credentials: "include", cache: "no-store" }
             );
-
             if (r.status === 401) return;
 
             const data = await r.json().catch(() => null);
@@ -82,12 +247,8 @@ export default function AvisosPage() {
         try {
             const r = await fetch(
                 `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
-                {
-                    credentials: "include",
-                    cache: "no-store",
-                }
+                { credentials: "include", cache: "no-store" }
             );
-
             if (r.status === 401) return;
 
             const data = await r.json().catch(() => null);
@@ -97,6 +258,7 @@ export default function AvisosPage() {
                 ? data.map((it: any) => ({
                     ...it,
                     id: it?.id != null ? String(it.id) : it.id,
+                    // mantém normalizado para regras, mas a gente vai exibir com capStatus depois
                     status: normalizarStatus(it?.status) ?? it?.status,
 
                     // ✅ URNA
@@ -139,6 +301,51 @@ export default function AvisosPage() {
         }
     }, []);
 
+    // ✅ AQUI: mesma lista do quadro (mesmo filtro + mesma ordenação)
+    const registrosParaLista = useMemo(() => {
+        const base = (registros || []).filter((r: any) => {
+            const statusNorm = normalizarStatus(r?.status);
+
+            if (statusNorm === "fase11") return false;
+            if (isTerceiroRegistro(r)) return statusNorm !== "fase10";
+            if (!isSim(r?.assistencia)) return statusNorm !== "fase10";
+            return true;
+        });
+
+        const withTs = base.map((r: any) => ({ r, ts: parseRegistroDateTime(r) }));
+        withTs.sort((a, b) => b.ts - a.ts);
+
+        // ✅ para exibir: status vira texto real
+        return withTs.map(({ r }) => ({
+            ...r,
+            status: capStatus(r?.status),
+        })) as Registro[];
+    }, [registros]);
+
+    // ✅ nomes ativos (pra esconder avisos Serviço quando o atendimento some)
+    const nomesAtivos = useMemo(() => {
+        const set = new Set<string>();
+        for (const r of registrosParaLista as any[]) {
+            const nome = String(r?.falecido ?? "").trim();
+            if (nome) set.add(normNome(nome));
+        }
+        return set;
+    }, [registrosParaLista]);
+
+    // ✅ avisos filtrados (Serviço só aparece se falecido ainda estiver no quadro)
+    const avisosParaExibir = useMemo(() => {
+        const arr = Array.isArray(avisos) ? avisos : [];
+        return arr.filter((a) => {
+            const msg = String((a as any)?.mensagem ?? "");
+            if (!isServicoMsg(msg)) return true;
+
+            const nome = extractServicoNome(msg);
+            if (!nome) return true; // se não conseguiu ler, não some
+            return nomesAtivos.has(normNome(nome));
+        });
+    }, [avisos, nomesAtivos]);
+
+    // ✅ enviar aviso "Geral"
     const enviarAviso = useCallback(async () => {
         const val = (avisoInputRef.current?.value ?? "").trim();
         if (!val) {
@@ -147,11 +354,12 @@ export default function AvisosPage() {
         }
 
         try {
+            const mensagem = `${TAG_GERAL} ${val}`;
             const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ mensagem: val }),
+                body: JSON.stringify({ mensagem }),
             });
 
             if (res?.sucesso) {
@@ -273,81 +481,105 @@ export default function AvisosPage() {
         };
     }, [fetchAvisos, fetchRegistros]);
 
-    // ✅ AQUI: mesma lista do quadro (mesmo filtro + mesma ordenação)
-    const registrosParaLista = useMemo(() => {
-        const base = (registros || []).filter((r: any) => {
-            const status = normalizarStatus(r?.status);
-
-            // mesma regra do quadro:
-            if (status === "fase11") return false;
-            if (isTerceiroRegistro(r)) return status !== "fase10";
-            if (!isSim(r?.assistencia)) return status !== "fase10";
-            return true;
-        });
-
-        const withTs = base.map((r: any) => ({ r, ts: parseRegistroDateTime(r) }));
-        withTs.sort((a, b) => b.ts - a.ts);
-        return withTs.map((x) => x.r) as Registro[];
-    }, [registros]);
-
+    // ✅ chamado pelo AvisosBox ao clicar no botão do falecido
     const onAddObservacao = useCallback(
         async (registroId: string) => {
-            const r = registrosParaLista.find(
-                (x: any) => String(x?.id) === String(registroId)
+            const r = (registrosParaLista as any[]).find(
+                (x) => String(x?.id) === String(registroId)
             );
-            const nome = String((r as any)?.falecido ?? "").trim();
+            const nome = String(r?.falecido ?? "").trim();
 
             if (!nome) {
-                alert("Não encontrei o nome do falecido nesse atendimento.");
+                setAvisoMsg({ ok: false, text: "Não encontrei o nome do falecido nesse atendimento." });
                 return;
             }
 
-            const obs = window.prompt(
-                `Adicionar observação para: ${nome}\n\nDigite a observação:`,
-                ""
-            );
-            if (!obs || !obs.trim()) return;
-
-            // ✅ salvando como aviso (mensagem do plantão)
-            try {
-                const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ mensagem: `${nome}: ${obs.trim()}` }),
-                });
-
-                if (res?.sucesso) {
-                    setAvisoMsg({ ok: true, text: "Observação adicionada como aviso!" });
-                    fetchAvisos();
-                } else {
-                    setAvisoMsg({
-                        ok: false,
-                        text: res?.erro || res?.msg || "Erro ao adicionar observação.",
-                    });
-                }
-            } catch (e: any) {
-                setAvisoMsg({
-                    ok: false,
-                    text: e?.message || "Erro ao adicionar observação.",
-                });
-            }
+            setObsRegistroId(String(registroId));
+            setObsFalecido(nome);
+            setObsTexto("");
+            setObsOpen(true);
         },
-        [registrosParaLista, fetchAvisos]
+        [registrosParaLista]
     );
 
+    const closeObs = useCallback(() => {
+        if (obsLoading) return;
+        setObsOpen(false);
+        setObsTexto("");
+        setObsRegistroId(null);
+        setObsFalecido("");
+    }, [obsLoading]);
+
+    const submitObs = useCallback(async () => {
+        const nome = String(obsFalecido ?? "").trim();
+        const obs = String(obsTexto ?? "").trim();
+        if (!nome) {
+            setAvisoMsg({ ok: false, text: "Falecido inválido." });
+            return;
+        }
+        if (!obs) {
+            setAvisoMsg({ ok: false, text: "Digite uma observação." });
+            return;
+        }
+
+        // se o atendimento sumiu enquanto o modal estava aberto, não adiciona
+        if (!nomesAtivos.has(normNome(nome))) {
+            setAvisoMsg({
+                ok: false,
+                text: "Esse atendimento não está mais no quadro. Não foi possível adicionar a observação.",
+            });
+            closeObs();
+            return;
+        }
+
+        setObsLoading(true);
+        try {
+            const mensagem = `${TAG_SERVICO} ${nome}: ${obs}`;
+
+            const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ mensagem }),
+            });
+
+            if (res?.sucesso) {
+                setAvisoMsg({ ok: true, text: "Observação adicionada!" });
+                closeObs();
+                fetchAvisos();
+            } else {
+                setAvisoMsg({
+                    ok: false,
+                    text: res?.erro || res?.msg || "Erro ao adicionar observação.",
+                });
+            }
+        } catch (e: any) {
+            setAvisoMsg({
+                ok: false,
+                text: e?.message || "Erro ao adicionar observação.",
+            });
+        } finally {
+            setObsLoading(false);
+        }
+    }, [obsFalecido, obsTexto, nomesAtivos, closeObs, fetchAvisos]);
+
     return (
-        <div className="p-6">
-            <header className="mb-6 flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-semibold">Avisos</h1>
+        <div className="mx-auto w-full max-w-6xl p-3 sm:p-6">
+            <header className="mb-4 sm:mb-6 rounded-2xl border bg-white/60 p-4 sm:p-6 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-xl sm:text-2xl font-semibold">Avisos</h1>
+                        <p className="mt-1 text-sm text-slate-600">
+                            Geral (avisos livres) e Serviço (observações vinculadas ao atendimento).
+                        </p>
+                    </div>
                 </div>
             </header>
 
             <AvisosBox
-                avisos={avisos}
-                registros={registrosParaLista} // ✅ usa a lista com mesmas regras do quadro
-                onAddObservacao={onAddObservacao} // ✅ botão de add obs por falecido
+                avisos={avisosParaExibir}
+                registros={registrosParaLista}
+                onAddObservacao={onAddObservacao}
                 avisoMsg={avisoMsg}
                 setAvisoMsg={setAvisoMsg}
                 enviarAviso={enviarAviso}
@@ -355,6 +587,17 @@ export default function AvisosPage() {
                 excluirAviso={excluirAviso}
                 finalizarAviso={finalizarAviso}
                 avisoInputRef={avisoInputRef}
+            />
+
+            <ObservacaoModal
+                open={obsOpen}
+                onClose={closeObs}
+                titulo="Adicionar Observação"
+                subtitulo={obsFalecido ? `Falecido(a): ${obsFalecido}` : undefined}
+                value={obsTexto}
+                setValue={setObsTexto}
+                onSubmit={submitObs}
+                loading={obsLoading}
             />
         </div>
     );
