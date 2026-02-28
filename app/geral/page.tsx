@@ -4058,18 +4058,7 @@ export default function Page() {
     }, [tab]);
 
 
-    const tabs = useMemo(
-        () =>
-            [
-                ["HOME", "Movimentação"],
-                ["ENTRADA", "Entrada"],
-                ["ESTOQUE", "Estoque"],
-                ["CONFERENCIA", "Conferência"],
-                ["HISTORICO", "Histórico"],
-                ["AVANCADO", "Avançado"],
-            ] as const,
-        []
-    );
+    
 
     return (
         <main className="min-h-screen bg-slate-50">
