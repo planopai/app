@@ -91,7 +91,7 @@ type HistoricoResp = {
 
 
 
-// ✅ CONFERÊNCIAS (REGISTROS SALVOS NO BANCO)
+// ✅ CONFERÊNCIAS (REGISTROS SALVOS)
 type ConferenciaRegistro = {
     id: number;
     deposito_id: ID;
