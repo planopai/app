@@ -25,6 +25,7 @@ type Step = {
     options?: string[];
     placeholder?: string;
     datalist?: string[];
+    
 };
 
 type EstoqueRow = {

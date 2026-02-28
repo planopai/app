@@ -144,6 +144,96 @@ type ConferenciaDetalheResp = {
 
 
 
+function QuickIcon({ children }: { children: React.ReactNode }) {
+    return (
+        <span
+            className="grid h-11 w-11 place-items-center rounded-full
+        bg-sky-100 text-sky-700
+        transition-colors
+        group-hover:bg-sky-600 group-hover:text-white
+        dark:bg-sky-900/30 dark:text-sky-200
+        dark:group-hover:bg-sky-600"
+        >
+            {children}
+        </span>
+    );
+}
+
+
+type TabAction = {
+    key: UiTab;
+    label: string;
+    icon: React.ReactNode;
+};
+
+const tabActions: TabAction[] = [
+    {
+        key: "HOME",
+        label: "Movimentação",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M4 12l8-7 8 7v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9z" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M9 22v-7h6v7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+    {
+        key: "ENTRADA",
+        label: "Entrada",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3v12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 21h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+    {
+        key: "ESTOQUE",
+        label: "Estoque",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M7 8l5-3 5 3v10l-5 3-5-3V8z" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M7 8l5 3 5-3" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M12 11v10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+    {
+        key: "CONFERENCIA",
+        label: "Conferência",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M8 8h8M8 12h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M9 16l2 2 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        ),
+    },
+    {
+        key: "HISTORICO",
+        label: "Histórico",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M12 8v5l3 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M21 12a9 9 0 1 1-3-6.7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M21 3v6h-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        ),
+    },
+    {
+        key: "AVANCADO",
+        label: "Avançado",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2l2 4 4 .5-3 3 .7 4.5-3.7-2-3.7 2 .7-4.5-3-3L10 6z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M6 22h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+];
+
+
 type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
 type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number };
@@ -4013,17 +4103,63 @@ export default function Page() {
                 </Card>
 
                 <div className="mt-4">
-                    <div className="grid grid-cols-2 gap-2 sm:hidden">
-                        {tabs.map(([k, label]) => (
-                            <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
-                        ))}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                        {tabActions.map((a) => {
+                            const active = tab === a.key;
+
+                            return (
+                                <button
+                                    key={a.key}
+                                    type="button"
+                                    onClick={() => setTab(a.key)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "dark:bg-gray-900",
+                                        active
+                                            ? "border-sky-300 ring-2 ring-sky-200 dark:border-sky-700 dark:ring-sky-900/40"
+                                            : "border-gray-200 dark:border-gray-800",
+                                    ].join(" ")}
+                                >
+                                    <QuickIcon>{a.icon}</QuickIcon>
+
+                                    <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-white text-center leading-tight">
+                                        {a.label}
+                                    </span>
+                                </button>
+                            );
+                        })}
                     </div>
 
                     <Card className="hidden p-2 sm:block">
-                        <div className="grid grid-cols-6 gap-2">
-                            {tabs.map(([k, label]) => (
-                                <TabButton key={k} label={label} active={tab === (k as UiTab)} onClick={() => setTab(k as UiTab)} />
-                            ))}
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                            {tabActions.map((a) => {
+                                const active = tab === a.key;
+
+                                return (
+                                    <button
+                                        key={a.key}
+                                        type="button"
+                                        onClick={() => setTab(a.key)}
+                                        className={[
+                                            "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                            "border bg-white py-4 px-3 shadow-sm transition-all",
+                                            "hover:-translate-y-[1px] hover:shadow-md",
+                                            "dark:bg-gray-900",
+                                            active
+                                                ? "border-sky-300 ring-2 ring-sky-200 dark:border-sky-700 dark:ring-sky-900/40"
+                                                : "border-gray-200 dark:border-gray-800",
+                                        ].join(" ")}
+                                    >
+                                        <QuickIcon>{a.icon}</QuickIcon>
+
+                                        <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-white text-center leading-tight">
+                                            {a.label}
+                                        </span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </Card>
                 </div>
