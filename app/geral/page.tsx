@@ -159,6 +159,51 @@ function QuickIcon({ children }: { children: React.ReactNode }) {
     );
 }
 
+function AdvActionButton({
+    label,
+    icon,
+    onClick,
+    active = false,
+}: {
+    label: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+    active?: boolean;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={[
+                "group flex flex-col items-center justify-center",
+                "gap-3 rounded-2xl border bg-white p-5",
+                "shadow-sm transition-all hover:-translate-y-[1px] hover:shadow-md",
+                active
+                    ? "border-sky-300 ring-2 ring-sky-200"
+                    : "border-slate-200 hover:border-slate-300",
+            ].join(" ")}
+        >
+            {/* CÍRCULO AZUL (igual ao menu) */}
+            <div
+                className={[
+                    "flex h-14 w-14 items-center justify-center rounded-full",
+                    "bg-sky-100 text-sky-700",
+                    "transition-transform group-hover:scale-[1.03]",
+                ].join(" ")}
+            >
+                {icon}
+            </div>
+
+            {/* TÍTULO */}
+            <div className="text-center">
+                <span className="block text-[13px] font-extrabold tracking-tight text-slate-900 leading-tight">
+                    {label}
+                </span>
+            </div>
+        </button>
+    );
+}
+
 
 type TabAction = {
     key: UiTab;
@@ -5037,198 +5082,67 @@ export default function Page() {
                                 </Button>
                             </div>
 
-                            {/* GRID DE AÇÕES (BOTÕES) */}
+                            {/* GRID DE AÇÕES (PADRÃO MENU AZUL) */}
                             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                                {/* Cadastrar novo produto */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Cadastrar novo produto"
                                     onClick={() => setAdvNovoProdutoOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        {/* ícone simples (pode trocar) */}
-                                        <span className="text-lg">＋</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Cadastrar novo produto
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">+</span>}
+                                />
 
-                                {/* Ajuste manual de saldos */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Ajuste manual de saldos"
                                     onClick={() => setAdvAjusteOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">⚙️</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Ajuste manual de saldos
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">⚙️</span>}
+                                />
 
-                                {/* Adicionar depósito */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Adicionar depósito"
                                     onClick={() => setAdvDepAddOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">🏠</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Adicionar depósito
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">🏠</span>}
+                                />
 
-                                {/* Renomear depósito */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Renomear depósito"
                                     onClick={() => setAdvDepRenameOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">✏️</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Renomear depósito
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">✏️</span>}
+                                />
 
-                                {/* Adicionar categoria */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Adicionar categoria"
                                     onClick={() => setAdvCatAddOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">📦</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Adicionar categoria
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">📦</span>}
+                                />
 
-                                {/* Renomear categoria */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Renomear categoria"
                                     onClick={() => setAdvCatRenameOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">✏️</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Renomear categoria
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">✏️</span>}
+                                />
 
-                                {/* Adicionar fabricante */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Adicionar fabricante"
                                     onClick={() => setAdvFabAddOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">🏭</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Adicionar fabricante
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">🏭</span>}
+                                />
 
-                                {/* Renomear fabricante */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Renomear fabricante"
                                     onClick={() => setAdvFabRenameOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">✏️</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Renomear fabricante
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">✏️</span>}
+                                />
 
-                                {/* Exportação CSV */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Exportação (CSV)"
                                     onClick={() => setAdvExportOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">⬇️</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Exportação (CSV)
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">↓</span>}
+                                />
 
-                                {/* Importar CSV */}
-                                <button
-                                    type="button"
+                                <AdvActionButton
+                                    label="Importar via CSV"
                                     onClick={() => setAdvImportOpen(true)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "border-slate-200",
-                                    ].join(" ")}
-                                >
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                                        <span className="text-lg">⬆️</span>
-                                    </div>
-                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
-                                        Importar via CSV
-                                    </span>
-                                </button>
+                                    icon={<span className="text-lg leading-none">↑</span>}
+                                />
                             </div>
                         </Card>
                     ) : null}
