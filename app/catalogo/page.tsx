@@ -358,7 +358,7 @@ function BigButton({
 }) {
     return (
         <button onClick={onClick} className="bigBtn">
-            <span style={{ whiteSpace: "pre-line" }}>{label}</span>
+            <span className="btnLabel">{label.replace(/\n/g, " ")}</span>
         </button>
     );
 }
@@ -552,9 +552,7 @@ export default function Page() {
                         className="homeBtn"
                         onClick={() => go("elementos")}
                     >
-                        ELEMENTOS DE
-                        <br />
-                        HOMENAGEM
+                        ELEMENTOS DE HOMENAGEM
                     </button>
 
                     <button
@@ -563,9 +561,7 @@ export default function Page() {
                             alert("Mock: aqui entraria a Lista de Orçamentos.")
                         }
                     >
-                        2. LISTA DE
-                        <br />
-                        ORÇAMENTOS
+                        LISTA DE ORÇAMENTOS
                     </button>
                 </div>
             </div>
@@ -574,7 +570,7 @@ export default function Page() {
 
     const ScreenElementos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} />
+            <TopRightNav onBack={back} onHome={home} onList={list} disabledBack={!canBack} />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div className="gridMenu2">
@@ -587,7 +583,7 @@ export default function Page() {
 
     const ScreenLinhas = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} />
+            <TopRightNav onBack={back} onHome={home} onList={list} disabledBack={!canBack} />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
@@ -613,7 +609,7 @@ export default function Page() {
 
     const ScreenListagem = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} />
+            <TopRightNav onBack={back} onHome={home} onList={list} disabledBack={!canBack} />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
@@ -892,9 +888,11 @@ const css = `
   }
 
   .root{
-  min-height: 100vh;
+  width:100vw;
+  height:100vh;
 
-  /* fundo principal */
+  overflow:hidden; /* ✅ impede rolagem */
+
   background-image:
     linear-gradient(
       rgba(8,32,70,0.45),
@@ -905,16 +903,12 @@ const css = `
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  background-attachment: fixed;
-
-  /* fallback */
-  background-color: #0e4c86;
 
   display:flex;
   align-items:center;
   justify-content:center;
-  padding: 18px;
-  font-family: Arial, Helvetica, sans-serif;
+
+  font-family: var(--font-nunito), Nunito, sans-serif;
 }
 
   .screen{
@@ -978,41 +972,48 @@ const css = `
   
 
   .homeBtns{
-    margin-top: 34px;
-    display:flex;
-    flex-direction:column;
-    gap: 16px;
-    align-items:center;
-  }
+  width:100%;
+  max-width:900px;
+
+  display:flex;
+  flex-direction:row; /* ✅ lado a lado */
+  gap:28px;
+
+  align-items:center;
+  justify-content:center;
+}
   .homeBtn{
-  width: min(520px, 90%);
-  padding: 18px 22px;
-  border-radius: 18px;
+  flex:1; /* ✅ divide espaço igualmente */
+
+  padding:22px 28px;
+  border-radius:20px;
 
   font-family: var(--font-nunito), Nunito, sans-serif;
-  font-weight: 800;
-  font-size: 24px;
-  letter-spacing: 0.8px;
-  line-height: 1.2;
+  font-weight:800;
+  font-size:24px;
+  letter-spacing:.8px;
 
-  color: #ffffff;
-  background: #029cde;
+  white-space:nowrap; /* ✅ NÃO QUEBRA LINHA */
+  text-align:center;
 
-  border: 2px solid rgba(255,255,255,0.35);
+  color:#fff;
+  background:#029cde;
+
+  border:2px solid rgba(255,255,255,.35);
 
   box-shadow:
-    0 12px 28px rgba(2,156,222,0.35),
-    inset 0 1px 0 rgba(255,255,255,0.25);
+    0 14px 32px rgba(2,156,222,.35),
+    inset 0 1px 0 rgba(255,255,255,.25);
 
-  cursor: pointer;
+  cursor:pointer;
 
   transition:
     transform .18s ease,
     box-shadow .18s ease,
-    background .18s ease,
-    filter .18s ease;
+    background .18s ease;
 
-  backdrop-filter: blur(6px);
+  position:relative;
+  overflow:hidden;
 }
 
 .homeBtn:hover{
@@ -1060,33 +1061,73 @@ const css = `
   overflow:hidden;
 }
 
-  .homeBtn:hover{ transform: translateY(-1px); filter: brightness(1.02); }
-  .homeBtn:active{ transform: translateY(0px) scale(0.995); }
+  
 
   .gridMenu2{
-    display:grid;
-    grid-template-columns: repeat(2, minmax(240px, 520px));
-    justify-content:center;
-    gap: 22px 34px;
-    padding: 0 26px;
-  }
+  width:100%;
+  max-width:900px;
+
+  margin:0 auto;
+
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:28px;
+}
 
   .bigBtn{
-    border-radius: 16px;
-    padding: 18px 16px;
-    background: rgba(220,233,246,0.92);
-    border: 2px solid rgba(255,255,255,0.55);
-    box-shadow: var(--shadow);
-    color: #111;
-    font-weight: 900;
-    letter-spacing: 1px;
-    font-size: 26px;
-    cursor:pointer;
-    transition: transform .12s ease, filter .12s ease;
-    min-height: 74px;
-  }
-  .bigBtn:hover{ transform: translateY(-1px); filter: brightness(1.02); }
-  .bigBtn:active{ transform: translateY(0px) scale(0.995); }
+  width:100%;
+  height:84px;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  padding:0 24px;
+
+  border-radius:20px;
+
+  font-family: var(--font-nunito), Nunito, sans-serif;
+  font-weight:800;
+  font-size:22px;
+  letter-spacing:.8px;
+
+  white-space:nowrap; /* ✅ nunca quebra */
+  text-align:center;
+
+  color:#fff;
+  background:#029cde;
+
+  border:2px solid rgba(255,255,255,.35);
+
+  box-shadow:
+    0 14px 32px rgba(2,156,222,.35),
+    inset 0 1px 0 rgba(255,255,255,.25);
+
+  cursor:pointer;
+
+  transition:
+    transform .18s ease,
+    box-shadow .18s ease,
+    background .18s ease;
+
+  position:relative;
+  overflow:hidden;
+}
+
+.bigBtn:hover{
+  background:#03a7ec;
+  transform:translateY(-3px);
+}
+
+.bigBtn:active{
+  transform:scale(.97);
+}
+
+.btnLabel{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 
   /* listagem */
   .listHeader{
