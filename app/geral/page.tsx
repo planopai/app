@@ -4054,7 +4054,7 @@ export default function Page() {
     useEffect(() => {
         if (tab === "HISTORICO") loadHistorico();
         if (tab === "CONFERENCIA") loadConferenciasRegistros();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line 
     }, [tab]);
 
 
