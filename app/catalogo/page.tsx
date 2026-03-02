@@ -374,9 +374,6 @@ function Title({ children }: { children: React.ReactNode }) {
 function ScreenContainer({ children }: { children: React.ReactNode }) {
     return (
         <div className="screen">
-            <div className="circuit left" />
-            <div className="circuit right" />
-            <div className="watermark" aria-hidden />
             {children}
         </div>
     );
@@ -542,30 +539,18 @@ export default function Page() {
     // ---------- screens ----------
     const ScreenHome = (
         <ScreenContainer>
-            <div style={{ padding: "34px 26px 0 26px" }}>
-                <div className="brandRow">
-                    <div className="logoMark">
-                        <div className="logoDot" />
-                        <div className="logoArc" />
-                    </div>
-                    <div className="brandText">
-                        <div className="brandPAI">PAI</div>
-                        <div className="brandSub">PLANO ASSISTENCIAL INTEGRADO</div>
-                    </div>
-                    <div className="brandCap">CAPA</div>
-                </div>
-
-                <div className="headline">
-                    Cuidando de cada despedida com respeito, elegância
-                    <br />
-                    e serenidade.
-                </div>
-
+            <div
+                style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                }}
+            >
                 <div className="homeBtns">
                     <button
                         className="homeBtn"
                         onClick={() => go("elementos")}
-                        aria-label="Elementos de Homenagem"
                     >
                         ELEMENTOS DE
                         <br />
@@ -574,8 +559,9 @@ export default function Page() {
 
                     <button
                         className="homeBtn"
-                        onClick={() => alert("Mock: aqui entraria a Lista de Orçamentos.")}
-                        aria-label="Lista de Orçamentos"
+                        onClick={() =>
+                            alert("Mock: aqui entraria a Lista de Orçamentos.")
+                        }
                     >
                         2. LISTA DE
                         <br />
@@ -937,52 +923,16 @@ const css = `
   height: min(680px, 92vh);
   border-radius: 14px;
   overflow:hidden;
+  background: transparent;
+}
 
-  background:
-    linear-gradient(
-      rgba(44,163,212,0.88),
-      rgba(14,76,134,0.92)
-    );
 
-  backdrop-filter: blur(3px);
+ 
 
-  /* circuit corners (bem parecido com as imagens) */
-  .circuit{
-    position:absolute;
-    top: 0;
-    bottom: 0;
-    width: 120px;
-    opacity: 0.55;
-    pointer-events:none;
-  }
-  .circuit.left{
-    left: 0;
-    background:
-      radial-gradient(circle at 30px 60px, rgba(255,255,255,0.6) 0 4px, transparent 5px),
-      radial-gradient(circle at 35px 180px, rgba(255,255,255,0.55) 0 4px, transparent 5px),
-      radial-gradient(circle at 52px 420px, rgba(255,255,255,0.55) 0 4px, transparent 5px),
-      linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.0));
-    mask-image: linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0.3));
-  }
-  .circuit.right{
-    right: 0;
-    background:
-      radial-gradient(circle at 90px 70px, rgba(255,255,255,0.6) 0 4px, transparent 5px),
-      radial-gradient(circle at 86px 220px, rgba(255,255,255,0.55) 0 4px, transparent 5px),
-      radial-gradient(circle at 72px 520px, rgba(255,255,255,0.55) 0 4px, transparent 5px),
-      linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.0));
-    mask-image: linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0.3));
-  }
+  
 
-  /* watermark */
-  .watermark{
-    position:absolute;
-    inset: -80px;
-    background:
-      radial-gradient(circle at 55% 45%, rgba(255,255,255,0.14), rgba(255,255,255,0) 55%);
-    opacity: 0.65;
-    pointer-events:none;
-  }
+  
+  
 
   /* icons top-right */
   .iconBtn{
@@ -1025,69 +975,7 @@ const css = `
   }
 
   /* Home header mock */
-  .brandRow{
-    display:flex;
-    align-items:center;
-    gap: 16px;
-    position:relative;
-  }
-  .logoMark{
-    width: 86px;
-    height: 86px;
-    position:relative;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.14);
-    border: 2px solid rgba(255,255,255,0.18);
-    box-shadow: 0 16px 30px rgba(0,0,0,0.22);
-  }
-  .logoDot{
-    width: 30px; height: 30px;
-    border-radius: 999px;
-    background: #ffd400;
-    position:absolute;
-    top: 16px; left: 30px;
-  }
-  .logoArc{
-    position:absolute;
-    inset: 14px;
-    border-radius: 999px;
-    border: 8px solid rgba(0,0,0,0);
-    border-left-color: rgba(255,255,255,0.0);
-    border-top-color: rgba(255,255,255,0.0);
-    border-right-color: rgba(10,40,80,0.55);
-    border-bottom-color: rgba(10,40,80,0.55);
-    transform: rotate(20deg);
-  }
-  .brandText{ color: var(--ink); }
-  .brandPAI{
-    font-size: 58px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    line-height: 0.95;
-  }
-  .brandSub{
-    font-weight: 700;
-    opacity: 0.85;
-    letter-spacing: 2px;
-    font-size: 14px;
-  }
-  .brandCap{
-    margin-left:auto;
-    color: var(--ink);
-    font-size: 48px;
-    letter-spacing: 2px;
-    opacity: 0.9;
-  }
-
-  .headline{
-    margin-top: 22px;
-    text-align:center;
-    color: var(--ink);
-    font-size: 30px;
-    font-weight: 700;
-    opacity: 0.92;
-    text-shadow: 0 10px 22px rgba(0,0,0,0.22);
-  }
+  
 
   .homeBtns{
     margin-top: 34px;
