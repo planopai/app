@@ -314,7 +314,7 @@ const tabActions: TabAction[] = [
 ];
 
 
-type UiTab = "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
+type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
 type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number };
 type SaidaItem = { id: number; payload: any; resumo: string };
@@ -1231,7 +1231,7 @@ function ProductCombobox({
 ========================= */
 
 export default function Page() {
-    const [tab, setTab] = useState<UiTab>("HOME");
+    const [tab, setTab] = useState<UiTab>("MENU");
 
     const [loading, setLoading] = useState(true);
     const [initErr, setInitErr] = useState<string>("");
@@ -4262,19 +4262,32 @@ export default function Page() {
                     {/* ENTRADA (atalho) */}
                     {tab === "ENTRADA" ? (
                         <Card className="p-4">
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                    <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {/* ESQUERDA: Entrada */}
+                                <HomeActionButton
+                                    label="Abrir Entrada"
+                                    icon={<span className="text-lg leading-none">⬇️</span>}
+                                    onClick={() => setEntradaOpen(true)}
+                                />
 
-                                {/* Botão no padrão azul + círculo */}
-                                <div className="w-full sm:w-auto">
-                                    <HomeActionButton
-                                        label="Abrir Entrada"
-                                        icon={<span className="text-lg leading-none">⬇️</span>}
-                                        onClick={() => setEntradaOpen(true)}
-                                    />
-                                </div>
+                                {/* DIREITA: espaço para outro botão (placeholder) */}
+                                <button
+                                    type="button"
+                                    disabled
+                                    className={[
+                                        "w-full rounded-2xl border border-dashed border-slate-200",
+                                        "bg-white/60 p-5 text-slate-400",
+                                        "shadow-sm",
+                                        "flex flex-col items-center justify-center gap-3",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                                        <span className="text-lg leading-none">＋</span>
+                                    </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-center leading-tight">
+                                        Em breve
+                                    </span>
+                                </button>
                             </div>
                         </Card>
                     ) : null}
