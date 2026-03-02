@@ -5037,112 +5037,198 @@ export default function Page() {
                                 </Button>
                             </div>
 
-                            {/* GRID DE AÇÕES */}
-                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                {/* Produtos */}
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Cadastrar novo produto</p>
-                                    <p className="mt-1 text-xs text-slate-600">Use apenas quando autorizado.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvNovoProdutoOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                            {/* GRID DE AÇÕES (BOTÕES) */}
+                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                                {/* Cadastrar novo produto */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvNovoProdutoOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        {/* ícone simples (pode trocar) */}
+                                        <span className="text-lg">＋</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Cadastrar novo produto
+                                    </span>
+                                </button>
 
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Ajuste manual de saldos</p>
-                                    <p className="mt-1 text-xs text-slate-600">Gera AJUSTE. Use com cuidado.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvAjusteOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Ajuste manual de saldos */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvAjusteOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">⚙️</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Ajuste manual de saldos
+                                    </span>
+                                </button>
 
-                                {/* Depósitos */}
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Adicionar depósito</p>
-                                    <p className="mt-1 text-xs text-slate-600">Cria um novo depósito.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvDepAddOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Adicionar depósito */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvDepAddOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">🏠</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Adicionar depósito
+                                    </span>
+                                </button>
 
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Renomear depósito</p>
-                                    <p className="mt-1 text-xs text-slate-600">Altera o nome de um depósito.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvDepRenameOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Renomear depósito */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvDepRenameOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">✏️</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Renomear depósito
+                                    </span>
+                                </button>
 
-                                {/* Categorias */}
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Adicionar categoria</p>
-                                    <p className="mt-1 text-xs text-slate-600">Cria uma nova categoria.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvCatAddOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Adicionar categoria */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvCatAddOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">📦</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Adicionar categoria
+                                    </span>
+                                </button>
 
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Renomear categoria</p>
-                                    <p className="mt-1 text-xs text-slate-600">Altera o nome de uma categoria.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvCatRenameOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Renomear categoria */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvCatRenameOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">✏️</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Renomear categoria
+                                    </span>
+                                </button>
 
-                                {/* Fabricantes */}
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Adicionar fabricante</p>
-                                    <p className="mt-1 text-xs text-slate-600">Cria um novo fabricante.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvFabAddOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Adicionar fabricante */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvFabAddOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">🏭</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Adicionar fabricante
+                                    </span>
+                                </button>
 
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Renomear fabricante</p>
-                                    <p className="mt-1 text-xs text-slate-600">Altera o nome de um fabricante.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvFabRenameOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Renomear fabricante */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvFabRenameOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">✏️</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Renomear fabricante
+                                    </span>
+                                </button>
 
-                                {/* Export / Import */}
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Exportação (CSV)</p>
-                                    <p className="mt-1 text-xs text-slate-600">Exporta CSV por depósito (conferência).</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvExportOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Exportação CSV */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvExportOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">⬇️</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Exportação (CSV)
+                                    </span>
+                                </button>
 
-                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Importar via CSV</p>
-                                    <p className="mt-1 text-xs text-slate-600">Importa produtos e saldos.</p>
-                                    <div className="mt-3">
-                                        <Button variant="soft" onClick={() => setAdvImportOpen(true)} type="button" className="w-full">
-                                            Abrir
-                                        </Button>
+                                {/* Importar CSV */}
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvImportOpen(true)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white py-4 px-3 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "border-slate-200",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                                        <span className="text-lg">⬆️</span>
                                     </div>
-                                </div>
+                                    <span className="text-[13px] font-extrabold tracking-tight text-slate-900 text-center leading-tight">
+                                        Importar via CSV
+                                    </span>
+                                </button>
                             </div>
                         </Card>
                     ) : null}
