@@ -4092,7 +4092,7 @@ export default function Page() {
                 </Card>
 
                 <div className="mt-4">
-                    <div className="grid grid-cols-2 gap-3 sm:hidden">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
                         {tabActions.map((a) => {
                             const active = tab === a.key;
 
