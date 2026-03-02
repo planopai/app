@@ -43,7 +43,11 @@ type Produto = {
     especificacoes: string;
 };
 
-const BG_GRADIENT = "linear-gradient(180deg, #2ca3d4 0%, #0e4c86 100%)";
+const BG_IMAGE =
+    "https://pai.planoassistencialintegrado.com.br/catalogo.png";
+
+const BG_GRADIENT =
+    "linear-gradient(180deg, #2ca3d4 0%, #0e4c86 100%)"; // fallback
 
 // ---------- helpers UI ----------
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -902,25 +906,45 @@ const css = `
   }
 
   .root{
-    min-height: 100vh;
-    background: ${BG_GRADIENT};
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding: 18px;
-    font-family: Arial, Helvetica, sans-serif;
-  }
+  min-height: 100vh;
+
+  /* fundo principal */
+  background-image:
+    linear-gradient(
+      rgba(8,32,70,0.45),
+      rgba(8,32,70,0.65)
+    ),
+    url("${BG_IMAGE}");
+
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+
+  /* fallback */
+  background-color: #0e4c86;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 18px;
+  font-family: Arial, Helvetica, sans-serif;
+}
 
   .screen{
-    position: relative;
-    width: min(1200px, 98vw);
-    height: min(680px, 92vh);
-    border-radius: 14px;
-    overflow:hidden;
-    background: ${BG_GRADIENT};
-    box-shadow: 0 24px 60px rgba(0,0,0,0.35);
-    border: 1px solid rgba(255,255,255,0.14);
-  }
+  position: relative;
+  width: min(1200px, 98vw);
+  height: min(680px, 92vh);
+  border-radius: 14px;
+  overflow:hidden;
+
+  background:
+    linear-gradient(
+      rgba(44,163,212,0.88),
+      rgba(14,76,134,0.92)
+    );
+
+  backdrop-filter: blur(3px);
 
   /* circuit corners (bem parecido com as imagens) */
   .circuit{
