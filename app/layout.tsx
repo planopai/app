@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { Nunito } from "next/font/google";
 
 import "./globals.css";
@@ -45,12 +45,8 @@ export const metadata: Metadata = {
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
-    other: [
-      { rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" },
-    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
   },
   appleWebApp: {
     capable: true,
@@ -59,74 +55,43 @@ export const metadata: Metadata = {
   },
 };
 
-/* ======================================================
-   ROOT LAYOUT
-====================================================== */
-
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  /* ---------------- Cookies ---------------- */
-  /* ---------------- Cookies ---------------- */
   const cookieStore = await cookies();
-
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
 
   const uidCookie = cookieStore.get("pai_uid")?.value || null;
 
-  /* ---------------- Permissões ---------------- */
   const initialPerms = await getInitialPerms();
-
-  /* ---------------- Headers ---------------- */
-  const headersList = await headers();
-
-  const pathname =
-    headersList.get("x-pathname") ??
-    headersList.get("next-url") ??
-    "";
-
-  const isFullscreen = pathname.startsWith("/fullscreen");
-
-  /* =================================================== */
 
   return (
     <html
       lang="pt-BR"
       suppressHydrationWarning
-      className={nunito.variable}
+      className={nunito.variable} // ✅ injeta variável CSS
     >
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#059de0" />
-
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-
         <link rel="icon" href="/favicon.ico" />
-        <link rel="icon" sizes="32x32" href="/favicon-32x32.png" />
-        <link rel="icon" sizes="16x16" href="/favicon-16x16.png" />
-
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#059de0" />
-
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta
-          name="apple-mobile-web-app-status-bar-style"
-          content="black-translucent"
-        />
-        <meta
-          name="apple-mobile-web-app-title"
-          content="App Plano PAI 2.0"
-        />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="App Plano PAI 2.0" />
       </head>
 
       <body
         className={cn(
-          "bg-background overscroll-none antialiased font-[var(--font-nunito)]",
+          "bg-background overscroll-none antialiased font-[var(--font-nunito)]", // ✅ NUNITO GLOBAL
           activeThemeValue ? `theme-${activeThemeValue}` : "",
           isScaled ? "theme-scaled" : ""
         )}
       >
-        {/* Services */}
         <RegisterSW />
         <OneSignalInit />
 
@@ -143,14 +108,9 @@ export default async function RootLayout({
               userKey={uidCookie}
               initialPerms={initialPerms}
             >
-              {/* ✅ FULLSCREEN SEM SIDEBAR */}
-              {isFullscreen ? (
-                children
-              ) : (
-                <AppShell hideOnRoutes={["/login"]}>
-                  {children}
-                </AppShell>
-              )}
+              <AppShell hideOnRoutes={["/login"]}>
+                {children}
+              </AppShell>
             </PermsProvider>
           </ActiveThemeProvider>
         </ThemeProvider>
