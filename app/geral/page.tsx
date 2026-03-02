@@ -204,6 +204,41 @@ function AdvActionButton({
     );
 }
 
+function HomeActionButton({
+    label,
+    icon,
+    onClick,
+    active = false,
+}: {
+    label: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+    active?: boolean;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={[
+                "group w-full flex flex-col items-center justify-center",
+                "gap-3 rounded-2xl border bg-white p-5",
+                "shadow-sm transition-all hover:-translate-y-[1px] hover:shadow-md",
+                active
+                    ? "border-sky-300 ring-2 ring-sky-200"
+                    : "border-slate-200 hover:border-slate-300",
+            ].join(" ")}
+        >
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-sky-100 text-sky-700 transition-transform group-hover:scale-[1.03]">
+                {icon}
+            </div>
+
+            <span className="text-center text-[13px] font-extrabold tracking-tight text-slate-900 leading-tight">
+                {label}
+            </span>
+        </button>
+    );
+}
+
 
 type TabAction = {
     key: UiTab;
@@ -4202,53 +4237,44 @@ export default function Page() {
                     {/* HOME / MOVIMENTAÇÃO */}
                     {tab === "HOME" ? (
                         <Card className="p-4">
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Saída</p>
-                                    
-                                    <div className="mt-3">
-                                        <Button onClick={() => setSaidaOpen(true)} type="button">
-                                            Abrir Saída
-                                        </Button>
-                                    </div>
-                                </div>
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                <HomeActionButton
+                                    label="Saída"
+                                    icon={<span className="text-lg leading-none">⬆️</span>}
+                                    onClick={() => setSaidaOpen(true)}
+                                />
 
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Transferência</p>
-                                    
-                                    <div className="mt-3">
-                                        <Button onClick={() => setTrfOpen(true)} type="button">
-                                            Abrir Transferência
-                                        </Button>
-                                    </div>
-                                </div>
+                                <HomeActionButton
+                                    label="Transferência"
+                                    icon={<span className="text-lg leading-none">🔁</span>}
+                                    onClick={() => setTrfOpen(true)}
+                                />
 
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <p className="text-sm font-semibold text-slate-900">Histórico</p>
-                                    
-                                    <div className="mt-3">
-                                        <Button variant="ghost" onClick={() => setTab("HISTORICO")} type="button">
-                                            Ver Histórico
-                                        </Button>
-                                    </div>
-                                </div>
+                                <HomeActionButton
+                                    label="Histórico"
+                                    icon={<span className="text-lg leading-none">🕘</span>}
+                                    onClick={() => setTab("HISTORICO")}
+                                />
                             </div>
-
-                            
                         </Card>
                     ) : null}
 
                     {/* ENTRADA (atalho) */}
                     {tab === "ENTRADA" ? (
                         <Card className="p-4">
-                            <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
                                     <h2 className="text-base font-semibold text-slate-900">Entrada</h2>
-                                    
                                 </div>
-                                <Button onClick={() => setEntradaOpen(true)} variant="ghost" type="button">
-                                    Abrir Entrada
-                                </Button>
+
+                                {/* Botão no padrão azul + círculo */}
+                                <div className="w-full sm:w-auto">
+                                    <HomeActionButton
+                                        label="Abrir Entrada"
+                                        icon={<span className="text-lg leading-none">⬇️</span>}
+                                        onClick={() => setEntradaOpen(true)}
+                                    />
+                                </div>
                             </div>
                         </Card>
                     ) : null}
