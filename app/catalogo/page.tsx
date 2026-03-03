@@ -677,73 +677,72 @@ export default function Page() {
                                 ))}
                             </div>
 
-                            <div className="detailMeta">
-                                <div className="metaPill">
-                                    <b>Saldo:</b> {selected.saldo}
-                                </div>
-                                <div className="metaPill">{formatBRL(selected.preco)}</div>
-                                {selected.linha ? (
+                                <div className="detailMeta">
                                     <div className="metaPill">
-                                        <b>Linha:</b> {selected.linha}
+                                        <b>Saldo:</b> {selected.saldo}
                                     </div>
-                                ) : null}
-                            </div>
+                                    {selected.linha ? (
+                                        <div className="metaPill">
+                                            <b>Linha:</b> {selected.linha}
+                                        </div>
+                                    ) : null}
+                                </div>
                         </div>
 
                         {/* direita */}
                         <div className="detailRight">
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
-                            <div className="bulletBox">
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
+                                <div className="bulletBox">
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
+                                        </div>
+                                    </div>
+
+                                    <div className="detailActions">
+                                        <button
+                                            type="button"
+                                            className="iconActionBtn"
+                                            onClick={() => setOpenPrices(true)}
+                                            aria-label="Tabela de valores"
+                                            title="Tabela de valores"
+                                        >
+                                            <IconDollar />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="iconActionBtn"
+                                            onClick={() => console.info("Mock: adicionar ao orçamento")}
+                                            aria-label="Adicionar a orçamento"
+                                            title="Adicionar a orçamento"
+                                        >
+                                            <IconPlus />
+                                        </button>
+                                    </div>
+
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>INSPIRAÇÃO:</b> {selected.inspiracao}
+                                        </div>
+                                    </div>
+
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>CONCEITO:</b> {selected.conceito}
+                                        </div>
+                                    </div>
+
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
+                                        </div>
                                     </div>
                                 </div>
-
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>INSPIRAÇÃO:</b> {selected.inspiracao}
-                                    </div>
-                                </div>
-
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>CONCEITO:</b> {selected.conceito}
-                                    </div>
-                                </div>
-
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="detailActions">
-                                <button
-                                    type="button"
-                                    className="iconActionBtn"
-                                    onClick={() => setOpenPrices(true)}
-                                    aria-label="Tabela de valores"
-                                    title="Tabela de valores"
-                                >
-                                    <IconDollar />
-                                </button>
-                                <button
-                                    type="button"
-                                    className="iconActionBtn"
-                                    onClick={() => console.info("Mock: adicionar ao orçamento")}
-                                    aria-label="Adicionar a orçamento"
-                                    title="Adicionar a orçamento"
-                                >
-                                    <IconPlus />
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
@@ -1175,13 +1174,13 @@ const css = `
   }
   .bulletDot{ color: rgba(255,255,255,0.92); font-size: 18px; line-height: 1; margin-top: 2px; }
 
-  .detailActions{
-    margin-top: 18px;
-    display:flex;
-    gap: 14px;
-    justify-content:flex-end;
-    align-items:center;
-  }
+ .detailActions{
+  margin-top: 10px;
+  display:flex;
+  gap: 14px;
+  justify-content:flex-start;
+  align-items:center;
+}
   .iconActionBtn{
     width: 54px;
     height: 54px;
