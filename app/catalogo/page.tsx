@@ -613,6 +613,10 @@ export default function Page() {
     const [openUserPick, setOpenUserPick] = useState(false);
     const [operadorSel, setOperadorSel] = useState<Usuario | null>(null);
 
+    // ✅ typeahead (buscar operador)
+    const [userQuery, setUserQuery] = useState("");
+    const [userHighlight, setUserHighlight] = useState(0);
+
     const [openInicio, setOpenInicio] = useState(false);
     const [formResp, setFormResp] = useState("");
     const [formFalecido, setFormFalecido] = useState("");
@@ -680,6 +684,11 @@ export default function Page() {
 
     const openFluxoHomenagem = useCallback(async () => {
         setOpenUserPick(true);
+
+        // ✅ reset do typeahead
+        setUserQuery("");
+        setUserHighlight(0);
+
         if (!usuarios.length) {
             await fetchUsuarios();
         }
@@ -689,12 +698,28 @@ export default function Page() {
         setOperadorSel(u);
         setOpenUserPick(false);
 
+        // ✅ reset do typeahead
+        setUserQuery("");
+        setUserHighlight(0);
+
         // abrir modal de início (dados da homenagem)
         setFormResp("");
         setFormFalecido("");
         setFormTel("");
         setOpenInicio(true);
     }, []);
+
+    const filteredUsuarios = useMemo(() => {
+        const qq = userQuery.trim().toLowerCase();
+        if (!qq) return []; // ✅ não mostra nada se vazio
+
+        return usuarios
+            .filter((u) => {
+                const hay = `${u.nome} ${u.usuario}`.toLowerCase();
+                return hay.includes(qq);
+            })
+            .slice(0, 12); // ✅ limita pra não ficar grande
+    }, [usuarios, userQuery]);
 
     const iniciarHomenagem = useCallback(() => {
         const responsavel = formResp.trim();
@@ -800,6 +825,8 @@ export default function Page() {
         [draftItens]
     );
 
+    
+
     // ---------- draft: add (sem duplicar) ----------
     const addToDraft = useCallback((p: Produto) => {
         setDraftItens((prev) => {
@@ -838,6 +865,17 @@ export default function Page() {
         if (!categoria) return -1;
         return CATEGORIAS_FLUXO.findIndex((x) => x.id === categoria);
     }, [categoria]);
+
+    // ✅ mostrar botões Retornar/Próximo somente quando estiver dentro de uma categoria do fluxo
+    const showStepperButtons = useMemo(() => {
+        return Boolean(categoria); // se tem categoria selecionada, está no fluxo
+    }, [categoria]);
+
+    // ✅ última categoria do fluxo? (para trocar "Próximo Passo" por "Concluir")
+    const isLastCategoria = useMemo(() => {
+        if (!categoria) return false;
+        return currentCatIndex === CATEGORIAS_FLUXO.length - 1;
+    }, [categoria, currentCatIndex]);
 
     const goCategoria = useCallback(
         (cat: CategoriaFluxo) => {
@@ -1227,24 +1265,42 @@ export default function Page() {
 
                 <div className="pagerRow">
                     <div className="pagerBtns">
-                        <button type="button" className="pagerBtn" onClick={() => setPage((x) => Math.max(1, x - 1))} disabled={page <= 1} aria-label="Página anterior">
+                        <button
+                            type="button"
+                            className="pagerBtn"
+                            onClick={() => setPage((x) => Math.max(1, x - 1))}
+                            disabled={page <= 1}
+                            aria-label="Página anterior"
+                        >
                             <IconChevron dir="left" />
                         </button>
-                        <div className="pagerInfo">
-                            Página <b>{page}</b> de <b>{totalPages}</b>
-                        </div>
-                        <button type="button" className="pagerBtn" onClick={() => setPage((x) => Math.min(totalPages, x + 1))} disabled={page >= totalPages} aria-label="Próxima página">
+
+                        <button
+                            type="button"
+                            className="pagerBtn"
+                            onClick={() => setPage((x) => Math.min(totalPages, x + 1))}
+                            disabled={page >= totalPages}
+                            aria-label="Próxima página"
+                        >
                             <IconChevron dir="right" />
                         </button>
                     </div>
+
+                    {showStepperButtons ? (
+                        <button type="button" className="stepBtn" onClick={nextCategoria}>
+                            {isLastCategoria ? "Concluir" : "Próximo Passo"}
+                        </button>
+                    ) : null}
                 </div>
+
+                
+
+                
             </div>
         </ScreenContainer>
     );
 
-    const showStepperButtons = Boolean(categoria); // só aparece quando já está em uma categoria do fluxo
-
-    const isLastCategoria = currentCatIndex === CATEGORIAS_FLUXO.length - 1;
+    
 
     const ScreenDetalhe = (
         <ScreenContainer>
@@ -1573,14 +1629,19 @@ export default function Page() {
                         <button
                             type="button"
                             className="ctaBtn"
-                            onClick={() => {
-                                setOpenUserPick(false);
-                            }}
+                            onClick={() => setOpenUserPick(false)}
                             style={{ minWidth: 180 }}
                         >
                             CANCELAR
                         </button>
-                        <button type="button" className="ctaBtn" onClick={fetchUsuarios} style={{ minWidth: 220 }} disabled={loadingUsers}>
+
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={fetchUsuarios}
+                            style={{ minWidth: 220 }}
+                            disabled={loadingUsers}
+                        >
                             {loadingUsers ? "ATUALIZANDO..." : "ATUALIZAR LISTA"}
                         </button>
                     </div>
@@ -1588,14 +1649,63 @@ export default function Page() {
             >
                 {usersError ? <div className="errorBox">{usersError}</div> : null}
 
-                <div className="usersGrid">
+                {/* ✅ Barra de busca */}
+                <div className="userPickerSearch">
+                    <span className="userPickerIcon">
+                        <IconSearch />
+                    </span>
+
+                    <input
+                        value={userQuery}
+                        onChange={(e) => {
+                            setUserQuery(e.target.value);
+                            setUserHighlight(0);
+                        }}
+                        onKeyDown={(e) => {
+                            if (!filteredUsuarios.length) return;
+
+                            if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                setUserHighlight((i) => Math.min(i + 1, filteredUsuarios.length - 1));
+                            }
+                            if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setUserHighlight((i) => Math.max(i - 1, 0));
+                            }
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                const pick = filteredUsuarios[userHighlight];
+                                if (pick) selectOperador(pick);
+                            }
+                        }}
+                        className="userPickerInput"
+                        placeholder={loadingUsers ? "Carregando usuários..." : "Digite nome ou @usuário..."}
+                        aria-label="Buscar operador"
+                        autoFocus
+                        disabled={loadingUsers}
+                    />
+                </div>
+
+                {/* ✅ Resultados só quando digita */}
+                <div className="userPickerResults">
                     {loadingUsers ? (
                         <div className="emptyState" style={{ marginTop: 0 }}>
                             Carregando usuários...
                         </div>
-                    ) : usuarios.length ? (
-                        usuarios.map((u) => (
-                            <button key={u.id} type="button" className="userCard" onClick={() => selectOperador(u)} title="Selecionar">
+                    ) : !userQuery.trim() ? (
+                        <div className="emptyState" style={{ marginTop: 0 }}>
+                            Digite para buscar um usuário.
+                        </div>
+                    ) : filteredUsuarios.length ? (
+                        filteredUsuarios.map((u, idx) => (
+                            <button
+                                key={u.id}
+                                type="button"
+                                className={cn("userCard", idx === userHighlight && "userCardActive")}
+                                onMouseEnter={() => setUserHighlight(idx)}
+                                onClick={() => selectOperador(u)}
+                                title="Selecionar"
+                            >
                                 <div className="userName">{u.nome}</div>
                                 <div className="userUser">@{u.usuario}</div>
                             </button>
@@ -2016,7 +2126,13 @@ const css = `
     text-align:center;
   }
 
-  .pagerRow{ display:flex; justify-content:flex-end; margin-top: 12px; }
+  .pagerRow{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap: 12px;
+  margin-top: 12px;
+}
   .pagerBtns{
     display:flex;
     align-items:center;
