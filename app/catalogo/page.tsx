@@ -1,33 +1,16 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
- * PAGE ÚNICA (page.tsx) — CATÁLOGO (UI/UX no padrão das imagens)
- * - Tudo em um arquivo para você testar design + dinâmica.
- * - Dados 100% fictícios.
- * - Navegação simulada: Home -> Elementos -> Linhas -> Listagem -> Detalhe
- * - Botões: Voltar / Home / Lista (top-right) + Paginação (setas)
- *
- * Coloque este arquivo em: app/catalogo/page.tsx (ou onde quiser)
+ * PAGE ÚNICA (page.tsx) — CATÁLOGO (protótipo)
  */
 
-type CatalogGroup =
-    | "home"
-    | "elementos"
-    | "urnas_linhas"
-    | "listagem"
-    | "detalhe";
+type CatalogGroup = "home" | "elementos" | "urnas_linhas" | "listagem" | "detalhe";
 
 type Categoria = "URNAS" | "ROUPAS" | "ORNAMENTACAO" | "PREPARACAO" | "AMBIENTACAO";
 
-type Linha =
-    | "SERENIDADE"
-    | "HARMONIA"
-    | "ESSENCIA"
-    | "ETERNUM"
-    | "ALVORADA"
-    | "AMPARO";
+type Linha = "SERENIDADE" | "HARMONIA" | "ESSENCIA" | "ETERNUM" | "ALVORADA" | "AMPARO";
 
 type Produto = {
     id: number;
@@ -36,18 +19,14 @@ type Produto = {
     nome: string;
     preco: number;
     saldo: number;
-    thumb: string; // imagem mock
+    thumb: string;
     descricaoCurta: string;
     inspiracao: string;
     conceito: string;
     especificacoes: string;
 };
 
-const BG_IMAGE =
-    "https://pai.planoassistencialintegrado.com.br/catalogo.png";
-
-const BG_GRADIENT =
-    "linear-gradient(180deg, #2ca3d4 0%, #0e4c86 100%)"; // fallback
+const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
 
 // ---------- helpers UI ----------
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -92,7 +71,6 @@ const LINHAS: Array<{ id: Linha; title: string }> = [
 ];
 
 const mockProdutos: Produto[] = [
-    // URNAS - Serenidade
     {
         id: 101,
         categoria: "URNAS",
@@ -118,15 +96,11 @@ const mockProdutos: Produto[] = [
         saldo: 4,
         thumb: mockImg("URNA AURORA", 32),
         descricaoCurta: "Equilíbrio e beleza em linhas suaves e acabamento elegante.",
-        inspiracao:
-            "Aurora representa novos começos e serenidade, como um amanhecer de paz.",
-        conceito:
-            "Design harmônico e acolhedor para uma despedida com respeito e tranquilidade.",
+        inspiracao: "Aurora representa novos começos e serenidade, como um amanhecer de paz.",
+        conceito: "Design harmônico e acolhedor para uma despedida com respeito e tranquilidade.",
         especificacoes:
             "MDF premium • pintura especial • detalhes em frisos • forração interna • fecho reforçado.",
     },
-
-    // URNAS - Harmonia
     {
         id: 201,
         categoria: "URNAS",
@@ -136,15 +110,12 @@ const mockProdutos: Produto[] = [
         saldo: 2,
         thumb: mockImg("URNA NOBRE", 55),
         descricaoCurta: "Acabamento refinado com presença discreta e imponente.",
-        inspiracao:
-            "Harmonia é equilíbrio: forma e função em um produto de alta qualidade.",
+        inspiracao: "Harmonia é equilíbrio: forma e função em um produto de alta qualidade.",
         conceito:
             "Criada para quem deseja uma homenagem com estética clássica e materiais selecionados.",
         especificacoes:
             "Madeira maciça • verniz fosco • cantos arredondados • forração interna • suporte de alças.",
     },
-
-    // URNAS - Essencia
     {
         id: 301,
         categoria: "URNAS",
@@ -154,15 +125,11 @@ const mockProdutos: Produto[] = [
         saldo: 11,
         thumb: mockImg("URNA CLÁSSICA", 110),
         descricaoCurta: "Clássico atemporal com ótimo custo-benefício.",
-        inspiracao:
-            "Essência é o que permanece: simplicidade com significado e presença.",
-        conceito:
-            "Linha pensada para atender com dignidade, sem abrir mão da estética e da qualidade.",
+        inspiracao: "Essência é o que permanece: simplicidade com significado e presença.",
+        conceito: "Linha pensada para atender com dignidade, sem abrir mão da estética e da qualidade.",
         especificacoes:
             "Estrutura resistente • acabamento padrão • forração interna • fecho simples • encaixes firmes.",
     },
-
-    // URNAS - Eternum
     {
         id: 401,
         categoria: "URNAS",
@@ -172,15 +139,11 @@ const mockProdutos: Produto[] = [
         saldo: 1,
         thumb: mockImg("URNA LUX", 190),
         descricaoCurta: "Luxo e detalhes marcantes para uma homenagem inesquecível.",
-        inspiracao:
-            "Eternum simboliza memória duradoura e respeito, com um design mais sofisticado.",
-        conceito:
-            "Produto premium com foco em acabamento e elegância para cerimônias especiais.",
+        inspiracao: "Eternum simboliza memória duradoura e respeito, com um design mais sofisticado.",
+        conceito: "Produto premium com foco em acabamento e elegância para cerimônias especiais.",
         especificacoes:
             "Madeira selecionada • detalhes em alto-relevo • forração premium • sistema de fechamento reforçado.",
     },
-
-    // URNAS - Alvorada
     {
         id: 501,
         categoria: "URNAS",
@@ -190,15 +153,10 @@ const mockProdutos: Produto[] = [
         saldo: 5,
         thumb: mockImg("URNA BRISA", 220),
         descricaoCurta: "Leveza visual com acabamento delicado e moderno.",
-        inspiracao:
-            "Alvorada remete a luz suave e esperança — um tributo com serenidade.",
-        conceito:
-            "Uma linha de estética clean e aconchegante para despedidas com delicadeza.",
-        especificacoes:
-            "Acabamento clean • bordas suaves • forração interna • detalhes minimalistas.",
+        inspiracao: "Alvorada remete a luz suave e esperança — um tributo com serenidade.",
+        conceito: "Uma linha de estética clean e aconchegante para despedidas com delicadeza.",
+        especificacoes: "Acabamento clean • bordas suaves • forração interna • detalhes minimalistas.",
     },
-
-    // URNAS - Amparo
     {
         id: 601,
         categoria: "URNAS",
@@ -208,110 +166,50 @@ const mockProdutos: Produto[] = [
         saldo: 7,
         thumb: mockImg("URNA CONFORT", 260),
         descricaoCurta: "Conforto e acolhimento em cada detalhe.",
-        inspiracao:
-            "Amparo é cuidado — uma proposta de acolhimento e presença gentil.",
-        conceito:
-            "Ideal para famílias que preferem um design simples, bem construído e respeitoso.",
-        especificacoes:
-            "Estrutura robusta • acabamento padrão • forração interna • fecho reforçado.",
+        inspiracao: "Amparo é cuidado — uma proposta de acolhimento e presença gentil.",
+        conceito: "Ideal para famílias que preferem um design simples, bem construído e respeitoso.",
+        especificacoes: "Estrutura robusta • acabamento padrão • forração interna • fecho reforçado.",
     },
 ];
-
-const ELEMENTOS_MENU: Array<{
-    key: string;
-    title: string;
-    subtitle?: string;
-    action: () => void;
-}> = []; // preenchido dentro do componente para acessar setState
 
 // ---------- icons ----------
 function IconBack({ size = 22 }: { size?: number }) {
     return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-            <path
-                d="M10 7L5 12L10 17"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M5 12H20"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M10 7L5 12L10 17" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M5 12H20" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
 }
-
 function IconHome({ size = 22 }: { size?: number }) {
     return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-            <path
-                d="M4 10.5L12 4L20 10.5V20H4V10.5Z"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M9.5 20V14H14.5V20"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-            />
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 10.5L12 4L20 10.5V20H4V10.5Z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M9.5 20V14H14.5V20" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
         </svg>
     );
 }
-
 function IconList({ size = 22 }: { size?: number }) {
     return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-            <path
-                d="M7 6H21M7 12H21M7 18H21"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
-            <path
-                d="M3 6H3.01M3 12H3.01M3 18H3.01"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 6H21M7 12H21M7 18H21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M3 6H3.01M3 12H3.01M3 18H3.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
 }
-
 function IconSearch({ size = 20 }: { size?: number }) {
     return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-            <path
-                d="M10.5 18.5C14.6421 18.5 18 15.1421 18 11C18 6.85786 14.6421 3.5 10.5 3.5C6.35786 3.5 3 6.85786 3 11C3 15.1421 6.35786 18.5 10.5 18.5Z"
-                stroke="currentColor"
-                strokeWidth="2.2"
-            />
-            <path
-                d="M20.5 20.5L16.8 16.8"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M10.5 18.5C14.6421 18.5 18 15.1421 18 11C18 6.85786 14.6421 3.5 10.5 3.5C6.35786 3.5 3 6.85786 3 11C3 15.1421 6.35786 18.5 10.5 18.5Z" stroke="currentColor" strokeWidth="2.2" />
+            <path d="M20.5 20.5L16.8 16.8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
 }
-
 function IconChevron({ dir }: { dir: "left" | "right" }) {
     const rotate = dir === "left" ? "180deg" : "0deg";
     return (
-        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" style={{ transform: `rotate(${rotate})` }}>
-            <path
-                d="M9 6L15 12L9 18"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" style={{ transform: `rotate(${rotate})` }} aria-hidden="true">
+            <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -330,34 +228,22 @@ function TopRightNav({
 }) {
     return (
         <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10 }}>
-            <button
-                onClick={onBack}
-                disabled={disabledBack}
-                className={cn("iconBtn", disabledBack && "iconBtnDisabled")}
-                aria-label="Voltar"
-                title="Voltar"
-            >
+            <button type="button" onClick={onBack} disabled={disabledBack} className={cn("iconBtn", disabledBack && "iconBtnDisabled")} aria-label="Voltar" title="Voltar">
                 <IconBack />
             </button>
-            <button onClick={onHome} className="iconBtn" aria-label="Home" title="Home">
+            <button type="button" onClick={onHome} className="iconBtn" aria-label="Home" title="Home">
                 <IconHome />
             </button>
-            <button onClick={onList} className="iconBtn" aria-label="Lista" title="Lista">
+            <button type="button" onClick={onList} className="iconBtn" aria-label="Lista" title="Lista">
                 <IconList />
             </button>
         </div>
     );
 }
 
-function BigButton({
-    label,
-    onClick,
-}: {
-    label: string;
-    onClick: () => void;
-}) {
+function BigButton({ label, onClick }: { label: string; onClick: () => void }) {
     return (
-        <button onClick={onClick} className="bigBtn">
+        <button type="button" onClick={onClick} className="bigBtn">
             <span className="btnLabel">{label.replace(/\n/g, " ")}</span>
         </button>
     );
@@ -372,28 +258,18 @@ function Title({ children }: { children: React.ReactNode }) {
 }
 
 function ScreenContainer({ children }: { children: React.ReactNode }) {
-    return (
-        <div className="screen">
-            {children}
-        </div>
-    );
+    return <div className="screen">{children}</div>;
 }
 
 function SectionPill({ children }: { children: React.ReactNode }) {
     return <div className="pill">{children}</div>;
 }
 
-function ProductCard({
-    p,
-    onOpen,
-}: {
-    p: Produto;
-    onOpen: () => void;
-}) {
+function ProductCard({ p, onOpen }: { p: Produto; onOpen: () => void }) {
     return (
-        <button className="prodCard" onClick={onOpen} title={p.nome}>
+        <button type="button" className="prodCard" onClick={onOpen} title={p.nome}>
             <div className="prodImgWrap">
-                <img src={p.thumb} alt={p.nome} className="prodImg" />
+                <img src={p.thumb} alt={p.nome} className="prodImg" loading="lazy" />
             </div>
             <div className="prodName">{p.nome}</div>
         </button>
@@ -413,13 +289,32 @@ function Modal({
     onClose: () => void;
     footer?: React.ReactNode;
 }) {
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [open, onClose]);
+
     if (!open) return null;
+
     return (
-        <div className="modalOverlay" role="dialog" aria-modal="true">
+        <div
+            className="modalOverlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            onMouseDown={(e) => {
+                // clique fora fecha
+                if (e.currentTarget === e.target) onClose();
+            }}
+        >
             <div className="modalCard">
                 <div className="modalHeader">
                     <div className="modalTitle">{title}</div>
-                    <button className="modalClose" onClick={onClose}>
+                    <button type="button" className="modalClose" onClick={onClose} aria-label="Fechar modal" title="Fechar">
                         ✕
                     </button>
                 </div>
@@ -446,14 +341,15 @@ export default function Page() {
 
     const canBack = stack.length > 1;
 
-    function go(to: CatalogGroup) {
+    const go = useCallback((to: CatalogGroup) => {
         setStack((s) => [...s, to]);
-    }
-    function back() {
-        if (!canBack) return;
-        setStack((s) => s.slice(0, -1));
-    }
-    function home() {
+    }, []);
+
+    const back = useCallback(() => {
+        setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+    }, []);
+
+    const home = useCallback(() => {
         setStack(["home"]);
         setCategoria(null);
         setLinha(null);
@@ -461,15 +357,20 @@ export default function Page() {
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
-    }
-    function list() {
-        // “Lista” vai para a listagem atual se existir contexto; senão abre Elementos
-        if (categoria === "URNAS") {
-            setStack(["home", "elementos", "urnas_linhas", "listagem"]);
+    }, []);
+
+    const list = useCallback(() => {
+        // Se tiver contexto (categoria), vai para listagem; senão, para Elementos
+        if (categoria) {
+            if (categoria === "URNAS") {
+                setStack(["home", "elementos", "urnas_linhas", "listagem"]);
+            } else {
+                setStack(["home", "elementos", "listagem"]);
+            }
             return;
         }
         setStack(["home", "elementos"]);
-    }
+    }, [categoria]);
 
     const elementosMenu = useMemo(() => {
         return [
@@ -484,13 +385,18 @@ export default function Page() {
                     go("urnas_linhas");
                 },
             },
-            { key: "apresentacao", title: "APRESENTAÇÃO", action: () => alert("Mock: este menu pode levar a outra categoria/subfluxo.") },
-            { key: "espaco", title: "ESPAÇO DE\nDESPEDIDA", action: () => alert("Mock: outro fluxo do catálogo.") },
-            { key: "prep", title: "PREPARAÇÃO E\nCUIDADO", action: () => alert("Mock: outro fluxo do catálogo.") },
-            { key: "amb", title: "AMBIENTAÇÃO", action: () => alert("Mock: outro fluxo do catálogo.") },
-            { key: "cuidados", title: "CUIDADOS\nADICIONAIS", action: () => alert("Mock: outro fluxo do catálogo.") },
+            { key: "apresentacao", title: "APRESENTAÇÃO", action: () => console.info("Mock: submenu") },
+            { key: "espaco", title: "ESPAÇO DE\nDESPEDIDA", action: () => console.info("Mock: submenu") },
+            { key: "prep", title: "PREPARAÇÃO E\nCUIDADO", action: () => console.info("Mock: submenu") },
+            { key: "amb", title: "AMBIENTAÇÃO", action: () => console.info("Mock: submenu") },
+            { key: "cuidados", title: "CUIDADOS\nADICIONAIS", action: () => console.info("Mock: submenu") },
         ] as Array<{ key: string; title: string; action: () => void }>;
-    }, []);
+    }, [go]);
+
+    // Se categoria não suporta linha, zera linha
+    useEffect(() => {
+        if (categoria !== "URNAS" && linha) setLinha(null);
+    }, [categoria, linha]);
 
     const produtosFiltrados = useMemo(() => {
         let arr = mockProdutos.slice();
@@ -509,58 +415,82 @@ export default function Page() {
     }, [categoria, linha, q]);
 
     const totalPages = Math.max(1, Math.ceil(produtosFiltrados.length / pageSize));
+
     const paged = useMemo(() => {
         const start = (page - 1) * pageSize;
         return produtosFiltrados.slice(start, start + pageSize);
-    }, [produtosFiltrados, page]);
+    }, [produtosFiltrados, page, pageSize]);
 
     // sempre manter page dentro do range
-    React.useEffect(() => {
+    useEffect(() => {
         if (page > totalPages) setPage(totalPages);
+        if (page < 1) setPage(1);
     }, [totalPages, page]);
 
+    // ao entrar em listagem sem contexto, define defaults de forma controlada
+    useEffect(() => {
+        if (current !== "listagem") return;
+
+        if (!categoria) setCategoria("URNAS");
+
+        // só define linha default para categorias que exigem linha
+        if ((categoria ?? "URNAS") === "URNAS" && !linha) setLinha("SERENIDADE");
+    }, [current, categoria, linha]);
+
     // abrir detalhe “navegando”
-    function openProduct(p: Produto) {
-        setSelected(p);
-        if (current !== "detalhe") go("detalhe");
-    }
+    const openProduct = useCallback(
+        (p: Produto) => {
+            setSelected(p);
+            if (current !== "detalhe") go("detalhe");
+        },
+        [current, go]
+    );
+
+    // garante selected coerente com os filtros quando em detalhe
+    useEffect(() => {
+        if (current !== "detalhe") return;
+
+        if (!produtosFiltrados.length) {
+            setSelected(null);
+            return;
+        }
+
+        if (!selected || !produtosFiltrados.some((p) => p.id === selected.id)) {
+            setSelected(produtosFiltrados[0]);
+        }
+    }, [current, selected, produtosFiltrados]);
+
+    // miniaturas memoizadas (evita regenerar SVGs a cada render)
+    const detailThumbs = useMemo(() => {
+        return Array.from({ length: 6 }).map((_, i) => ({
+            key: `thumb-${i + 1}`,
+            src: mockImg(`IMG ${i + 1}`, 26 + i * 12),
+            alt: `Miniatura ${i + 1}`,
+        }));
+    }, []);
 
     // mock “tabela de valores”
     const tabelaValores = useMemo(() => {
         if (!selected) return [];
+        const extraLinha = selected.linha ? 80 : 0;
         return [
             { label: "Preço base", value: formatBRL(selected.preco) },
             { label: "Taxa de preparação (mock)", value: formatBRL(120) },
-            { label: "Ajuste por linha (mock)", value: formatBRL(selected.linha ? 80 : 0) },
-            { label: "Total estimado", value: formatBRL(selected.preco + 120 + (selected.linha ? 80 : 0)) },
+            { label: "Ajuste por linha (mock)", value: formatBRL(extraLinha) },
+            { label: "Total estimado", value: formatBRL(selected.preco + 120 + extraLinha) },
         ];
     }, [selected]);
 
     // ---------- screens ----------
     const ScreenHome = (
         <ScreenContainer>
-            <div
-                style={{
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                }}
-            >
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div className="homeBtns">
-                    <button
-                        className="homeBtn"
-                        onClick={() => go("elementos")}
-                    >
+                    <button type="button" className="homeBtn" onClick={() => go("elementos")}>
                         ELEMENTOS DE HOMENAGEM
                     </button>
 
-                    <button
-                        className="homeBtn"
-                        onClick={() =>
-                            alert("Mock: aqui entraria a Lista de Orçamentos.")
-                        }
-                    >
+                    <button type="button" className="homeBtn" onClick={() => console.info("Mock: lista de orçamentos")}>
                         LISTA DE ORÇAMENTOS
                     </button>
                 </div>
@@ -613,9 +543,7 @@ export default function Page() {
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
-                    <div className="listTitle">
-                        PÁGINA DE LISTAGEM DE PRODUTOS
-                    </div>
+                    <div className="listTitle">PÁGINA DE LISTAGEM DE PRODUTOS</div>
 
                     <div className="listSubTitle">
                         {categoria ? `${categoria}` : "CATÁLOGO"} {linha ? `• LINHA ${linha}` : ""}
@@ -634,6 +562,7 @@ export default function Page() {
                                 }}
                                 className="searchInput"
                                 placeholder="Buscar produto..."
+                                aria-label="Buscar produto"
                             />
                         </div>
 
@@ -647,16 +576,13 @@ export default function Page() {
                     {paged.map((p) => (
                         <ProductCard key={p.id} p={p} onOpen={() => openProduct(p)} />
                     ))}
-                    {paged.length === 0 ? (
-                        <div className="emptyState">
-                            Nenhum produto encontrado.
-                        </div>
-                    ) : null}
+                    {paged.length === 0 ? <div className="emptyState">Nenhum produto encontrado.</div> : null}
                 </div>
 
                 <div className="pagerRow">
                     <div className="pagerBtns">
                         <button
+                            type="button"
                             className="pagerBtn"
                             onClick={() => setPage((x) => Math.max(1, x - 1))}
                             disabled={page <= 1}
@@ -668,6 +594,7 @@ export default function Page() {
                             Página <b>{page}</b> de <b>{totalPages}</b>
                         </div>
                         <button
+                            type="button"
                             className="pagerBtn"
                             onClick={() => setPage((x) => Math.min(totalPages, x + 1))}
                             disabled={page >= totalPages}
@@ -685,14 +612,12 @@ export default function Page() {
         <ScreenContainer>
             <TopRightNav
                 onBack={() => {
-                    // volta para listagem mantendo contexto
                     setOpenPrices(false);
                     back();
                 }}
                 onHome={home}
                 onList={() => {
                     setOpenPrices(false);
-                    // garante voltar para listagem
                     setStack((s) => {
                         const idx = s.lastIndexOf("listagem");
                         if (idx >= 0) return s.slice(0, idx + 1);
@@ -716,28 +641,15 @@ export default function Page() {
                         <div className="detailLeft">
                             <div className="detailImgCard">
                                 <img src={selected.thumb} alt={selected.nome} className="detailImg" />
-                                <button
-                                    className="zoomBtn"
-                                    onClick={() => alert("Mock: zoom/galeria")}
-                                    title="Zoom"
-                                >
+                                <button type="button" className="zoomBtn" onClick={() => console.info("Mock: zoom")} title="Zoom" aria-label="Zoom">
                                     🔍
                                 </button>
                             </div>
 
                             <div className="thumbRow" aria-label="Miniaturas (mock)">
-                                {Array.from({ length: 6 }).map((_, i) => (
-                                    <button
-                                        key={i}
-                                        className="thumb"
-                                        onClick={() => alert("Mock: trocar imagem")}
-                                        title="Miniatura (mock)"
-                                    >
-                                        <img
-                                            src={mockImg(`IMG ${i + 1}`, 26 + i * 12)}
-                                            alt={`Miniatura ${i + 1}`}
-                                            className="thumbImg"
-                                        />
+                                {detailThumbs.map((t) => (
+                                    <button type="button" key={t.key} className="thumb" onClick={() => console.info("Mock: trocar imagem")} title="Miniatura (mock)">
+                                        <img src={t.src} alt={t.alt} className="thumbImg" />
                                     </button>
                                 ))}
                             </div>
@@ -792,13 +704,10 @@ export default function Page() {
                             </div>
 
                             <div className="detailActions">
-                                <button className="ctaBtn" onClick={() => setOpenPrices(true)}>
+                                <button type="button" className="ctaBtn" onClick={() => setOpenPrices(true)}>
                                     TABELA DE VALORES
                                 </button>
-                                <button
-                                    className="ctaBtn"
-                                    onClick={() => alert("Mock: adicionar ao orçamento")}
-                                >
+                                <button type="button" className="ctaBtn" onClick={() => console.info("Mock: adicionar ao orçamento")}>
                                     ADICIONAR A ORÇAMENTO
                                 </button>
                             </div>
@@ -812,16 +721,16 @@ export default function Page() {
                 title="Tabela de valores (mock)"
                 onClose={() => setOpenPrices(false)}
                 footer={
-                    <button className="ctaBtn" onClick={() => setOpenPrices(false)}>
+                    <button type="button" className="ctaBtn" onClick={() => setOpenPrices(false)}>
                         FECHAR
                     </button>
                 }
             >
                 {!selected ? null : (
                     <div style={{ display: "grid", gap: 10 }}>
-                        {tabelaValores.map((row, idx) => (
+                        {tabelaValores.map((row) => (
                             <div
-                                key={idx}
+                                key={row.label}
                                 style={{
                                     display: "flex",
                                     justifyContent: "space-between",
@@ -843,26 +752,11 @@ export default function Page() {
 
     // ---------- render switch ----------
     let screen: React.ReactNode = null;
-
     if (current === "home") screen = ScreenHome;
     if (current === "elementos") screen = ScreenElementos;
     if (current === "urnas_linhas") screen = ScreenLinhas;
     if (current === "listagem") screen = ScreenListagem;
     if (current === "detalhe") screen = ScreenDetalhe;
-
-    // se entrar em listagem sem categoria/linha, define defaults
-    React.useEffect(() => {
-        if (current === "listagem") {
-            if (!categoria) setCategoria("URNAS");
-            if (!linha) setLinha("SERENIDADE");
-        }
-    }, [current, categoria, linha]);
-
-    // garante selected coerente
-    React.useEffect(() => {
-        if (current !== "detalhe") return;
-        if (!selected && produtosFiltrados[0]) setSelected(produtosFiltrados[0]);
-    }, [current, selected, produtosFiltrados]);
 
     return (
         <div className="root">
@@ -888,47 +782,30 @@ const css = `
   }
 
   .root{
-  width:100vw;
-  height:100vh;
-
-  overflow:hidden; /* ✅ impede rolagem */
-
-  background-image:
-    linear-gradient(
-      rgba(8,32,70,0.45),
-      rgba(8,32,70,0.65)
-    ),
-    url("${BG_IMAGE}");
-
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
-  font-family: var(--font-nunito), Nunito, sans-serif;
-}
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+    background-image:
+      linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
+      url("${BG_IMAGE}");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family: var(--font-nunito), Nunito, sans-serif;
+  }
 
   .screen{
-  position: relative;
-  width: min(1200px, 98vw);
-  height: min(680px, 92vh);
-  border-radius: 14px;
-  overflow:hidden;
-  background: transparent;
-}
+    position: relative;
+    width: min(1200px, 98vw);
+    height: min(680px, 92vh);
+    border-radius: 14px;
+    overflow:hidden;
+    background: transparent;
+  }
 
-
- 
-
-  
-
-  
-  
-
-  /* icons top-right */
   .iconBtn{
     width: 44px;
     height: 44px;
@@ -945,10 +822,7 @@ const css = `
   }
   .iconBtn:hover{ transform: translateY(-1px); filter: brightness(1.02); }
   .iconBtn:active{ transform: translateY(0px) scale(0.99); }
-  .iconBtnDisabled{
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
+  .iconBtnDisabled{ opacity: 0.55; cursor: not-allowed; }
 
   .title{
     color: var(--ink);
@@ -968,171 +842,92 @@ const css = `
     letter-spacing: 0.5px;
   }
 
-  /* Home header mock */
-  
-
   .homeBtns{
-  width:100%;
-  max-width:900px;
-
-  display:flex;
-  flex-direction:row; /* ✅ lado a lado */
-  gap:28px;
-
-  align-items:center;
-  justify-content:center;
-}
+    width:100%;
+    max-width:900px;
+    display:flex;
+    flex-direction:row;
+    gap:28px;
+    align-items:center;
+    justify-content:center;
+  }
   .homeBtn{
-  flex:1; /* ✅ divide espaço igualmente */
-
-  padding:22px 28px;
-  border-radius:20px;
-
-  font-family: var(--font-nunito), Nunito, sans-serif;
-  font-weight:800;
-  font-size:24px;
-  letter-spacing:.8px;
-
-  white-space:nowrap; /* ✅ NÃO QUEBRA LINHA */
-  text-align:center;
-
-  color:#fff;
-  background:#029cde;
-
-  border:2px solid rgba(255,255,255,.35);
-
-  box-shadow:
-    0 14px 32px rgba(2,156,222,.35),
-    inset 0 1px 0 rgba(255,255,255,.25);
-
-  cursor:pointer;
-
-  transition:
-    transform .18s ease,
-    box-shadow .18s ease,
-    background .18s ease;
-
-  position:relative;
-  overflow:hidden;
-}
-
-.homeBtn:hover{
-  background: #03a7ec;
-
-  transform: translateY(-3px);
-
-  box-shadow:
-    0 18px 40px rgba(2,156,222,0.45),
-    inset 0 1px 0 rgba(255,255,255,0.35);
-}
-
-.homeBtn:active{
-  transform: translateY(0px) scale(0.97);
-
-  box-shadow:
-    0 6px 14px rgba(2,156,222,0.35),
-    inset 0 2px 6px rgba(0,0,0,0.25);
-}
-
-.homeBtn::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  border-radius:18px;
-
-  background:
-    linear-gradient(
-      120deg,
-      transparent 20%,
-      rgba(255,255,255,0.25),
-      transparent 80%
-    );
-
-  opacity:0;
-  transition:opacity .25s ease;
-}
-
-.homeBtn:hover::before{
-  opacity:1;
-}
-
-.homeBtn{
-  position:relative;
-  overflow:hidden;
-}
-
-  
+    flex:1;
+    padding:22px 28px;
+    border-radius:20px;
+    font-family: var(--font-nunito), Nunito, sans-serif;
+    font-weight:800;
+    font-size:24px;
+    letter-spacing:.8px;
+    white-space:nowrap;
+    text-align:center;
+    color:#fff;
+    background:#029cde;
+    border:2px solid rgba(255,255,255,.35);
+    box-shadow: 0 14px 32px rgba(2,156,222,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    cursor:pointer;
+    transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    position:relative;
+    overflow:hidden;
+  }
+  .homeBtn:hover{
+    background: #03a7ec;
+    transform: translateY(-3px);
+    box-shadow: 0 18px 40px rgba(2,156,222,0.45), inset 0 1px 0 rgba(255,255,255,0.35);
+  }
+  .homeBtn:active{
+    transform: translateY(0px) scale(0.97);
+    box-shadow: 0 6px 14px rgba(2,156,222,0.35), inset 0 2px 6px rgba(0,0,0,0.25);
+  }
+  .homeBtn::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:18px;
+    background: linear-gradient(120deg, transparent 20%, rgba(255,255,255,0.25), transparent 80%);
+    opacity:0;
+    transition:opacity .25s ease;
+  }
+  .homeBtn:hover::before{ opacity:1; }
 
   .gridMenu2{
-  width:100%;
-  max-width:900px;
-
-  margin:0 auto;
-
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap:28px;
-}
+    width:100%;
+    max-width:900px;
+    margin:0 auto;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:28px;
+  }
 
   .bigBtn{
-  width:100%;
-  height:84px;
-
-  display:flex;
-  align-items:center;
-  justify-content:center;
-
-  padding:0 24px;
-
-  border-radius:20px;
-
-  font-family: var(--font-nunito), Nunito, sans-serif;
-  font-weight:800;
-  font-size:22px;
-  letter-spacing:.8px;
-
-  white-space:nowrap; /* ✅ nunca quebra */
-  text-align:center;
-
-  color:#fff;
-  background:#029cde;
-
-  border:2px solid rgba(255,255,255,.35);
-
-  box-shadow:
-    0 14px 32px rgba(2,156,222,.35),
-    inset 0 1px 0 rgba(255,255,255,.25);
-
-  cursor:pointer;
-
-  transition:
-    transform .18s ease,
-    box-shadow .18s ease,
-    background .18s ease;
-
-  position:relative;
-  overflow:hidden;
-}
-
-.bigBtn:hover{
-  background:#03a7ec;
-  transform:translateY(-3px);
-}
-
-.bigBtn:active{
-  transform:scale(.97);
-}
-
-.btnLabel{
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
+    width:100%;
+    height:84px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0 24px;
+    border-radius:20px;
+    font-family: var(--font-nunito), Nunito, sans-serif;
+    font-weight:800;
+    font-size:22px;
+    letter-spacing:.8px;
+    white-space:nowrap;
+    text-align:center;
+    color:#fff;
+    background:#029cde;
+    border:2px solid rgba(255,255,255,.35);
+    box-shadow: 0 14px 32px rgba(2,156,222,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    cursor:pointer;
+    transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    position:relative;
+    overflow:hidden;
+  }
+  .bigBtn:hover{ background:#03a7ec; transform:translateY(-3px); }
+  .bigBtn:active{ transform:scale(.97); }
+  .btnLabel{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* listagem */
-  .listHeader{
-    margin-bottom: 14px;
-  }
+  .listHeader{ margin-bottom: 14px; }
   .listTitle{
     color: #ffe600;
     font-weight: 900;
@@ -1164,12 +959,7 @@ const css = `
     border: 1px solid rgba(255,255,255,0.22);
     box-shadow: 0 14px 30px rgba(0,0,0,0.18);
   }
-  .searchIcon{
-    color: rgba(255,255,255,0.92);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
+  .searchIcon{ color: rgba(255,255,255,0.92); display:flex; }
   .searchInput{
     width: 100%;
     border: none;
@@ -1203,7 +993,7 @@ const css = `
     border-radius: 18px;
     padding: 12px;
     background: rgba(0,0,0,0.0);
-    border: 2px solid rgba(189, 155, 0, 0.35); /* vibe borda amarela/verde do print */
+    border: 2px solid rgba(189, 155, 0, 0.35);
     box-shadow: 0 18px 34px rgba(0,0,0,0.20);
     cursor:pointer;
     transition: transform .12s ease, filter .12s ease;
@@ -1222,12 +1012,7 @@ const css = `
     align-items:center;
     justify-content:center;
   }
-  .prodImg{
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scale(1.02);
-  }
+  .prodImg{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.02); }
 
   .prodName{
     margin-top: 10px;
@@ -1252,11 +1037,7 @@ const css = `
     text-align:center;
   }
 
-  .pagerRow{
-    display:flex;
-    justify-content:flex-end;
-    margin-top: 12px;
-  }
+  .pagerRow{ display:flex; justify-content:flex-end; margin-top: 12px; }
   .pagerBtns{
     display:flex;
     align-items:center;
@@ -1278,15 +1059,8 @@ const css = `
     align-items:center;
     justify-content:center;
   }
-  .pagerBtn:disabled{
-    opacity: 0.55;
-    cursor:not-allowed;
-  }
-  .pagerInfo{
-    color: rgba(255,255,255,0.92);
-    font-weight: 700;
-    padding: 0 10px;
-  }
+  .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
+  .pagerInfo{ color: rgba(255,255,255,0.92); font-weight: 700; padding: 0 10px; }
 
   /* detalhe */
   .detailLayout{
@@ -1296,11 +1070,7 @@ const css = `
     align-items: start;
     margin-top: 12px;
   }
-  .detailLeft{
-    display:flex;
-    flex-direction:column;
-    gap: 12px;
-  }
+  .detailLeft{ display:flex; flex-direction:column; gap: 12px; }
   .detailImgCard{
     position:relative;
     border-radius: 18px;
@@ -1310,11 +1080,7 @@ const css = `
     box-shadow: 0 20px 46px rgba(0,0,0,0.26);
     height: 330px;
   }
-  .detailImg{
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+  .detailImg{ width: 100%; height: 100%; object-fit: cover; }
   .zoomBtn{
     position:absolute;
     right: 12px;
@@ -1328,11 +1094,7 @@ const css = `
     cursor:pointer;
   }
 
-  .thumbRow{
-    display:flex;
-    gap: 10px;
-    align-items:center;
-  }
+  .thumbRow{ display:flex; gap: 10px; align-items:center; }
   .thumb{
     width: 62px;
     height: 44px;
@@ -1342,17 +1104,9 @@ const css = `
     background: rgba(255,255,255,0.10);
     cursor:pointer;
   }
-  .thumbImg{
-    width:100%;
-    height:100%;
-    object-fit:cover;
-  }
+  .thumbImg{ width:100%; height:100%; object-fit:cover; }
 
-  .detailMeta{
-    display:flex;
-    gap: 10px;
-    flex-wrap:wrap;
-  }
+  .detailMeta{ display:flex; gap: 10px; flex-wrap:wrap; }
   .metaPill{
     padding: 9px 12px;
     border-radius: 999px;
@@ -1377,12 +1131,7 @@ const css = `
     font-size: 28px;
     margin-bottom: 10px;
   }
-  .bulletBox{
-    margin-top: 6px;
-    display:flex;
-    flex-direction:column;
-    gap: 10px;
-  }
+  .bulletBox{ margin-top: 6px; display:flex; flex-direction:column; gap: 10px; }
   .bulletItem{
     display:flex;
     gap: 10px;
@@ -1391,12 +1140,7 @@ const css = `
     line-height: 1.35;
     font-size: 14px;
   }
-  .bulletDot{
-    color: rgba(255,255,255,0.92);
-    font-size: 18px;
-    line-height: 1;
-    margin-top: 2px;
-  }
+  .bulletDot{ color: rgba(255,255,255,0.92); font-size: 18px; line-height: 1; margin-top: 2px; }
 
   .detailActions{
     margin-top: 18px;
@@ -1446,11 +1190,7 @@ const css = `
     padding: 14px 14px;
     border-bottom: 1px solid rgba(255,255,255,0.14);
   }
-  .modalTitle{
-    color: rgba(255,255,255,0.95);
-    font-weight: 900;
-    letter-spacing: 0.8px;
-  }
+  .modalTitle{ color: rgba(255,255,255,0.95); font-weight: 900; letter-spacing: 0.8px; }
   .modalClose{
     width: 38px;
     height: 38px;
@@ -1460,10 +1200,7 @@ const css = `
     color: rgba(255,255,255,0.92);
     cursor:pointer;
   }
-  .modalBody{
-    padding: 14px;
-    color: rgba(255,255,255,0.92);
-  }
+  .modalBody{ padding: 14px; color: rgba(255,255,255,0.92); }
   .modalFooter{
     padding: 14px;
     border-top: 1px solid rgba(255,255,255,0.14);
@@ -1471,7 +1208,6 @@ const css = `
     justify-content:flex-end;
   }
 
-  /* responsive */
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
     .detailLayout{ grid-template-columns: 1fr; }
@@ -1480,7 +1216,5 @@ const css = `
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
-    .brandPAI{ font-size: 44px; }
-    .headline{ font-size: 22px; }
   }
 `;
