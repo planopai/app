@@ -120,29 +120,44 @@ function clampInt(v: any) {
 }
 
 // ---------- parser robusto (tolera BOM/HTML) ----------
-async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
-    const r = await fetch(input, { cache: "no-store", ...init });
-    const txt = await r.text();
-    const cleaned = txt.replace(/^\uFEFF/, "").trim();
-    let json: any = null;
+async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutMs?: number }) {
+    const timeoutMs = init?.timeoutMs ?? 15000;
 
-    if (!cleaned.startsWith("<")) {
-        try {
-            json = JSON.parse(cleaned);
-        } catch {
-            const m = cleaned.match(/\{[\s\S]*\}$/m);
-            if (m) json = JSON.parse(m[0]);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    try {
+        const { timeoutMs: _omit, ...rest } = init || {};
+        const r = await fetch(input, { cache: "no-store", signal: ctrl.signal, ...rest });
+        const txt = await r.text();
+        const cleaned = txt.replace(/^\uFEFF/, "").trim();
+        let json: any = null;
+
+        if (!cleaned.startsWith("<")) {
+            try {
+                json = JSON.parse(cleaned);
+            } catch {
+                const m = cleaned.match(/\{[\s\S]*\}$/m);
+                if (m) json = JSON.parse(m[0]);
+            }
         }
-    }
 
-    if (json == null)
-        throw new Error(
-            `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? "…" : ""
-            }`
-        );
-    if (!r.ok || json?.erro)
-        throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
-    return json;
+        if (json == null)
+            throw new Error(
+                `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? "…" : ""
+                }`
+            );
+        if (!r.ok || json?.erro)
+            throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+        return json;
+    } catch (e: any) {
+        if (e?.name === "AbortError") {
+            throw new Error("Tempo esgotado ao conectar com o servidor. Tente novamente.");
+        }
+        throw e;
+    } finally {
+        clearTimeout(t);
+    }
 }
 
 // ---------- mock images (data-uri) ----------
@@ -653,7 +668,7 @@ export default function Page() {
         setLoadingUsers(true);
         setUsersError(null);
         try {
-            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`);
+            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`, { timeoutMs: 15000 });
             setUsuarios(Array.isArray(j) ? (j as Usuario[]) : []);
         } catch (e: any) {
             setUsuarios([]);
@@ -778,14 +793,18 @@ export default function Page() {
         ];
     }, [selected]);
 
+    const isSelectedInDraft = useCallback(
+        (produtoId: number) => {
+            return draftItens.some((x) => x.produtoId === produtoId);
+        },
+        [draftItens]
+    );
+
     // ---------- draft: add (sem duplicar) ----------
     const addToDraft = useCallback((p: Produto) => {
         setDraftItens((prev) => {
             const exists = prev.some((x) => x.produtoId === p.id);
-            if (exists) {
-                alert("Este item já foi adicionado.");
-                return prev;
-            }
+            if (exists) return prev; // já está selecionado (ícone muda no botão)
             return [
                 ...prev,
                 {
@@ -798,6 +817,10 @@ export default function Page() {
                 },
             ];
         });
+    }, []);
+
+    const removeFromDraft = useCallback((produtoId: number) => {
+        setDraftItens((prev) => prev.filter((x) => x.produtoId !== produtoId));
     }, []);
 
     const groupedByCategoria = useMemo(() => {
@@ -1248,6 +1271,7 @@ export default function Page() {
                 }}
                 onCheck={openConcluirModal}
                 showCheck={true}
+                checkCount={draftItens.length}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
@@ -1278,20 +1302,11 @@ export default function Page() {
                                 ))}
                             </div>
 
+                            {/* ✅ abaixo das fotos: somente Saldo */}
                             <div className="detailMeta">
                                 <div className="metaPill">
                                     <b>Saldo:</b> {selected.saldo}
                                 </div>
-                                {selected.linha ? (
-                                    <div className="metaPill">
-                                        <b>Linha:</b> {selected.linha}
-                                    </div>
-                                ) : null}
-                                {categoria ? (
-                                    <div className="metaPill">
-                                        <b>Categoria:</b> {labelCategoria(categoria)}
-                                    </div>
-                                ) : null}
                             </div>
                         </div>
 
@@ -1333,9 +1348,21 @@ export default function Page() {
                                         <IconDollar />
                                     </button>
 
-                                    <button type="button" className="iconActionBtn" onClick={() => addToDraft(selected)} aria-label="Adicionar" title="Adicionar">
-                                        <IconPlus />
-                                    </button>
+                                    {(() => {
+                                        const already = isSelectedInDraft(selected.id);
+                                        return (
+                                            <button
+                                                type="button"
+                                                className={cn("iconActionBtn", already && "iconActionBtnSelected")}
+                                                onClick={() => addToDraft(selected)}
+                                                aria-label={already ? "Selecionado" : "Adicionar"}
+                                                title={already ? "Selecionado" : "Adicionar"}
+                                                disabled={already}
+                                            >
+                                                {already ? <IconCheck /> : <IconPlus />}
+                                            </button>
+                                        );
+                                    })()}
                                 </div>
 
                                 {showStepperButtons ? (
@@ -1679,7 +1706,18 @@ export default function Page() {
                                             <div key={it.produtoId} className="reviewItemRow">
                                                 <div className="reviewItemName">{it.nome}</div>
                                                 <div className="reviewItemMeta">{it.linha ? `Linha: ${it.linha}` : ""}</div>
-                                                <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
+                                                <div className="reviewItemRight">
+                                                    <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
+                                                    <button
+                                                        type="button"
+                                                        className="reviewRemoveBtn"
+                                                        onClick={() => removeFromDraft(it.produtoId)}
+                                                        aria-label="Remover item"
+                                                        title="Remover"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -2107,6 +2145,12 @@ const css = `
   }
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
+  .iconActionBtn:disabled{ opacity: 0.70; cursor: not-allowed; }
+  .iconActionBtnSelected{
+    background: rgba(230, 255, 238, 0.92);
+    border-color: rgba(16, 185, 129, 0.35);
+    color: #065f46;
+  }
 
   .stepperRow{
     margin-top: 16px;
@@ -2465,18 +2509,16 @@ const css = `
     margin-bottom: 12px;
   }
   .reviewLine{ font-weight: 900; }
-  .reviewWrap{
-  display:grid;
-  gap: 12px;
-  /* remove overflow/max-height daqui */
-}
 
-  /* ✅ mantém cabeçalho visível + lista rolável */
-  max-height: min(56vh, 520px);
-  overflow: auto;
-  padding-right: 4px;
-  -webkit-overflow-scrolling: touch;
-}
+  .reviewWrap{
+    display:grid;
+    gap: 12px;
+    max-height: min(56vh, 520px);
+    overflow: auto;
+    padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .reviewBlock{
     border-radius: 14px;
     background: rgba(255,255,255,0.08);
@@ -2502,7 +2544,21 @@ const css = `
   }
   .reviewItemName{ font-weight: 1000; }
   .reviewItemMeta{ opacity: 0.9; font-size: 12px; grid-column: 1 / 2; }
+  .reviewItemRight{ display:flex; align-items:center; gap: 10px; }
   .reviewItemPrice{ font-weight: 1000; white-space: nowrap; }
+  .reviewRemoveBtn{
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.92);
+    cursor:pointer;
+    font-weight: 1000;
+    line-height: 1;
+  }
+  .reviewRemoveBtn:hover{ filter: brightness(1.05); transform: translateY(-1px); }
+  .reviewRemoveBtn:active{ transform: translateY(0px) scale(0.99); }
 
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
