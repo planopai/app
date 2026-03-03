@@ -403,6 +403,7 @@ function TopRightNav({
     onCheck,
     disabledBack,
     showCheck = true,
+    checkCount = 0,
 }: {
     onBack: () => void;
     onHome: () => void;
@@ -410,10 +411,20 @@ function TopRightNav({
     onCheck?: () => void;
     disabledBack?: boolean;
     showCheck?: boolean;
+    checkCount?: number;
 }) {
+    const n = Math.max(0, Math.floor(checkCount || 0));
+
     return (
         <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
-            <button type="button" onClick={onBack} disabled={disabledBack} className={cn("iconBtn", disabledBack && "iconBtnDisabled")} aria-label="Voltar" title="Voltar">
+            <button
+                type="button"
+                onClick={onBack}
+                disabled={disabledBack}
+                className={cn("iconBtn", disabledBack && "iconBtnDisabled")}
+                aria-label="Voltar"
+                title="Voltar"
+            >
                 <IconBack />
             </button>
 
@@ -426,8 +437,15 @@ function TopRightNav({
             </button>
 
             {showCheck ? (
-                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Concluir" title="Concluir">
+                <button
+                    type="button"
+                    onClick={onCheck}
+                    className="iconBtn iconBtnCheck"
+                    aria-label="Concluir"
+                    title="Concluir"
+                >
                     <IconCheck />
+                    {n > 0 ? <span className="badgeCount" aria-label={`${n} itens selecionados`}>{n}</span> : null}
                 </button>
             ) : null}
         </div>
@@ -1074,6 +1092,7 @@ export default function Page() {
                 onCheck={openConcluirModal}
                 disabledBack={!canBack}
                 showCheck={true}
+                checkCount={draftItens.length}
             />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
@@ -1100,6 +1119,7 @@ export default function Page() {
                 onCheck={openConcluirModal}
                 disabledBack={!canBack}
                 showCheck={true}
+                checkCount={draftItens.length}
             />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
@@ -1133,6 +1153,7 @@ export default function Page() {
                 onCheck={openConcluirModal}
                 disabledBack={!canBack}
                 showCheck={true}
+                checkCount={draftItens.length}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
@@ -1724,6 +1745,29 @@ const css = `
     color: #065f46;
   }
 
+  .badgeCount{
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #029cde;
+  color: #fff;
+  font-weight: 1000;
+  font-size: 12px;
+  line-height: 1;
+
+  border: 2px solid rgba(255,255,255,0.95);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.22);
+}
+
   .title{
     color: var(--ink);
     font-weight: 800;
@@ -2101,29 +2145,31 @@ const css = `
 
   /* modal */
   .modalOverlay{
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.55);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding: 18px;
-    z-index: 999;
-  }
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 18px;
+  z-index: 999;
+}
   .modalCard{
-    border-radius: 16px;
-    background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
-    border: 1px solid rgba(255,255,255,0.18);
-    box-shadow: 0 30px 70px rgba(0,0,0,0.5);
-    overflow:hidden;
-  }
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 30px 70px rgba(0,0,0,0.5);
+  overflow: hidden;
+
+  display: flex;
+  flex-direction: column;
+
+  /* NÃO estoura tela */
+  max-height: min(88vh, 740px);
+}
   .modalHeader{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    padding: 14px 14px;
-    border-bottom: 1px solid rgba(255,255,255,0.14);
-  }
+  flex: 0 0 auto;
+}
   .modalTitle{ color: rgba(255,255,255,0.95); font-weight: 900; letter-spacing: 0.8px; }
   .modalClose{
     width: 38px;
@@ -2134,13 +2180,23 @@ const css = `
     color: rgba(255,255,255,0.92);
     cursor:pointer;
   }
-  .modalBody{ padding: 14px; color: rgba(255,255,255,0.92); }
-  .modalFooter{
-    padding: 14px;
-    border-top: 1px solid rgba(255,255,255,0.14);
-    display:flex;
-    justify-content:flex-end;
-  }
+  .modalBody{
+  padding: 14px;
+  color: rgba(255,255,255,0.92);
+
+  /* ✅ área rolável */
+  flex: 1 1 auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modalFooter{
+  flex: 0 0 auto;
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,0.14);
+  display:flex;
+  justify-content:flex-end;
+}
 
   /* forms */
   .formGrid{ display:grid; gap: 12px; }
@@ -2159,10 +2215,22 @@ const css = `
 
   /* users */
   .usersGrid{
-    display:grid;
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-    gap: 12px;
-  }
+  display:grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+  /* remove overflow/max-height daqui */
+}
+
+  /* ✅ evita lista “infinita” e melhora responsividade */
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1100px){
+  .usersGrid{ grid-template-columns: 1fr; }
+}
   .userCard{
     text-align:left;
     padding: 12px;
@@ -2381,9 +2449,17 @@ const css = `
   }
   .reviewLine{ font-weight: 900; }
   .reviewWrap{
-    display:grid;
-    gap: 12px;
-  }
+  display:grid;
+  gap: 12px;
+  /* remove overflow/max-height daqui */
+}
+
+  /* ✅ mantém cabeçalho visível + lista rolável */
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
   .reviewBlock{
     border-radius: 14px;
     background: rgba(255,255,255,0.08);
