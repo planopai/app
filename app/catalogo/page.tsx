@@ -2153,11 +2153,14 @@ const css = `
   }
 
   .stepperRow{
-    margin-top: 16px;
-    display:flex;
-    justify-content:flex-end;
-    gap: 10px;
-  }
+  position: absolute;
+  right: 26px;   /* mesma distância da borda direita */
+  bottom: 22px;  /* distância da borda de baixo */
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  z-index: 5;
+}
   .stepBtn{
     border-radius: 14px;
     padding: 12px 14px;
