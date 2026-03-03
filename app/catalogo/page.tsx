@@ -4,11 +4,20 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
  * PAGE ÚNICA (page.tsx) — CATÁLOGO + ORÇAMENTOS (protótipo)
- * - Home: Elementos / Lista de Orçamentos
- * - Elementos -> Linhas -> Listagem -> Detalhe (adiciona no "carrinho" do orçamento com +)
- * - Botão ✅ (ao lado de Voltar/Home/Lista): pede Responsável/Falecido/Telefone e cria Orçamento
- * - Lista de Orçamentos: mostra Responsável + Falecido; clique abre Resumo da Homenagem
- * - Resumo: botão 🖨️ exporta PDF (jsPDF + autoTable). Botão ✅ fica “sem função” (você altera depois)
+ * Ajustes aplicados:
+ * ✅ NÃO exibe "Itens no orçamento / Total" em nenhuma tela (Elementos e Produto removidos)
+ * ✅ Só aparece Itens/Total dentro do modal "Finalizar orçamento"
+ * ✅ Resumo da Homenagem:
+ *   - Logo no topo esquerdo ao lado de ORÇAMENTO / Nº
+ *   - Dados (Responsável/Falecido/Telefone) deslocados mais à direita
+ *   - Removido botão "Exportar CSV"
+ *   - Topo direito: botão Voltar (para lista de orçamentos) + ✅ (sem função) + 🖨️ (PDF)
+ * ✅ PDF:
+ *   - Logo no canto superior esquerdo
+ *   - Título central "Resumo da Homenagem"
+ *   - Embaixo: "ORÇAMENTO Nº xxxx"
+ *   - Box abaixo: somente Responsável / Falecido(a) / Telefone
+ *   - Removido logo do rodapé
  */
 
 type CatalogGroup =
@@ -54,8 +63,8 @@ type Orcamento = {
 };
 
 const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
-const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png"; // canto inferior direito (tela)
-const LOGO_URL_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png"; // pdf
+const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png";
+const LOGO_URL_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png";
 
 // ---------- helpers UI ----------
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -68,12 +77,6 @@ function clampInt(v: any) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.floor(n));
-}
-function escapeCsvCell(v: any, sep: string) {
-    const s = String(v ?? "");
-    const mustQuote = s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(sep);
-    const x = s.replace(/"/g, '""');
-    return mustQuote ? `"${x}"` : x;
 }
 
 // ---------- mock images (data-uri) ----------
@@ -442,6 +445,11 @@ export default function Page() {
     // “Carrinho” do orçamento em construção
     const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
     const draftCount = useMemo(() => draftItens.reduce((a, b) => a + clampInt(b.qtd), 0), [draftItens]);
+    const draftTotal = useMemo(() => {
+        let t = 0;
+        for (const it of draftItens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
+        return t;
+    }, [draftItens]);
 
     // Orçamentos salvos (lista)
     const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
@@ -478,7 +486,6 @@ export default function Page() {
     }, []);
 
     const list = useCallback(() => {
-        // “Lista” (ícone) continua indo para Elementos/Listagem dependendo do contexto
         if (categoria) {
             if (categoria === "URNAS") setStack(["home", "elementos", "urnas_linhas", "listagem"]);
             else setStack(["home", "elementos", "listagem"]);
@@ -508,7 +515,6 @@ export default function Page() {
         ] as Array<{ key: string; title: string; action: () => void }>;
     }, [go]);
 
-    // Se categoria não suporta linha, zera linha
     useEffect(() => {
         if (categoria !== "URNAS" && linha) setLinha(null);
     }, [categoria, linha]);
@@ -583,7 +589,6 @@ export default function Page() {
         ];
     }, [selected]);
 
-    // ---------- draft orçamento: add / remove ----------
     const addToDraft = useCallback((p: Produto) => {
         setDraftItens((prev) => {
             const idx = prev.findIndex((x) => x.produtoId === p.id);
@@ -595,12 +600,6 @@ export default function Page() {
             return [...prev, { produtoId: p.id, nome: p.nome, valorUnit: Number(p.preco) || 0, qtd: 1 }];
         });
     }, []);
-
-    const draftTotal = useMemo(() => {
-        let t = 0;
-        for (const it of draftItens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
-        return t;
-    }, [draftItens]);
 
     const openFinalizeModal = useCallback(() => {
         if (!draftItens.length) {
@@ -642,7 +641,6 @@ export default function Page() {
         setDraftItens([]);
         setOpenFinalize(false);
 
-        // vai para Lista de Orçamentos
         setOrcamentoSelecionadoId(null);
         setStack(["home", "orcamentos"]);
     }, [draftItens, formResp, formFalecido, formTel]);
@@ -664,34 +662,7 @@ export default function Page() {
         return t;
     }, [orcamentoSelecionado]);
 
-    // ---------- EXPORT CSV/PDF (Resumo) ----------
-    const exportarResumoCSV = useCallback((o: Orcamento) => {
-        const sep = ";";
-        const header = ["Item", "Quantidade", "Valor (un)", "Subtotal"];
-
-        const lines: string[] = [];
-        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
-
-        for (const it of o.itens) {
-            const sub = clampInt(it.qtd) * (Number(it.valorUnit) || 0);
-            lines.push([it.nome, clampInt(it.qtd), formatBRL(Number(it.valorUnit) || 0), formatBRL(sub)].map((x) => escapeCsvCell(x, sep)).join(sep));
-        }
-
-        lines.push(["TOTAL", "", "", formatBRL(totalOrcamentoSelecionado)].map((x) => escapeCsvCell(x, sep)).join(sep));
-
-        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-
-        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${safeName}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-    }, [totalOrcamentoSelecionado]);
-
+    // ---------- EXPORT PDF (Resumo) ----------
     const exportarResumoPDF = useCallback(async (o: Orcamento) => {
         if (!o.itens.length) {
             alert("Nenhum item para exportar.");
@@ -703,51 +674,52 @@ export default function Page() {
         const logoDataUrl = await toDataUrl(LOGO_URL_PDF);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
-        const dt = new Date(o.criadoEmISO);
-        const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
         const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
 
-        // A4 landscape (fica parecido com o “relatório” que você mostrou)
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
         const pageW = doc.internal.pageSize.getWidth();
         const marginX = 12;
-        let y = 12;
 
-        // Header
-        doc.setTextColor(15, 23, 42);
+        // Cabeçalho: logo esquerda / título central / gerado em direita
+        const topY = 10;
+
+        if (logoDataUrl) {
+            doc.addImage(logoDataUrl, logoFormat as any, marginX, topY, 45, 13);
+        }
+
         doc.setFont("helvetica", "bold");
         doc.setFontSize(16);
-        doc.text("Resumo da Homenagem", marginX, y + 6);
+        doc.setTextColor(15, 23, 42);
+        doc.text("Resumo da Homenagem", pageW / 2, topY + 8, { align: "center" });
 
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9.5);
         doc.setTextColor(51, 65, 85);
-        doc.text(`Gerado em: ${geradoEm}`, pageW - marginX, y + 6, { align: "right" });
+        doc.text(`Gerado em: ${geradoEm}`, pageW - marginX, topY + 8, { align: "right" });
 
-        y += 12;
+        // ORÇAMENTO Nº abaixo do título
+        let y = topY + 20;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`ORÇAMENTO Nº ${o.id}`, pageW / 2, y, { align: "center" });
 
-        // “Faixa” com dados
+        // Box: somente Responsável / Falecido(a) / Telefone
+        y += 6;
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
-        doc.roundedRect(marginX, y, pageW - marginX * 2, 20, 2, 2, "FD");
-
-        doc.setFontSize(10);
-        doc.setTextColor(15, 23, 42);
-        doc.setFont("helvetica", "bold");
-        doc.text(`ORÇAMENTO Nº ${o.id}`, marginX + 3, y + 6);
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 18, 2, 2, "FD");
 
         doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
         doc.setTextColor(30, 41, 59);
-        doc.text(`Responsável: ${o.responsavel}`, marginX + 55, y + 6);
-        doc.text(`Falecido(a): ${o.falecido}`, marginX + 55, y + 12);
-        doc.text(`Telefone: ${o.telefone}`, marginX + 55, y + 18);
 
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(15, 23, 42);
-        doc.text(`Data: ${dataBR}`, pageW - marginX - 3, y + 6, { align: "right" });
+        doc.text(`Responsável: ${o.responsavel}`, marginX + 4, y + 6);
+        doc.text(`Falecido(a): ${o.falecido}`, marginX + 4, y + 12);
+        doc.text(`Telefone: ${o.telefone}`, pageW / 2, y + 6);
 
-        y += 26;
+        y += 24;
 
         // Tabela
         const head = ["Item", "Qtd", "Valor (un)", "Subtotal"];
@@ -780,22 +752,18 @@ export default function Page() {
                 valign: "middle",
             },
             columnStyles: {
-                0: { cellWidth: 180, overflow: "linebreak" },
+                0: { cellWidth: 190, overflow: "linebreak" },
                 1: { halign: "right", cellWidth: 18 },
-                2: { halign: "right", cellWidth: 32 },
+                2: { halign: "right", cellWidth: 34 },
                 3: { halign: "right", cellWidth: 34 },
-            },
-            didParseCell: (data) => {
-                if (data.section === "body" && data.column.index === 1) data.cell.styles.halign = "right";
-                if (data.section === "body" && data.column.index >= 2) data.cell.styles.halign = "right";
             },
         });
 
         const afterY = (doc as any).lastAutoTable?.finalY ?? y;
 
-        // Total “box” no canto direito
-        const boxW = 54;
-        const boxH = 12;
+        // Total box (direita)
+        const boxW = 60;
+        const boxH = 13;
         const boxX = pageW - marginX - boxW;
         const boxY = afterY + 6;
 
@@ -806,16 +774,9 @@ export default function Page() {
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12);
-        doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
+        doc.text(formatBRL(total), boxX + boxW - 3, boxY + 9, { align: "right" });
 
-        // Rodapé com logo no canto inferior direito
-        if (logoDataUrl) {
-            const imgW = 40;
-            const imgH = 12;
-            const yLogo = doc.internal.pageSize.getHeight() - 14 - imgH;
-            doc.addImage(logoDataUrl, logoFormat as any, pageW - marginX - imgW, yLogo, imgW, imgH);
-        }
-
+        // sem logo no rodapé
         const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }, []);
@@ -848,11 +809,7 @@ export default function Page() {
                 ))}
             </div>
 
-            <div className="draftHint">
-                <div className="draftHintBox">
-                    <b>Itens no orçamento:</b> {draftCount} • <b>Total:</b> {formatBRL(draftTotal)}
-                </div>
-            </div>
+            {/* REMOVIDO: Itens no orçamento / Total */}
         </ScreenContainer>
     );
 
@@ -972,7 +929,6 @@ export default function Page() {
                     </div>
                 ) : (
                     <div className="detailLayout">
-                        {/* esquerda */}
                         <div className="detailLeft">
                             <div className="detailImgCard">
                                 <img src={selected.thumb} alt={selected.nome} className="detailImg" />
@@ -1001,7 +957,6 @@ export default function Page() {
                             </div>
                         </div>
 
-                        {/* direita */}
                         <div className="detailRight">
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
@@ -1039,24 +994,11 @@ export default function Page() {
                                         <IconDollar />
                                     </button>
 
-                                    <button
-                                        type="button"
-                                        className="iconActionBtn"
-                                        onClick={() => addToDraft(selected)}
-                                        aria-label="Adicionar a orçamento"
-                                        title="Adicionar a orçamento"
-                                    >
+                                    <button type="button" className="iconActionBtn" onClick={() => addToDraft(selected)} aria-label="Adicionar a orçamento" title="Adicionar a orçamento">
                                         <IconPlus />
                                     </button>
 
-                                    <div className="draftMini">
-                                        <div>
-                                            <b>Itens:</b> {draftCount}
-                                        </div>
-                                        <div>
-                                            <b>Total:</b> {formatBRL(draftTotal)}
-                                        </div>
-                                    </div>
+                                    {/* REMOVIDO: Itens/Total */}
                                 </div>
                             </div>
                         </div>
@@ -1114,12 +1056,18 @@ export default function Page() {
                                 <button key={o.id} type="button" className="budgetCard" onClick={() => openOrcamentoResumo(o.id)} title="Abrir resumo">
                                     <div className="budgetTop">
                                         <div className="budgetTitle">{o.falecido}</div>
-                                        <div className="budgetMeta">Responsável: <b>{o.responsavel}</b></div>
+                                        <div className="budgetMeta">
+                                            Responsável: <b>{o.responsavel}</b>
+                                        </div>
                                     </div>
 
                                     <div className="budgetBottom">
-                                        <div className="budgetSmall">Data: <b>{dataBR}</b></div>
-                                        <div className="budgetSmall">Itens: <b>{o.itens.reduce((a, b) => a + clampInt(b.qtd), 0)}</b></div>
+                                        <div className="budgetSmall">
+                                            Data: <b>{dataBR}</b>
+                                        </div>
+                                        <div className="budgetSmall">
+                                            Itens: <b>{o.itens.reduce((a, b) => a + clampInt(b.qtd), 0)}</b>
+                                        </div>
                                         <div className="budgetTotal">{formatBRL(total)}</div>
                                     </div>
                                 </button>
@@ -1137,8 +1085,18 @@ export default function Page() {
 
     const ScreenResumo = (
         <ScreenContainer>
+            {/* Topo direito: Voltar (para lista) + ✅ + 🖨️ */}
             <div className="resumoTopBar">
-                {/* ✅ deixa o visto aí (sem função por enquanto) */}
+                <button
+                    type="button"
+                    className="iconBtn resumoBtn"
+                    onClick={() => setStack(["home", "orcamentos"])}
+                    title="Voltar para lista de orçamentos"
+                    aria-label="Voltar para lista de orçamentos"
+                >
+                    <IconBack />
+                </button>
+
                 <button type="button" className="iconBtn resumoBtn" onClick={() => console.info("Visto (sem função por enquanto)")} title="Visto">
                     <IconCheck />
                 </button>
@@ -1163,23 +1121,29 @@ export default function Page() {
                 ) : (
                     <div className="resumoCard">
                         <div className="resumoHeader">
-                            <div className="resumoOrc">
-                                <div className="resumoOrcMain">ORÇAMENTO</div>
-                                <div className="resumoOrcSub">Nº {orcamentoSelecionado.id}</div>
+                            {/* Esquerda: logo + ORÇAMENTO / Nº */}
+                            <div className="resumoOrcLeft">
+                                <img src={LOGO_URL_UI} alt="PAI" className="resumoLogoTop" />
+                                <div className="resumoOrcText">
+                                    <div className="resumoOrcMain">ORÇAMENTO</div>
+                                    <div className="resumoOrcSub">Nº {orcamentoSelecionado.id}</div>
+                                </div>
                             </div>
 
+                            {/* Meio: infos (empurrado para direita pra liberar espaço) */}
                             <div className="resumoInfo">
                                 <div className="resumoLine">
                                     <b>Responsável:</b> {orcamentoSelecionado.responsavel}
                                 </div>
                                 <div className="resumoLine">
-                                    <b>Falecido:</b> {orcamentoSelecionado.falecido}
+                                    <b>Falecido(a):</b> {orcamentoSelecionado.falecido}
                                 </div>
                                 <div className="resumoLine">
                                     <b>Telefone:</b> {orcamentoSelecionado.telefone}
                                 </div>
                             </div>
 
+                            {/* Direita: data */}
                             <div className="resumoDate">
                                 <div className="resumoLine">
                                     <b>Data:</b>{" "}
@@ -1205,7 +1169,9 @@ export default function Page() {
                         </div>
 
                         <div className="resumoBottom">
-                            <div className="resumoValidade">Orçamento válido por <b>07</b> dias</div>
+                            <div className="resumoValidade">
+                                Orçamento válido por <b>07</b> dias
+                            </div>
 
                             <div className="resumoTotalBox">
                                 <div className="resumoTotalLabel">Total</div>
@@ -1224,15 +1190,10 @@ export default function Page() {
                                     <div>À prazo</div>
                                     <div className="resumoPayVal">até 6 vezes</div>
                                 </div>
-
-                                <div className="resumoExportRow">
-                                    <button type="button" className="smallBtn" onClick={() => exportarResumoCSV(orcamentoSelecionado)}>
-                                        Exportar CSV
-                                    </button>
-                                </div>
                             </div>
 
-                            <img src={LOGO_URL_UI} alt="PAI" className="resumoLogo" />
+                            {/* REMOVIDO: Logo rodapé + Exportar CSV */}
+                            <div />
                         </div>
                     </div>
                 )}
@@ -1287,6 +1248,7 @@ export default function Page() {
                         <input value={formTel} onChange={(e) => setFormTel(e.target.value)} className="formInput" placeholder="(xx) xxxxx-xxxx" />
                     </label>
 
+                    {/* ÚNICO lugar que mostra Itens/Total */}
                     <div className="formResumo">
                         <div>
                             <b>Itens:</b> {draftCount}
@@ -1711,17 +1673,6 @@ const css = `
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
 
-  .draftMini{
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.16);
-    color: rgba(255,255,255,0.92);
-    font-weight: 800;
-    display:flex;
-    gap: 16px;
-  }
-
   .ctaBtn{
     border-radius: 14px;
     padding: 14px 16px;
@@ -1807,20 +1758,6 @@ const css = `
     font-weight: 900;
   }
 
-  .draftHint{
-    margin-top: 18px;
-    display:flex;
-    justify-content:center;
-  }
-  .draftHintBox{
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.18);
-    color: rgba(255,255,255,0.92);
-    font-weight: 900;
-  }
-
   /* orçamentos */
   .budgetsWrap{ padding: 0 26px 24px 26px; }
   .budgetGrid{
@@ -1890,13 +1827,27 @@ const css = `
   }
   .resumoHeader{
     display:grid;
-    grid-template-columns: 240px 1fr 220px;
+    grid-template-columns: 360px 1fr 220px;
     gap: 10px;
     padding: 14px 14px 10px 14px;
     background: rgba(255,255,255,0.92);
     border-bottom: 1px solid rgba(2, 156, 222, 0.22);
     align-items: start;
   }
+
+  .resumoOrcLeft{
+    display:flex;
+    gap: 10px;
+    align-items:flex-start;
+  }
+  .resumoLogoTop{
+    width: 130px;
+    height: auto;
+    object-fit: contain;
+    margin-top: 2px;
+  }
+  .resumoOrcText{ display:flex; flex-direction:column; }
+
   .resumoOrcMain{
     font-weight: 1000;
     color: #0b2b4d;
@@ -2000,22 +1951,6 @@ const css = `
     font-size: 13px;
   }
   .resumoPayVal{ font-weight: 1000; }
-  .resumoLogo{
-    width: 180px;
-    height: auto;
-    object-fit: contain;
-  }
-
-  .resumoExportRow{ margin-top: 8px; }
-  .smallBtn{
-    border: 1px solid rgba(2,156,222,0.35);
-    background: rgba(2,156,222,0.10);
-    color: #0b2b4d;
-    font-weight: 1000;
-    border-radius: 12px;
-    padding: 10px 12px;
-    cursor:pointer;
-  }
 
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
@@ -2030,5 +1965,6 @@ const css = `
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
     .budgetGrid{ grid-template-columns: 1fr; }
     .resumoTableHead, .resumoRow{ grid-template-columns: 1fr 70px 120px; }
+    .resumoOrcLeft{ align-items:center; }
   }
 `;
