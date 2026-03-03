@@ -214,6 +214,29 @@ function IconChevron({ dir }: { dir: "left" | "right" }) {
     );
 }
 
+function IconDollar({ size = 22 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+            <path
+                d="M16 7.5c0-1.6-1.8-2.9-4-2.9s-4 1.3-4 2.9 1.8 2.9 4 2.9 4 1.3 4 2.9-1.8 2.9-4 2.9-4-1.3-4-2.9"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
+function IconPlus({ size = 22 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+        </svg>
+    );
+}
+
 // ---------- small UI blocks ----------
 function TopRightNav({
     onBack,
@@ -658,9 +681,7 @@ export default function Page() {
                                 <div className="metaPill">
                                     <b>Saldo:</b> {selected.saldo}
                                 </div>
-                                <div className="metaPill">
-                                    <b>Preço:</b> {formatBRL(selected.preco)}
-                                </div>
+                                <div className="metaPill">{formatBRL(selected.preco)}</div>
                                 {selected.linha ? (
                                     <div className="metaPill">
                                         <b>Linha:</b> {selected.linha}
@@ -704,11 +725,23 @@ export default function Page() {
                             </div>
 
                             <div className="detailActions">
-                                <button type="button" className="ctaBtn" onClick={() => setOpenPrices(true)}>
-                                    TABELA DE VALORES
+                                <button
+                                    type="button"
+                                    className="iconActionBtn"
+                                    onClick={() => setOpenPrices(true)}
+                                    aria-label="Tabela de valores"
+                                    title="Tabela de valores"
+                                >
+                                    <IconDollar />
                                 </button>
-                                <button type="button" className="ctaBtn" onClick={() => console.info("Mock: adicionar ao orçamento")}>
-                                    ADICIONAR A ORÇAMENTO
+                                <button
+                                    type="button"
+                                    className="iconActionBtn"
+                                    onClick={() => console.info("Mock: adicionar ao orçamento")}
+                                    aria-label="Adicionar a orçamento"
+                                    title="Adicionar a orçamento"
+                                >
+                                    <IconPlus />
                                 </button>
                             </div>
                         </div>
@@ -1149,6 +1182,23 @@ const css = `
     justify-content:flex-end;
     align-items:center;
   }
+  .iconActionBtn{
+    width: 54px;
+    height: 54px;
+    border-radius: 999px;
+    background: #029cde;
+    border: 2px solid rgba(255,255,255,0.35);
+    box-shadow: var(--shadow);
+    color: #fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    transition: transform .12s ease, filter .12s ease;
+  }
+  .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
+  .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
+
   .ctaBtn{
     border-radius: 14px;
     padding: 14px 16px;
