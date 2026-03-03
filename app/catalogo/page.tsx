@@ -617,6 +617,8 @@ export default function Page() {
     const [userQuery, setUserQuery] = useState("");
     const [userHighlight, setUserHighlight] = useState(0);
 
+    const [operadorTemp, setOperadorTemp] = useState<Usuario | null>(null);
+
     const [openInicio, setOpenInicio] = useState(false);
     const [formResp, setFormResp] = useState("");
     const [formFalecido, setFormFalecido] = useState("");
@@ -688,6 +690,7 @@ export default function Page() {
         // ✅ reset do typeahead
         setUserQuery("");
         setUserHighlight(0);
+        setOperadorTemp(null);
 
         if (!usuarios.length) {
             await fetchUsuarios();
@@ -695,7 +698,13 @@ export default function Page() {
     }, [fetchUsuarios, usuarios.length]);
 
     const selectOperador = useCallback((u: Usuario) => {
-        setOperadorSel(u);
+        setOperadorTemp(u);
+    }, []);
+
+    const confirmarOperador = useCallback(() => {
+        if (!operadorTemp) return;
+
+        setOperadorSel(operadorTemp);
         setOpenUserPick(false);
 
         // ✅ reset do typeahead
@@ -707,7 +716,7 @@ export default function Page() {
         setFormFalecido("");
         setFormTel("");
         setOpenInicio(true);
-    }, []);
+    }, [operadorTemp]);
 
     const filteredUsuarios = useMemo(() => {
         const qq = userQuery.trim().toLowerCase();
@@ -1619,6 +1628,7 @@ export default function Page() {
             {screen}
 
             {/* MODAL: Selecionar Operador */}
+            {/* MODAL: Selecionar Operador */}
             <Modal
                 open={openUserPick}
                 title="Selecionar Operador"
@@ -1638,18 +1648,18 @@ export default function Page() {
                         <button
                             type="button"
                             className="ctaBtn"
-                            onClick={fetchUsuarios}
+                            onClick={confirmarOperador}
                             style={{ minWidth: 220 }}
-                            disabled={loadingUsers}
+                            disabled={!operadorTemp}
                         >
-                            {loadingUsers ? "ATUALIZANDO..." : "ATUALIZAR LISTA"}
+                            CONFIRMAR
                         </button>
                     </div>
                 }
             >
                 {usersError ? <div className="errorBox">{usersError}</div> : null}
 
-                {/* ✅ Barra de busca */}
+                {/* ✅ Barra de busca 100% */}
                 <div className="userPickerSearch">
                     <span className="userPickerIcon">
                         <IconSearch />
@@ -1675,7 +1685,7 @@ export default function Page() {
                             if (e.key === "Enter") {
                                 e.preventDefault();
                                 const pick = filteredUsuarios[userHighlight];
-                                if (pick) selectOperador(pick);
+                                if (pick) setOperadorTemp(pick); // ✅ só seleciona
                             }
                         }}
                         className="userPickerInput"
@@ -1686,7 +1696,7 @@ export default function Page() {
                     />
                 </div>
 
-                {/* ✅ Resultados só quando digita */}
+                {/* ✅ Lista vertical */}
                 <div className="userPickerResults">
                     {loadingUsers ? (
                         <div className="emptyState" style={{ marginTop: 0 }}>
@@ -1697,19 +1707,32 @@ export default function Page() {
                             Digite para buscar um usuário.
                         </div>
                     ) : filteredUsuarios.length ? (
-                        filteredUsuarios.map((u, idx) => (
-                            <button
-                                key={u.id}
-                                type="button"
-                                className={cn("userCard", idx === userHighlight && "userCardActive")}
-                                onMouseEnter={() => setUserHighlight(idx)}
-                                onClick={() => selectOperador(u)}
-                                title="Selecionar"
-                            >
-                                <div className="userName">{u.nome}</div>
-                                <div className="userUser">@{u.usuario}</div>
-                            </button>
-                        ))
+                        filteredUsuarios.map((u, idx) => {
+                            const active = idx === userHighlight;
+                            const selected = operadorTemp?.id === u.id;
+
+                            return (
+                                <button
+                                    key={u.id}
+                                    type="button"
+                                    className={cn(
+                                        "userRow",
+                                        active && "userRowActive",
+                                        selected && "userRowSelected"
+                                    )}
+                                    onMouseEnter={() => setUserHighlight(idx)}
+                                    onClick={() => selectOperador(u)} // ✅ só marca
+                                    title="Selecionar"
+                                >
+                                    <div className="userRowLeft">
+                                        <div className="userName">{u.nome}</div>
+                                        <div className="userUser">@{u.usuario}</div>
+                                    </div>
+
+                                    {selected ? <span className="userRowCheck">✓</span> : null}
+                                </button>
+                            );
+                        })
                     ) : (
                         <div className="emptyState" style={{ marginTop: 0 }}>
                             Nenhum usuário encontrado.
@@ -2420,6 +2443,106 @@ const css = `
     cursor:pointer;
     color: rgba(255,255,255,0.92);
     font-weight: 900;
+  }
+
+    /* ✅ user picker (lista vertical) */
+  .userPickerSearch{
+    width: 100%;
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    border-radius: 14px;
+    padding: 12px 12px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.22);
+    box-shadow: 0 14px 30px rgba(0,0,0,0.18);
+    margin-bottom: 12px;
+  }
+
+  .userPickerIcon{
+    color: rgba(255,255,255,0.92);
+    display:flex;
+    flex: 0 0 auto;
+  }
+
+  .userPickerInput{
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: rgba(255,255,255,0.95);
+    font-weight: 800;
+    font-size: 15px;
+  }
+  .userPickerInput::placeholder{ color: rgba(255,255,255,0.75); }
+
+  .userPickerResults{
+    display: grid;
+    gap: 10px;
+    max-height: min(56vh, 520px);
+    overflow: auto;
+    padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .userRow{
+    width: 100%;
+    text-align:left;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    cursor:pointer;
+    color: rgba(255,255,255,0.92);
+    font-weight: 900;
+
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .userRowLeft{
+    display:flex;
+    flex-direction:column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .userRow .userName{
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .userRow .userUser{
+    opacity: 0.9;
+    font-size: 12px;
+  }
+
+  .userRowActive{
+    outline: 2px solid rgba(2,156,222,0.55);
+    filter: brightness(1.03);
+  }
+
+  .userRowSelected{
+    border-color: rgba(16, 185, 129, 0.55);
+    background: rgba(16, 185, 129, 0.12);
+  }
+
+  .userRowCheck{
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight: 1000;
+    color: #065f46;
+    background: rgba(230, 255, 238, 0.92);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    flex: 0 0 auto;
   }
   .userCard:hover{ filter: brightness(1.03); transform: translateY(-1px); }
   .userName{ font-size: 15px; }
