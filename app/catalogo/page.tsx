@@ -5,10 +5,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 /**
  * PAGE ÚNICA (page.tsx) — CATÁLOGO + ORÇAMENTOS (protótipo)
  * - Home: Elementos / Lista de Orçamentos
- * - Elementos -> Linhas -> Listagem -> Detalhe (adiciona no "carrinho" do orçamento com +)
- * - Botão ✅ (ao lado de Voltar/Home/Lista): pede Responsável/Falecido/Telefone e cria Orçamento
- * - Lista de Orçamentos: mostra Responsável + Falecido; clique abre Resumo da Homenagem
- * - Resumo: botão 🖨️ exporta PDF (jsPDF + autoTable). Botão ✅ fica “sem função” (você altera depois)
+ * - Itens são adicionados com "+" no detalhe
+ * - Botão ✅ (check) abre modal (Responsável/Falecido/Telefone) e gera orçamento na lista
+ * - Lista de Orçamentos: mostra Responsável + Falecido; ao clicar abre Resumo
+ * - Resumo: botão imprimir exporta PDF (jsPDF + autoTable) com logo e tabela
  */
 
 type CatalogGroup =
@@ -45,7 +45,7 @@ type OrcamentoItem = {
 };
 
 type Orcamento = {
-    id: string;
+    id: string; // "XXX" etc
     criadoEmISO: string;
     responsavel: string;
     falecido: string;
@@ -54,8 +54,7 @@ type Orcamento = {
 };
 
 const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
-const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png"; // canto inferior direito (tela)
-const LOGO_URL_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png"; // pdf
+const LOGO_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png";
 
 // ---------- helpers UI ----------
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -64,16 +63,16 @@ function cn(...parts: Array<string | false | null | undefined>) {
 function formatBRL(v: number) {
     return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
-function clampInt(v: any) {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.floor(n));
+function fmtDateBRShort(d: Date) {
+    return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(d);
 }
-function escapeCsvCell(v: any, sep: string) {
-    const s = String(v ?? "");
-    const mustQuote = s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(sep);
-    const x = s.replace(/"/g, '""');
-    return mustQuote ? `"${x}"` : x;
+function fmtDateTimeBRShort(d: Date) {
+    return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
+}
+function clampInt(n: any) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return 0;
+    return Math.max(0, Math.floor(x));
 }
 
 // ---------- mock images (data-uri) ----------
@@ -121,7 +120,8 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Uma urna sóbria e sofisticada para homenagens memoráveis.",
         inspiracao: "O nome Zeus remete a uma presença soberana e única, evocando força e dignidade na despedida.",
         conceito: "Pensada para famílias que buscam a máxima homenagem possível, com acabamento premium e estética marcante.",
-        especificacoes: "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
+        especificacoes:
+            "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
     },
     {
         id: 102,
@@ -173,7 +173,8 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Luxo e detalhes marcantes para uma homenagem inesquecível.",
         inspiracao: "Eternum simboliza memória duradoura e respeito, com um design mais sofisticado.",
         conceito: "Produto premium com foco em acabamento e elegância para cerimônias especiais.",
-        especificacoes: "Madeira selecionada • detalhes em alto-relevo • forração premium • sistema de fechamento reforçado.",
+        especificacoes:
+            "Madeira selecionada • detalhes em alto-relevo • forração premium • sistema de fechamento reforçado.",
     },
     {
         id: 501,
@@ -231,7 +232,11 @@ function IconList({ size = 22 }: { size?: number }) {
 function IconSearch({ size = 20 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M10.5 18.5C14.6421 18.5 18 15.1421 18 11C18 6.85786 14.6421 3.5 10.5 3.5C6.35786 3.5 3 6.85786 3 11C3 15.1421 6.35786 18.5 10.5 18.5Z" stroke="currentColor" strokeWidth="2.2" />
+            <path
+                d="M10.5 18.5C14.6421 18.5 18 15.1421 18 11C18 6.85786 14.6421 3.5 10.5 3.5C6.35786 3.5 3 6.85786 3 11C3 15.1421 6.35786 18.5 10.5 18.5Z"
+                stroke="currentColor"
+                strokeWidth="2.2"
+            />
             <path d="M20.5 20.5L16.8 16.8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
@@ -268,21 +273,22 @@ function IconPlus({ size = 22 }: { size?: number }) {
 function IconCheck({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     );
 }
 function IconPrint({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 8V4h10v4" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M7 17h10v3H7v-3Z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
             <path
-                d="M7 9V4h10v5M7 18H6a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1"
+                d="M6 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1"
                 stroke="currentColor"
                 strokeWidth="2.2"
-                strokeLinecap="round"
                 strokeLinejoin="round"
             />
-            <path d="M7 14h10v6H7v-6Z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M17 12h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
         </svg>
     );
 }
@@ -292,39 +298,60 @@ function TopRightNav({
     onBack,
     onHome,
     onList,
-    onCheck,
     disabledBack,
-    showCheck = true,
-    checkBadge,
+    onCheck,
+    disabledCheck,
+    showCheck,
+    onPrint,
+    showPrint,
 }: {
     onBack: () => void;
     onHome: () => void;
     onList: () => void;
-    onCheck?: () => void;
     disabledBack?: boolean;
+    onCheck?: () => void;
+    disabledCheck?: boolean;
     showCheck?: boolean;
-    checkBadge?: string | number;
+    onPrint?: () => void;
+    showPrint?: boolean;
 }) {
     return (
-        <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
-            <button type="button" onClick={onBack} disabled={disabledBack} className={cn("iconBtn", disabledBack && "iconBtnDisabled")} aria-label="Voltar" title="Voltar">
+        <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10 }}>
+            {showPrint ? (
+                <button type="button" onClick={onPrint} className="iconBtn" aria-label="Imprimir" title="Imprimir / Exportar PDF">
+                    <IconPrint />
+                </button>
+            ) : null}
+
+            {showCheck ? (
+                <button
+                    type="button"
+                    onClick={onCheck}
+                    disabled={!!disabledCheck}
+                    className={cn("iconBtn", disabledCheck && "iconBtnDisabled")}
+                    aria-label="Finalizar orçamento"
+                    title="Finalizar orçamento"
+                >
+                    <IconCheck />
+                </button>
+            ) : null}
+
+            <button
+                type="button"
+                onClick={onBack}
+                disabled={disabledBack}
+                className={cn("iconBtn", disabledBack && "iconBtnDisabled")}
+                aria-label="Voltar"
+                title="Voltar"
+            >
                 <IconBack />
             </button>
-
             <button type="button" onClick={onHome} className="iconBtn" aria-label="Home" title="Home">
                 <IconHome />
             </button>
-
-            <button type="button" onClick={onList} className="iconBtn" aria-label="Lista" title="Lista">
+            <button type="button" onClick={onList} className="iconBtn" aria-label="Lista" title="Lista de Orçamentos">
                 <IconList />
             </button>
-
-            {showCheck ? (
-                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Finalizar orçamento" title="Finalizar orçamento">
-                    <IconCheck />
-                    {checkBadge ? <span className="badge">{checkBadge}</span> : null}
-                </button>
-            ) : null}
         </div>
     );
 }
@@ -336,6 +363,7 @@ function BigButton({ label, onClick }: { label: string; onClick: () => void }) {
         </button>
     );
 }
+
 function Title({ children }: { children: React.ReactNode }) {
     return (
         <div style={{ textAlign: "center", marginTop: 38, marginBottom: 26 }}>
@@ -343,12 +371,15 @@ function Title({ children }: { children: React.ReactNode }) {
         </div>
     );
 }
+
 function ScreenContainer({ children }: { children: React.ReactNode }) {
     return <div className="screen">{children}</div>;
 }
+
 function SectionPill({ children }: { children: React.ReactNode }) {
     return <div className="pill">{children}</div>;
 }
+
 function ProductCard({ p, onOpen }: { p: Produto; onOpen: () => void }) {
     return (
         <button type="button" className="prodCard" onClick={onOpen} title={p.nome}>
@@ -408,23 +439,6 @@ function Modal({
     );
 }
 
-// ---------- PDF helpers (logo -> dataURL) ----------
-async function toDataUrl(url: string): Promise<string | null> {
-    try {
-        const r = await fetch(url, { mode: "cors", cache: "no-store" });
-        const b = await r.blob();
-        const reader = await new Promise<string>((resolve, reject) => {
-            const fr = new FileReader();
-            fr.onerror = () => reject(new Error("Falha ao ler logo"));
-            fr.onload = () => resolve(String(fr.result || ""));
-            fr.readAsDataURL(b);
-        });
-        return reader;
-    } catch {
-        return null;
-    }
-}
-
 // ---------- main page ----------
 export default function Page() {
     const [stack, setStack] = useState<CatalogGroup[]>(["home"]);
@@ -439,19 +453,14 @@ export default function Page() {
     const [selected, setSelected] = useState<Produto | null>(null);
     const [openPrices, setOpenPrices] = useState(false);
 
-    // “Carrinho” do orçamento em construção
-    const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
-    const draftCount = useMemo(() => draftItens.reduce((a, b) => a + clampInt(b.qtd), 0), [draftItens]);
-
-    // Orçamentos salvos (lista)
+    // --- ORÇAMENTO (rascunho + lista) ---
+    const [draftItems, setDraftItems] = useState<OrcamentoItem[]>([]);
     const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
-    const [orcamentoSelecionadoId, setOrcamentoSelecionadoId] = useState<string | null>(null);
-
-    // Modal de finalizar orçamento
-    const [openFinalize, setOpenFinalize] = useState(false);
+    const [openCheckout, setOpenCheckout] = useState(false);
     const [formResp, setFormResp] = useState("");
-    const [formFalecido, setFormFalecido] = useState("");
+    const [formFal, setFormFal] = useState("");
     const [formTel, setFormTel] = useState("");
+    const [selectedOrc, setSelectedOrc] = useState<Orcamento | null>(null);
 
     const canBack = stack.length > 1;
 
@@ -471,21 +480,18 @@ export default function Page() {
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
+        // não limpa rascunho nem orçamentos aqui (pra testar fluxo)
     }, []);
 
-    const goBudgets = useCallback(() => {
+    const goOrcamentos = useCallback(() => {
+        setSelectedOrc(null);
         setStack(["home", "orcamentos"]);
     }, []);
 
-    const list = useCallback(() => {
-        // “Lista” (ícone) continua indo para Elementos/Listagem dependendo do contexto
-        if (categoria) {
-            if (categoria === "URNAS") setStack(["home", "elementos", "urnas_linhas", "listagem"]);
-            else setStack(["home", "elementos", "listagem"]);
-            return;
-        }
-        setStack(["home", "elementos"]);
-    }, [categoria]);
+    const listNav = useCallback(() => {
+        // botão "lista" do topo sempre vai pra lista de orçamentos
+        goOrcamentos();
+    }, [goOrcamentos]);
 
     const elementosMenu = useMemo(() => {
         return [
@@ -534,17 +540,20 @@ export default function Page() {
         return produtosFiltrados.slice(start, start + pageSize);
     }, [produtosFiltrados, page, pageSize]);
 
+    // sempre manter page dentro do range
     useEffect(() => {
         if (page > totalPages) setPage(totalPages);
         if (page < 1) setPage(1);
     }, [totalPages, page]);
 
+    // ao entrar em listagem sem contexto, define defaults de forma controlada
     useEffect(() => {
         if (current !== "listagem") return;
         if (!categoria) setCategoria("URNAS");
         if ((categoria ?? "URNAS") === "URNAS" && !linha) setLinha("SERENIDADE");
     }, [current, categoria, linha]);
 
+    // abrir detalhe “navegando”
     const openProduct = useCallback(
         (p: Produto) => {
             setSelected(p);
@@ -553,6 +562,7 @@ export default function Page() {
         [current, go]
     );
 
+    // garante selected coerente com os filtros quando em detalhe
     useEffect(() => {
         if (current !== "detalhe") return;
         if (!produtosFiltrados.length) {
@@ -564,6 +574,7 @@ export default function Page() {
         }
     }, [current, selected, produtosFiltrados]);
 
+    // miniaturas memoizadas (evita regenerar SVGs a cada render)
     const detailThumbs = useMemo(() => {
         return Array.from({ length: 6 }).map((_, i) => ({
             key: `thumb-${i + 1}`,
@@ -583,182 +594,162 @@ export default function Page() {
         ];
     }, [selected]);
 
-    // ---------- draft orçamento: add / remove ----------
+    // --- draft helpers ---
+    const draftCount = useMemo(() => draftItems.reduce((acc, it) => acc + clampInt(it.qtd), 0), [draftItems]);
+    const draftTotal = useMemo(
+        () => draftItems.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0),
+        [draftItems]
+    );
+
     const addToDraft = useCallback((p: Produto) => {
-        setDraftItens((prev) => {
+        setDraftItems((prev) => {
             const idx = prev.findIndex((x) => x.produtoId === p.id);
             if (idx >= 0) {
                 const copy = prev.slice();
                 copy[idx] = { ...copy[idx], qtd: clampInt(copy[idx].qtd) + 1 };
                 return copy;
             }
-            return [...prev, { produtoId: p.id, nome: p.nome, valorUnit: Number(p.preco) || 0, qtd: 1 }];
+            return [...prev, { produtoId: p.id, nome: p.nome, valorUnit: p.preco, qtd: 1 }];
         });
     }, []);
 
-    const draftTotal = useMemo(() => {
-        let t = 0;
-        for (const it of draftItens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
-        return t;
-    }, [draftItens]);
+    const removeFromDraft = useCallback((produtoId: number) => {
+        setDraftItems((prev) => prev.filter((x) => x.produtoId !== produtoId));
+    }, []);
 
-    const openFinalizeModal = useCallback(() => {
-        if (!draftItens.length) {
-            alert("Nenhum item no orçamento. Adicione itens com o botão +.");
-            return;
-        }
+    const changeDraftQtd = useCallback((produtoId: number, qtd: number) => {
+        setDraftItems((prev) =>
+            prev
+                .map((x) => (x.produtoId === produtoId ? { ...x, qtd: clampInt(qtd) } : x))
+                .filter((x) => x.qtd > 0)
+        );
+    }, []);
+
+    const openFinalize = useCallback(() => {
+        if (!draftItems.length) return;
         setFormResp("");
-        setFormFalecido("");
+        setFormFal("");
         setFormTel("");
-        setOpenFinalize(true);
-    }, [draftItens.length]);
+        setOpenCheckout(true);
+    }, [draftItems.length]);
 
-    const createOrcamento = useCallback(() => {
+    const makeOrcId = useCallback(() => {
+        // "XXX" simplificado (incremental)
+        const n = orcamentos.length + 1;
+        return String(n).padStart(3, "0");
+    }, [orcamentos.length]);
+
+    const finalizarOrcamento = useCallback(() => {
         const responsavel = formResp.trim();
-        const falecido = formFalecido.trim();
+        const falecido = formFal.trim();
         const telefone = formTel.trim();
 
         if (!responsavel || !falecido || !telefone) {
             alert("Preencha Responsável, Falecido(a) e Telefone.");
             return;
         }
-
-        const now = new Date();
-        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random()
-            .toString(16)
-            .slice(2, 8)
-            .toUpperCase()}`;
+        if (!draftItems.length) {
+            alert("Nenhum item no orçamento.");
+            return;
+        }
 
         const novo: Orcamento = {
-            id,
-            criadoEmISO: now.toISOString(),
+            id: makeOrcId(),
+            criadoEmISO: new Date().toISOString(),
             responsavel,
             falecido,
             telefone,
-            itens: draftItens.map((x) => ({ ...x, qtd: clampInt(x.qtd) })),
+            itens: draftItems.map((x) => ({ ...x, qtd: clampInt(x.qtd) })),
         };
 
         setOrcamentos((prev) => [novo, ...prev]);
-        setDraftItens([]);
-        setOpenFinalize(false);
+        setDraftItems([]); // limpa o rascunho depois de enviar
+        setOpenCheckout(false);
 
-        // vai para Lista de Orçamentos
-        setOrcamentoSelecionadoId(null);
-        setStack(["home", "orcamentos"]);
-    }, [draftItens, formResp, formFalecido, formTel]);
-
-    const openOrcamentoResumo = useCallback((id: string) => {
-        setOrcamentoSelecionadoId(id);
+        setSelectedOrc(novo);
         setStack(["home", "orcamentos", "resumo"]);
-    }, []);
+    }, [draftItems, formFal, formResp, formTel, makeOrcId]);
 
-    const orcamentoSelecionado = useMemo(() => {
-        if (!orcamentoSelecionadoId) return null;
-        return orcamentos.find((o) => o.id === orcamentoSelecionadoId) ?? null;
-    }, [orcamentos, orcamentoSelecionadoId]);
-
-    const totalOrcamentoSelecionado = useMemo(() => {
-        if (!orcamentoSelecionado) return 0;
-        let t = 0;
-        for (const it of orcamentoSelecionado.itens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
-        return t;
-    }, [orcamentoSelecionado]);
-
-    // ---------- EXPORT CSV/PDF (Resumo) ----------
-    const exportarResumoCSV = useCallback((o: Orcamento) => {
-        const sep = ";";
-        const header = ["Item", "Quantidade", "Valor (un)", "Subtotal"];
-
-        const lines: string[] = [];
-        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
-
-        for (const it of o.itens) {
-            const sub = clampInt(it.qtd) * (Number(it.valorUnit) || 0);
-            lines.push([it.nome, clampInt(it.qtd), formatBRL(Number(it.valorUnit) || 0), formatBRL(sub)].map((x) => escapeCsvCell(x, sep)).join(sep));
-        }
-
-        lines.push(["TOTAL", "", "", formatBRL(totalOrcamentoSelecionado)].map((x) => escapeCsvCell(x, sep)).join(sep));
-
-        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-
-        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${safeName}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-    }, [totalOrcamentoSelecionado]);
-
-    const exportarResumoPDF = useCallback(async (o: Orcamento) => {
-        if (!o.itens.length) {
+    // --- PDF export (Resumo) ---
+    async function exportarResumoPDF(orc: Orcamento) {
+        if (!orc?.itens?.length) {
             alert("Nenhum item para exportar.");
             return;
         }
 
-        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+        const { default: jsPDF } = await import("jspdf");
+        const autoTable = (await import("jspdf-autotable")).default;
 
-        const logoDataUrl = await toDataUrl(LOGO_URL_PDF);
+        async function toDataUrl(url: string): Promise<string | null> {
+            try {
+                const r = await fetch(url, { mode: "cors", cache: "no-store" });
+                const b = await r.blob();
+                const reader = await new Promise<string>((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onerror = () => reject(new Error("Falha ao ler logo"));
+                    fr.onload = () => resolve(String(fr.result || ""));
+                    fr.readAsDataURL(b);
+                });
+                return reader;
+            } catch {
+                return null;
+            }
+        }
+
+        const logoDataUrl = await toDataUrl(LOGO_PDF);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
-        const dt = new Date(o.criadoEmISO);
-        const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
-        const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
-
-        // A4 landscape (fica parecido com o “relatório” que você mostrou)
-        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
+        const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
         const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
         const marginX = 12;
+
+        const criadoEm = new Date(orc.criadoEmISO);
+        const dataBR = fmtDateBRShort(criadoEm);
+
+        // header
         let y = 12;
 
-        // Header
-        doc.setTextColor(15, 23, 42);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(16);
-        doc.text("Resumo da Homenagem", marginX, y + 6);
+        doc.setFontSize(18);
+        doc.setTextColor(255, 255, 255);
+        doc.setFillColor(27, 141, 198); // azul
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 18, 3, 3, "F");
+        doc.text("RESUMO DA HOMENAGEM", pageW / 2, y + 12, { align: "center" });
 
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9.5);
-        doc.setTextColor(51, 65, 85);
-        doc.text(`Gerado em: ${geradoEm}`, pageW - marginX, y + 6, { align: "right" });
+        y += 24;
 
-        y += 12;
-
-        // “Faixa” com dados
+        // box meta
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
-        doc.roundedRect(marginX, y, pageW - marginX * 2, 20, 2, 2, "FD");
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 32, 3, 3, "FD");
 
-        doc.setFontSize(10);
         doc.setTextColor(15, 23, 42);
+        doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
-        doc.text(`ORÇAMENTO Nº ${o.id}`, marginX + 3, y + 6);
+        doc.text(`ORÇAMENTO Nº ${orc.id}`, marginX + 4, y + 10);
 
         doc.setFont("helvetica", "normal");
-        doc.setTextColor(30, 41, 59);
-        doc.text(`Responsável: ${o.responsavel}`, marginX + 55, y + 6);
-        doc.text(`Falecido(a): ${o.falecido}`, marginX + 55, y + 12);
-        doc.text(`Telefone: ${o.telefone}`, marginX + 55, y + 18);
+        doc.setFontSize(10);
+        doc.text(`Responsável: ${orc.responsavel}`, marginX + 4, y + 18);
+        doc.text(`Falecido(a): ${orc.falecido}`, marginX + 4, y + 25);
 
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(15, 23, 42);
-        doc.text(`Data: ${dataBR}`, pageW - marginX - 3, y + 6, { align: "right" });
+        doc.text(`Data: ${dataBR}`, pageW - marginX - 4, y + 10, { align: "right" });
 
-        y += 26;
+        doc.setFont("helvetica", "normal");
+        doc.text(`Telefone: ${orc.telefone}`, pageW - marginX - 4, y + 18, { align: "right" });
 
-        // Tabela
+        y += 40;
+
         const head = ["Item", "Qtd", "Valor (un)", "Subtotal"];
-        const body = o.itens.map((it) => {
+        const body = orc.itens.map((it) => {
             const qtd = clampInt(it.qtd);
             const v = Number(it.valorUnit) || 0;
-            const sub = qtd * v;
-            return [it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
+            return [it.nome, String(qtd), formatBRL(v), formatBRL(qtd * v)];
         });
 
-        const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+        const total = orc.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
 
         autoTable(doc, {
             startY: y,
@@ -767,8 +758,8 @@ export default function Page() {
             margin: { left: marginX, right: marginX },
             styles: {
                 font: "helvetica",
-                fontSize: 9.5,
-                cellPadding: 2.4,
+                fontSize: 9.6,
+                cellPadding: 2.2,
                 valign: "top",
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
@@ -779,46 +770,43 @@ export default function Page() {
                 fontStyle: "bold",
                 valign: "middle",
             },
-            columnStyles: {
-                0: { cellWidth: 180, overflow: "linebreak" },
-                1: { halign: "right", cellWidth: 18 },
-                2: { halign: "right", cellWidth: 32 },
-                3: { halign: "right", cellWidth: 34 },
-            },
             didParseCell: (data) => {
-                if (data.section === "body" && data.column.index === 1) data.cell.styles.halign = "right";
-                if (data.section === "body" && data.column.index >= 2) data.cell.styles.halign = "right";
+                const col = head[data.column.index];
+                if (["Qtd", "Valor (un)", "Subtotal"].includes(col)) data.cell.styles.halign = "right";
+            },
+            columnStyles: {
+                0: { cellWidth: 98, overflow: "linebreak" },
+                1: { cellWidth: 16 },
+                2: { cellWidth: 32 },
+                3: { cellWidth: 32 },
             },
         });
 
-        const afterY = (doc as any).lastAutoTable?.finalY ?? y;
+        const lastY = (doc as any).lastAutoTable?.finalY ?? y + 10;
 
-        // Total “box” no canto direito
-        const boxW = 54;
-        const boxH = 12;
-        const boxX = pageW - marginX - boxW;
-        const boxY = afterY + 6;
+        // Total box
+        const totalBoxW = 60;
+        const totalBoxH = 12;
+        const totalX = pageW - marginX - totalBoxW;
+        const totalY = Math.min(pageH - 22, lastY + 10);
 
-        doc.setFillColor(2, 156, 222);
-        doc.setDrawColor(2, 156, 222);
-        doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, "F");
-
+        doc.setFillColor(27, 141, 198);
+        doc.roundedRect(totalX, totalY, totalBoxW, totalBoxH, 2, 2, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12);
-        doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
+        doc.text(formatBRL(total), totalX + totalBoxW - 3, totalY + 8.2, { align: "right" });
 
-        // Rodapé com logo no canto inferior direito
+        // Logo no canto inferior direito (como você pediu)
         if (logoDataUrl) {
-            const imgW = 40;
-            const imgH = 12;
-            const yLogo = doc.internal.pageSize.getHeight() - 14 - imgH;
-            doc.addImage(logoDataUrl, logoFormat as any, pageW - marginX - imgW, yLogo, imgW, imgH);
+            const lw = 42;
+            const lh = 14;
+            doc.addImage(logoDataUrl, logoFormat as any, pageW - marginX - lw, pageH - 18, lw, lh);
         }
 
-        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        const safeName = `orcamento_${orc.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
-    }, []);
+    }
 
     // ---------- screens ----------
     const ScreenHome = (
@@ -829,7 +817,7 @@ export default function Page() {
                         ELEMENTOS DE HOMENAGEM
                     </button>
 
-                    <button type="button" className="homeBtn" onClick={goBudgets}>
+                    <button type="button" className="homeBtn" onClick={goOrcamentos}>
                         LISTA DE ORÇAMENTOS
                     </button>
                 </div>
@@ -839,30 +827,52 @@ export default function Page() {
 
     const ScreenElementos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={listNav}
+                disabledBack={!canBack}
+                showCheck
+                onCheck={openFinalize}
+                disabledCheck={!draftItems.length}
+            />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
+
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+                <div className="draftPill">
+                    Itens no orçamento: <b style={{ marginLeft: 6 }}>{draftCount}</b> • Total: <b style={{ marginLeft: 6 }}>{formatBRL(draftTotal)}</b>
+                </div>
+            </div>
 
             <div className="gridMenu2">
                 {elementosMenu.map((it) => (
                     <BigButton key={it.key} label={it.title} onClick={it.action} />
                 ))}
             </div>
-
-            <div className="draftHint">
-                <div className="draftHintBox">
-                    <b>Itens no orçamento:</b> {draftCount} • <b>Total:</b> {formatBRL(draftTotal)}
-                </div>
-            </div>
         </ScreenContainer>
     );
 
     const ScreenLinhas = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={listNav}
+                disabledBack={!canBack}
+                showCheck
+                onCheck={openFinalize}
+                disabledCheck={!draftItems.length}
+            />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
                 <SectionPill>URNAS • LINHAS</SectionPill>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+                <div className="draftPill">
+                    Itens no orçamento: <b style={{ marginLeft: 6 }}>{draftCount}</b> • Total: <b style={{ marginLeft: 6 }}>{formatBRL(draftTotal)}</b>
+                </div>
             </div>
 
             <div className="gridMenu2">
@@ -884,7 +894,15 @@ export default function Page() {
 
     const ScreenListagem = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={listNav}
+                disabledBack={!canBack}
+                showCheck
+                onCheck={openFinalize}
+                disabledCheck={!draftItems.length}
+            />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
@@ -913,6 +931,12 @@ export default function Page() {
 
                         <div className="chip">
                             Itens: <b style={{ marginLeft: 6 }}>{produtosFiltrados.length}</b>
+                        </div>
+                    </div>
+
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start" }}>
+                        <div className="draftPillSmall">
+                            Orçamento: <b style={{ marginLeft: 6 }}>{draftCount}</b> item(ns) • <b style={{ marginLeft: 6 }}>{formatBRL(draftTotal)}</b>
                         </div>
                     </div>
                 </div>
@@ -949,16 +973,10 @@ export default function Page() {
                     back();
                 }}
                 onHome={home}
-                onList={() => {
-                    setOpenPrices(false);
-                    setStack((s) => {
-                        const idx = s.lastIndexOf("listagem");
-                        if (idx >= 0) return s.slice(0, idx + 1);
-                        return ["home", "elementos"];
-                    });
-                }}
-                onCheck={openFinalizeModal}
-                checkBadge={draftCount || ""}
+                onList={listNav}
+                showCheck
+                onCheck={openFinalize}
+                disabledCheck={!draftItems.length}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
@@ -998,6 +1016,9 @@ export default function Page() {
                                         <b>Linha:</b> {selected.linha}
                                     </div>
                                 ) : null}
+                                <div className="metaPill">
+                                    <b>Orçamento:</b> {draftCount} item(ns)
+                                </div>
                             </div>
                         </div>
 
@@ -1043,21 +1064,48 @@ export default function Page() {
                                         type="button"
                                         className="iconActionBtn"
                                         onClick={() => addToDraft(selected)}
-                                        aria-label="Adicionar a orçamento"
-                                        title="Adicionar a orçamento"
+                                        aria-label="Adicionar ao orçamento"
+                                        title="Adicionar ao orçamento"
                                     >
                                         <IconPlus />
                                     </button>
 
-                                    <div className="draftMini">
-                                        <div>
-                                            <b>Itens:</b> {draftCount}
-                                        </div>
-                                        <div>
-                                            <b>Total:</b> {formatBRL(draftTotal)}
-                                        </div>
+                                    <div className="addHint">
+                                        + adiciona no orçamento
+                                        <div className="addHintSub">{formatBRL(selected.preco)} un.</div>
                                     </div>
                                 </div>
+
+                                {draftItems.length ? (
+                                    <div className="draftBox">
+                                        <div className="draftBoxTitle">Itens no orçamento</div>
+                                        <div className="draftList">
+                                            {draftItems.slice(0, 4).map((it) => (
+                                                <div key={it.produtoId} className="draftRow">
+                                                    <div className="draftRowName">{it.nome}</div>
+                                                    <div className="draftRowRight">
+                                                        <button className="miniBtn" onClick={() => changeDraftQtd(it.produtoId, clampInt(it.qtd) - 1)} title="Diminuir">
+                                                            −
+                                                        </button>
+                                                        <div className="draftQtd">{it.qtd}</div>
+                                                        <button className="miniBtn" onClick={() => changeDraftQtd(it.produtoId, clampInt(it.qtd) + 1)} title="Aumentar">
+                                                            +
+                                                        </button>
+                                                        <button className="miniBtnDanger" onClick={() => removeFromDraft(it.produtoId)} title="Remover">
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {draftItems.length > 4 ? <div className="draftMore">+ {draftItems.length - 4} item(ns)…</div> : null}
+                                        </div>
+
+                                        <div className="draftTotalRow">
+                                            <span>Total</span>
+                                            <b>{formatBRL(draftTotal)}</b>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
                     </div>
@@ -1100,139 +1148,143 @@ export default function Page() {
 
     const ScreenOrcamentos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav onBack={back} onHome={home} onList={listNav} disabledBack={!canBack} showCheck onCheck={openFinalize} disabledCheck={!draftItems.length} />
+
             <Title>LISTA DE ORÇAMENTOS</Title>
 
-            <div className="budgetsWrap">
-                {orcamentos.length ? (
-                    <div className="budgetGrid">
-                        {orcamentos.map((o) => {
-                            const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
-                            const dt = new Date(o.criadoEmISO);
-                            const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
-                            return (
-                                <button key={o.id} type="button" className="budgetCard" onClick={() => openOrcamentoResumo(o.id)} title="Abrir resumo">
-                                    <div className="budgetTop">
-                                        <div className="budgetTitle">{o.falecido}</div>
-                                        <div className="budgetMeta">Responsável: <b>{o.responsavel}</b></div>
-                                    </div>
+            <div style={{ padding: "0 26px 18px 26px" }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+                    <SectionPill>Toque em um orçamento para abrir o Resumo</SectionPill>
+                </div>
 
-                                    <div className="budgetBottom">
-                                        <div className="budgetSmall">Data: <b>{dataBR}</b></div>
-                                        <div className="budgetSmall">Itens: <b>{o.itens.reduce((a, b) => a + clampInt(b.qtd), 0)}</b></div>
-                                        <div className="budgetTotal">{formatBRL(total)}</div>
+                <div className="orcList">
+                    {orcamentos.length === 0 ? (
+                        <div className="emptyState" style={{ marginTop: 0 }}>
+                            Nenhum orçamento ainda. Adicione itens com <b>+</b> e finalize pelo <b>✅</b>.
+                        </div>
+                    ) : (
+                        orcamentos.map((o) => {
+                            const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+                            return (
+                                <button
+                                    key={o.id}
+                                    type="button"
+                                    className="orcCard"
+                                    onClick={() => {
+                                        setSelectedOrc(o);
+                                        go("resumo");
+                                    }}
+                                >
+                                    <div className="orcLeft">
+                                        <div className="orcTitle">
+                                            <span className="orcId">ORÇAMENTO Nº {o.id}</span>
+                                            <span className="orcDate">{fmtDateTimeBRShort(new Date(o.criadoEmISO))}</span>
+                                        </div>
+                                        <div className="orcNames">
+                                            <div>
+                                                <b>Falecido(a):</b> {o.falecido}
+                                            </div>
+                                            <div>
+                                                <b>Responsável:</b> {o.responsavel}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="orcRight">
+                                        <div className="orcTotal">{formatBRL(total)}</div>
+                                        <div className="orcHint">Abrir resumo</div>
                                     </div>
                                 </button>
                             );
-                        })}
-                    </div>
-                ) : (
-                    <div className="emptyState" style={{ margin: "0 26px" }}>
-                        Nenhum orçamento ainda. Adicione itens com <b>+</b> e finalize com <b>✅</b>.
-                    </div>
-                )}
+                        })
+                    )}
+                </div>
             </div>
         </ScreenContainer>
     );
 
     const ScreenResumo = (
         <ScreenContainer>
-            <div className="resumoTopBar">
-                {/* ✅ deixa o visto aí (sem função por enquanto) */}
-                <button type="button" className="iconBtn resumoBtn" onClick={() => console.info("Visto (sem função por enquanto)")} title="Visto">
-                    <IconCheck />
-                </button>
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={listNav}
+                disabledBack={!canBack}
+                showPrint
+                onPrint={() => {
+                    if (!selectedOrc) return;
+                    exportarResumoPDF(selectedOrc);
+                }}
+                showCheck
+                // ✅ fica aí (como você pediu). depois você troca a função.
+                onCheck={() => alert("✅ Ação do check (mock). Você vai ligar sua função manual aqui.")}
+                disabledCheck={false}
+            />
 
-                <button
-                    type="button"
-                    className="iconBtn resumoBtn"
-                    onClick={() => (orcamentoSelecionado ? exportarResumoPDF(orcamentoSelecionado) : null)}
-                    title="Imprimir (PDF)"
-                >
-                    <IconPrint />
-                </button>
-            </div>
+            <Title>RESUMO DA HOMENAGEM</Title>
 
-            <div style={{ padding: "22px 26px 0 26px" }}>
-                <div className="resumoTitle">RESUMO DA HOMENAGEM</div>
-
-                {!orcamentoSelecionado ? (
-                    <div className="emptyState" style={{ marginTop: 18 }}>
-                        Orçamento não encontrado.
+            <div style={{ padding: "0 26px 18px 26px" }}>
+                {!selectedOrc ? (
+                    <div className="emptyState" style={{ marginTop: 0 }}>
+                        Nenhum orçamento selecionado.
                     </div>
                 ) : (
                     <div className="resumoCard">
                         <div className="resumoHeader">
-                            <div className="resumoOrc">
-                                <div className="resumoOrcMain">ORÇAMENTO</div>
-                                <div className="resumoOrcSub">Nº {orcamentoSelecionado.id}</div>
-                            </div>
-
-                            <div className="resumoInfo">
-                                <div className="resumoLine">
-                                    <b>Responsável:</b> {orcamentoSelecionado.responsavel}
+                            <div className="resumoHeaderLeft">
+                                <div className="resumoOrc">
+                                    <b>ORÇAMENTO</b> Nº <b>{selectedOrc.id}</b>
                                 </div>
-                                <div className="resumoLine">
-                                    <b>Falecido:</b> {orcamentoSelecionado.falecido}
-                                </div>
-                                <div className="resumoLine">
-                                    <b>Telefone:</b> {orcamentoSelecionado.telefone}
+                                <div className="resumoMeta">
+                                    <div>
+                                        <b>Responsável:</b> {selectedOrc.responsavel}
+                                    </div>
+                                    <div>
+                                        <b>Falecido(a):</b> {selectedOrc.falecido}
+                                    </div>
                                 </div>
                             </div>
-
-                            <div className="resumoDate">
-                                <div className="resumoLine">
-                                    <b>Data:</b>{" "}
-                                    {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(orcamentoSelecionado.criadoEmISO))}
+                            <div className="resumoHeaderRight">
+                                <div className="resumoDate">
+                                    <b>Data:</b> {fmtDateBRShort(new Date(selectedOrc.criadoEmISO))}
+                                </div>
+                                <div className="resumoTel">
+                                    <b>Telefone:</b> {selectedOrc.telefone}
                                 </div>
                             </div>
                         </div>
 
                         <div className="resumoTable">
-                            <div className="resumoTableHead">
+                            <div className="resumoRowHead">
                                 <div>Item</div>
                                 <div style={{ textAlign: "right" }}>Qtd</div>
-                                <div style={{ textAlign: "right" }}>Valor</div>
+                                <div style={{ textAlign: "right" }}>Valor (un)</div>
+                                <div style={{ textAlign: "right" }}>Subtotal</div>
                             </div>
 
-                            {orcamentoSelecionado.itens.map((it, idx) => (
-                                <div key={`${it.produtoId}-${idx}`} className="resumoRow">
-                                    <div className="resumoItemName">{it.nome}</div>
-                                    <div style={{ textAlign: "right" }}>{clampInt(it.qtd)}</div>
-                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="resumoBottom">
-                            <div className="resumoValidade">Orçamento válido por <b>07</b> dias</div>
-
-                            <div className="resumoTotalBox">
-                                <div className="resumoTotalLabel">Total</div>
-                                <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
-                            </div>
+                            {selectedOrc.itens.map((it) => {
+                                const qtd = clampInt(it.qtd);
+                                const v = Number(it.valorUnit) || 0;
+                                const sub = qtd * v;
+                                return (
+                                    <div key={`${selectedOrc.id}-${it.produtoId}`} className="resumoRow">
+                                        <div className="resumoItem">{it.nome}</div>
+                                        <div style={{ textAlign: "right" }}>{qtd}</div>
+                                        <div style={{ textAlign: "right" }}>{formatBRL(v)}</div>
+                                        <div style={{ textAlign: "right" }}>
+                                            <b>{formatBRL(sub)}</b>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         <div className="resumoFooter">
-                            <div className="resumoPay">
-                                <div className="resumoPayTitle">Condições de pagamento</div>
-                                <div className="resumoPayRow">
-                                    <div>À vista</div>
-                                    <div className="resumoPayVal">{formatBRL(Math.max(0, totalOrcamentoSelecionado - 381))}</div>
-                                </div>
-                                <div className="resumoPayRow">
-                                    <div>À prazo</div>
-                                    <div className="resumoPayVal">até 6 vezes</div>
-                                </div>
+                            <div className="resumoValid">Orçamento válido por 07 dias</div>
+                            <div className="resumoTotalBox">{formatBRL(selectedOrc.itens.reduce((a, it) => a + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0))}</div>
+                        </div>
 
-                                <div className="resumoExportRow">
-                                    <button type="button" className="smallBtn" onClick={() => exportarResumoCSV(orcamentoSelecionado)}>
-                                        Exportar CSV
-                                    </button>
-                                </div>
-                            </div>
-
-                            <img src={LOGO_URL_UI} alt="PAI" className="resumoLogo" />
+                        <div className="resumoLogo">
+                            <img src={LOGO_PDF} alt="PAI" />
                         </div>
                     </div>
                 )}
@@ -1253,47 +1305,59 @@ export default function Page() {
     return (
         <div className="root">
             <style>{css}</style>
-
             {screen}
 
+            {/* Modal checkout (✅) */}
             <Modal
-                open={openFinalize}
-                title="Finalizar orçamento"
-                onClose={() => setOpenFinalize(false)}
+                open={openCheckout}
+                title="Finalizar Orçamento"
+                onClose={() => setOpenCheckout(false)}
                 footer={
-                    <div style={{ display: "flex", gap: 10 }}>
-                        <button type="button" className="ctaBtn" onClick={() => setOpenFinalize(false)} style={{ minWidth: 160 }}>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", width: "100%" }}>
+                        <button type="button" className="ghostBtn" onClick={() => setOpenCheckout(false)}>
                             CANCELAR
                         </button>
-                        <button type="button" className="ctaBtn" onClick={createOrcamento} style={{ minWidth: 220 }}>
-                            OK • ENVIAR PARA LISTA
+                        <button type="button" className="ctaBtn" onClick={finalizarOrcamento}>
+                            OK
                         </button>
                     </div>
                 }
             >
-                <div className="formGrid">
-                    <label className="formField">
-                        <span>Responsável</span>
-                        <input value={formResp} onChange={(e) => setFormResp(e.target.value)} className="formInput" placeholder="Nome do responsável" />
-                    </label>
+                <div style={{ display: "grid", gap: 10 }}>
+                    <div className="field">
+                        <label className="fieldLabel">Responsável</label>
+                        <input className="fieldInput" value={formResp} onChange={(e) => setFormResp(e.target.value)} placeholder="Nome do responsável" />
+                    </div>
+                    <div className="field">
+                        <label className="fieldLabel">Falecido(a)</label>
+                        <input className="fieldInput" value={formFal} onChange={(e) => setFormFal(e.target.value)} placeholder="Nome do falecido(a)" />
+                    </div>
+                    <div className="field">
+                        <label className="fieldLabel">Telefone</label>
+                        <input className="fieldInput" value={formTel} onChange={(e) => setFormTel(e.target.value)} placeholder="(xx) xxxxx-xxxx" />
+                    </div>
 
-                    <label className="formField">
-                        <span>Falecido(a)</span>
-                        <input value={formFalecido} onChange={(e) => setFormFalecido(e.target.value)} className="formInput" placeholder="Nome do falecido(a)" />
-                    </label>
-
-                    <label className="formField">
-                        <span>Telefone</span>
-                        <input value={formTel} onChange={(e) => setFormTel(e.target.value)} className="formInput" placeholder="(xx) xxxxx-xxxx" />
-                    </label>
-
-                    <div className="formResumo">
-                        <div>
-                            <b>Itens:</b> {draftCount}
+                    <div className="miniResumo">
+                        <div className="miniResumoRow">
+                            <span>Itens</span>
+                            <b>{draftCount}</b>
                         </div>
-                        <div>
-                            <b>Total:</b> {formatBRL(draftTotal)}
+                        <div className="miniResumoRow">
+                            <span>Total</span>
+                            <b>{formatBRL(draftTotal)}</b>
                         </div>
+                    </div>
+
+                    <div className="miniList">
+                        {draftItems.map((it) => (
+                            <div key={it.produtoId} className="miniItem">
+                                <div className="miniItemName">{it.nome}</div>
+                                <div className="miniItemRight">
+                                    <span className="miniTag">{it.qtd}x</span>
+                                    <span className="miniTag">{formatBRL(it.valorUnit)}</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </Modal>
@@ -1306,7 +1370,13 @@ const css = `
   :root{
     --bg1:#2ca3d4;
     --bg2:#0e4c86;
+    --pill: rgba(255,255,255,0.78);
+    --pillBorder: rgba(255,255,255,0.28);
+    --btn: rgba(220,233,246,0.92);
+    --btnBorder: rgba(255,255,255,0.55);
+    --btnText: #0b2b4d;
     --ink: rgba(255,255,255,0.95);
+    --inkSoft: rgba(255,255,255,0.85);
     --shadow: 0 16px 34px rgba(0,0,0,0.25);
   }
 
@@ -1348,35 +1418,10 @@ const css = `
     justify-content:center;
     cursor:pointer;
     transition: transform .12s ease, filter .12s ease;
-    position: relative;
   }
   .iconBtn:hover{ transform: translateY(-1px); filter: brightness(1.02); }
   .iconBtn:active{ transform: translateY(0px) scale(0.99); }
   .iconBtnDisabled{ opacity: 0.55; cursor: not-allowed; }
-
-  .iconBtnCheck{
-    background: rgba(230, 255, 238, 0.92);
-    border-color: rgba(16, 185, 129, 0.35);
-    color: #065f46;
-  }
-
-  .badge{
-    position:absolute;
-    top: -8px;
-    right: -8px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: #0ea5e9;
-    color: #fff;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size: 12px;
-    font-weight: 900;
-    box-shadow: 0 10px 18px rgba(0,0,0,0.22);
-  }
 
   .title{
     color: var(--ink);
@@ -1394,6 +1439,25 @@ const css = `
     color: var(--ink);
     font-weight: 700;
     letter-spacing: 0.5px;
+    text-align:center;
+  }
+
+  .draftPill{
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.92);
+    font-weight: 800;
+    box-shadow: 0 14px 28px rgba(0,0,0,0.18);
+  }
+  .draftPillSmall{
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.16);
+    color: rgba(255,255,255,0.92);
+    font-weight: 800;
   }
 
   .homeBtns{
@@ -1433,6 +1497,16 @@ const css = `
     transform: translateY(0px) scale(0.97);
     box-shadow: 0 6px 14px rgba(2,156,222,0.35), inset 0 2px 6px rgba(0,0,0,0.25);
   }
+  .homeBtn::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:18px;
+    background: linear-gradient(120deg, transparent 20%, rgba(255,255,255,0.25), transparent 80%);
+    opacity:0;
+    transition:opacity .25s ease;
+  }
+  .homeBtn:hover::before{ opacity:1; }
 
   .gridMenu2{
     width:100%;
@@ -1692,7 +1766,6 @@ const css = `
     gap: 14px;
     justify-content:flex-start;
     align-items:center;
-    flex-wrap: wrap;
   }
   .iconActionBtn{
     width: 54px;
@@ -1711,15 +1784,92 @@ const css = `
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
 
-  .draftMini{
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.16);
+  .addHint{
+    color: rgba(255,255,255,0.92);
+    font-weight: 900;
+    letter-spacing: .3px;
+  }
+  .addHintSub{
+    font-weight: 800;
+    opacity: .9;
+    margin-top: 2px;
+  }
+
+  .draftBox{
+    margin-top: 10px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    padding: 12px;
+  }
+  .draftBoxTitle{
+    color: rgba(255,255,255,0.95);
+    font-weight: 900;
+    letter-spacing: .6px;
+    margin-bottom: 8px;
+  }
+  .draftList{ display:grid; gap: 8px; }
+  .draftRow{
+    display:flex;
+    justify-content:space-between;
+    gap: 10px;
+    align-items:center;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.10);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .draftRowName{
     color: rgba(255,255,255,0.92);
     font-weight: 800;
+    font-size: 13px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width: 320px;
+  }
+  .draftRowRight{ display:flex; align-items:center; gap: 8px; }
+  .draftQtd{
+    width: 22px;
+    text-align:center;
+    color: rgba(255,255,255,0.95);
+    font-weight: 900;
+  }
+  .miniBtn{
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(222,234,246,0.90);
+    color: #0b2b4d;
+    cursor:pointer;
+    font-weight: 900;
+  }
+  .miniBtnDanger{
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(239, 68, 68, 0.18);
+    color: rgba(255,255,255,0.92);
+    cursor:pointer;
+    font-weight: 900;
+  }
+  .draftMore{
+    color: rgba(255,255,255,0.9);
+    font-weight: 800;
+    text-align:right;
+    opacity: .95;
+  }
+  .draftTotalRow{
+    margin-top: 10px;
     display:flex;
-    gap: 16px;
+    justify-content:space-between;
+    align-items:center;
+    color: rgba(255,255,255,0.95);
+    font-weight: 900;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.14);
   }
 
   .ctaBtn{
@@ -1732,10 +1882,22 @@ const css = `
     font-weight: 900;
     letter-spacing: 1px;
     cursor:pointer;
-    min-width: 220px;
+    min-width: 170px;
   }
   .ctaBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .ctaBtn:active{ transform: translateY(0px) scale(0.995); }
+
+  .ghostBtn{
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.92);
+    font-weight: 900;
+    letter-spacing: 1px;
+    cursor:pointer;
+    min-width: 140px;
+  }
 
   /* modal */
   .modalOverlay{
@@ -1749,7 +1911,7 @@ const css = `
     z-index: 999;
   }
   .modalCard{
-    width: min(680px, 96vw);
+    width: min(640px, 96vw);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
     border: 1px solid rgba(255,255,255,0.18);
@@ -1781,254 +1943,240 @@ const css = `
     justify-content:flex-end;
   }
 
-  /* finalize form */
-  .formGrid{ display:grid; gap: 12px; }
-  .formField{ display:grid; gap: 6px; font-weight: 900; color: rgba(255,255,255,0.95); }
-  .formField span{ font-size: 12px; letter-spacing: 0.6px; opacity: 0.95; }
-  .formInput{
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.95);
-    padding: 12px 12px;
-    border-radius: 12px;
-    outline: none;
-    font-weight: 800;
+  /* fields */
+  .field{ display:grid; gap: 6px; }
+  .fieldLabel{
+    font-weight: 900;
+    letter-spacing: .4px;
+    color: rgba(255,255,255,0.92);
   }
-  .formInput::placeholder{ color: rgba(255,255,255,0.65); }
-  .formResumo{
-    margin-top: 8px;
-    padding: 12px;
+  .fieldInput{
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.95);
+    font-weight: 800;
+    padding: 10px 12px;
+    outline: none;
+  }
+  .fieldInput::placeholder{ color: rgba(255,255,255,0.7); }
+
+  .miniResumo{
+    margin-top: 6px;
     border-radius: 14px;
     background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.14);
+    padding: 10px 12px;
+  }
+  .miniResumoRow{
     display:flex;
-    gap: 18px;
-    justify-content: space-between;
+    justify-content:space-between;
+    color: rgba(255,255,255,0.95);
     font-weight: 900;
+    padding: 4px 0;
   }
-
-  .draftHint{
-    margin-top: 18px;
-    display:flex;
-    justify-content:center;
-  }
-  .draftHintBox{
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.18);
-    color: rgba(255,255,255,0.92);
-    font-weight: 900;
-  }
-
-  /* orçamentos */
-  .budgetsWrap{ padding: 0 26px 24px 26px; }
-  .budgetGrid{
+  .miniList{
+    margin-top: 10px;
     display:grid;
-    grid-template-columns: repeat(3, minmax(240px, 1fr));
-    gap: 16px;
+    gap: 8px;
   }
-  .budgetCard{
-    text-align:left;
-    padding: 14px;
+  .miniItem{
+    display:flex;
+    justify-content:space-between;
+    gap: 10px;
+    align-items:center;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.10);
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 8px 10px;
+  }
+  .miniItemName{
+    font-weight: 900;
+    color: rgba(255,255,255,0.92);
+    font-size: 13px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width: 380px;
+  }
+  .miniItemRight{ display:flex; gap: 8px; }
+  .miniTag{
+    font-weight: 900;
+    color: rgba(255,255,255,0.92);
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.06);
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+
+  /* lista de orçamentos */
+  .orcList{
+    width: min(980px, 100%);
+    margin: 0 auto;
+    display:grid;
+    gap: 12px;
+  }
+  .orcCard{
+    width: 100%;
+    display:flex;
+    justify-content:space-between;
+    gap: 14px;
+    align-items:center;
+    padding: 14px 14px;
     border-radius: 18px;
     background: rgba(255,255,255,0.10);
     border: 1px solid rgba(255,255,255,0.18);
-    box-shadow: 0 18px 34px rgba(0,0,0,0.18);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.18);
     cursor:pointer;
-    color: rgba(255,255,255,0.94);
-    transition: transform .12s ease, filter .12s ease;
+    color: rgba(255,255,255,0.92);
   }
-  .budgetCard:hover{ transform: translateY(-2px); filter: brightness(1.03); }
-  .budgetCard:active{ transform: translateY(0px) scale(0.995); }
-  .budgetTop{ display:grid; gap: 6px; }
-  .budgetTitle{ font-weight: 1000; font-size: 18px; letter-spacing: 0.5px; }
-  .budgetMeta{ font-weight: 800; opacity: 0.95; }
-  .budgetBottom{
-    margin-top: 12px;
-    display:flex;
-    align-items:center;
-    justify-content: space-between;
-    gap: 10px;
+  .orcCard:hover{ filter: brightness(1.03); transform: translateY(-1px); }
+  .orcLeft{ display:flex; flex-direction:column; gap: 8px; text-align:left; }
+  .orcTitle{ display:flex; gap: 12px; align-items:baseline; flex-wrap:wrap; }
+  .orcId{
+    font-weight: 900;
+    letter-spacing: .8px;
+    color: #ffe600;
   }
-  .budgetSmall{ font-weight: 800; opacity: 0.95; }
-  .budgetTotal{
-    font-weight: 1000;
-    background: rgba(2,156,222,0.30);
-    border: 1px solid rgba(2,156,222,0.40);
-    padding: 8px 10px;
-    border-radius: 999px;
-    white-space: nowrap;
+  .orcDate{
+    font-weight: 800;
+    opacity: .95;
   }
+  .orcNames{
+    display:grid;
+    gap: 4px;
+    font-weight: 800;
+  }
+  .orcRight{ text-align:right; display:flex; flex-direction:column; gap: 4px; align-items:flex-end; }
+  .orcTotal{
+    font-weight: 900;
+    letter-spacing: .4px;
+    font-size: 18px;
+    color: rgba(255,255,255,0.95);
+  }
+  .orcHint{ font-weight: 800; opacity: .9; font-size: 12px; }
 
   /* resumo */
-  .resumoTopBar{
-    position:absolute;
-    top: 18px;
-    right: 18px;
-    display:flex;
-    gap: 10px;
-    z-index: 5;
-  }
-  .resumoBtn{ background: rgba(222,234,246,0.92); }
-  .resumoTitle{
-    text-align:center;
-    color: rgba(255,255,255,0.95);
-    font-weight: 1000;
-    letter-spacing: 1px;
-    font-size: 34px;
-    text-shadow: 0 10px 22px rgba(0,0,0,0.25);
-    margin-top: 10px;
-  }
   .resumoCard{
-    margin-top: 16px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.86);
-    border: 1px solid rgba(255,255,255,0.55);
+    width: min(980px, 100%);
+    margin: 0 auto;
+    position: relative;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 22px 54px rgba(0,0,0,0.22);
+    padding: 14px;
     overflow:hidden;
-    box-shadow: 0 20px 46px rgba(0,0,0,0.20);
   }
   .resumoHeader{
-    display:grid;
-    grid-template-columns: 240px 1fr 220px;
-    gap: 10px;
-    padding: 14px 14px 10px 14px;
-    background: rgba(255,255,255,0.92);
-    border-bottom: 1px solid rgba(2, 156, 222, 0.22);
-    align-items: start;
+    display:flex;
+    justify-content:space-between;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.16);
+    color: rgba(255,255,255,0.92);
   }
-  .resumoOrcMain{
-    font-weight: 1000;
-    color: #0b2b4d;
-    letter-spacing: 1px;
-    font-size: 22px;
-  }
-  .resumoOrcSub{
-    margin-top: 2px;
+  .resumoOrc{
     font-weight: 900;
-    color: #0b2b4d;
-    opacity: 0.9;
+    letter-spacing: .6px;
+    color: #ffe600;
+    margin-bottom: 6px;
   }
-  .resumoLine{
-    color: #0b2b4d;
-    font-weight: 800;
-    font-size: 13px;
-    line-height: 1.35;
-  }
-  .resumoInfo{ display:grid; gap: 2px; }
-  .resumoDate{ display:flex; justify-content:flex-end; }
-
-  .resumoTable{
-    padding: 0 14px;
-    background: rgba(255,255,255,0.92);
-  }
-  .resumoTableHead{
+  .resumoMeta{
     display:grid;
-    grid-template-columns: 1fr 90px 140px;
+    gap: 4px;
+    font-weight: 800;
+  }
+  .resumoHeaderRight{
+    display:grid;
+    gap: 6px;
+    font-weight: 800;
+    text-align:right;
+    align-content:start;
+  }
+  .resumoTable{
+    margin-top: 12px;
+    border-radius: 14px;
+    overflow:hidden;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.06);
+  }
+  .resumoRowHead{
+    display:grid;
+    grid-template-columns: 1fr 70px 120px 120px;
     gap: 10px;
-    padding: 10px 0;
-    border-bottom: 2px solid rgba(2,156,222,0.35);
-    color: #0b2b4d;
-    font-weight: 1000;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.14);
+    font-weight: 900;
+    color: rgba(255,255,255,0.95);
   }
   .resumoRow{
     display:grid;
-    grid-template-columns: 1fr 90px 140px;
+    grid-template-columns: 1fr 70px 120px 120px;
     gap: 10px;
-    padding: 10px 0;
-    border-bottom: 1px solid rgba(15,23,42,0.10);
-    color: #0b2b4d;
+    padding: 10px 12px;
+    border-top: 1px solid rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.92);
     font-weight: 800;
   }
-  .resumoItemName{ text-transform: uppercase; }
-
-  .resumoBottom{
-    display:flex;
-    align-items:center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 14px;
-    background: rgba(255,255,255,0.92);
+  .resumoItem{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width: 520px;
   }
-  .resumoValidade{
-    color: #0b2b4d;
+  .resumoFooter{
+    margin-top: 12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap: 10px;
+  }
+  .resumoValid{
+    color: rgba(255,255,255,0.92);
     font-weight: 900;
-    font-size: 16px;
+    letter-spacing: .2px;
   }
   .resumoTotalBox{
-    display:flex;
-    align-items:center;
-    gap: 12px;
-  }
-  .resumoTotalLabel{
-    color: #0b2b4d;
-    font-weight: 1000;
-  }
-  .resumoTotalValue{
-    background: #029cde;
-    color: #fff;
-    font-weight: 1000;
-    padding: 8px 12px;
+    padding: 10px 14px;
     border-radius: 10px;
-    box-shadow: 0 14px 32px rgba(2,156,222,.25);
+    background: rgba(27,141,198,0.95);
+    color: #fff;
+    font-weight: 900;
+    letter-spacing: .5px;
     min-width: 160px;
     text-align:right;
-    letter-spacing: 0.5px;
+    box-shadow: 0 16px 30px rgba(0,0,0,0.18);
   }
-
-  .resumoFooter{
-    padding: 14px;
-    display:flex;
-    align-items:flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    background: rgba(255,255,255,0.92);
-  }
-  .resumoPay{
-    display:grid;
-    gap: 6px;
-    color: #0b2b4d;
-    font-weight: 900;
-  }
-  .resumoPayTitle{ font-size: 13px; opacity: 0.9; }
-  .resumoPayRow{
-    display:flex;
-    align-items:center;
-    justify-content: space-between;
-    gap: 14px;
-    min-width: 300px;
-    font-size: 13px;
-  }
-  .resumoPayVal{ font-weight: 1000; }
   .resumoLogo{
-    width: 180px;
-    height: auto;
-    object-fit: contain;
+    position:absolute;
+    right: 12px;
+    bottom: 10px;
+    opacity: .95;
+    pointer-events:none;
   }
-
-  .resumoExportRow{ margin-top: 8px; }
-  .smallBtn{
-    border: 1px solid rgba(2,156,222,0.35);
-    background: rgba(2,156,222,0.10);
-    color: #0b2b4d;
-    font-weight: 1000;
-    border-radius: 12px;
-    padding: 10px 12px;
-    cursor:pointer;
+  .resumoLogo img{
+    width: 160px;
+    height: auto;
+    display:block;
+    filter: drop-shadow(0 10px 18px rgba(0,0,0,0.25));
   }
 
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
     .detailLayout{ grid-template-columns: 1fr; }
     .detailImgCard{ height: 300px; }
-    .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
-    .resumoHeader{ grid-template-columns: 1fr; }
-    .resumoDate{ justify-content:flex-start; }
+    .resumoRowHead, .resumoRow{ grid-template-columns: 1fr 56px 110px 110px; }
   }
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
-    .budgetGrid{ grid-template-columns: 1fr; }
-    .resumoTableHead, .resumoRow{ grid-template-columns: 1fr 70px 120px; }
+    .resumoHeader{ flex-direction:column; text-align:left; }
+    .resumoHeaderRight{ text-align:left; }
+    .resumoItem{ max-width: 280px; }
   }
 `;
