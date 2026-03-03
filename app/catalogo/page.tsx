@@ -701,26 +701,7 @@ export default function Page() {
                                         </div>
                                     </div>
 
-                                    <div className="detailActions">
-                                        <button
-                                            type="button"
-                                            className="iconActionBtn"
-                                            onClick={() => setOpenPrices(true)}
-                                            aria-label="Tabela de valores"
-                                            title="Tabela de valores"
-                                        >
-                                            <IconDollar />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="iconActionBtn"
-                                            onClick={() => console.info("Mock: adicionar ao orçamento")}
-                                            aria-label="Adicionar a orçamento"
-                                            title="Adicionar a orçamento"
-                                        >
-                                            <IconPlus />
-                                        </button>
-                                    </div>
+                                    
 
                                     <div className="bulletItem">
                                         <span className="bulletDot">•</span>
@@ -741,6 +722,27 @@ export default function Page() {
                                         <div>
                                             <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
                                         </div>
+                                    </div>
+
+                                    <div className="detailActions">
+                                        <button
+                                            type="button"
+                                            className="iconActionBtn"
+                                            onClick={() => setOpenPrices(true)}
+                                            aria-label="Tabela de valores"
+                                            title="Tabela de valores"
+                                        >
+                                            <IconDollar />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="iconActionBtn"
+                                            onClick={() => console.info("Mock: adicionar ao orçamento")}
+                                            aria-label="Adicionar a orçamento"
+                                            title="Adicionar a orçamento"
+                                        >
+                                            <IconPlus />
+                                        </button>
                                     </div>
                                 </div>
                         </div>
