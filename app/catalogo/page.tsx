@@ -3,21 +3,34 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
- * PAGE ÚNICA (page.tsx) — CATÁLOGO + ORÇAMENTOS (protótipo)
- * Ajustes aplicados:
- * ✅ NÃO exibe "Itens no orçamento / Total" em nenhuma tela (Elementos e Produto removidos)
- * ✅ Só aparece Itens/Total dentro do modal "Finalizar orçamento"
- * ✅ Resumo da Homenagem:
- *   - Logo no topo esquerdo ao lado de ORÇAMENTO / Nº
- *   - Dados (Responsável/Falecido/Telefone) deslocados mais à direita
- *   - Removido botão "Exportar CSV"
- *   - Topo direito: botão Voltar (para lista de orçamentos) + ✅ (sem função) + 🖨️ (PDF)
- * ✅ PDF:
- *   - Logo no canto superior esquerdo
- *   - Título central "Resumo da Homenagem"
- *   - Embaixo: "ORÇAMENTO Nº xxxx"
- *   - Box abaixo: somente Responsável / Falecido(a) / Telefone
- *   - Removido logo do rodapé
+ * PAGE ÚNICA (page.tsx) — CATÁLOGO + ORÇAMENTOS (com fluxo de "Homenagem")
+ *
+ * ALTERAÇÕES IMPLEMENTADAS (resumo):
+ * 1) Home -> "ELEMENTOS DE HOMENAGEM" abre modal de seleção de Usuário (Operador) via pai_api.php?action=list_users
+ * 2) Após selecionar Operador, abre modal "Início da Homenagem" (Responsável/Falecido/Telefone)
+ *    - Telefone com teclado numérico (inputMode="numeric")
+ *    - Botões: Cancelar / Começar
+ * 3) Somente após "Começar" o usuário entra no catálogo (categorias/linhas/produtos)
+ * 4) Mesmo item NÃO pode ser adicionado 2x (botão + bloqueia duplicado)
+ * 5) No detalhe do produto:
+ *    - Remove "PÁGINA DE APRESENTAÇÃO DO PRODUTO"
+ *    - Título vira "Linha: <LINHA>" (se houver linha)
+ *    - Mostra botões "Retornar" e "Próximo Passo" (ou "Concluir" na última categoria)
+ *    - Pode avançar sem selecionar itens
+ * 6) "Próximo Passo" navega automaticamente pelas categorias:
+ *    URNAS -> APRESENTAÇÃO -> ESPAÇO DE DESPEDIDA -> PREPARAÇÃO E CUIDADO -> AMBIENTAÇÃO -> CUIDADOS ADICIONAIS
+ * 7) Ao "Concluir" (ou ✅ no topo), abre modal de revisão com itens agrupados por categoria e botão "Finalizar"
+ *    -> Ao finalizar, cria Orçamento e vai para Lista de Orçamentos
+ * 8) Removidos textos de "Itens/Total" fora das telas/ações próprias (não aparece em Elementos nem no detalhe)
+ * 9) Resumo da Homenagem (UI):
+ *    - Logo no canto superior esquerdo ao lado de "ORÇAMENTO" e "Nº ..."
+ *    - Remove botão Exportar CSV
+ *    - Topo com botões: Voltar (lista) + ✅ + PDF
+ * 10) PDF:
+ *    - Logo no canto superior esquerdo
+ *    - Título "Resumo da Homenagem"
+ *    - Abaixo: Nº do orçamento
+ *    - Depois: Responsável / Falecido(a) / Telefone
  */
 
 type CatalogGroup =
@@ -29,12 +42,25 @@ type CatalogGroup =
     | "orcamentos"
     | "resumo";
 
-type Categoria = "URNAS" | "ROUPAS" | "ORNAMENTACAO" | "PREPARACAO" | "AMBIENTACAO";
-type Linha = "SERENIDADE" | "HARMONIA" | "ESSENCIA" | "ETERNUM" | "ALVORADA" | "AMPARO";
+type CategoriaFluxo =
+    | "URNAS"
+    | "APRESENTACAO"
+    | "ESPACO_DESPEDIDA"
+    | "PREPARACAO_CUIDADO"
+    | "AMBIENTACAO"
+    | "CUIDADOS_ADICIONAIS";
+
+type Linha =
+    | "SERENIDADE"
+    | "HARMONIA"
+    | "ESSENCIA"
+    | "ETERNUM"
+    | "ALVORADA"
+    | "AMPARO";
 
 type Produto = {
     id: number;
-    categoria: Categoria;
+    categoria: CategoriaFluxo;
     linha?: Linha;
     nome: string;
     preco: number;
@@ -49,6 +75,8 @@ type Produto = {
 type OrcamentoItem = {
     produtoId: number;
     nome: string;
+    categoria: CategoriaFluxo;
+    linha?: Linha;
     valorUnit: number;
     qtd: number;
 };
@@ -56,11 +84,23 @@ type OrcamentoItem = {
 type Orcamento = {
     id: string;
     criadoEmISO: string;
+
+    // operador escolhido no início:
+    operadorId: number;
+    operadorNome: string;
+    operadorUsuario: string;
+
+    // dados da homenagem:
     responsavel: string;
     falecido: string;
     telefone: string;
+
     itens: OrcamentoItem[];
 };
+
+type Usuario = { id: number; nome: string; usuario: string };
+
+const API_URL = "https://api.planoassistencialintegrado.com.br/pai_api.php";
 
 const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
 const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png";
@@ -77,6 +117,32 @@ function clampInt(v: any) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.floor(n));
+}
+
+// ---------- parser robusto (tolera BOM/HTML) ----------
+async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
+    const r = await fetch(input, { cache: "no-store", ...init });
+    const txt = await r.text();
+    const cleaned = txt.replace(/^\uFEFF/, "").trim();
+    let json: any = null;
+
+    if (!cleaned.startsWith("<")) {
+        try {
+            json = JSON.parse(cleaned);
+        } catch {
+            const m = cleaned.match(/\{[\s\S]*\}$/m);
+            if (m) json = JSON.parse(m[0]);
+        }
+    }
+
+    if (json == null)
+        throw new Error(
+            `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? "…" : ""
+            }`
+        );
+    if (!r.ok || json?.erro)
+        throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+    return json;
 }
 
 // ---------- mock images (data-uri) ----------
@@ -102,7 +168,16 @@ function mockImg(label: string, hue = 200) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-// ---------- mock data ----------
+// ---------- fluxo/categorias ----------
+const CATEGORIAS_FLUXO: Array<{ id: CategoriaFluxo; label: string }> = [
+    { id: "URNAS", label: "URNAS" },
+    { id: "APRESENTACAO", label: "APRESENTAÇÃO" },
+    { id: "ESPACO_DESPEDIDA", label: "ESPAÇO DE\nDESPEDIDA" },
+    { id: "PREPARACAO_CUIDADO", label: "PREPARAÇÃO E\nCUIDADO" },
+    { id: "AMBIENTACAO", label: "AMBIENTAÇÃO" },
+    { id: "CUIDADOS_ADICIONAIS", label: "CUIDADOS\nADICIONAIS" },
+];
+
 const LINHAS: Array<{ id: Linha; title: string }> = [
     { id: "SERENIDADE", title: "LINHA\nSERENIDADE" },
     { id: "HARMONIA", title: "LINHA\nHARMONIA" },
@@ -112,7 +187,9 @@ const LINHAS: Array<{ id: Linha; title: string }> = [
     { id: "AMPARO", title: "LINHA\nAMPARO" },
 ];
 
+// ---------- mock produtos (para todas as categorias do fluxo) ----------
 const mockProdutos: Produto[] = [
+    // URNAS (com linha)
     {
         id: 101,
         categoria: "URNAS",
@@ -124,7 +201,8 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Uma urna sóbria e sofisticada para homenagens memoráveis.",
         inspiracao: "O nome Zeus remete a uma presença soberana e única, evocando força e dignidade na despedida.",
         conceito: "Pensada para famílias que buscam a máxima homenagem possível, com acabamento premium e estética marcante.",
-        especificacoes: "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
+        especificacoes:
+            "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
     },
     {
         id: 102,
@@ -137,7 +215,8 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Equilíbrio e beleza em linhas suaves e acabamento elegante.",
         inspiracao: "Aurora representa novos começos e serenidade, como um amanhecer de paz.",
         conceito: "Design harmônico e acolhedor para uma despedida com respeito e tranquilidade.",
-        especificacoes: "MDF premium • pintura especial • detalhes em frisos • forração interna • fecho reforçado.",
+        especificacoes:
+            "MDF premium • pintura especial • detalhes em frisos • forração interna • fecho reforçado.",
     },
     {
         id: 201,
@@ -150,59 +229,85 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Acabamento refinado com presença discreta e imponente.",
         inspiracao: "Harmonia é equilíbrio: forma e função em um produto de alta qualidade.",
         conceito: "Criada para quem deseja uma homenagem com estética clássica e materiais selecionados.",
-        especificacoes: "Madeira maciça • verniz fosco • cantos arredondados • forração interna • suporte de alças.",
+        especificacoes:
+            "Madeira maciça • verniz fosco • cantos arredondados • forração interna • suporte de alças.",
+    },
+    // APRESENTAÇÃO
+    {
+        id: 1001,
+        categoria: "APRESENTACAO",
+        nome: "Véu de Apresentação Clássico",
+        preco: 120,
+        saldo: 50,
+        thumb: mockImg("APRESENTAÇÃO", 160),
+        descricaoCurta: "Véu discreto e elegante para apresentação.",
+        inspiracao: "Sutileza e respeito em cada detalhe.",
+        conceito: "Complemento pensado para cerimônias com estética tradicional.",
+        especificacoes: "Tecido leve • acabamento fino • tamanho padrão.",
     },
     {
-        id: 301,
-        categoria: "URNAS",
-        linha: "ESSENCIA",
-        nome: "Urna Essencia Clássica",
-        preco: 1290,
-        saldo: 11,
-        thumb: mockImg("URNA CLÁSSICA", 110),
-        descricaoCurta: "Clássico atemporal com ótimo custo-benefício.",
-        inspiracao: "Essência é o que permanece: simplicidade com significado e presença.",
-        conceito: "Linha pensada para atender com dignidade, sem abrir mão da estética e da qualidade.",
-        especificacoes: "Estrutura resistente • acabamento padrão • forração interna • fecho simples • encaixes firmes.",
+        id: 1002,
+        categoria: "APRESENTACAO",
+        nome: "Arranjo Floral (mock)",
+        preco: 180,
+        saldo: 20,
+        thumb: mockImg("ARRANJO", 168),
+        descricaoCurta: "Arranjo floral simbólico (mock).",
+        inspiracao: "Uma homenagem visual delicada.",
+        conceito: "Peça complementar para cerimônia.",
+        especificacoes: "Composição mista • base simples • montagem rápida.",
     },
+    // ESPAÇO DE DESPEDIDA
     {
-        id: 401,
-        categoria: "URNAS",
-        linha: "ETERNUM",
-        nome: "Urna Eternum Lux",
-        preco: 2590,
-        saldo: 1,
-        thumb: mockImg("URNA LUX", 190),
-        descricaoCurta: "Luxo e detalhes marcantes para uma homenagem inesquecível.",
-        inspiracao: "Eternum simboliza memória duradoura e respeito, com um design mais sofisticado.",
-        conceito: "Produto premium com foco em acabamento e elegância para cerimônias especiais.",
-        especificacoes: "Madeira selecionada • detalhes em alto-relevo • forração premium • sistema de fechamento reforçado.",
+        id: 2001,
+        categoria: "ESPACO_DESPEDIDA",
+        nome: "Kit Velas Cerimoniais",
+        preco: 90,
+        saldo: 60,
+        thumb: mockImg("VELAS", 210),
+        descricaoCurta: "Kit com velas para ambientação do espaço.",
+        inspiracao: "Luz como símbolo de memória.",
+        conceito: "Acompanha cerimônias em espaço de despedida.",
+        especificacoes: "6 unidades • suporte simples.",
     },
+    // PREPARAÇÃO E CUIDADO
     {
-        id: 501,
-        categoria: "URNAS",
-        linha: "ALVORADA",
-        nome: "Urna Alvorada Brisa",
-        preco: 1390,
-        saldo: 5,
-        thumb: mockImg("URNA BRISA", 220),
-        descricaoCurta: "Leveza visual com acabamento delicado e moderno.",
-        inspiracao: "Alvorada remete a luz suave e esperança — um tributo com serenidade.",
-        conceito: "Uma linha de estética clean e aconchegante para despedidas com delicadeza.",
-        especificacoes: "Acabamento clean • bordas suaves • forração interna • detalhes minimalistas.",
+        id: 3001,
+        categoria: "PREPARACAO_CUIDADO",
+        nome: "Preparação Básica (mock)",
+        preco: 300,
+        saldo: 999,
+        thumb: mockImg("PREPARO", 120),
+        descricaoCurta: "Serviço de preparação (mock).",
+        inspiracao: "Cuidado e dignidade.",
+        conceito: "Etapa de preparação para cerimônia.",
+        especificacoes: "Procedimento padrão • equipe especializada (mock).",
     },
+    // AMBIENTAÇÃO
     {
-        id: 601,
-        categoria: "URNAS",
-        linha: "AMPARO",
-        nome: "Urna Amparo Confort",
-        preco: 1190,
-        saldo: 7,
-        thumb: mockImg("URNA CONFORT", 260),
-        descricaoCurta: "Conforto e acolhimento em cada detalhe.",
-        inspiracao: "Amparo é cuidado — uma proposta de acolhimento e presença gentil.",
-        conceito: "Ideal para famílias que preferem um design simples, bem construído e respeitoso.",
-        especificacoes: "Estrutura robusta • acabamento padrão • forração interna • fecho reforçado.",
+        id: 4001,
+        categoria: "AMBIENTACAO",
+        nome: "Ambientação Suave (mock)",
+        preco: 220,
+        saldo: 999,
+        thumb: mockImg("AMBIENTAÇÃO", 90),
+        descricaoCurta: "Ambientação com elementos suaves (mock).",
+        inspiracao: "Conforto e serenidade.",
+        conceito: "Complemento para o clima da cerimônia.",
+        especificacoes: "Itens decorativos • montagem simples.",
+    },
+    // CUIDADOS ADICIONAIS
+    {
+        id: 5001,
+        categoria: "CUIDADOS_ADICIONAIS",
+        nome: "Cuidados Adicionais (mock)",
+        preco: 140,
+        saldo: 999,
+        thumb: mockImg("CUIDADOS", 260),
+        descricaoCurta: "Serviços adicionais (mock).",
+        inspiracao: "Atenção aos detalhes.",
+        conceito: "Complemento conforme necessidade.",
+        especificacoes: "Pacote flexível (mock).",
     },
 ];
 
@@ -298,7 +403,6 @@ function TopRightNav({
     onCheck,
     disabledBack,
     showCheck = true,
-    checkBadge,
 }: {
     onBack: () => void;
     onHome: () => void;
@@ -306,7 +410,6 @@ function TopRightNav({
     onCheck?: () => void;
     disabledBack?: boolean;
     showCheck?: boolean;
-    checkBadge?: string | number;
 }) {
     return (
         <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
@@ -323,9 +426,8 @@ function TopRightNav({
             </button>
 
             {showCheck ? (
-                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Finalizar orçamento" title="Finalizar orçamento">
+                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Concluir" title="Concluir">
                     <IconCheck />
-                    {checkBadge ? <span className="badge">{checkBadge}</span> : null}
                 </button>
             ) : null}
         </div>
@@ -369,12 +471,14 @@ function Modal({
     children,
     onClose,
     footer,
+    maxWidth = 680,
 }: {
     open: boolean;
     title: string;
     children: React.ReactNode;
     onClose: () => void;
     footer?: React.ReactNode;
+    maxWidth?: number;
 }) {
     useEffect(() => {
         if (!open) return;
@@ -397,7 +501,7 @@ function Modal({
                 if (e.currentTarget === e.target) onClose();
             }}
         >
-            <div className="modalCard">
+            <div className="modalCard" style={{ width: `min(${maxWidth}px, 96vw)` }}>
                 <div className="modalHeader">
                     <div className="modalTitle">{title}</div>
                     <button type="button" className="modalClose" onClick={onClose} aria-label="Fechar modal" title="Fechar">
@@ -428,38 +532,53 @@ async function toDataUrl(url: string): Promise<string | null> {
     }
 }
 
+function labelCategoria(c: CategoriaFluxo) {
+    const map: Record<CategoriaFluxo, string> = {
+        URNAS: "URNAS",
+        APRESENTACAO: "APRESENTAÇÃO",
+        ESPACO_DESPEDIDA: "ESPAÇO DE DESPEDIDA",
+        PREPARACAO_CUIDADO: "PREPARAÇÃO E CUIDADO",
+        AMBIENTACAO: "AMBIENTAÇÃO",
+        CUIDADOS_ADICIONAIS: "CUIDADOS ADICIONAIS",
+    };
+    return map[c];
+}
+
 // ---------- main page ----------
 export default function Page() {
     const [stack, setStack] = useState<CatalogGroup[]>(["home"]);
     const current = stack[stack.length - 1];
 
-    const [categoria, setCategoria] = useState<Categoria | null>(null);
+    // catálogo
+    const [categoria, setCategoria] = useState<CategoriaFluxo | null>(null);
     const [linha, setLinha] = useState<Linha | null>(null);
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
     const pageSize = 8;
-
     const [selected, setSelected] = useState<Produto | null>(null);
     const [openPrices, setOpenPrices] = useState(false);
 
-    // “Carrinho” do orçamento em construção
+    // itens selecionados (não duplica)
     const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
-    const draftCount = useMemo(() => draftItens.reduce((a, b) => a + clampInt(b.qtd), 0), [draftItens]);
-    const draftTotal = useMemo(() => {
-        let t = 0;
-        for (const it of draftItens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
-        return t;
-    }, [draftItens]);
 
-    // Orçamentos salvos (lista)
+    // orçamentos
     const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
     const [orcamentoSelecionadoId, setOrcamentoSelecionadoId] = useState<string | null>(null);
 
-    // Modal de finalizar orçamento
-    const [openFinalize, setOpenFinalize] = useState(false);
+    // ----- fluxo de homenagem (operador + dados iniciais) -----
+    const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+    const [loadingUsers, setLoadingUsers] = useState(false);
+    const [usersError, setUsersError] = useState<string | null>(null);
+
+    const [openUserPick, setOpenUserPick] = useState(false);
+    const [operadorSel, setOperadorSel] = useState<Usuario | null>(null);
+
+    const [openInicio, setOpenInicio] = useState(false);
     const [formResp, setFormResp] = useState("");
     const [formFalecido, setFormFalecido] = useState("");
     const [formTel, setFormTel] = useState("");
+
+    const [openConcluir, setOpenConcluir] = useState(false);
 
     const canBack = stack.length > 1;
 
@@ -479,6 +598,16 @@ export default function Page() {
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
+
+        // não zera orçamentos salvos, mas zera o fluxo atual:
+        setDraftItens([]);
+        setOperadorSel(null);
+        setFormResp("");
+        setFormFalecido("");
+        setFormTel("");
+        setOpenUserPick(false);
+        setOpenInicio(false);
+        setOpenConcluir(false);
     }, []);
 
     const goBudgets = useCallback(() => {
@@ -486,36 +615,77 @@ export default function Page() {
     }, []);
 
     const list = useCallback(() => {
-        if (categoria) {
-            if (categoria === "URNAS") setStack(["home", "elementos", "urnas_linhas", "listagem"]);
-            else setStack(["home", "elementos", "listagem"]);
+        // ícone "lista": volta para o menu de categorias do fluxo se já começou; senão home->elementos
+        if (operadorSel && formResp.trim() && formFalecido.trim() && formTel.trim()) {
+            setStack(["home", "elementos"]);
             return;
         }
+        setStack(["home"]);
+    }, [operadorSel, formResp, formFalecido, formTel]);
+
+    // ---------- usuários ----------
+    const fetchUsuarios = useCallback(async () => {
+        setLoadingUsers(true);
+        setUsersError(null);
+        try {
+            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`);
+            setUsuarios(Array.isArray(j) ? (j as Usuario[]) : []);
+        } catch (e: any) {
+            setUsuarios([]);
+            setUsersError(e?.message || "Erro ao listar usuários.");
+        } finally {
+            setLoadingUsers(false);
+        }
+    }, []);
+
+    const openFluxoHomenagem = useCallback(async () => {
+        setOpenUserPick(true);
+        if (!usuarios.length) {
+            await fetchUsuarios();
+        }
+    }, [fetchUsuarios, usuarios.length]);
+
+    const selectOperador = useCallback((u: Usuario) => {
+        setOperadorSel(u);
+        setOpenUserPick(false);
+
+        // abrir modal de início (dados da homenagem)
+        setFormResp("");
+        setFormFalecido("");
+        setFormTel("");
+        setOpenInicio(true);
+    }, []);
+
+    const iniciarHomenagem = useCallback(() => {
+        const responsavel = formResp.trim();
+        const falecido = formFalecido.trim();
+        const telefone = formTel.trim();
+
+        if (!operadorSel) {
+            alert("Selecione o Operador.");
+            return;
+        }
+        if (!responsavel || !falecido || !telefone) {
+            alert("Preencha Responsável, Falecido(a) e Telefone.");
+            return;
+        }
+
+        // inicia o fluxo no menu de categorias
+        setOpenInicio(false);
+        setDraftItens([]);
+        setCategoria(null);
+        setLinha(null);
+        setQ("");
+        setPage(1);
+        setSelected(null);
+        setOpenPrices(false);
+
         setStack(["home", "elementos"]);
-    }, [categoria]);
+    }, [formResp, formFalecido, formTel, operadorSel]);
 
-    const elementosMenu = useMemo(() => {
-        return [
-            {
-                key: "urnas",
-                title: "URNAS",
-                action: () => {
-                    setCategoria("URNAS");
-                    setLinha(null);
-                    setQ("");
-                    setPage(1);
-                    go("urnas_linhas");
-                },
-            },
-            { key: "apresentacao", title: "APRESENTAÇÃO", action: () => console.info("Mock: submenu") },
-            { key: "espaco", title: "ESPAÇO DE\nDESPEDIDA", action: () => console.info("Mock: submenu") },
-            { key: "prep", title: "PREPARAÇÃO E\nCUIDADO", action: () => console.info("Mock: submenu") },
-            { key: "amb", title: "AMBIENTAÇÃO", action: () => console.info("Mock: submenu") },
-            { key: "cuidados", title: "CUIDADOS\nADICIONAIS", action: () => console.info("Mock: submenu") },
-        ] as Array<{ key: string; title: string; action: () => void }>;
-    }, [go]);
-
+    // ---------- catálogo ----------
     useEffect(() => {
+        // URNAS usa LINHAS; demais vão direto para listagem
         if (categoria !== "URNAS" && linha) setLinha(null);
     }, [categoria, linha]);
 
@@ -544,12 +714,6 @@ export default function Page() {
         if (page > totalPages) setPage(totalPages);
         if (page < 1) setPage(1);
     }, [totalPages, page]);
-
-    useEffect(() => {
-        if (current !== "listagem") return;
-        if (!categoria) setCategoria("URNAS");
-        if ((categoria ?? "URNAS") === "URNAS" && !linha) setLinha("SERENIDADE");
-    }, [current, categoria, linha]);
 
     const openProduct = useCallback(
         (p: Produto) => {
@@ -589,36 +753,112 @@ export default function Page() {
         ];
     }, [selected]);
 
+    // ---------- draft: add (sem duplicar) ----------
     const addToDraft = useCallback((p: Produto) => {
         setDraftItens((prev) => {
-            const idx = prev.findIndex((x) => x.produtoId === p.id);
-            if (idx >= 0) {
-                const copy = prev.slice();
-                copy[idx] = { ...copy[idx], qtd: clampInt(copy[idx].qtd) + 1 };
-                return copy;
+            const exists = prev.some((x) => x.produtoId === p.id);
+            if (exists) {
+                alert("Este item já foi adicionado.");
+                return prev;
             }
-            return [...prev, { produtoId: p.id, nome: p.nome, valorUnit: Number(p.preco) || 0, qtd: 1 }];
+            return [
+                ...prev,
+                {
+                    produtoId: p.id,
+                    nome: p.nome,
+                    categoria: p.categoria,
+                    linha: p.linha,
+                    valorUnit: Number(p.preco) || 0,
+                    qtd: 1,
+                },
+            ];
         });
     }, []);
 
-    const openFinalizeModal = useCallback(() => {
-        if (!draftItens.length) {
-            alert("Nenhum item no orçamento. Adicione itens com o botão +.");
+    const groupedByCategoria = useMemo(() => {
+        const g: Record<string, OrcamentoItem[]> = {};
+        for (const it of draftItens) {
+            const k = it.categoria;
+            if (!g[k]) g[k] = [];
+            g[k].push(it);
+        }
+        return g as Record<CategoriaFluxo, OrcamentoItem[]>;
+    }, [draftItens]);
+
+    // ---------- navegação Próximo Passo / Retornar ----------
+    const currentCatIndex = useMemo(() => {
+        if (!categoria) return -1;
+        return CATEGORIAS_FLUXO.findIndex((x) => x.id === categoria);
+    }, [categoria]);
+
+    const goCategoria = useCallback(
+        (cat: CategoriaFluxo) => {
+            setCategoria(cat);
+            setQ("");
+            setPage(1);
+            setSelected(null);
+            setOpenPrices(false);
+
+            if (cat === "URNAS") {
+                setLinha(null);
+                setStack(["home", "elementos", "urnas_linhas"]);
+            } else {
+                setLinha(null);
+                setStack(["home", "elementos", "listagem"]);
+            }
+        },
+        []
+    );
+
+    const nextCategoria = useCallback(() => {
+        const idx = currentCatIndex;
+        if (idx < 0) return;
+        const next = CATEGORIAS_FLUXO[idx + 1]?.id;
+        if (!next) {
+            setOpenConcluir(true);
             return;
         }
-        setFormResp("");
-        setFormFalecido("");
-        setFormTel("");
-        setOpenFinalize(true);
-    }, [draftItens.length]);
+        goCategoria(next);
+    }, [currentCatIndex, goCategoria]);
 
-    const createOrcamento = useCallback(() => {
+    const prevCategoria = useCallback(() => {
+        const idx = currentCatIndex;
+        if (idx <= 0) {
+            // se está na primeira, volta para menu de categorias
+            setStack(["home", "elementos"]);
+            setCategoria(null);
+            setLinha(null);
+            setQ("");
+            setPage(1);
+            setSelected(null);
+            return;
+        }
+        const prev = CATEGORIAS_FLUXO[idx - 1]?.id;
+        if (!prev) return;
+        goCategoria(prev);
+    }, [currentCatIndex, goCategoria]);
+
+    const openConcluirModal = useCallback(() => {
+        // pode concluir mesmo sem itens
+        if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) {
+            alert("Para concluir, inicie a homenagem (Operador + dados).");
+            return;
+        }
+        setOpenConcluir(true);
+    }, [operadorSel, formResp, formFalecido, formTel]);
+
+    // ---------- criar orçamento (somente no Finalizar) ----------
+    const finalizarOrcamento = useCallback(() => {
+        if (!operadorSel) {
+            alert("Operador não selecionado.");
+            return;
+        }
         const responsavel = formResp.trim();
         const falecido = formFalecido.trim();
         const telefone = formTel.trim();
 
         if (!responsavel || !falecido || !telefone) {
-            alert("Preencha Responsável, Falecido(a) e Telefone.");
+            alert("Dados da homenagem incompletos.");
             return;
         }
 
@@ -631,19 +871,34 @@ export default function Page() {
         const novo: Orcamento = {
             id,
             criadoEmISO: now.toISOString(),
+
+            operadorId: operadorSel.id,
+            operadorNome: operadorSel.nome,
+            operadorUsuario: operadorSel.usuario,
+
             responsavel,
             falecido,
             telefone,
-            itens: draftItens.map((x) => ({ ...x, qtd: clampInt(x.qtd) })),
+
+            itens: draftItens.map((x) => ({ ...x, qtd: 1 })),
         };
 
         setOrcamentos((prev) => [novo, ...prev]);
-        setDraftItens([]);
-        setOpenFinalize(false);
 
+        // reset fluxo atual
+        setDraftItens([]);
+        setCategoria(null);
+        setLinha(null);
+        setQ("");
+        setPage(1);
+        setSelected(null);
+        setOpenPrices(false);
+        setOpenConcluir(false);
+
+        // ir para lista
         setOrcamentoSelecionadoId(null);
         setStack(["home", "orcamentos"]);
-    }, [draftItens, formResp, formFalecido, formTel]);
+    }, [draftItens, formFalecido, formResp, formTel, operadorSel]);
 
     const openOrcamentoResumo = useCallback((id: string) => {
         setOrcamentoSelecionadoId(id);
@@ -664,49 +919,53 @@ export default function Page() {
 
     // ---------- EXPORT PDF (Resumo) ----------
     const exportarResumoPDF = useCallback(async (o: Orcamento) => {
-        if (!o.itens.length) {
-            alert("Nenhum item para exportar.");
-            return;
-        }
-
         const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
 
         const logoDataUrl = await toDataUrl(LOGO_URL_PDF);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
+        const dt = new Date(o.criadoEmISO);
+        const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
         const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
 
+        // A4 landscape
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
         const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
         const marginX = 12;
 
-        // Cabeçalho: logo esquerda / título central / gerado em direita
-        const topY = 10;
+        let y = 12;
 
+        // Logo (top-left)
         if (logoDataUrl) {
-            doc.addImage(logoDataUrl, logoFormat as any, marginX, topY, 45, 13);
+            const imgW = 40;
+            const imgH = 12;
+            doc.addImage(logoDataUrl, logoFormat as any, marginX, y, imgW, imgH);
         }
 
+        // Título (ao lado)
+        doc.setTextColor(15, 23, 42);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(16);
-        doc.setTextColor(15, 23, 42);
-        doc.text("Resumo da Homenagem", pageW / 2, topY + 8, { align: "center" });
+        doc.text("Resumo da Homenagem", marginX + 45, y + 8);
 
+        // Gerado em (top-right)
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9.5);
         doc.setTextColor(51, 65, 85);
-        doc.text(`Gerado em: ${geradoEm}`, pageW - marginX, topY + 8, { align: "right" });
+        doc.text(`Gerado em: ${geradoEm}`, pageW - marginX, y + 8, { align: "right" });
 
-        // ORÇAMENTO Nº abaixo do título
-        let y = topY + 20;
+        y += 18;
+
+        // Número do orçamento embaixo do título
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
-        doc.text(`ORÇAMENTO Nº ${o.id}`, pageW / 2, y, { align: "center" });
+        doc.text(`Nº ${o.id}`, marginX + 45, y);
 
-        // Box: somente Responsável / Falecido(a) / Telefone
-        y += 6;
+        y += 8;
+
+        // Caixa com dados (somente Responsável/Falecido/Telefone + Data)
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
         doc.roundedRect(marginX, y, pageW - marginX * 2, 18, 2, 2, "FD");
@@ -715,19 +974,23 @@ export default function Page() {
         doc.setFontSize(10);
         doc.setTextColor(30, 41, 59);
 
-        doc.text(`Responsável: ${o.responsavel}`, marginX + 4, y + 6);
-        doc.text(`Falecido(a): ${o.falecido}`, marginX + 4, y + 12);
-        doc.text(`Telefone: ${o.telefone}`, pageW / 2, y + 6);
+        doc.text(`Responsável: ${o.responsavel}`, marginX + 3, y + 6);
+        doc.text(`Falecido(a): ${o.falecido}`, marginX + 3, y + 12);
+        doc.text(`Telefone: ${o.telefone}`, marginX + 85, y + 12);
+
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text(`Data: ${dataBR}`, pageW - marginX - 3, y + 6, { align: "right" });
 
         y += 24;
 
         // Tabela
-        const head = ["Item", "Qtd", "Valor (un)", "Subtotal"];
+        const head = ["Categoria", "Item", "Qtd", "Valor (un)", "Subtotal"];
         const body = o.itens.map((it) => {
             const qtd = clampInt(it.qtd);
             const v = Number(it.valorUnit) || 0;
             const sub = qtd * v;
-            return [it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
+            return [labelCategoria(it.categoria), it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
         });
 
         const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
@@ -752,20 +1015,25 @@ export default function Page() {
                 valign: "middle",
             },
             columnStyles: {
-                0: { cellWidth: 190, overflow: "linebreak" },
-                1: { halign: "right", cellWidth: 18 },
-                2: { halign: "right", cellWidth: 34 },
-                3: { halign: "right", cellWidth: 34 },
+                0: { cellWidth: 48 },
+                1: { cellWidth: 150, overflow: "linebreak" },
+                2: { halign: "right", cellWidth: 16 },
+                3: { halign: "right", cellWidth: 32 },
+                4: { halign: "right", cellWidth: 34 },
+            },
+            didParseCell: (data) => {
+                if (data.section === "body" && data.column.index === 2) data.cell.styles.halign = "right";
+                if (data.section === "body" && data.column.index >= 3) data.cell.styles.halign = "right";
             },
         });
 
         const afterY = (doc as any).lastAutoTable?.finalY ?? y;
 
-        // Total box (direita)
-        const boxW = 60;
-        const boxH = 13;
+        // Total box no canto direito
+        const boxW = 54;
+        const boxH = 12;
         const boxX = pageW - marginX - boxW;
-        const boxY = afterY + 6;
+        const boxY = Math.min(afterY + 6, pageH - marginX - boxH);
 
         doc.setFillColor(2, 156, 222);
         doc.setDrawColor(2, 156, 222);
@@ -774,9 +1042,8 @@ export default function Page() {
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12);
-        doc.text(formatBRL(total), boxX + boxW - 3, boxY + 9, { align: "right" });
+        doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
 
-        // sem logo no rodapé
         const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }, []);
@@ -786,7 +1053,7 @@ export default function Page() {
         <ScreenContainer>
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div className="homeBtns">
-                    <button type="button" className="homeBtn" onClick={() => go("elementos")}>
+                    <button type="button" className="homeBtn" onClick={openFluxoHomenagem}>
                         ELEMENTOS DE HOMENAGEM
                     </button>
 
@@ -800,22 +1067,40 @@ export default function Page() {
 
     const ScreenElementos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={list}
+                onCheck={openConcluirModal}
+                disabledBack={!canBack}
+                showCheck={true}
+            />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div className="gridMenu2">
-                {elementosMenu.map((it) => (
-                    <BigButton key={it.key} label={it.title} onClick={it.action} />
+                {CATEGORIAS_FLUXO.map((it) => (
+                    <BigButton
+                        key={it.id}
+                        label={it.label}
+                        onClick={() => {
+                            goCategoria(it.id);
+                        }}
+                    />
                 ))}
             </div>
-
-            {/* REMOVIDO: Itens no orçamento / Total */}
         </ScreenContainer>
     );
 
     const ScreenLinhas = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={list}
+                onCheck={openConcluirModal}
+                disabledBack={!canBack}
+                showCheck={true}
+            />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
@@ -831,7 +1116,7 @@ export default function Page() {
                             setLinha(l.id);
                             setQ("");
                             setPage(1);
-                            go("listagem");
+                            setStack(["home", "elementos", "urnas_linhas", "listagem"]);
                         }}
                     />
                 ))}
@@ -841,14 +1126,22 @@ export default function Page() {
 
     const ScreenListagem = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={list}
+                onCheck={openConcluirModal}
+                disabledBack={!canBack}
+                showCheck={true}
+            />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
-                    <div className="listTitle">PÁGINA DE LISTAGEM DE PRODUTOS</div>
+                    <div className="listTitle">{categoria ? labelCategoria(categoria) : "CATÁLOGO"}</div>
 
                     <div className="listSubTitle">
-                        {categoria ? `${categoria}` : "CATÁLOGO"} {linha ? `• LINHA ${linha}` : ""}
+                        {categoria ? `${labelCategoria(categoria)}` : "CATÁLOGO"}{" "}
+                        {categoria === "URNAS" && linha ? `• LINHA ${linha}` : ""}
                     </div>
 
                     <div className="searchRow">
@@ -898,6 +1191,10 @@ export default function Page() {
         </ScreenContainer>
     );
 
+    const showStepperButtons = Boolean(categoria); // só aparece quando já está em uma categoria do fluxo
+
+    const isLastCategoria = currentCatIndex === CATEGORIAS_FLUXO.length - 1;
+
     const ScreenDetalhe = (
         <ScreenContainer>
             <TopRightNav
@@ -908,19 +1205,26 @@ export default function Page() {
                 onHome={home}
                 onList={() => {
                     setOpenPrices(false);
-                    setStack((s) => {
-                        const idx = s.lastIndexOf("listagem");
-                        if (idx >= 0) return s.slice(0, idx + 1);
-                        return ["home", "elementos"];
-                    });
+                    // volta para listagem da categoria atual (ou menu se não tiver)
+                    if (categoria === "URNAS") {
+                        setStack((s) => {
+                            const idx = s.lastIndexOf("listagem");
+                            if (idx >= 0) return s.slice(0, idx + 1);
+                            return ["home", "elementos", "urnas_linhas", "listagem"];
+                        });
+                    } else if (categoria) {
+                        setStack(["home", "elementos", "listagem"]);
+                    } else {
+                        setStack(["home", "elementos"]);
+                    }
                 }}
-                onCheck={openFinalizeModal}
-                checkBadge={draftCount || ""}
+                onCheck={openConcluirModal}
+                showCheck={true}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listTitle" style={{ marginBottom: 10 }}>
-                    PÁGINA DE APRESENTAÇÃO DO PRODUTO
+                    {selected?.linha ? `Linha: ${selected.linha}` : "Linha: -"}
                 </div>
 
                 {!selected ? (
@@ -929,6 +1233,7 @@ export default function Page() {
                     </div>
                 ) : (
                     <div className="detailLayout">
+                        {/* esquerda */}
                         <div className="detailLeft">
                             <div className="detailImgCard">
                                 <img src={selected.thumb} alt={selected.nome} className="detailImg" />
@@ -954,9 +1259,15 @@ export default function Page() {
                                         <b>Linha:</b> {selected.linha}
                                     </div>
                                 ) : null}
+                                {categoria ? (
+                                    <div className="metaPill">
+                                        <b>Categoria:</b> {labelCategoria(categoria)}
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
 
+                        {/* direita */}
                         <div className="detailRight">
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
@@ -994,12 +1305,21 @@ export default function Page() {
                                         <IconDollar />
                                     </button>
 
-                                    <button type="button" className="iconActionBtn" onClick={() => addToDraft(selected)} aria-label="Adicionar a orçamento" title="Adicionar a orçamento">
+                                    <button type="button" className="iconActionBtn" onClick={() => addToDraft(selected)} aria-label="Adicionar" title="Adicionar">
                                         <IconPlus />
                                     </button>
-
-                                    {/* REMOVIDO: Itens/Total */}
                                 </div>
+
+                                {showStepperButtons ? (
+                                    <div className="stepperRow">
+                                        <button type="button" className="stepBtn stepBtnGhost" onClick={prevCategoria}>
+                                            Retornar
+                                        </button>
+                                        <button type="button" className="stepBtn" onClick={nextCategoria}>
+                                            {isLastCategoria ? "Concluir" : "Próximo Passo"}
+                                        </button>
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
                     </div>
@@ -1042,7 +1362,7 @@ export default function Page() {
 
     const ScreenOrcamentos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openConcluirModal} disabledBack={!canBack} showCheck={false} />
             <Title>LISTA DE ORÇAMENTOS</Title>
 
             <div className="budgetsWrap">
@@ -1066,7 +1386,7 @@ export default function Page() {
                                             Data: <b>{dataBR}</b>
                                         </div>
                                         <div className="budgetSmall">
-                                            Itens: <b>{o.itens.reduce((a, b) => a + clampInt(b.qtd), 0)}</b>
+                                            Itens: <b>{o.itens.length}</b>
                                         </div>
                                         <div className="budgetTotal">{formatBRL(total)}</div>
                                     </div>
@@ -1076,7 +1396,7 @@ export default function Page() {
                     </div>
                 ) : (
                     <div className="emptyState" style={{ margin: "0 26px" }}>
-                        Nenhum orçamento ainda. Adicione itens com <b>+</b> e finalize com <b>✅</b>.
+                        Nenhum orçamento ainda.
                     </div>
                 )}
             </div>
@@ -1085,15 +1405,8 @@ export default function Page() {
 
     const ScreenResumo = (
         <ScreenContainer>
-            {/* Topo direito: Voltar (para lista) + ✅ + 🖨️ */}
             <div className="resumoTopBar">
-                <button
-                    type="button"
-                    className="iconBtn resumoBtn"
-                    onClick={() => setStack(["home", "orcamentos"])}
-                    title="Voltar para lista de orçamentos"
-                    aria-label="Voltar para lista de orçamentos"
-                >
+                <button type="button" className="iconBtn resumoBtn" onClick={() => setStack(["home", "orcamentos"])} title="Voltar (lista)">
                     <IconBack />
                 </button>
 
@@ -1101,12 +1414,7 @@ export default function Page() {
                     <IconCheck />
                 </button>
 
-                <button
-                    type="button"
-                    className="iconBtn resumoBtn"
-                    onClick={() => (orcamentoSelecionado ? exportarResumoPDF(orcamentoSelecionado) : null)}
-                    title="Imprimir (PDF)"
-                >
+                <button type="button" className="iconBtn resumoBtn" onClick={() => (orcamentoSelecionado ? exportarResumoPDF(orcamentoSelecionado) : null)} title="Imprimir (PDF)">
                     <IconPrint />
                 </button>
             </div>
@@ -1120,17 +1428,15 @@ export default function Page() {
                     </div>
                 ) : (
                     <div className="resumoCard">
-                        <div className="resumoHeader">
-                            {/* Esquerda: logo + ORÇAMENTO / Nº */}
-                            <div className="resumoOrcLeft">
-                                <img src={LOGO_URL_UI} alt="PAI" className="resumoLogoTop" />
-                                <div className="resumoOrcText">
+                        <div className="resumoHeader2">
+                            <div className="resumoHeaderLeft">
+                                <img src={LOGO_URL_UI} alt="PAI" className="resumoLogoTopLeft" />
+                                <div className="resumoOrcBlock">
                                     <div className="resumoOrcMain">ORÇAMENTO</div>
                                     <div className="resumoOrcSub">Nº {orcamentoSelecionado.id}</div>
                                 </div>
                             </div>
 
-                            {/* Meio: infos (empurrado para direita pra liberar espaço) */}
                             <div className="resumoInfo">
                                 <div className="resumoLine">
                                     <b>Responsável:</b> {orcamentoSelecionado.responsavel}
@@ -1143,7 +1449,6 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            {/* Direita: data */}
                             <div className="resumoDate">
                                 <div className="resumoLine">
                                     <b>Data:</b>{" "}
@@ -1153,14 +1458,16 @@ export default function Page() {
                         </div>
 
                         <div className="resumoTable">
-                            <div className="resumoTableHead">
+                            <div className="resumoTableHead2">
+                                <div>Categoria</div>
                                 <div>Item</div>
                                 <div style={{ textAlign: "right" }}>Qtd</div>
                                 <div style={{ textAlign: "right" }}>Valor</div>
                             </div>
 
                             {orcamentoSelecionado.itens.map((it, idx) => (
-                                <div key={`${it.produtoId}-${idx}`} className="resumoRow">
+                                <div key={`${it.produtoId}-${idx}`} className="resumoRow2">
+                                    <div className="resumoCat">{labelCategoria(it.categoria)}</div>
                                     <div className="resumoItemName">{it.nome}</div>
                                     <div style={{ textAlign: "right" }}>{clampInt(it.qtd)}</div>
                                     <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
@@ -1177,23 +1484,6 @@ export default function Page() {
                                 <div className="resumoTotalLabel">Total</div>
                                 <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
                             </div>
-                        </div>
-
-                        <div className="resumoFooter">
-                            <div className="resumoPay">
-                                <div className="resumoPayTitle">Condições de pagamento</div>
-                                <div className="resumoPayRow">
-                                    <div>À vista</div>
-                                    <div className="resumoPayVal">{formatBRL(Math.max(0, totalOrcamentoSelecionado - 381))}</div>
-                                </div>
-                                <div className="resumoPayRow">
-                                    <div>À prazo</div>
-                                    <div className="resumoPayVal">até 6 vezes</div>
-                                </div>
-                            </div>
-
-                            {/* REMOVIDO: Logo rodapé + Exportar CSV */}
-                            <div />
                         </div>
                     </div>
                 )}
@@ -1217,21 +1507,75 @@ export default function Page() {
 
             {screen}
 
+            {/* MODAL: Selecionar Operador */}
             <Modal
-                open={openFinalize}
-                title="Finalizar orçamento"
-                onClose={() => setOpenFinalize(false)}
+                open={openUserPick}
+                title="Selecionar Operador"
+                onClose={() => setOpenUserPick(false)}
+                maxWidth={760}
                 footer={
                     <div style={{ display: "flex", gap: 10 }}>
-                        <button type="button" className="ctaBtn" onClick={() => setOpenFinalize(false)} style={{ minWidth: 160 }}>
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={() => {
+                                setOpenUserPick(false);
+                            }}
+                            style={{ minWidth: 180 }}
+                        >
                             CANCELAR
                         </button>
-                        <button type="button" className="ctaBtn" onClick={createOrcamento} style={{ minWidth: 220 }}>
-                            OK • ENVIAR PARA LISTA
+                        <button type="button" className="ctaBtn" onClick={fetchUsuarios} style={{ minWidth: 220 }} disabled={loadingUsers}>
+                            {loadingUsers ? "ATUALIZANDO..." : "ATUALIZAR LISTA"}
                         </button>
                     </div>
                 }
             >
+                {usersError ? <div className="errorBox">{usersError}</div> : null}
+
+                <div className="usersGrid">
+                    {loadingUsers ? (
+                        <div className="emptyState" style={{ marginTop: 0 }}>
+                            Carregando usuários...
+                        </div>
+                    ) : usuarios.length ? (
+                        usuarios.map((u) => (
+                            <button key={u.id} type="button" className="userCard" onClick={() => selectOperador(u)} title="Selecionar">
+                                <div className="userName">{u.nome}</div>
+                                <div className="userUser">@{u.usuario}</div>
+                            </button>
+                        ))
+                    ) : (
+                        <div className="emptyState" style={{ marginTop: 0 }}>
+                            Nenhum usuário encontrado.
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
+            {/* MODAL: Início da Homenagem */}
+            <Modal
+                open={openInicio}
+                title="Início da Homenagem"
+                onClose={() => setOpenInicio(false)}
+                maxWidth={860}
+                footer={
+                    <div style={{ display: "flex", gap: 10 }}>
+                        <button type="button" className="ctaBtn" onClick={() => setOpenInicio(false)} style={{ minWidth: 180 }}>
+                            CANCELAR
+                        </button>
+                        <button type="button" className="ctaBtn" onClick={iniciarHomenagem} style={{ minWidth: 220 }}>
+                            COMEÇAR
+                        </button>
+                    </div>
+                }
+            >
+                <div className="inicioTopHint">
+                    <div>
+                        <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                    </div>
+                </div>
+
                 <div className="formGrid">
                     <label className="formField">
                         <span>Responsável</span>
@@ -1245,19 +1589,77 @@ export default function Page() {
 
                     <label className="formField">
                         <span>Telefone</span>
-                        <input value={formTel} onChange={(e) => setFormTel(e.target.value)} className="formInput" placeholder="(xx) xxxxx-xxxx" />
+                        <input
+                            value={formTel}
+                            onChange={(e) => setFormTel(e.target.value)}
+                            className="formInput"
+                            placeholder="(xx) xxxxx-xxxx"
+                            type="tel"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                        />
                     </label>
+                </div>
+            </Modal>
 
-                    {/* ÚNICO lugar que mostra Itens/Total */}
-                    <div className="formResumo">
-                        <div>
-                            <b>Itens:</b> {draftCount}
-                        </div>
-                        <div>
-                            <b>Total:</b> {formatBRL(draftTotal)}
-                        </div>
+            {/* MODAL: Concluir (revisão + finalizar) */}
+            <Modal
+                open={openConcluir}
+                title="Revisão da Homenagem"
+                onClose={() => setOpenConcluir(false)}
+                maxWidth={980}
+                footer={
+                    <div style={{ display: "flex", gap: 10 }}>
+                        <button type="button" className="ctaBtn" onClick={() => setOpenConcluir(false)} style={{ minWidth: 180 }}>
+                            VOLTAR
+                        </button>
+                        <button type="button" className="ctaBtn" onClick={finalizarOrcamento} style={{ minWidth: 220 }}>
+                            FINALIZAR
+                        </button>
+                    </div>
+                }
+            >
+                <div className="reviewHeader">
+                    <div className="reviewLine">
+                        <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                    </div>
+                    <div className="reviewLine">
+                        <b>Responsável:</b> {formResp.trim() || "-"}
+                    </div>
+                    <div className="reviewLine">
+                        <b>Falecido(a):</b> {formFalecido.trim() || "-"}
+                    </div>
+                    <div className="reviewLine">
+                        <b>Telefone:</b> {formTel.trim() || "-"}
                     </div>
                 </div>
+
+                {draftItens.length === 0 ? (
+                    <div className="emptyState" style={{ marginTop: 12 }}>
+                        Nenhum item selecionado. Você pode finalizar mesmo assim.
+                    </div>
+                ) : (
+                    <div className="reviewWrap">
+                        {CATEGORIAS_FLUXO.map((c) => {
+                            const items = groupedByCategoria[c.id];
+                            if (!items?.length) return null;
+                            return (
+                                <div key={c.id} className="reviewBlock">
+                                    <div className="reviewCat">{labelCategoria(c.id)}</div>
+                                    <div className="reviewItems">
+                                        {items.map((it) => (
+                                            <div key={it.produtoId} className="reviewItemRow">
+                                                <div className="reviewItemName">{it.nome}</div>
+                                                <div className="reviewItemMeta">{it.linha ? `Linha: ${it.linha}` : ""}</div>
+                                                <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </Modal>
         </div>
     );
@@ -1320,24 +1722,6 @@ const css = `
     background: rgba(230, 255, 238, 0.92);
     border-color: rgba(16, 185, 129, 0.35);
     color: #065f46;
-  }
-
-  .badge{
-    position:absolute;
-    top: -8px;
-    right: -8px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: #0ea5e9;
-    color: #fff;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size: 12px;
-    font-weight: 900;
-    box-shadow: 0 10px 18px rgba(0,0,0,0.22);
   }
 
   .title{
@@ -1673,6 +2057,33 @@ const css = `
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
 
+  .stepperRow{
+    margin-top: 16px;
+    display:flex;
+    justify-content:flex-end;
+    gap: 10px;
+  }
+  .stepBtn{
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: #029cde;
+    border: 2px solid rgba(255,255,255,0.35);
+    box-shadow: var(--shadow);
+    color: #fff;
+    font-weight: 1000;
+    letter-spacing: 1px;
+    cursor:pointer;
+    min-width: 170px;
+  }
+  .stepBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
+  .stepBtn:active{ transform: translateY(0px) scale(0.995); }
+  .stepBtnGhost{
+    background: rgba(220,233,246,0.92);
+    color: #111;
+    border: 2px solid rgba(255,255,255,0.55);
+    min-width: 140px;
+  }
+
   .ctaBtn{
     border-radius: 14px;
     padding: 14px 16px;
@@ -1700,7 +2111,6 @@ const css = `
     z-index: 999;
   }
   .modalCard{
-    width: min(680px, 96vw);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
     border: 1px solid rgba(255,255,255,0.18);
@@ -1732,7 +2142,7 @@ const css = `
     justify-content:flex-end;
   }
 
-  /* finalize form */
+  /* forms */
   .formGrid{ display:grid; gap: 12px; }
   .formField{ display:grid; gap: 6px; font-weight: 900; color: rgba(255,255,255,0.95); }
   .formField span{ font-size: 12px; letter-spacing: 0.6px; opacity: 0.95; }
@@ -1746,15 +2156,43 @@ const css = `
     font-weight: 800;
   }
   .formInput::placeholder{ color: rgba(255,255,255,0.65); }
-  .formResumo{
-    margin-top: 8px;
+
+  /* users */
+  .usersGrid{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .userCard{
+    text-align:left;
     padding: 12px;
     border-radius: 14px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    cursor:pointer;
+    color: rgba(255,255,255,0.92);
+    font-weight: 900;
+  }
+  .userCard:hover{ filter: brightness(1.03); transform: translateY(-1px); }
+  .userName{ font-size: 15px; }
+  .userUser{ margin-top: 4px; opacity: 0.9; font-size: 12px; }
+
+  .errorBox{
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(239,68,68,0.16);
+    border: 1px solid rgba(239,68,68,0.35);
+    color: rgba(255,255,255,0.95);
+    font-weight: 900;
+  }
+
+  .inicioTopHint{
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
     background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.14);
-    display:flex;
-    gap: 18px;
-    justify-content: space-between;
     font-weight: 900;
   }
 
@@ -1825,7 +2263,8 @@ const css = `
     overflow:hidden;
     box-shadow: 0 20px 46px rgba(0,0,0,0.20);
   }
-  .resumoHeader{
+
+  .resumoHeader2{
     display:grid;
     grid-template-columns: 360px 1fr 220px;
     gap: 10px;
@@ -1834,20 +2273,20 @@ const css = `
     border-bottom: 1px solid rgba(2, 156, 222, 0.22);
     align-items: start;
   }
-
-  .resumoOrcLeft{
+  .resumoHeaderLeft{
     display:flex;
-    gap: 10px;
     align-items:flex-start;
+    gap: 12px;
   }
-  .resumoLogoTop{
-    width: 130px;
+  .resumoLogoTopLeft{
+    width: 120px;
     height: auto;
     object-fit: contain;
-    margin-top: 2px;
   }
-  .resumoOrcText{ display:flex; flex-direction:column; }
-
+  .resumoOrcBlock{
+    display:flex;
+    flex-direction:column;
+  }
   .resumoOrcMain{
     font-weight: 1000;
     color: #0b2b4d;
@@ -1860,6 +2299,7 @@ const css = `
     color: #0b2b4d;
     opacity: 0.9;
   }
+
   .resumoLine{
     color: #0b2b4d;
     font-weight: 800;
@@ -1873,18 +2313,18 @@ const css = `
     padding: 0 14px;
     background: rgba(255,255,255,0.92);
   }
-  .resumoTableHead{
+  .resumoTableHead2{
     display:grid;
-    grid-template-columns: 1fr 90px 140px;
+    grid-template-columns: 200px 1fr 90px 140px;
     gap: 10px;
     padding: 10px 0;
     border-bottom: 2px solid rgba(2,156,222,0.35);
     color: #0b2b4d;
     font-weight: 1000;
   }
-  .resumoRow{
+  .resumoRow2{
     display:grid;
-    grid-template-columns: 1fr 90px 140px;
+    grid-template-columns: 200px 1fr 90px 140px;
     gap: 10px;
     padding: 10px 0;
     border-bottom: 1px solid rgba(15,23,42,0.10);
@@ -1892,6 +2332,7 @@ const css = `
     font-weight: 800;
   }
   .resumoItemName{ text-transform: uppercase; }
+  .resumoCat{ font-weight: 1000; }
 
   .resumoBottom{
     display:flex;
@@ -1927,44 +2368,64 @@ const css = `
     letter-spacing: 0.5px;
   }
 
-  .resumoFooter{
-    padding: 14px;
-    display:flex;
-    align-items:flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    background: rgba(255,255,255,0.92);
-  }
-  .resumoPay{
+  /* revisão */
+  .reviewHeader{
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
     display:grid;
     gap: 6px;
-    color: #0b2b4d;
     font-weight: 900;
+    margin-bottom: 12px;
   }
-  .resumoPayTitle{ font-size: 13px; opacity: 0.9; }
-  .resumoPayRow{
-    display:flex;
+  .reviewLine{ font-weight: 900; }
+  .reviewWrap{
+    display:grid;
+    gap: 12px;
+  }
+  .reviewBlock{
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    overflow:hidden;
+  }
+  .reviewCat{
+    padding: 10px 12px;
+    font-weight: 1000;
+    background: rgba(255,255,255,0.08);
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+  }
+  .reviewItems{
+    padding: 10px 12px;
+    display:grid;
+    gap: 10px;
+  }
+  .reviewItemRow{
+    display:grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 12px;
     align-items:center;
-    justify-content: space-between;
-    gap: 14px;
-    min-width: 300px;
-    font-size: 13px;
   }
-  .resumoPayVal{ font-weight: 1000; }
+  .reviewItemName{ font-weight: 1000; }
+  .reviewItemMeta{ opacity: 0.9; font-size: 12px; grid-column: 1 / 2; }
+  .reviewItemPrice{ font-weight: 1000; white-space: nowrap; }
 
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
     .detailLayout{ grid-template-columns: 1fr; }
     .detailImgCard{ height: 300px; }
     .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
-    .resumoHeader{ grid-template-columns: 1fr; }
+    .resumoHeader2{ grid-template-columns: 1fr; }
     .resumoDate{ justify-content:flex-start; }
+    .usersGrid{ grid-template-columns: 1fr; }
   }
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
     .budgetGrid{ grid-template-columns: 1fr; }
-    .resumoTableHead, .resumoRow{ grid-template-columns: 1fr 70px 120px; }
-    .resumoOrcLeft{ align-items:center; }
+    .resumoTableHead2, .resumoRow2{ grid-template-columns: 140px 1fr 60px 110px; }
+    .stepperRow{ justify-content: space-between; }
+    .stepBtn{ min-width: 0; width: 100%; }
   }
 `;
