@@ -521,10 +521,17 @@ function Modal({
         >
             <div className="modalCard" style={{ width: `min(${maxWidth}px, 96vw)` }}>
                 <div className="modalHeader">
-                    <div className="modalTitle">{title}</div>
-                    <button type="button" className="modalClose" onClick={onClose} aria-label="Fechar modal" title="Fechar">
+                    <button
+                        type="button"
+                        className="modalClose"
+                        onClick={onClose}
+                        aria-label="Fechar modal"
+                        title="Fechar"
+                    >
                         ✕
                     </button>
+
+                    <div className="modalTitle">{title}</div>
                 </div>
                 <div className="modalBody">{children}</div>
                 {footer ? <div className="modalFooter">{footer}</div> : null}
@@ -2168,18 +2175,31 @@ const css = `
   max-height: min(88vh, 740px);
 }
   .modalHeader{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.14);
+}
+
+.modalTitle{
+  color: rgba(255,255,255,0.95);
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.modalClose{
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.92);
+  cursor:pointer;
   flex: 0 0 auto;
 }
-  .modalTitle{ color: rgba(255,255,255,0.95); font-weight: 900; letter-spacing: 0.8px; }
-  .modalClose{
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.92);
-    cursor:pointer;
-  }
   .modalBody{
   padding: 14px;
   color: rgba(255,255,255,0.92);
@@ -2216,12 +2236,9 @@ const css = `
   /* users */
   .usersGrid{
   display:grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: 1fr;     /* ✅ sempre 1 coluna */
   gap: 12px;
-  /* remove overflow/max-height daqui */
-}
 
-  /* ✅ evita lista “infinita” e melhora responsividade */
   max-height: min(56vh, 520px);
   overflow: auto;
   padding-right: 4px;
