@@ -3,13 +3,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
- * PAGE ÚNICA (page.tsx) — CATÁLOGO (protótipo)
+ * PAGE ÚNICA (page.tsx) — CATÁLOGO + ORÇAMENTOS (protótipo)
+ * - Home: Elementos / Lista de Orçamentos
+ * - Elementos -> Linhas -> Listagem -> Detalhe (adiciona no "carrinho" do orçamento com +)
+ * - Botão ✅ (ao lado de Voltar/Home/Lista): pede Responsável/Falecido/Telefone e cria Orçamento
+ * - Lista de Orçamentos: mostra Responsável + Falecido; clique abre Resumo da Homenagem
+ * - Resumo: botão 🖨️ exporta PDF (jsPDF + autoTable). Botão ✅ fica “sem função” (você altera depois)
  */
 
-type CatalogGroup = "home" | "elementos" | "urnas_linhas" | "listagem" | "detalhe";
+type CatalogGroup =
+    | "home"
+    | "elementos"
+    | "urnas_linhas"
+    | "listagem"
+    | "detalhe"
+    | "orcamentos"
+    | "resumo";
 
 type Categoria = "URNAS" | "ROUPAS" | "ORNAMENTACAO" | "PREPARACAO" | "AMBIENTACAO";
-
 type Linha = "SERENIDADE" | "HARMONIA" | "ESSENCIA" | "ETERNUM" | "ALVORADA" | "AMPARO";
 
 type Produto = {
@@ -26,15 +37,43 @@ type Produto = {
     especificacoes: string;
 };
 
+type OrcamentoItem = {
+    produtoId: number;
+    nome: string;
+    valorUnit: number;
+    qtd: number;
+};
+
+type Orcamento = {
+    id: string;
+    criadoEmISO: string;
+    responsavel: string;
+    falecido: string;
+    telefone: string;
+    itens: OrcamentoItem[];
+};
+
 const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
+const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png"; // canto inferior direito (tela)
+const LOGO_URL_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png"; // pdf
 
 // ---------- helpers UI ----------
 function cn(...parts: Array<string | false | null | undefined>) {
     return parts.filter(Boolean).join(" ");
 }
-
 function formatBRL(v: number) {
     return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function clampInt(v: any) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+}
+function escapeCsvCell(v: any, sep: string) {
+    const s = String(v ?? "");
+    const mustQuote = s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(sep);
+    const x = s.replace(/"/g, '""');
+    return mustQuote ? `"${x}"` : x;
 }
 
 // ---------- mock images (data-uri) ----------
@@ -80,12 +119,9 @@ const mockProdutos: Produto[] = [
         saldo: 8,
         thumb: mockImg("URNA ZEUS", 26),
         descricaoCurta: "Uma urna sóbria e sofisticada para homenagens memoráveis.",
-        inspiracao:
-            "O nome Zeus remete a uma presença soberana e única, evocando força e dignidade na despedida.",
-        conceito:
-            "Pensada para famílias que buscam a máxima homenagem possível, com acabamento premium e estética marcante.",
-        especificacoes:
-            "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
+        inspiracao: "O nome Zeus remete a uma presença soberana e única, evocando força e dignidade na despedida.",
+        conceito: "Pensada para famílias que buscam a máxima homenagem possível, com acabamento premium e estética marcante.",
+        especificacoes: "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
     },
     {
         id: 102,
@@ -98,8 +134,7 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Equilíbrio e beleza em linhas suaves e acabamento elegante.",
         inspiracao: "Aurora representa novos começos e serenidade, como um amanhecer de paz.",
         conceito: "Design harmônico e acolhedor para uma despedida com respeito e tranquilidade.",
-        especificacoes:
-            "MDF premium • pintura especial • detalhes em frisos • forração interna • fecho reforçado.",
+        especificacoes: "MDF premium • pintura especial • detalhes em frisos • forração interna • fecho reforçado.",
     },
     {
         id: 201,
@@ -111,10 +146,8 @@ const mockProdutos: Produto[] = [
         thumb: mockImg("URNA NOBRE", 55),
         descricaoCurta: "Acabamento refinado com presença discreta e imponente.",
         inspiracao: "Harmonia é equilíbrio: forma e função em um produto de alta qualidade.",
-        conceito:
-            "Criada para quem deseja uma homenagem com estética clássica e materiais selecionados.",
-        especificacoes:
-            "Madeira maciça • verniz fosco • cantos arredondados • forração interna • suporte de alças.",
+        conceito: "Criada para quem deseja uma homenagem com estética clássica e materiais selecionados.",
+        especificacoes: "Madeira maciça • verniz fosco • cantos arredondados • forração interna • suporte de alças.",
     },
     {
         id: 301,
@@ -127,8 +160,7 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Clássico atemporal com ótimo custo-benefício.",
         inspiracao: "Essência é o que permanece: simplicidade com significado e presença.",
         conceito: "Linha pensada para atender com dignidade, sem abrir mão da estética e da qualidade.",
-        especificacoes:
-            "Estrutura resistente • acabamento padrão • forração interna • fecho simples • encaixes firmes.",
+        especificacoes: "Estrutura resistente • acabamento padrão • forração interna • fecho simples • encaixes firmes.",
     },
     {
         id: 401,
@@ -141,8 +173,7 @@ const mockProdutos: Produto[] = [
         descricaoCurta: "Luxo e detalhes marcantes para uma homenagem inesquecível.",
         inspiracao: "Eternum simboliza memória duradoura e respeito, com um design mais sofisticado.",
         conceito: "Produto premium com foco em acabamento e elegância para cerimônias especiais.",
-        especificacoes:
-            "Madeira selecionada • detalhes em alto-relevo • forração premium • sistema de fechamento reforçado.",
+        especificacoes: "Madeira selecionada • detalhes em alto-relevo • forração premium • sistema de fechamento reforçado.",
     },
     {
         id: 501,
@@ -213,7 +244,6 @@ function IconChevron({ dir }: { dir: "left" | "right" }) {
         </svg>
     );
 }
-
 function IconDollar({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -228,11 +258,31 @@ function IconDollar({ size = 22 }: { size?: number }) {
         </svg>
     );
 }
-
 function IconPlus({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+        </svg>
+    );
+}
+function IconCheck({ size = 22 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+function IconPrint({ size = 22 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+                d="M7 9V4h10v5M7 18H6a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path d="M7 14h10v6H7v-6Z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -242,24 +292,39 @@ function TopRightNav({
     onBack,
     onHome,
     onList,
+    onCheck,
     disabledBack,
+    showCheck = true,
+    checkBadge,
 }: {
     onBack: () => void;
     onHome: () => void;
     onList: () => void;
+    onCheck?: () => void;
     disabledBack?: boolean;
+    showCheck?: boolean;
+    checkBadge?: string | number;
 }) {
     return (
-        <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10 }}>
+        <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
             <button type="button" onClick={onBack} disabled={disabledBack} className={cn("iconBtn", disabledBack && "iconBtnDisabled")} aria-label="Voltar" title="Voltar">
                 <IconBack />
             </button>
+
             <button type="button" onClick={onHome} className="iconBtn" aria-label="Home" title="Home">
                 <IconHome />
             </button>
+
             <button type="button" onClick={onList} className="iconBtn" aria-label="Lista" title="Lista">
                 <IconList />
             </button>
+
+            {showCheck ? (
+                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Finalizar orçamento" title="Finalizar orçamento">
+                    <IconCheck />
+                    {checkBadge ? <span className="badge">{checkBadge}</span> : null}
+                </button>
+            ) : null}
         </div>
     );
 }
@@ -271,7 +336,6 @@ function BigButton({ label, onClick }: { label: string; onClick: () => void }) {
         </button>
     );
 }
-
 function Title({ children }: { children: React.ReactNode }) {
     return (
         <div style={{ textAlign: "center", marginTop: 38, marginBottom: 26 }}>
@@ -279,15 +343,12 @@ function Title({ children }: { children: React.ReactNode }) {
         </div>
     );
 }
-
 function ScreenContainer({ children }: { children: React.ReactNode }) {
     return <div className="screen">{children}</div>;
 }
-
 function SectionPill({ children }: { children: React.ReactNode }) {
     return <div className="pill">{children}</div>;
 }
-
 function ProductCard({ p, onOpen }: { p: Produto; onOpen: () => void }) {
     return (
         <button type="button" className="prodCard" onClick={onOpen} title={p.nome}>
@@ -330,7 +391,6 @@ function Modal({
             aria-modal="true"
             aria-label={title}
             onMouseDown={(e) => {
-                // clique fora fecha
                 if (e.currentTarget === e.target) onClose();
             }}
         >
@@ -348,6 +408,23 @@ function Modal({
     );
 }
 
+// ---------- PDF helpers (logo -> dataURL) ----------
+async function toDataUrl(url: string): Promise<string | null> {
+    try {
+        const r = await fetch(url, { mode: "cors", cache: "no-store" });
+        const b = await r.blob();
+        const reader = await new Promise<string>((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onerror = () => reject(new Error("Falha ao ler logo"));
+            fr.onload = () => resolve(String(fr.result || ""));
+            fr.readAsDataURL(b);
+        });
+        return reader;
+    } catch {
+        return null;
+    }
+}
+
 // ---------- main page ----------
 export default function Page() {
     const [stack, setStack] = useState<CatalogGroup[]>(["home"]);
@@ -361,6 +438,20 @@ export default function Page() {
 
     const [selected, setSelected] = useState<Produto | null>(null);
     const [openPrices, setOpenPrices] = useState(false);
+
+    // “Carrinho” do orçamento em construção
+    const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
+    const draftCount = useMemo(() => draftItens.reduce((a, b) => a + clampInt(b.qtd), 0), [draftItens]);
+
+    // Orçamentos salvos (lista)
+    const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
+    const [orcamentoSelecionadoId, setOrcamentoSelecionadoId] = useState<string | null>(null);
+
+    // Modal de finalizar orçamento
+    const [openFinalize, setOpenFinalize] = useState(false);
+    const [formResp, setFormResp] = useState("");
+    const [formFalecido, setFormFalecido] = useState("");
+    const [formTel, setFormTel] = useState("");
 
     const canBack = stack.length > 1;
 
@@ -382,14 +473,15 @@ export default function Page() {
         setOpenPrices(false);
     }, []);
 
+    const goBudgets = useCallback(() => {
+        setStack(["home", "orcamentos"]);
+    }, []);
+
     const list = useCallback(() => {
-        // Se tiver contexto (categoria), vai para listagem; senão, para Elementos
+        // “Lista” (ícone) continua indo para Elementos/Listagem dependendo do contexto
         if (categoria) {
-            if (categoria === "URNAS") {
-                setStack(["home", "elementos", "urnas_linhas", "listagem"]);
-            } else {
-                setStack(["home", "elementos", "listagem"]);
-            }
+            if (categoria === "URNAS") setStack(["home", "elementos", "urnas_linhas", "listagem"]);
+            else setStack(["home", "elementos", "listagem"]);
             return;
         }
         setStack(["home", "elementos"]);
@@ -423,7 +515,6 @@ export default function Page() {
 
     const produtosFiltrados = useMemo(() => {
         let arr = mockProdutos.slice();
-
         if (categoria) arr = arr.filter((p) => p.categoria === categoria);
         if (linha) arr = arr.filter((p) => p.linha === linha);
 
@@ -438,29 +529,22 @@ export default function Page() {
     }, [categoria, linha, q]);
 
     const totalPages = Math.max(1, Math.ceil(produtosFiltrados.length / pageSize));
-
     const paged = useMemo(() => {
         const start = (page - 1) * pageSize;
         return produtosFiltrados.slice(start, start + pageSize);
     }, [produtosFiltrados, page, pageSize]);
 
-    // sempre manter page dentro do range
     useEffect(() => {
         if (page > totalPages) setPage(totalPages);
         if (page < 1) setPage(1);
     }, [totalPages, page]);
 
-    // ao entrar em listagem sem contexto, define defaults de forma controlada
     useEffect(() => {
         if (current !== "listagem") return;
-
         if (!categoria) setCategoria("URNAS");
-
-        // só define linha default para categorias que exigem linha
         if ((categoria ?? "URNAS") === "URNAS" && !linha) setLinha("SERENIDADE");
     }, [current, categoria, linha]);
 
-    // abrir detalhe “navegando”
     const openProduct = useCallback(
         (p: Produto) => {
             setSelected(p);
@@ -469,21 +553,17 @@ export default function Page() {
         [current, go]
     );
 
-    // garante selected coerente com os filtros quando em detalhe
     useEffect(() => {
         if (current !== "detalhe") return;
-
         if (!produtosFiltrados.length) {
             setSelected(null);
             return;
         }
-
         if (!selected || !produtosFiltrados.some((p) => p.id === selected.id)) {
             setSelected(produtosFiltrados[0]);
         }
     }, [current, selected, produtosFiltrados]);
 
-    // miniaturas memoizadas (evita regenerar SVGs a cada render)
     const detailThumbs = useMemo(() => {
         return Array.from({ length: 6 }).map((_, i) => ({
             key: `thumb-${i + 1}`,
@@ -492,7 +572,6 @@ export default function Page() {
         }));
     }, []);
 
-    // mock “tabela de valores”
     const tabelaValores = useMemo(() => {
         if (!selected) return [];
         const extraLinha = selected.linha ? 80 : 0;
@@ -504,6 +583,243 @@ export default function Page() {
         ];
     }, [selected]);
 
+    // ---------- draft orçamento: add / remove ----------
+    const addToDraft = useCallback((p: Produto) => {
+        setDraftItens((prev) => {
+            const idx = prev.findIndex((x) => x.produtoId === p.id);
+            if (idx >= 0) {
+                const copy = prev.slice();
+                copy[idx] = { ...copy[idx], qtd: clampInt(copy[idx].qtd) + 1 };
+                return copy;
+            }
+            return [...prev, { produtoId: p.id, nome: p.nome, valorUnit: Number(p.preco) || 0, qtd: 1 }];
+        });
+    }, []);
+
+    const draftTotal = useMemo(() => {
+        let t = 0;
+        for (const it of draftItens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
+        return t;
+    }, [draftItens]);
+
+    const openFinalizeModal = useCallback(() => {
+        if (!draftItens.length) {
+            alert("Nenhum item no orçamento. Adicione itens com o botão +.");
+            return;
+        }
+        setFormResp("");
+        setFormFalecido("");
+        setFormTel("");
+        setOpenFinalize(true);
+    }, [draftItens.length]);
+
+    const createOrcamento = useCallback(() => {
+        const responsavel = formResp.trim();
+        const falecido = formFalecido.trim();
+        const telefone = formTel.trim();
+
+        if (!responsavel || !falecido || !telefone) {
+            alert("Preencha Responsável, Falecido(a) e Telefone.");
+            return;
+        }
+
+        const now = new Date();
+        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random()
+            .toString(16)
+            .slice(2, 8)
+            .toUpperCase()}`;
+
+        const novo: Orcamento = {
+            id,
+            criadoEmISO: now.toISOString(),
+            responsavel,
+            falecido,
+            telefone,
+            itens: draftItens.map((x) => ({ ...x, qtd: clampInt(x.qtd) })),
+        };
+
+        setOrcamentos((prev) => [novo, ...prev]);
+        setDraftItens([]);
+        setOpenFinalize(false);
+
+        // vai para Lista de Orçamentos
+        setOrcamentoSelecionadoId(null);
+        setStack(["home", "orcamentos"]);
+    }, [draftItens, formResp, formFalecido, formTel]);
+
+    const openOrcamentoResumo = useCallback((id: string) => {
+        setOrcamentoSelecionadoId(id);
+        setStack(["home", "orcamentos", "resumo"]);
+    }, []);
+
+    const orcamentoSelecionado = useMemo(() => {
+        if (!orcamentoSelecionadoId) return null;
+        return orcamentos.find((o) => o.id === orcamentoSelecionadoId) ?? null;
+    }, [orcamentos, orcamentoSelecionadoId]);
+
+    const totalOrcamentoSelecionado = useMemo(() => {
+        if (!orcamentoSelecionado) return 0;
+        let t = 0;
+        for (const it of orcamentoSelecionado.itens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
+        return t;
+    }, [orcamentoSelecionado]);
+
+    // ---------- EXPORT CSV/PDF (Resumo) ----------
+    const exportarResumoCSV = useCallback((o: Orcamento) => {
+        const sep = ";";
+        const header = ["Item", "Quantidade", "Valor (un)", "Subtotal"];
+
+        const lines: string[] = [];
+        lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
+
+        for (const it of o.itens) {
+            const sub = clampInt(it.qtd) * (Number(it.valorUnit) || 0);
+            lines.push([it.nome, clampInt(it.qtd), formatBRL(Number(it.valorUnit) || 0), formatBRL(sub)].map((x) => escapeCsvCell(x, sep)).join(sep));
+        }
+
+        lines.push(["TOTAL", "", "", formatBRL(totalOrcamentoSelecionado)].map((x) => escapeCsvCell(x, sep)).join(sep));
+
+        const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+
+        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${safeName}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }, [totalOrcamentoSelecionado]);
+
+    const exportarResumoPDF = useCallback(async (o: Orcamento) => {
+        if (!o.itens.length) {
+            alert("Nenhum item para exportar.");
+            return;
+        }
+
+        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+
+        const logoDataUrl = await toDataUrl(LOGO_URL_PDF);
+        const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+
+        const dt = new Date(o.criadoEmISO);
+        const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
+        const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+
+        // A4 landscape (fica parecido com o “relatório” que você mostrou)
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+        const pageW = doc.internal.pageSize.getWidth();
+        const marginX = 12;
+        let y = 12;
+
+        // Header
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.text("Resumo da Homenagem", marginX, y + 6);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(51, 65, 85);
+        doc.text(`Gerado em: ${geradoEm}`, pageW - marginX, y + 6, { align: "right" });
+
+        y += 12;
+
+        // “Faixa” com dados
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(marginX, y, pageW - marginX * 2, 20, 2, 2, "FD");
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "bold");
+        doc.text(`ORÇAMENTO Nº ${o.id}`, marginX + 3, y + 6);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(30, 41, 59);
+        doc.text(`Responsável: ${o.responsavel}`, marginX + 55, y + 6);
+        doc.text(`Falecido(a): ${o.falecido}`, marginX + 55, y + 12);
+        doc.text(`Telefone: ${o.telefone}`, marginX + 55, y + 18);
+
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text(`Data: ${dataBR}`, pageW - marginX - 3, y + 6, { align: "right" });
+
+        y += 26;
+
+        // Tabela
+        const head = ["Item", "Qtd", "Valor (un)", "Subtotal"];
+        const body = o.itens.map((it) => {
+            const qtd = clampInt(it.qtd);
+            const v = Number(it.valorUnit) || 0;
+            const sub = qtd * v;
+            return [it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
+        });
+
+        const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+
+        autoTable(doc, {
+            startY: y,
+            head: [head],
+            body,
+            margin: { left: marginX, right: marginX },
+            styles: {
+                font: "helvetica",
+                fontSize: 9.5,
+                cellPadding: 2.4,
+                valign: "top",
+                lineColor: [226, 232, 240],
+                lineWidth: 0.2,
+            },
+            headStyles: {
+                fillColor: [241, 245, 249],
+                textColor: [15, 23, 42],
+                fontStyle: "bold",
+                valign: "middle",
+            },
+            columnStyles: {
+                0: { cellWidth: 180, overflow: "linebreak" },
+                1: { halign: "right", cellWidth: 18 },
+                2: { halign: "right", cellWidth: 32 },
+                3: { halign: "right", cellWidth: 34 },
+            },
+            didParseCell: (data) => {
+                if (data.section === "body" && data.column.index === 1) data.cell.styles.halign = "right";
+                if (data.section === "body" && data.column.index >= 2) data.cell.styles.halign = "right";
+            },
+        });
+
+        const afterY = (doc as any).lastAutoTable?.finalY ?? y;
+
+        // Total “box” no canto direito
+        const boxW = 54;
+        const boxH = 12;
+        const boxX = pageW - marginX - boxW;
+        const boxY = afterY + 6;
+
+        doc.setFillColor(2, 156, 222);
+        doc.setDrawColor(2, 156, 222);
+        doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, "F");
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
+
+        // Rodapé com logo no canto inferior direito
+        if (logoDataUrl) {
+            const imgW = 40;
+            const imgH = 12;
+            const yLogo = doc.internal.pageSize.getHeight() - 14 - imgH;
+            doc.addImage(logoDataUrl, logoFormat as any, pageW - marginX - imgW, yLogo, imgW, imgH);
+        }
+
+        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        doc.save(`${safeName}.pdf`);
+    }, []);
+
     // ---------- screens ----------
     const ScreenHome = (
         <ScreenContainer>
@@ -513,7 +829,7 @@ export default function Page() {
                         ELEMENTOS DE HOMENAGEM
                     </button>
 
-                    <button type="button" className="homeBtn" onClick={() => console.info("Mock: lista de orçamentos")}>
+                    <button type="button" className="homeBtn" onClick={goBudgets}>
                         LISTA DE ORÇAMENTOS
                     </button>
                 </div>
@@ -523,7 +839,7 @@ export default function Page() {
 
     const ScreenElementos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} disabledBack={!canBack} />
+            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div className="gridMenu2">
@@ -531,12 +847,18 @@ export default function Page() {
                     <BigButton key={it.key} label={it.title} onClick={it.action} />
                 ))}
             </div>
+
+            <div className="draftHint">
+                <div className="draftHintBox">
+                    <b>Itens no orçamento:</b> {draftCount} • <b>Total:</b> {formatBRL(draftTotal)}
+                </div>
+            </div>
         </ScreenContainer>
     );
 
     const ScreenLinhas = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} disabledBack={!canBack} />
+            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
@@ -562,7 +884,7 @@ export default function Page() {
 
     const ScreenListagem = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} disabledBack={!canBack} />
+            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
@@ -604,25 +926,13 @@ export default function Page() {
 
                 <div className="pagerRow">
                     <div className="pagerBtns">
-                        <button
-                            type="button"
-                            className="pagerBtn"
-                            onClick={() => setPage((x) => Math.max(1, x - 1))}
-                            disabled={page <= 1}
-                            aria-label="Página anterior"
-                        >
+                        <button type="button" className="pagerBtn" onClick={() => setPage((x) => Math.max(1, x - 1))} disabled={page <= 1} aria-label="Página anterior">
                             <IconChevron dir="left" />
                         </button>
                         <div className="pagerInfo">
                             Página <b>{page}</b> de <b>{totalPages}</b>
                         </div>
-                        <button
-                            type="button"
-                            className="pagerBtn"
-                            onClick={() => setPage((x) => Math.min(totalPages, x + 1))}
-                            disabled={page >= totalPages}
-                            aria-label="Próxima página"
-                        >
+                        <button type="button" className="pagerBtn" onClick={() => setPage((x) => Math.min(totalPages, x + 1))} disabled={page >= totalPages} aria-label="Próxima página">
                             <IconChevron dir="right" />
                         </button>
                     </div>
@@ -647,6 +957,8 @@ export default function Page() {
                         return ["home", "elementos"];
                     });
                 }}
+                onCheck={openFinalizeModal}
+                checkBadge={draftCount || ""}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
@@ -677,74 +989,76 @@ export default function Page() {
                                 ))}
                             </div>
 
-                                <div className="detailMeta">
-                                    <div className="metaPill">
-                                        <b>Saldo:</b> {selected.saldo}
-                                    </div>
-                                    {selected.linha ? (
-                                        <div className="metaPill">
-                                            <b>Linha:</b> {selected.linha}
-                                        </div>
-                                    ) : null}
+                            <div className="detailMeta">
+                                <div className="metaPill">
+                                    <b>Saldo:</b> {selected.saldo}
                                 </div>
+                                {selected.linha ? (
+                                    <div className="metaPill">
+                                        <b>Linha:</b> {selected.linha}
+                                    </div>
+                                ) : null}
+                            </div>
                         </div>
 
                         {/* direita */}
                         <div className="detailRight">
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
-                                <div className="bulletBox">
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
-                                        </div>
-                                    </div>
-
-                                    
-
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>INSPIRAÇÃO:</b> {selected.inspiracao}
-                                        </div>
-                                    </div>
-
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>CONCEITO:</b> {selected.conceito}
-                                        </div>
-                                    </div>
-
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
-                                        </div>
-                                    </div>
-
-                                    <div className="detailActions">
-                                        <button
-                                            type="button"
-                                            className="iconActionBtn"
-                                            onClick={() => setOpenPrices(true)}
-                                            aria-label="Tabela de valores"
-                                            title="Tabela de valores"
-                                        >
-                                            <IconDollar />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="iconActionBtn"
-                                            onClick={() => console.info("Mock: adicionar ao orçamento")}
-                                            aria-label="Adicionar a orçamento"
-                                            title="Adicionar a orçamento"
-                                        >
-                                            <IconPlus />
-                                        </button>
+                            <div className="bulletBox">
+                                <div className="bulletItem">
+                                    <span className="bulletDot">•</span>
+                                    <div>
+                                        <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
                                     </div>
                                 </div>
+
+                                <div className="bulletItem">
+                                    <span className="bulletDot">•</span>
+                                    <div>
+                                        <b>INSPIRAÇÃO:</b> {selected.inspiracao}
+                                    </div>
+                                </div>
+
+                                <div className="bulletItem">
+                                    <span className="bulletDot">•</span>
+                                    <div>
+                                        <b>CONCEITO:</b> {selected.conceito}
+                                    </div>
+                                </div>
+
+                                <div className="bulletItem">
+                                    <span className="bulletDot">•</span>
+                                    <div>
+                                        <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
+                                    </div>
+                                </div>
+
+                                <div className="detailActions">
+                                    <button type="button" className="iconActionBtn" onClick={() => setOpenPrices(true)} aria-label="Tabela de valores" title="Tabela de valores">
+                                        <IconDollar />
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className="iconActionBtn"
+                                        onClick={() => addToDraft(selected)}
+                                        aria-label="Adicionar a orçamento"
+                                        title="Adicionar a orçamento"
+                                    >
+                                        <IconPlus />
+                                    </button>
+
+                                    <div className="draftMini">
+                                        <div>
+                                            <b>Itens:</b> {draftCount}
+                                        </div>
+                                        <div>
+                                            <b>Total:</b> {formatBRL(draftTotal)}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -784,6 +1098,148 @@ export default function Page() {
         </ScreenContainer>
     );
 
+    const ScreenOrcamentos = (
+        <ScreenContainer>
+            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openFinalizeModal} disabledBack={!canBack} checkBadge={draftCount || ""} />
+            <Title>LISTA DE ORÇAMENTOS</Title>
+
+            <div className="budgetsWrap">
+                {orcamentos.length ? (
+                    <div className="budgetGrid">
+                        {orcamentos.map((o) => {
+                            const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+                            const dt = new Date(o.criadoEmISO);
+                            const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
+                            return (
+                                <button key={o.id} type="button" className="budgetCard" onClick={() => openOrcamentoResumo(o.id)} title="Abrir resumo">
+                                    <div className="budgetTop">
+                                        <div className="budgetTitle">{o.falecido}</div>
+                                        <div className="budgetMeta">Responsável: <b>{o.responsavel}</b></div>
+                                    </div>
+
+                                    <div className="budgetBottom">
+                                        <div className="budgetSmall">Data: <b>{dataBR}</b></div>
+                                        <div className="budgetSmall">Itens: <b>{o.itens.reduce((a, b) => a + clampInt(b.qtd), 0)}</b></div>
+                                        <div className="budgetTotal">{formatBRL(total)}</div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="emptyState" style={{ margin: "0 26px" }}>
+                        Nenhum orçamento ainda. Adicione itens com <b>+</b> e finalize com <b>✅</b>.
+                    </div>
+                )}
+            </div>
+        </ScreenContainer>
+    );
+
+    const ScreenResumo = (
+        <ScreenContainer>
+            <div className="resumoTopBar">
+                {/* ✅ deixa o visto aí (sem função por enquanto) */}
+                <button type="button" className="iconBtn resumoBtn" onClick={() => console.info("Visto (sem função por enquanto)")} title="Visto">
+                    <IconCheck />
+                </button>
+
+                <button
+                    type="button"
+                    className="iconBtn resumoBtn"
+                    onClick={() => (orcamentoSelecionado ? exportarResumoPDF(orcamentoSelecionado) : null)}
+                    title="Imprimir (PDF)"
+                >
+                    <IconPrint />
+                </button>
+            </div>
+
+            <div style={{ padding: "22px 26px 0 26px" }}>
+                <div className="resumoTitle">RESUMO DA HOMENAGEM</div>
+
+                {!orcamentoSelecionado ? (
+                    <div className="emptyState" style={{ marginTop: 18 }}>
+                        Orçamento não encontrado.
+                    </div>
+                ) : (
+                    <div className="resumoCard">
+                        <div className="resumoHeader">
+                            <div className="resumoOrc">
+                                <div className="resumoOrcMain">ORÇAMENTO</div>
+                                <div className="resumoOrcSub">Nº {orcamentoSelecionado.id}</div>
+                            </div>
+
+                            <div className="resumoInfo">
+                                <div className="resumoLine">
+                                    <b>Responsável:</b> {orcamentoSelecionado.responsavel}
+                                </div>
+                                <div className="resumoLine">
+                                    <b>Falecido:</b> {orcamentoSelecionado.falecido}
+                                </div>
+                                <div className="resumoLine">
+                                    <b>Telefone:</b> {orcamentoSelecionado.telefone}
+                                </div>
+                            </div>
+
+                            <div className="resumoDate">
+                                <div className="resumoLine">
+                                    <b>Data:</b>{" "}
+                                    {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(orcamentoSelecionado.criadoEmISO))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="resumoTable">
+                            <div className="resumoTableHead">
+                                <div>Item</div>
+                                <div style={{ textAlign: "right" }}>Qtd</div>
+                                <div style={{ textAlign: "right" }}>Valor</div>
+                            </div>
+
+                            {orcamentoSelecionado.itens.map((it, idx) => (
+                                <div key={`${it.produtoId}-${idx}`} className="resumoRow">
+                                    <div className="resumoItemName">{it.nome}</div>
+                                    <div style={{ textAlign: "right" }}>{clampInt(it.qtd)}</div>
+                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="resumoBottom">
+                            <div className="resumoValidade">Orçamento válido por <b>07</b> dias</div>
+
+                            <div className="resumoTotalBox">
+                                <div className="resumoTotalLabel">Total</div>
+                                <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
+                            </div>
+                        </div>
+
+                        <div className="resumoFooter">
+                            <div className="resumoPay">
+                                <div className="resumoPayTitle">Condições de pagamento</div>
+                                <div className="resumoPayRow">
+                                    <div>À vista</div>
+                                    <div className="resumoPayVal">{formatBRL(Math.max(0, totalOrcamentoSelecionado - 381))}</div>
+                                </div>
+                                <div className="resumoPayRow">
+                                    <div>À prazo</div>
+                                    <div className="resumoPayVal">até 6 vezes</div>
+                                </div>
+
+                                <div className="resumoExportRow">
+                                    <button type="button" className="smallBtn" onClick={() => exportarResumoCSV(orcamentoSelecionado)}>
+                                        Exportar CSV
+                                    </button>
+                                </div>
+                            </div>
+
+                            <img src={LOGO_URL_UI} alt="PAI" className="resumoLogo" />
+                        </div>
+                    </div>
+                )}
+            </div>
+        </ScreenContainer>
+    );
+
     // ---------- render switch ----------
     let screen: React.ReactNode = null;
     if (current === "home") screen = ScreenHome;
@@ -791,11 +1247,56 @@ export default function Page() {
     if (current === "urnas_linhas") screen = ScreenLinhas;
     if (current === "listagem") screen = ScreenListagem;
     if (current === "detalhe") screen = ScreenDetalhe;
+    if (current === "orcamentos") screen = ScreenOrcamentos;
+    if (current === "resumo") screen = ScreenResumo;
 
     return (
         <div className="root">
             <style>{css}</style>
+
             {screen}
+
+            <Modal
+                open={openFinalize}
+                title="Finalizar orçamento"
+                onClose={() => setOpenFinalize(false)}
+                footer={
+                    <div style={{ display: "flex", gap: 10 }}>
+                        <button type="button" className="ctaBtn" onClick={() => setOpenFinalize(false)} style={{ minWidth: 160 }}>
+                            CANCELAR
+                        </button>
+                        <button type="button" className="ctaBtn" onClick={createOrcamento} style={{ minWidth: 220 }}>
+                            OK • ENVIAR PARA LISTA
+                        </button>
+                    </div>
+                }
+            >
+                <div className="formGrid">
+                    <label className="formField">
+                        <span>Responsável</span>
+                        <input value={formResp} onChange={(e) => setFormResp(e.target.value)} className="formInput" placeholder="Nome do responsável" />
+                    </label>
+
+                    <label className="formField">
+                        <span>Falecido(a)</span>
+                        <input value={formFalecido} onChange={(e) => setFormFalecido(e.target.value)} className="formInput" placeholder="Nome do falecido(a)" />
+                    </label>
+
+                    <label className="formField">
+                        <span>Telefone</span>
+                        <input value={formTel} onChange={(e) => setFormTel(e.target.value)} className="formInput" placeholder="(xx) xxxxx-xxxx" />
+                    </label>
+
+                    <div className="formResumo">
+                        <div>
+                            <b>Itens:</b> {draftCount}
+                        </div>
+                        <div>
+                            <b>Total:</b> {formatBRL(draftTotal)}
+                        </div>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }
@@ -805,13 +1306,7 @@ const css = `
   :root{
     --bg1:#2ca3d4;
     --bg2:#0e4c86;
-    --pill: rgba(255,255,255,0.78);
-    --pillBorder: rgba(255,255,255,0.28);
-    --btn: rgba(220,233,246,0.92);
-    --btnBorder: rgba(255,255,255,0.55);
-    --btnText: #0b2b4d;
     --ink: rgba(255,255,255,0.95);
-    --inkSoft: rgba(255,255,255,0.85);
     --shadow: 0 16px 34px rgba(0,0,0,0.25);
   }
 
@@ -853,10 +1348,35 @@ const css = `
     justify-content:center;
     cursor:pointer;
     transition: transform .12s ease, filter .12s ease;
+    position: relative;
   }
   .iconBtn:hover{ transform: translateY(-1px); filter: brightness(1.02); }
   .iconBtn:active{ transform: translateY(0px) scale(0.99); }
   .iconBtnDisabled{ opacity: 0.55; cursor: not-allowed; }
+
+  .iconBtnCheck{
+    background: rgba(230, 255, 238, 0.92);
+    border-color: rgba(16, 185, 129, 0.35);
+    color: #065f46;
+  }
+
+  .badge{
+    position:absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #0ea5e9;
+    color: #fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size: 12px;
+    font-weight: 900;
+    box-shadow: 0 10px 18px rgba(0,0,0,0.22);
+  }
 
   .title{
     color: var(--ink);
@@ -913,16 +1433,6 @@ const css = `
     transform: translateY(0px) scale(0.97);
     box-shadow: 0 6px 14px rgba(2,156,222,0.35), inset 0 2px 6px rgba(0,0,0,0.25);
   }
-  .homeBtn::before{
-    content:"";
-    position:absolute;
-    inset:0;
-    border-radius:18px;
-    background: linear-gradient(120deg, transparent 20%, rgba(255,255,255,0.25), transparent 80%);
-    opacity:0;
-    transition:opacity .25s ease;
-  }
-  .homeBtn:hover::before{ opacity:1; }
 
   .gridMenu2{
     width:100%;
@@ -1176,13 +1686,14 @@ const css = `
   }
   .bulletDot{ color: rgba(255,255,255,0.92); font-size: 18px; line-height: 1; margin-top: 2px; }
 
- .detailActions{
-  margin-top: 10px;
-  display:flex;
-  gap: 14px;
-  justify-content:flex-start;
-  align-items:center;
-}
+  .detailActions{
+    margin-top: 10px;
+    display:flex;
+    gap: 14px;
+    justify-content:flex-start;
+    align-items:center;
+    flex-wrap: wrap;
+  }
   .iconActionBtn{
     width: 54px;
     height: 54px;
@@ -1199,6 +1710,17 @@ const css = `
   }
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
+
+  .draftMini{
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.16);
+    color: rgba(255,255,255,0.92);
+    font-weight: 800;
+    display:flex;
+    gap: 16px;
+  }
 
   .ctaBtn{
     border-radius: 14px;
@@ -1227,7 +1749,7 @@ const css = `
     z-index: 999;
   }
   .modalCard{
-    width: min(640px, 96vw);
+    width: min(680px, 96vw);
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
     border: 1px solid rgba(255,255,255,0.18);
@@ -1259,13 +1781,254 @@ const css = `
     justify-content:flex-end;
   }
 
+  /* finalize form */
+  .formGrid{ display:grid; gap: 12px; }
+  .formField{ display:grid; gap: 6px; font-weight: 900; color: rgba(255,255,255,0.95); }
+  .formField span{ font-size: 12px; letter-spacing: 0.6px; opacity: 0.95; }
+  .formInput{
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.95);
+    padding: 12px 12px;
+    border-radius: 12px;
+    outline: none;
+    font-weight: 800;
+  }
+  .formInput::placeholder{ color: rgba(255,255,255,0.65); }
+  .formResumo{
+    margin-top: 8px;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    display:flex;
+    gap: 18px;
+    justify-content: space-between;
+    font-weight: 900;
+  }
+
+  .draftHint{
+    margin-top: 18px;
+    display:flex;
+    justify-content:center;
+  }
+  .draftHintBox{
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.92);
+    font-weight: 900;
+  }
+
+  /* orçamentos */
+  .budgetsWrap{ padding: 0 26px 24px 26px; }
+  .budgetGrid{
+    display:grid;
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .budgetCard{
+    text-align:left;
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 18px 34px rgba(0,0,0,0.18);
+    cursor:pointer;
+    color: rgba(255,255,255,0.94);
+    transition: transform .12s ease, filter .12s ease;
+  }
+  .budgetCard:hover{ transform: translateY(-2px); filter: brightness(1.03); }
+  .budgetCard:active{ transform: translateY(0px) scale(0.995); }
+  .budgetTop{ display:grid; gap: 6px; }
+  .budgetTitle{ font-weight: 1000; font-size: 18px; letter-spacing: 0.5px; }
+  .budgetMeta{ font-weight: 800; opacity: 0.95; }
+  .budgetBottom{
+    margin-top: 12px;
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .budgetSmall{ font-weight: 800; opacity: 0.95; }
+  .budgetTotal{
+    font-weight: 1000;
+    background: rgba(2,156,222,0.30);
+    border: 1px solid rgba(2,156,222,0.40);
+    padding: 8px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  /* resumo */
+  .resumoTopBar{
+    position:absolute;
+    top: 18px;
+    right: 18px;
+    display:flex;
+    gap: 10px;
+    z-index: 5;
+  }
+  .resumoBtn{ background: rgba(222,234,246,0.92); }
+  .resumoTitle{
+    text-align:center;
+    color: rgba(255,255,255,0.95);
+    font-weight: 1000;
+    letter-spacing: 1px;
+    font-size: 34px;
+    text-shadow: 0 10px 22px rgba(0,0,0,0.25);
+    margin-top: 10px;
+  }
+  .resumoCard{
+    margin-top: 16px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.86);
+    border: 1px solid rgba(255,255,255,0.55);
+    overflow:hidden;
+    box-shadow: 0 20px 46px rgba(0,0,0,0.20);
+  }
+  .resumoHeader{
+    display:grid;
+    grid-template-columns: 240px 1fr 220px;
+    gap: 10px;
+    padding: 14px 14px 10px 14px;
+    background: rgba(255,255,255,0.92);
+    border-bottom: 1px solid rgba(2, 156, 222, 0.22);
+    align-items: start;
+  }
+  .resumoOrcMain{
+    font-weight: 1000;
+    color: #0b2b4d;
+    letter-spacing: 1px;
+    font-size: 22px;
+  }
+  .resumoOrcSub{
+    margin-top: 2px;
+    font-weight: 900;
+    color: #0b2b4d;
+    opacity: 0.9;
+  }
+  .resumoLine{
+    color: #0b2b4d;
+    font-weight: 800;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .resumoInfo{ display:grid; gap: 2px; }
+  .resumoDate{ display:flex; justify-content:flex-end; }
+
+  .resumoTable{
+    padding: 0 14px;
+    background: rgba(255,255,255,0.92);
+  }
+  .resumoTableHead{
+    display:grid;
+    grid-template-columns: 1fr 90px 140px;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 2px solid rgba(2,156,222,0.35);
+    color: #0b2b4d;
+    font-weight: 1000;
+  }
+  .resumoRow{
+    display:grid;
+    grid-template-columns: 1fr 90px 140px;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(15,23,42,0.10);
+    color: #0b2b4d;
+    font-weight: 800;
+  }
+  .resumoItemName{ text-transform: uppercase; }
+
+  .resumoBottom{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(255,255,255,0.92);
+  }
+  .resumoValidade{
+    color: #0b2b4d;
+    font-weight: 900;
+    font-size: 16px;
+  }
+  .resumoTotalBox{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+  }
+  .resumoTotalLabel{
+    color: #0b2b4d;
+    font-weight: 1000;
+  }
+  .resumoTotalValue{
+    background: #029cde;
+    color: #fff;
+    font-weight: 1000;
+    padding: 8px 12px;
+    border-radius: 10px;
+    box-shadow: 0 14px 32px rgba(2,156,222,.25);
+    min-width: 160px;
+    text-align:right;
+    letter-spacing: 0.5px;
+  }
+
+  .resumoFooter{
+    padding: 14px;
+    display:flex;
+    align-items:flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    background: rgba(255,255,255,0.92);
+  }
+  .resumoPay{
+    display:grid;
+    gap: 6px;
+    color: #0b2b4d;
+    font-weight: 900;
+  }
+  .resumoPayTitle{ font-size: 13px; opacity: 0.9; }
+  .resumoPayRow{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 14px;
+    min-width: 300px;
+    font-size: 13px;
+  }
+  .resumoPayVal{ font-weight: 1000; }
+  .resumoLogo{
+    width: 180px;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .resumoExportRow{ margin-top: 8px; }
+  .smallBtn{
+    border: 1px solid rgba(2,156,222,0.35);
+    background: rgba(2,156,222,0.10);
+    color: #0b2b4d;
+    font-weight: 1000;
+    border-radius: 12px;
+    padding: 10px 12px;
+    cursor:pointer;
+  }
+
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
     .detailLayout{ grid-template-columns: 1fr; }
     .detailImgCard{ height: 300px; }
+    .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+    .resumoHeader{ grid-template-columns: 1fr; }
+    .resumoDate{ justify-content:flex-start; }
   }
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+    .budgetGrid{ grid-template-columns: 1fr; }
+    .resumoTableHead, .resumoRow{ grid-template-columns: 1fr 70px 120px; }
   }
 `;
