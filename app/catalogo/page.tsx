@@ -101,6 +101,8 @@ type Orcamento = {
 type Usuario = { id: number; nome: string; usuario: string };
 
 const API_URL = "https://api.planoassistencialintegrado.com.br/pai_api.php";
+const CATALOGO_API_URL =
+    "https://api.planoassistencialintegrado.com.br/catalogo_api.php";
 
 const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
 const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png";
@@ -118,9 +120,20 @@ function clampInt(v: any) {
     if (!Number.isFinite(n)) return 0;
     return Math.max(0, Math.floor(n));
 }
+function normalizeKey(s: string) {
+    return (s || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toUpperCase();
+}
 
 // ---------- parser robusto (tolera BOM/HTML) ----------
-async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutMs?: number }) {
+async function safeJsonFetch(
+    input: RequestInfo,
+    init?: RequestInit & { timeoutMs?: number }
+) {
     const timeoutMs = init?.timeoutMs ?? 15000;
 
     const ctrl = new AbortController();
@@ -128,7 +141,12 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutM
 
     try {
         const { timeoutMs: _omit, ...rest } = init || {};
-        const r = await fetch(input, { cache: "no-store", signal: ctrl.signal, ...rest });
+        const r = await fetch(input, {
+            cache: "no-store",
+            credentials: "include",
+            signal: ctrl.signal,
+            ...rest,
+        });
         const txt = await r.text();
         const cleaned = txt.replace(/^\uFEFF/, "").trim();
         let json: any = null;
@@ -152,35 +170,14 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutM
         return json;
     } catch (e: any) {
         if (e?.name === "AbortError") {
-            throw new Error("Tempo esgotado ao conectar com o servidor. Tente novamente.");
+            throw new Error(
+                "Tempo esgotado ao conectar com o servidor. Tente novamente."
+            );
         }
         throw e;
     } finally {
         clearTimeout(t);
     }
-}
-
-// ---------- mock images (data-uri) ----------
-function mockImg(label: string, hue = 200) {
-    const svg = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="900" height="520">
-    <defs>
-      <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-        <stop offset="0" stop-color="hsl(${hue} 80% 55%)"/>
-        <stop offset="1" stop-color="hsl(${hue + 40} 80% 35%)"/>
-      </linearGradient>
-      <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="rgba(0,0,0,0.35)"/>
-      </filter>
-    </defs>
-    <rect width="100%" height="100%" fill="url(#g)"/>
-    <g filter="url(#s)">
-      <rect x="85" y="120" rx="18" ry="18" width="730" height="280" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.25)"/>
-      <text x="450" y="260" font-family="Arial" font-size="46" fill="rgba(255,255,255,0.95)" text-anchor="middle" font-weight="700">${label}</text>
-      <text x="450" y="315" font-family="Arial" font-size="20" fill="rgba(255,255,255,0.9)" text-anchor="middle">Imagem fictícia • Catálogo PAI</text>
-    </g>
-  </svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 // ---------- fluxo/categorias ----------
@@ -202,160 +199,102 @@ const LINHAS: Array<{ id: Linha; title: string }> = [
     { id: "AMPARO", title: "LINHA\nAMPARO" },
 ];
 
-// ---------- mock produtos (para todas as categorias do fluxo) ----------
-const mockProdutos: Produto[] = [
-    // URNAS (com linha)
-    {
-        id: 101,
-        categoria: "URNAS",
-        linha: "SERENIDADE",
-        nome: "Urna Serenidade Zeus",
-        preco: 1890,
-        saldo: 8,
-        thumb: mockImg("URNA ZEUS", 26),
-        descricaoCurta: "Uma urna sóbria e sofisticada para homenagens memoráveis.",
-        inspiracao: "O nome Zeus remete a uma presença soberana e única, evocando força e dignidade na despedida.",
-        conceito: "Pensada para famílias que buscam a máxima homenagem possível, com acabamento premium e estética marcante.",
-        especificacoes:
-            "Madeira nobre • acabamento acetinado • detalhes em textura • alças discretas • forração interna premium.",
-    },
-    {
-        id: 102,
-        categoria: "URNAS",
-        linha: "SERENIDADE",
-        nome: "Urna Serenidade Aurora",
-        preco: 1490,
-        saldo: 4,
-        thumb: mockImg("URNA AURORA", 32),
-        descricaoCurta: "Equilíbrio e beleza em linhas suaves e acabamento elegante.",
-        inspiracao: "Aurora representa novos começos e serenidade, como um amanhecer de paz.",
-        conceito: "Design harmônico e acolhedor para uma despedida com respeito e tranquilidade.",
-        especificacoes:
-            "MDF premium • pintura especial • detalhes em frisos • forração interna • fecho reforçado.",
-    },
-    {
-        id: 201,
-        categoria: "URNAS",
-        linha: "HARMONIA",
-        nome: "Urna Harmonia Nobre",
-        preco: 2090,
-        saldo: 2,
-        thumb: mockImg("URNA NOBRE", 55),
-        descricaoCurta: "Acabamento refinado com presença discreta e imponente.",
-        inspiracao: "Harmonia é equilíbrio: forma e função em um produto de alta qualidade.",
-        conceito: "Criada para quem deseja uma homenagem com estética clássica e materiais selecionados.",
-        especificacoes:
-            "Madeira maciça • verniz fosco • cantos arredondados • forração interna • suporte de alças.",
-    },
-    // APRESENTAÇÃO
-    {
-        id: 1001,
-        categoria: "APRESENTACAO",
-        nome: "Véu de Apresentação Clássico",
-        preco: 120,
-        saldo: 50,
-        thumb: mockImg("APRESENTAÇÃO", 160),
-        descricaoCurta: "Véu discreto e elegante para apresentação.",
-        inspiracao: "Sutileza e respeito em cada detalhe.",
-        conceito: "Complemento pensado para cerimônias com estética tradicional.",
-        especificacoes: "Tecido leve • acabamento fino • tamanho padrão.",
-    },
-    {
-        id: 1002,
-        categoria: "APRESENTACAO",
-        nome: "Arranjo Floral (mock)",
-        preco: 180,
-        saldo: 20,
-        thumb: mockImg("ARRANJO", 168),
-        descricaoCurta: "Arranjo floral simbólico (mock).",
-        inspiracao: "Uma homenagem visual delicada.",
-        conceito: "Peça complementar para cerimônia.",
-        especificacoes: "Composição mista • base simples • montagem rápida.",
-    },
-    // ESPAÇO DE DESPEDIDA
-    {
-        id: 2001,
-        categoria: "ESPACO_DESPEDIDA",
-        nome: "Kit Velas Cerimoniais",
-        preco: 90,
-        saldo: 60,
-        thumb: mockImg("VELAS", 210),
-        descricaoCurta: "Kit com velas para ambientação do espaço.",
-        inspiracao: "Luz como símbolo de memória.",
-        conceito: "Acompanha cerimônias em espaço de despedida.",
-        especificacoes: "6 unidades • suporte simples.",
-    },
-    // PREPARAÇÃO E CUIDADO
-    {
-        id: 3001,
-        categoria: "PREPARACAO_CUIDADO",
-        nome: "Preparação Básica (mock)",
-        preco: 300,
-        saldo: 999,
-        thumb: mockImg("PREPARO", 120),
-        descricaoCurta: "Serviço de preparação (mock).",
-        inspiracao: "Cuidado e dignidade.",
-        conceito: "Etapa de preparação para cerimônia.",
-        especificacoes: "Procedimento padrão • equipe especializada (mock).",
-    },
-    // AMBIENTAÇÃO
-    {
-        id: 4001,
-        categoria: "AMBIENTACAO",
-        nome: "Ambientação Suave (mock)",
-        preco: 220,
-        saldo: 999,
-        thumb: mockImg("AMBIENTAÇÃO", 90),
-        descricaoCurta: "Ambientação com elementos suaves (mock).",
-        inspiracao: "Conforto e serenidade.",
-        conceito: "Complemento para o clima da cerimônia.",
-        especificacoes: "Itens decorativos • montagem simples.",
-    },
-    // CUIDADOS ADICIONAIS
-    {
-        id: 5001,
-        categoria: "CUIDADOS_ADICIONAIS",
-        nome: "Cuidados Adicionais (mock)",
-        preco: 140,
-        saldo: 999,
-        thumb: mockImg("CUIDADOS", 260),
-        descricaoCurta: "Serviços adicionais (mock).",
-        inspiracao: "Atenção aos detalhes.",
-        conceito: "Complemento conforme necessidade.",
-        especificacoes: "Pacote flexível (mock).",
-    },
-];
+// ---------- catálogo API types ----------
+type CatalogoNo = {
+    id: number;
+    parent_id: number | null;
+    nome: string;
+    ordem: number;
+    ativo: number;
+};
+
+type CatalogoInit = {
+    ok: boolean;
+    nos: CatalogoNo[];
+};
+
+type CatalogoNoProdutoRow = {
+    id: number;
+    nome: string;
+    codigo_barras?: string | null;
+    valor?: number | string | null;
+    foto_url?: string | null;
+    descricao?: string | null;
+    categoria_nome?: string | null;
+    classificacao_nome?: string | null;
+    ordem?: number | null;
+};
 
 // ---------- icons ----------
 function IconBack({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M10 7L5 12L10 17" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M5 12H20" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path
+                d="M10 7L5 12L10 17"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M5 12H20"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+            />
         </svg>
     );
 }
 function IconHome({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 10.5L12 4L20 10.5V20H4V10.5Z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
-            <path d="M9.5 20V14H14.5V20" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+            <path
+                d="M4 10.5L12 4L20 10.5V20H4V10.5Z"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+            />
+            <path
+                d="M9.5 20V14H14.5V20"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+            />
         </svg>
     );
 }
 function IconList({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M7 6H21M7 12H21M7 18H21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-            <path d="M3 6H3.01M3 12H3.01M3 18H3.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path
+                d="M7 6H21M7 12H21M7 18H21"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+            />
+            <path
+                d="M3 6H3.01M3 12H3.01M3 18H3.01"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+            />
         </svg>
     );
 }
 function IconSearch({ size = 20 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M10.5 18.5C14.6421 18.5 18 15.1421 18 11C18 6.85786 14.6421 3.5 10.5 3.5C6.35786 3.5 3 6.85786 3 11C3 15.1421 6.35786 18.5 10.5 18.5Z" stroke="currentColor" strokeWidth="2.2" />
-            <path d="M20.5 20.5L16.8 16.8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path
+                d="M10.5 18.5C14.6421 18.5 18 15.1421 18 11C18 6.85786 14.6421 3.5 10.5 3.5C6.35786 3.5 3 6.85786 3 11C3 15.1421 6.35786 18.5 10.5 18.5Z"
+                stroke="currentColor"
+                strokeWidth="2.2"
+            />
+            <path
+                d="M20.5 20.5L16.8 16.8"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+            />
         </svg>
     );
 }
@@ -363,7 +302,13 @@ function IconChevron({ dir }: { dir: "left" | "right" }) {
     const rotate = dir === "left" ? "180deg" : "0deg";
     return (
         <svg width={22} height={22} viewBox="0 0 24 24" fill="none" style={{ transform: `rotate(${rotate})` }} aria-hidden="true">
-            <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+                d="M9 6L15 12L9 18"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
         </svg>
     );
 }
@@ -460,7 +405,11 @@ function TopRightNav({
                     title="Concluir"
                 >
                     <IconCheck />
-                    {n > 0 ? <span className="badgeCount" aria-label={`${n} itens selecionados`}>{n}</span> : null}
+                    {n > 0 ? (
+                        <span className="badgeCount" aria-label={`${n} itens selecionados`}>
+                            {n}
+                        </span>
+                    ) : null}
                 </button>
             ) : null}
         </div>
@@ -598,6 +547,16 @@ export default function Page() {
     const [selected, setSelected] = useState<Produto | null>(null);
     const [openPrices, setOpenPrices] = useState(false);
 
+    const [produtos, setProdutos] = useState<Produto[]>([]);
+    const [loadingProdutos, setLoadingProdutos] = useState(false);
+    const [produtosError, setProdutosError] = useState<string | null>(null);
+
+    const [catalogoNos, setCatalogoNos] = useState<CatalogoNo[]>([]);
+    const [loadingCatalogo, setLoadingCatalogo] = useState(false);
+    const [catalogoError, setCatalogoError] = useState<string | null>(null);
+
+    const [produtoIndex, setProdutoIndex] = useState<Record<number, Produto>>({});
+
     // itens selecionados (não duplica)
     const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
 
@@ -654,6 +613,12 @@ export default function Page() {
         setOpenUserPick(false);
         setOpenInicio(false);
         setOpenConcluir(false);
+
+        setProdutos([]);
+        setProdutosError(null);
+        setProdutoIndex({});
+        setCatalogoNos([]);
+        setCatalogoError(null);
     }, []);
 
     const goBudgets = useCallback(() => {
@@ -669,12 +634,87 @@ export default function Page() {
         setStack(["home"]);
     }, [operadorSel, formResp, formFalecido, formTel]);
 
+    const fetchCatalogoInit = useCallback(async () => {
+        if (loadingCatalogo) return;
+        setLoadingCatalogo(true);
+        setCatalogoError(null);
+        try {
+            const j = (await safeJsonFetch(`${CATALOGO_API_URL}?init=1&_=${Date.now()}`, {
+                timeoutMs: 20000,
+            })) as CatalogoInit;
+            setCatalogoNos(Array.isArray(j?.nos) ? j.nos : []);
+        } catch (e: any) {
+            setCatalogoNos([]);
+            setCatalogoError(e?.message || "Erro ao carregar catálogo.");
+        } finally {
+            setLoadingCatalogo(false);
+        }
+    }, [loadingCatalogo]);
+
+    const fetchProdutosNo = useCallback(
+        async (noId: number, cat: CategoriaFluxo | null, lin: Linha | null) => {
+            if (!noId || !cat) {
+                setProdutos([]);
+                return;
+            }
+
+            setLoadingProdutos(true);
+            setProdutosError(null);
+            try {
+                const j = await safeJsonFetch(
+                    `${CATALOGO_API_URL}?no_produtos=1&no_id=${noId}&_=${Date.now()}`,
+                    { timeoutMs: 20000 }
+                );
+                const rows: CatalogoNoProdutoRow[] = Array.isArray(j?.rows) ? j.rows : [];
+
+                const mapped: Produto[] = rows
+                    .map((r) => {
+                        const id = Number(r.id) || 0;
+                        const preco = Number(r.valor) || 0;
+                        const thumb =
+                            r.foto_url && String(r.foto_url).trim() ? String(r.foto_url) : LOGO_URL_UI;
+
+                        const p: Produto = {
+                            id,
+                            categoria: cat,
+                            linha: cat === "URNAS" ? (lin ?? undefined) : undefined,
+                            nome: String(r.nome || ""),
+                            preco,
+                            saldo: 0,
+                            thumb,
+                            descricaoCurta: String(r.descricao || ""),
+                            inspiracao: "",
+                            conceito: "",
+                            especificacoes: "",
+                        };
+                        return p;
+                    })
+                    .filter((p) => p.id > 0 && p.nome.trim() !== "");
+
+                setProdutos(mapped);
+                setProdutoIndex((prev) => {
+                    const next = { ...prev };
+                    for (const p of mapped) next[p.id] = p;
+                    return next;
+                });
+            } catch (e: any) {
+                setProdutos([]);
+                setProdutosError(e?.message || "Erro ao carregar produtos.");
+            } finally {
+                setLoadingProdutos(false);
+            }
+        },
+        []
+    );
+
     // ---------- usuários ----------
     const fetchUsuarios = useCallback(async () => {
         setLoadingUsers(true);
         setUsersError(null);
         try {
-            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`, { timeoutMs: 15000 });
+            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`, {
+                timeoutMs: 15000,
+            });
             setUsuarios(Array.isArray(j) ? (j as Usuario[]) : []);
         } catch (e: any) {
             setUsuarios([]);
@@ -763,20 +803,87 @@ export default function Page() {
         if (categoria !== "URNAS" && linha) setLinha(null);
     }, [categoria, linha]);
 
+    // carrega a árvore quando o fluxo já está iniciado
+    useEffect(() => {
+        if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim())
+            return;
+        if (!catalogoNos.length && !loadingCatalogo && !catalogoError) {
+            fetchCatalogoInit();
+        }
+    }, [
+        operadorSel,
+        formResp,
+        formFalecido,
+        formTel,
+        catalogoNos.length,
+        loadingCatalogo,
+        catalogoError,
+        fetchCatalogoInit,
+    ]);
+
+    const catNoId = useMemo(() => {
+        if (!catalogoNos.length || !categoria) return 0;
+
+        const wanted = normalizeKey(labelCategoria(categoria));
+        const urnasWanted = normalizeKey("URNAS");
+        const urnasNo = catalogoNos.find((n) => normalizeKey(n.nome) === urnasWanted);
+
+        if (categoria === "URNAS") return urnasNo?.id || 0;
+
+        const direct = catalogoNos.find((n) => normalizeKey(n.nome) === wanted);
+        if (direct) return direct.id;
+
+        const contains = catalogoNos.find((n) => normalizeKey(n.nome).includes(wanted));
+        return contains?.id || 0;
+    }, [catalogoNos, categoria]);
+
+    const linhaNoId = useMemo(() => {
+        if (!catalogoNos.length || categoria !== "URNAS" || !linha) return 0;
+
+        const urnasWanted = normalizeKey("URNAS");
+        const urnasNo = catalogoNos.find((n) => normalizeKey(n.nome) === urnasWanted);
+        if (!urnasNo) return 0;
+
+        const children = catalogoNos.filter((n) => n.parent_id === urnasNo.id);
+        const wanted = normalizeKey(linha);
+
+        const exact = children.find((n) => normalizeKey(n.nome) === wanted);
+        if (exact) return exact.id;
+
+        const contains = children.find((n) => normalizeKey(n.nome).includes(wanted));
+        return contains?.id || 0;
+    }, [catalogoNos, categoria, linha]);
+
+    useEffect(() => {
+        if (!categoria) {
+            setProdutos([]);
+            return;
+        }
+        if (!catalogoNos.length) return;
+
+        if (categoria === "URNAS") {
+            const noId = linhaNoId || catNoId;
+            if (noId) fetchProdutosNo(noId, categoria, linha);
+            else setProdutos([]);
+            return;
+        }
+
+        if (catNoId) fetchProdutosNo(catNoId, categoria, null);
+        else setProdutos([]);
+    }, [categoria, linha, catalogoNos.length, catNoId, linhaNoId, fetchProdutosNo]);
+
     const produtosFiltrados = useMemo(() => {
-        let arr = mockProdutos.slice();
-        if (categoria) arr = arr.filter((p) => p.categoria === categoria);
-        if (linha) arr = arr.filter((p) => p.linha === linha);
+        let arr = produtos.slice();
 
         const qq = q.trim().toLowerCase();
         if (qq) {
             arr = arr.filter((p) => {
-                const hay = `${p.nome} ${p.descricaoCurta} ${p.inspiracao} ${p.conceito} ${p.especificacoes}`.toLowerCase();
+                const hay = `${p.nome} ${p.descricaoCurta}`.toLowerCase();
                 return hay.includes(qq);
             });
         }
         return arr;
-    }, [categoria, linha, q]);
+    }, [produtos, q]);
 
     const totalPages = Math.max(1, Math.ceil(produtosFiltrados.length / pageSize));
     const paged = useMemo(() => {
@@ -798,26 +905,32 @@ export default function Page() {
     );
 
     // ✅ abrir item da revisão no detalhe (apresentação do produto)
-    const openItemFromReview = useCallback((produtoId: number) => {
-        const p = mockProdutos.find((x) => x.id === produtoId);
-        if (!p) return;
+    const openItemFromReview = useCallback(
+        (produtoId: number) => {
+            const p = produtoIndex[produtoId];
+            if (!p) {
+                alert(
+                    "Não foi possível localizar os dados do item. Abra a categoria novamente para carregar."
+                );
+                return;
+            }
 
-        // Ajusta filtros para o detalhe bater com o produto
-        setCategoria(p.categoria);
+            // Ajusta filtros para o detalhe bater com o produto
+            setCategoria(p.categoria);
 
-        if (p.categoria === "URNAS") {
-            setLinha((p.linha as Linha) ?? null);
-            setStack(["home", "elementos", "urnas_linhas", "listagem", "detalhe"]);
-        } else {
-            setLinha(null);
-            setStack(["home", "elementos", "listagem", "detalhe"]);
-        }
+            if (p.categoria === "URNAS") {
+                setLinha((p.linha as Linha) ?? null);
+                setStack(["home", "elementos", "urnas_linhas", "listagem", "detalhe"]);
+            } else {
+                setLinha(null);
+                setStack(["home", "elementos", "listagem", "detalhe"]);
+            }
 
-        setSelected(p);
-        setOpenConcluir(false); // fecha a revisão ao abrir o detalhe
-    }, []);
-
-    
+            setSelected(p);
+            setOpenConcluir(false); // fecha a revisão ao abrir o detalhe
+        },
+        [produtoIndex]
+    );
 
     useEffect(() => {
         if (current !== "detalhe") return;
@@ -830,23 +943,9 @@ export default function Page() {
         }
     }, [current, selected, produtosFiltrados]);
 
-    const detailThumbs = useMemo(() => {
-        return Array.from({ length: 6 }).map((_, i) => ({
-            key: `thumb-${i + 1}`,
-            src: mockImg(`IMG ${i + 1}`, 26 + i * 12),
-            alt: `Miniatura ${i + 1}`,
-        }));
-    }, []);
-
     const tabelaValores = useMemo(() => {
         if (!selected) return [];
-        const extraLinha = selected.linha ? 80 : 0;
-        return [
-            { label: "Preço base", value: formatBRL(selected.preco) },
-            { label: "Taxa de preparação (mock)", value: formatBRL(120) },
-            { label: "Ajuste por linha (mock)", value: formatBRL(extraLinha) },
-            { label: "Total estimado", value: formatBRL(selected.preco + 120 + extraLinha) },
-        ];
+        return [{ label: "Preço", value: formatBRL(selected.preco) }];
     }, [selected]);
 
     const isSelectedInDraft = useCallback(
@@ -855,8 +954,6 @@ export default function Page() {
         },
         [draftItens]
     );
-
-    
 
     // ---------- draft: toggle (adiciona/remove) ----------
     const toggleDraftItem = useCallback((p: Produto) => {
@@ -912,24 +1009,21 @@ export default function Page() {
         return currentCatIndex === CATEGORIAS_FLUXO.length - 1;
     }, [categoria, currentCatIndex]);
 
-    const goCategoria = useCallback(
-        (cat: CategoriaFluxo) => {
-            setCategoria(cat);
-            setQ("");
-            setPage(1);
-            setSelected(null);
-            setOpenPrices(false);
+    const goCategoria = useCallback((cat: CategoriaFluxo) => {
+        setCategoria(cat);
+        setQ("");
+        setPage(1);
+        setSelected(null);
+        setOpenPrices(false);
 
-            if (cat === "URNAS") {
-                setLinha(null);
-                setStack(["home", "elementos", "urnas_linhas"]);
-            } else {
-                setLinha(null);
-                setStack(["home", "elementos", "listagem"]);
-            }
-        },
-        []
-    );
+        if (cat === "URNAS") {
+            setLinha(null);
+            setStack(["home", "elementos", "urnas_linhas"]);
+        } else {
+            setLinha(null);
+            setStack(["home", "elementos", "listagem"]);
+        }
+    }, []);
 
     const nextCategoria = useCallback(() => {
         const idx = currentCatIndex;
@@ -984,10 +1078,9 @@ export default function Page() {
         }
 
         const now = new Date();
-        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random()
-            .toString(16)
-            .slice(2, 8)
-            .toUpperCase()}`;
+        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+            now.getDate()
+        ).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
 
         const novo: Orcamento = {
             id,
@@ -1034,20 +1127,27 @@ export default function Page() {
     const totalOrcamentoSelecionado = useMemo(() => {
         if (!orcamentoSelecionado) return 0;
         let t = 0;
-        for (const it of orcamentoSelecionado.itens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
+        for (const it of orcamentoSelecionado.itens)
+            t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
         return t;
     }, [orcamentoSelecionado]);
 
     // ---------- EXPORT PDF (Resumo) ----------
     const exportarResumoPDF = useCallback(async (o: Orcamento) => {
-        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+            import("jspdf"),
+            import("jspdf-autotable"),
+        ]);
 
         const logoDataUrl = await toDataUrl(LOGO_URL_PDF);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
         const dt = new Date(o.criadoEmISO);
         const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
-        const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+        const geradoEm = new Intl.DateTimeFormat("pt-BR", {
+            dateStyle: "short",
+            timeStyle: "short",
+        }).format(new Date());
 
         // A4 landscape
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
@@ -1165,7 +1265,10 @@ export default function Page() {
         doc.setFontSize(12);
         doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
 
-        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        const safeName = `orcamento_${o.id}_${new Date()
+            .toISOString()
+            .slice(0, 19)
+            .replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }, []);
 
@@ -1198,6 +1301,8 @@ export default function Page() {
                 checkCount={draftItens.length}
             />
             <Title>ELEMENTOS DE HOMENAGEM</Title>
+
+            {catalogoError ? <div className="emptyState" style={{ margin: "0 26px" }}>{catalogoError}</div> : null}
 
             <div className="gridMenu2">
                 {CATEGORIAS_FLUXO.map((it) => (
@@ -1261,8 +1366,6 @@ export default function Page() {
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
-                    
-
                     <div className="listSubTitle">
                         {categoria ? `${labelCategoria(categoria)}` : "CATÁLOGO"}{" "}
                         {categoria === "URNAS" && linha ? `• LINHA ${linha}` : ""}
@@ -1289,13 +1392,21 @@ export default function Page() {
                             Itens: <b style={{ marginLeft: 6 }}>{produtosFiltrados.length}</b>
                         </div>
                     </div>
+
+                    {produtosError ? <div className="errorBox" style={{ marginTop: 12 }}>{produtosError}</div> : null}
                 </div>
 
                 <div className="gridProdutos">
-                    {paged.map((p) => (
-                        <ProductCard key={p.id} p={p} onOpen={() => openProduct(p)} />
-                    ))}
-                    {paged.length === 0 ? <div className="emptyState">Nenhum produto encontrado.</div> : null}
+                    {loadingProdutos ? (
+                        <div className="emptyState">Carregando produtos...</div>
+                    ) : (
+                        <>
+                            {paged.map((p) => (
+                                <ProductCard key={p.id} p={p} onOpen={() => openProduct(p)} />
+                            ))}
+                            {paged.length === 0 ? <div className="emptyState">Nenhum produto encontrado.</div> : null}
+                        </>
+                    )}
                 </div>
 
                 <div className="pagerRow">
@@ -1327,15 +1438,9 @@ export default function Page() {
                         </button>
                     ) : null}
                 </div>
-
-                
-
-                
             </div>
         </ScreenContainer>
     );
-
-    
 
     const ScreenDetalhe = (
         <ScreenContainer>
@@ -1380,17 +1485,6 @@ export default function Page() {
                         <div className="detailLeft">
                             <div className="detailImgCard">
                                 <img src={selected.thumb} alt={selected.nome} className="detailImg" />
-                                <button type="button" className="zoomBtn" onClick={() => console.info("Mock: zoom")} title="Zoom" aria-label="Zoom">
-                                    🔍
-                                </button>
-                            </div>
-
-                            <div className="thumbRow" aria-label="Miniaturas (mock)">
-                                {detailThumbs.map((t) => (
-                                    <button type="button" key={t.key} className="thumb" onClick={() => console.info("Mock: trocar imagem")} title="Miniatura (mock)">
-                                        <img src={t.src} alt={t.alt} className="thumbImg" />
-                                    </button>
-                                ))}
                             </div>
 
                             {/* ✅ abaixo das fotos: somente Saldo */}
@@ -1406,53 +1500,67 @@ export default function Page() {
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
                             <div className="bulletBox">
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
+                                {selected.descricaoCurta ? (
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
+                                        </div>
                                     </div>
-                                </div>
+                                ) : null}
 
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>INSPIRAÇÃO:</b> {selected.inspiracao}
+                                {selected.inspiracao ? (
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>INSPIRAÇÃO:</b> {selected.inspiracao}
+                                        </div>
                                     </div>
-                                </div>
+                                ) : null}
 
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>CONCEITO:</b> {selected.conceito}
+                                {selected.conceito ? (
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>CONCEITO:</b> {selected.conceito}
+                                        </div>
                                     </div>
-                                </div>
+                                ) : null}
 
-                                <div className="bulletItem">
-                                    <span className="bulletDot">•</span>
-                                    <div>
-                                        <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
+                                {selected.especificacoes ? (
+                                    <div className="bulletItem">
+                                        <span className="bulletDot">•</span>
+                                        <div>
+                                            <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
+                                        </div>
                                     </div>
-                                </div>
+                                ) : null}
 
                                 <div className="detailActions">
-                                    <button type="button" className="iconActionBtn" onClick={() => setOpenPrices(true)} aria-label="Tabela de valores" title="Tabela de valores">
+                                    <button
+                                        type="button"
+                                        className="iconActionBtn"
+                                        onClick={() => setOpenPrices(true)}
+                                        aria-label="Tabela de valores"
+                                        title="Tabela de valores"
+                                    >
                                         <IconDollar />
                                     </button>
 
-                                        {(() => {
-                                            const already = isSelectedInDraft(selected.id);
-                                            return (
-                                                <button
-                                                    type="button"
-                                                    className={cn("iconActionBtn", already && "iconActionBtnSelected")}
-                                                    onClick={() => toggleDraftItem(selected)} // ✅ toggle
-                                                    aria-label={already ? "Remover" : "Adicionar"}
-                                                    title={already ? "Remover" : "Adicionar"}
-                                                >
-                                                    {already ? <IconCheck /> : <IconPlus />}
-                                                </button>
-                                            );
-                                        })()}
+                                    {(() => {
+                                        const already = isSelectedInDraft(selected.id);
+                                        return (
+                                            <button
+                                                type="button"
+                                                className={cn("iconActionBtn", already && "iconActionBtnSelected")}
+                                                onClick={() => toggleDraftItem(selected)} // ✅ toggle
+                                                aria-label={already ? "Remover" : "Adicionar"}
+                                                title={already ? "Remover" : "Adicionar"}
+                                            >
+                                                {already ? <IconCheck /> : <IconPlus />}
+                                            </button>
+                                        );
+                                    })()}
                                 </div>
 
                                 {showStepperButtons ? (
@@ -1473,7 +1581,7 @@ export default function Page() {
 
             <Modal
                 open={openPrices}
-                title="Tabela de valores (mock)"
+                title="Tabela de valores"
                 onClose={() => setOpenPrices(false)}
                 footer={
                     <button type="button" className="ctaBtn" onClick={() => setOpenPrices(false)}>
@@ -1507,18 +1615,34 @@ export default function Page() {
 
     const ScreenOrcamentos = (
         <ScreenContainer>
-            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openConcluirModal} disabledBack={!canBack} showCheck={false} />
+            <TopRightNav
+                onBack={back}
+                onHome={home}
+                onList={list}
+                onCheck={openConcluirModal}
+                disabledBack={!canBack}
+                showCheck={false}
+            />
             <Title>LISTA DE ORÇAMENTOS</Title>
 
             <div className="budgetsWrap">
                 {orcamentos.length ? (
                     <div className="budgetGrid">
                         {orcamentos.map((o) => {
-                            const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+                            const total = o.itens.reduce(
+                                (acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0),
+                                0
+                            );
                             const dt = new Date(o.criadoEmISO);
                             const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
                             return (
-                                <button key={o.id} type="button" className="budgetCard" onClick={() => openOrcamentoResumo(o.id)} title="Abrir resumo">
+                                <button
+                                    key={o.id}
+                                    type="button"
+                                    className="budgetCard"
+                                    onClick={() => openOrcamentoResumo(o.id)}
+                                    title="Abrir resumo"
+                                >
                                     <div className="budgetTop">
                                         <div className="budgetTitle">{o.falecido}</div>
                                         <div className="budgetMeta">
@@ -1551,15 +1675,30 @@ export default function Page() {
     const ScreenResumo = (
         <ScreenContainer>
             <div className="resumoTopBar">
-                <button type="button" className="iconBtn resumoBtn" onClick={() => setStack(["home", "orcamentos"])} title="Voltar (lista)">
+                <button
+                    type="button"
+                    className="iconBtn resumoBtn"
+                    onClick={() => setStack(["home", "orcamentos"])}
+                    title="Voltar (lista)"
+                >
                     <IconBack />
                 </button>
 
-                <button type="button" className="iconBtn resumoBtn" onClick={() => console.info("Visto (sem função por enquanto)")} title="Visto">
+                <button
+                    type="button"
+                    className="iconBtn resumoBtn"
+                    onClick={() => console.info("Visto (sem função por enquanto)")}
+                    title="Visto"
+                >
                     <IconCheck />
                 </button>
 
-                <button type="button" className="iconBtn resumoBtn" onClick={() => (orcamentoSelecionado ? exportarResumoPDF(orcamentoSelecionado) : null)} title="Imprimir (PDF)">
+                <button
+                    type="button"
+                    className="iconBtn resumoBtn"
+                    onClick={() => (orcamentoSelecionado ? exportarResumoPDF(orcamentoSelecionado) : null)}
+                    title="Imprimir (PDF)"
+                >
                     <IconPrint />
                 </button>
             </div>
@@ -1597,7 +1736,9 @@ export default function Page() {
                             <div className="resumoDate">
                                 <div className="resumoLine">
                                     <b>Data:</b>{" "}
-                                    {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(orcamentoSelecionado.criadoEmISO))}
+                                    {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(
+                                        new Date(orcamentoSelecionado.criadoEmISO)
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1615,7 +1756,9 @@ export default function Page() {
                                     <div className="resumoCat">{labelCategoria(it.categoria)}</div>
                                     <div className="resumoItemName">{it.nome}</div>
                                     <div style={{ textAlign: "right" }}>{clampInt(it.qtd)}</div>
-                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
+                                    <div style={{ textAlign: "right" }}>
+                                        {formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -1652,7 +1795,6 @@ export default function Page() {
 
             {screen}
 
-            {/* MODAL: Selecionar Operador */}
             {/* MODAL: Selecionar Operador */}
             <Modal
                 open={openUserPick}
@@ -1734,17 +1876,13 @@ export default function Page() {
                     ) : filteredUsuarios.length ? (
                         filteredUsuarios.map((u, idx) => {
                             const active = idx === userHighlight;
-                            const selected = operadorTemp?.id === u.id;
+                            const selectedU = operadorTemp?.id === u.id;
 
                             return (
                                 <button
                                     key={u.id}
                                     type="button"
-                                    className={cn(
-                                        "userRow",
-                                        active && "userRowActive",
-                                        selected && "userRowSelected"
-                                    )}
+                                    className={cn("userRow", active && "userRowActive", selectedU && "userRowSelected")}
                                     onMouseEnter={() => setUserHighlight(idx)}
                                     onClick={() => selectOperador(u)} // ✅ só marca
                                     title="Selecionar"
@@ -1754,7 +1892,7 @@ export default function Page() {
                                         <div className="userUser">@{u.usuario}</div>
                                     </div>
 
-                                    {selected ? <span className="userRowCheck">✓</span> : null}
+                                    {selectedU ? <span className="userRowCheck">✓</span> : null}
                                 </button>
                             );
                         })
@@ -1774,10 +1912,20 @@ export default function Page() {
                 maxWidth={860}
                 footer={
                     <div style={{ display: "flex", gap: 10 }}>
-                        <button type="button" className="ctaBtn" onClick={() => setOpenInicio(false)} style={{ minWidth: 180 }}>
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={() => setOpenInicio(false)}
+                            style={{ minWidth: 180 }}
+                        >
                             CANCELAR
                         </button>
-                        <button type="button" className="ctaBtn" onClick={iniciarHomenagem} style={{ minWidth: 220 }}>
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={iniciarHomenagem}
+                            style={{ minWidth: 220 }}
+                        >
                             COMEÇAR
                         </button>
                     </div>
@@ -1785,19 +1933,30 @@ export default function Page() {
             >
                 <div className="inicioTopHint">
                     <div>
-                        <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                        <b>Operador:</b>{" "}
+                        {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
                     </div>
                 </div>
 
                 <div className="formGrid">
                     <label className="formField">
                         <span>Responsável</span>
-                        <input value={formResp} onChange={(e) => setFormResp(e.target.value)} className="formInput" placeholder="Nome do responsável" />
+                        <input
+                            value={formResp}
+                            onChange={(e) => setFormResp(e.target.value)}
+                            className="formInput"
+                            placeholder="Nome do responsável"
+                        />
                     </label>
 
                     <label className="formField">
                         <span>Falecido(a)</span>
-                        <input value={formFalecido} onChange={(e) => setFormFalecido(e.target.value)} className="formInput" placeholder="Nome do falecido(a)" />
+                        <input
+                            value={formFalecido}
+                            onChange={(e) => setFormFalecido(e.target.value)}
+                            className="formInput"
+                            placeholder="Nome do falecido(a)"
+                        />
                     </label>
 
                     <label className="formField">
@@ -1869,7 +2028,6 @@ export default function Page() {
                         Nenhum item selecionado. Você pode finalizar mesmo assim.
                     </div>
                 ) : (
-                    // ✅ Sem categorias: lista “reta” de itens
                     <div className="reviewWrap">
                         <div className="reviewItems">
                             {draftItens.map((it) => (
@@ -1884,12 +2042,8 @@ export default function Page() {
                                         {it.nome}
                                     </button>
 
-                                    
-
                                     <div className="reviewItemRight">
-                                        <div className="reviewItemPrice">
-                                            {formatBRL(Number(it.valorUnit) || 0)}
-                                        </div>
+                                        <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
                                         <button
                                             type="button"
                                             className="reviewRemoveBtn"
@@ -1970,27 +2124,27 @@ const css = `
   }
 
   .badgeCount{
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
 
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
-  background: #029cde;
-  color: #fff;
-  font-weight: 1000;
-  font-size: 12px;
-  line-height: 1;
+    background: #029cde;
+    color: #fff;
+    font-weight: 1000;
+    font-size: 12px;
+    line-height: 1;
 
-  border: 2px solid rgba(255,255,255,0.95);
-  box-shadow: 0 10px 18px rgba(0,0,0,0.22);
-}
+    border: 2px solid rgba(255,255,255,0.95);
+    box-shadow: 0 10px 18px rgba(0,0,0,0.22);
+  }
 
   .title{
     color: var(--ink);
@@ -2196,12 +2350,12 @@ const css = `
   }
 
   .pagerRow{
-  display:flex;
-  justify-content:flex-end;
-  align-items:center;
-  gap: 12px;
-  margin-top: 12px;
-}
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    gap: 12px;
+    margin-top: 12px;
+  }
   .pagerBtns{
     display:flex;
     align-items:center;
@@ -2224,7 +2378,6 @@ const css = `
     justify-content:center;
   }
   .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
-  .pagerInfo{ color: rgba(255,255,255,0.92); font-weight: 700; padding: 0 10px; }
 
   /* detalhe */
   .detailLayout{
@@ -2245,30 +2398,6 @@ const css = `
     height: 330px;
   }
   .detailImg{ width: 100%; height: 100%; object-fit: cover; }
-  .zoomBtn{
-    position:absolute;
-    right: 12px;
-    bottom: 12px;
-    width: 44px;
-    height: 44px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.35);
-    background: rgba(0,0,0,0.18);
-    color: rgba(255,255,255,0.92);
-    cursor:pointer;
-  }
-
-  .thumbRow{ display:flex; gap: 10px; align-items:center; }
-  .thumb{
-    width: 62px;
-    height: 44px;
-    border-radius: 10px;
-    overflow:hidden;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.10);
-    cursor:pointer;
-  }
-  .thumbImg{ width:100%; height:100%; object-fit:cover; }
 
   .detailMeta{ display:flex; gap: 10px; flex-wrap:wrap; }
   .metaPill{
@@ -2330,7 +2459,6 @@ const css = `
   }
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
-  .iconActionBtn:disabled{ opacity: 0.70; cursor: not-allowed; }
   .iconActionBtnSelected{
     background: rgba(230, 255, 238, 0.92);
     border-color: rgba(16, 185, 129, 0.35);
@@ -2338,14 +2466,14 @@ const css = `
   }
 
   .stepperRow{
-  position: absolute;
-  right: 26px;   /* mesma distância da borda direita */
-  bottom: 22px;  /* distância da borda de baixo */
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  z-index: 5;
-}
+    position: absolute;
+    right: 26px;
+    bottom: 22px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    z-index: 5;
+  }
   .stepBtn{
     border-radius: 14px;
     padding: 12px 14px;
@@ -2384,71 +2512,66 @@ const css = `
 
   /* modal */
   .modalOverlay{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.55);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding: 18px;
-  z-index: 999;
-}
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 18px;
+    z-index: 999;
+  }
   .modalCard{
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
-  border: 1px solid rgba(255,255,255,0.18);
-  box-shadow: 0 30px 70px rgba(0,0,0,0.5);
-  overflow: hidden;
-
-  display: flex;
-  flex-direction: column;
-
-  /* NÃO estoura tela */
-  max-height: min(88vh, 740px);
-}
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 30px 70px rgba(0,0,0,0.5);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: min(88vh, 740px);
+  }
   .modalHeader{
-  display:flex;
-  align-items:center;
-  gap: 12px;
-  padding: 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.14);
-}
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    padding: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.14);
+  }
 
-.modalTitle{
-  color: rgba(255,255,255,0.95);
-  font-weight: 900;
-  letter-spacing: 0.8px;
-  font-size: 18px;
-  line-height: 1;
-}
+  .modalTitle{
+    color: rgba(255,255,255,0.95);
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    font-size: 18px;
+    line-height: 1;
+  }
 
-.modalClose{
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.92);
-  cursor:pointer;
-  flex: 0 0 auto;
-}
+  .modalClose{
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.92);
+    cursor:pointer;
+    flex: 0 0 auto;
+  }
   .modalBody{
-  padding: 14px;
-  color: rgba(255,255,255,0.92);
+    padding: 14px;
+    color: rgba(255,255,255,0.92);
+    flex: 1 1 auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 
-  /* ✅ área rolável */
-  flex: 1 1 auto;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.modalFooter{
-  flex: 0 0 auto;
-  padding: 14px;
-  border-top: 1px solid rgba(255,255,255,0.14);
-  display:flex;
-  justify-content:flex-end;
-}
+  .modalFooter{
+    flex: 0 0 auto;
+    padding: 14px;
+    border-top: 1px solid rgba(255,255,255,0.14);
+    display:flex;
+    justify-content:flex-end;
+  }
 
   /* forms */
   .formGrid{ display:grid; gap: 12px; }
@@ -2465,33 +2588,7 @@ const css = `
   }
   .formInput::placeholder{ color: rgba(255,255,255,0.65); }
 
-  /* users */
-  .usersGrid{
-  display:grid;
-  grid-template-columns: 1fr;     /* ✅ sempre 1 coluna */
-  gap: 12px;
-
-  max-height: min(56vh, 520px);
-  overflow: auto;
-  padding-right: 4px;
-  -webkit-overflow-scrolling: touch;
-}
-
-@media (max-width: 1100px){
-  .usersGrid{ grid-template-columns: 1fr; }
-}
-  .userCard{
-    text-align:left;
-    padding: 12px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.18);
-    cursor:pointer;
-    color: rgba(255,255,255,0.92);
-    font-weight: 900;
-  }
-
-    /* ✅ user picker (lista vertical) */
+  /* ✅ user picker (lista vertical) */
   .userPickerSearch{
     width: 100%;
     display:flex;
@@ -2541,7 +2638,6 @@ const css = `
     cursor:pointer;
     color: rgba(255,255,255,0.92);
     font-weight: 900;
-
     display:flex;
     align-items:center;
     justify-content: space-between;
@@ -2590,9 +2686,6 @@ const css = `
     border: 1px solid rgba(16, 185, 129, 0.35);
     flex: 0 0 auto;
   }
-  .userCard:hover{ filter: brightness(1.03); transform: translateY(-1px); }
-  .userName{ font-size: 15px; }
-  .userUser{ margin-top: 4px; opacity: 0.9; font-size: 12px; }
 
   .errorBox{
     margin-bottom: 10px;
@@ -2807,18 +2900,6 @@ const css = `
     -webkit-overflow-scrolling: touch;
   }
 
-  .reviewBlock{
-    border-radius: 14px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.14);
-    overflow:hidden;
-  }
-  .reviewCat{
-    padding: 10px 12px;
-    font-weight: 1000;
-    background: rgba(255,255,255,0.08);
-    border-bottom: 1px solid rgba(255,255,255,0.12);
-  }
   .reviewItems{
     padding: 10px 12px;
     display:grid;
@@ -2830,8 +2911,7 @@ const css = `
     justify-content: space-between;
     gap: 12px;
   }
-  .reviewItemName{ font-weight: 1000; }
-  
+
   .reviewItemRight{ display:flex; align-items:center; gap: 10px; }
   .reviewItemPrice{ font-weight: 1000; white-space: nowrap; }
   .reviewRemoveBtn{
@@ -2855,7 +2935,6 @@ const css = `
     .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
     .resumoHeader2{ grid-template-columns: 1fr; }
     .resumoDate{ justify-content:flex-start; }
-    .usersGrid{ grid-template-columns: 1fr; }
   }
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
@@ -2866,7 +2945,7 @@ const css = `
     .stepBtn{ min-width: 0; width: 100%; }
   }
 
-    .reviewHeaderRow{
+  .reviewHeaderRow{
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px 16px;
