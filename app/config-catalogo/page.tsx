@@ -257,7 +257,12 @@ export default function CatalogoConfigPage() {
 
             // ✅ NOVO: fluxos listados pelo PHP
             const fl: FluxoInfo[] = Array.isArray(res.fluxos)
-                ? res.fluxos.map((x: any) => ({ fluxo_nome: String(x.fluxo_nome ?? ""), total: x.total ?? 0 })).filter((x) => x.fluxo_nome)
+                ? res.fluxos
+                    .map((x: any) => ({
+                        fluxo_nome: String(x.fluxo_nome ?? ""),
+                        total: x.total ?? 0
+                    }))
+                    .filter((x: FluxoInfo) => x.fluxo_nome)
                 : [];
             setFluxos(fl);
 
