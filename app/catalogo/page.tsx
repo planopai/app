@@ -1449,8 +1449,8 @@ export default function Page() {
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
-                <div className="listTitle" style={{ marginBottom: 10 }}>
-                    {breadcrumb}
+                <div className="listTitle detailCrumb" style={{ marginBottom: 10 }}>
+                    {noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}
                 </div>
 
                 {!selected ? (
@@ -2116,6 +2116,11 @@ const css = `
     letter-spacing: 1px;
     font-size: 20px;
     text-shadow: 0 10px 20px rgba(0,0,0,0.25);
+  }
+
+  /* ✅ NOVO: no detalhe, título do breadcrumb deve ser branco e sem amarelo */
+  .detailCrumb{
+    color: rgba(255,255,255,0.95) !important;
   }
   .listSubTitle{
     margin-top: 0px;
