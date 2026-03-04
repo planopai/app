@@ -9,7 +9,7 @@ type No = {
     parent_id: number | null;
     nome: string;
     ordem: number;
-    ativo: number;
+    ativo: number | boolean;
 };
 
 type Produto = {
@@ -18,9 +18,14 @@ type Produto = {
     codigo_barras?: string | null;
     valor?: number | string | null;
     foto_url?: string | null;
+    descricao?: string | null;
     categoria_nome?: string | null;
     classificacao_nome?: string | null;
+    fabricante_nome?: string | null;
+    deposito_nome?: string | null;
 };
+
+type Option = { id: number; nome: string };
 
 function asBool(v: any) {
     return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
@@ -74,11 +79,12 @@ async function apiPOST(body: any) {
 
 /** monta árvore a partir da lista */
 function buildTree(nodes: No[]) {
-    const map = new Map<number, (No & { children: No[] })>();
+    const map = new Map<number, (No & { children: Array<No & { children: any[] }> })>();
     nodes.forEach((n) => map.set(n.id, { ...n, children: [] }));
-    const roots: Array<No & { children: No[] }> = [];
+
+    const roots: Array<No & { children: any[] }> = [];
     map.forEach((n) => {
-        if (n.parent_id && map.has(n.parent_id)) {
+        if (n.parent_id != null && map.has(n.parent_id)) {
             map.get(n.parent_id)!.children.push(n as any);
         } else {
             roots.push(n);
@@ -86,7 +92,7 @@ function buildTree(nodes: No[]) {
     });
 
     const sortRec = (arr: any[]) => {
-        arr.sort((a, b) => (toInt(a.ordem) - toInt(b.ordem)) || String(a.nome).localeCompare(String(b.nome)));
+        arr.sort((a, b) => toInt(a.ordem) - toInt(b.ordem) || String(a.nome).localeCompare(String(b.nome)));
         arr.forEach((x) => sortRec(x.children || []));
     };
     sortRec(roots);
@@ -99,30 +105,52 @@ function NodeItem({
     depth,
     selectedId,
     onSelect,
+    expanded,
+    toggleExpand,
 }: {
     node: No & { children: any[] };
     depth: number;
     selectedId: number | null;
     onSelect: (id: number) => void;
+    expanded: Set<number>;
+    toggleExpand: (id: number) => void;
 }) {
     const isSel = selectedId === node.id;
+    const hasChildren = (node.children?.length ?? 0) > 0;
+    const isOpen = expanded.has(node.id);
+
     return (
         <div>
-            <button
-                type="button"
-                className={`w-full text-left rounded-md px-2 py-2 text-sm hover:bg-muted/40 ${isSel ? "bg-muted font-semibold" : ""
-                    }`}
-                style={{ paddingLeft: 8 + depth * 14 }}
-                onClick={() => onSelect(node.id)}
+            <div
+                className={`flex items-center gap-1 rounded-md pr-2 ${isSel ? "bg-muted" : "hover:bg-muted/40"}`}
+                style={{ paddingLeft: 6 + depth * 14 }}
             >
-                <div className="flex items-center gap-2">
+                <button
+                    type="button"
+                    className="h-8 w-8 shrink-0 rounded-md hover:bg-muted/60 disabled:opacity-40"
+                    disabled={!hasChildren}
+                    title={hasChildren ? (isOpen ? "Encolher" : "Expandir") : "Sem filhos"}
+                    onClick={() => hasChildren && toggleExpand(node.id)}
+                >
+                    {hasChildren ? (
+                        <span className="text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
+                    ) : (
+                        <span className="text-xs text-muted-foreground">•</span>
+                    )}
+                </button>
+
+                <button
+                    type="button"
+                    className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${isSel ? "font-semibold" : ""}`}
+                    onClick={() => onSelect(node.id)}
+                >
                     <span className={`inline-flex h-2 w-2 rounded-full ${asBool(node.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
                     <span className="truncate">{node.nome}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground font-mono">{node.id}</span>
-                </div>
-            </button>
+                    <span className="ml-auto text-[11px] font-mono text-muted-foreground">#{node.id}</span>
+                </button>
+            </div>
 
-            {node.children?.length ? (
+            {hasChildren && isOpen ? (
                 <div className="mt-1">
                     {node.children.map((ch: any) => (
                         <NodeItem
@@ -131,6 +159,8 @@ function NodeItem({
                             depth={depth + 1}
                             selectedId={selectedId}
                             onSelect={onSelect}
+                            expanded={expanded}
+                            toggleExpand={toggleExpand}
                         />
                     ))}
                 </div>
@@ -139,7 +169,7 @@ function NodeItem({
     );
 }
 
-export default function CatalogoRegrasConfigPage() {
+export default function CatalogoConfigPage() {
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -148,23 +178,71 @@ export default function CatalogoRegrasConfigPage() {
 
     const [selectedNoId, setSelectedNoId] = useState<number | null>(null);
 
+    // controle de expandir/encolher
+    const [expanded, setExpanded] = useState<Set<number>>(new Set());
+    const expandAll = useCallback(() => {
+        const all = new Set<number>();
+        nodes.forEach((n) => all.add(n.id));
+        setExpanded(all);
+    }, [nodes]);
+    const collapseAll = useCallback(() => setExpanded(new Set()), []);
+    const toggleExpand = useCallback((id: number) => {
+        setExpanded((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }, []);
+
     // produtos já vinculados ao nó
     const [noProdutos, setNoProdutos] = useState<Produto[]>([]);
     const [selectedProdutoIds, setSelectedProdutoIds] = useState<Set<number>>(new Set());
 
-    // busca no estoque
+    // busca no estoque + filtros
     const [q, setQ] = useState("");
     const [estoqueLoading, setEstoqueLoading] = useState(false);
     const [estoqueRows, setEstoqueRows] = useState<Produto[]>([]);
+
+    // combos (se seu backend ainda não tiver, a UI funciona com "Todos/Todas")
+    const [depositos, setDepositos] = useState<Option[]>([]);
+    const [categorias, setCategorias] = useState<Option[]>([]);
+    const [fabricantes, setFabricantes] = useState<Option[]>([]);
+    const [classificacoes, setClassificacoes] = useState<Option[]>([]);
+
+    const [fDeposito, setFDeposito] = useState<number>(0);
+    const [fCategoria, setFCategoria] = useState<number>(0);
+    const [fFabricante, setFFabricante] = useState<number>(0);
+    const [fClassificacao, setFClassificacao] = useState<number>(0);
 
     const loadInit = useCallback(async () => {
         setMsg(null);
         setLoading(true);
         try {
-            // backend deve retornar: { ok:true, nos:[...] }
             const res = await apiGET({ init: 1 });
             if (!res) return;
-            setNodes(Array.isArray(res.nos) ? res.nos : []);
+
+            const raw = Array.isArray(res.nos) ? res.nos : [];
+            setNodes(raw);
+
+            // ✅ se o PHP retornar listas (opcional), preenche; senão fica vazio e a UI continua
+            const optMap = (arr: any): Option[] =>
+                Array.isArray(arr) ? arr.map((x) => ({ id: toInt(x.id), nome: String(x.nome ?? x.descricao ?? "") })) : [];
+
+            setDepositos(optMap(res.depositos));
+            setCategorias(optMap(res.categorias));
+            setFabricantes(optMap(res.fabricantes));
+            setClassificacoes(optMap(res.classificacoes));
+
+            // dica: expandir automaticamente raízes ao abrir
+            setExpanded((prev) => {
+                if (prev.size > 0) return prev;
+                const roots = new Set<number>();
+                raw.forEach((n: any) => {
+                    if (n.parent_id == null) roots.add(toInt(n.id));
+                });
+                return roots;
+            });
         } catch (e: any) {
             setNodes([]);
             setMsg({ ok: false, text: e?.message || "Falha ao carregar." });
@@ -202,6 +280,13 @@ export default function CatalogoRegrasConfigPage() {
             setEstoqueRows([]);
             setQ("");
             loadNoProdutos(id);
+
+            // garante que o caminho (e o próprio) fique expandido
+            setExpanded((prev) => {
+                const next = new Set(prev);
+                next.add(id);
+                return next;
+            });
         },
         [loadNoProdutos]
     );
@@ -212,8 +297,13 @@ export default function CatalogoRegrasConfigPage() {
 
         try {
             setMsg(null);
-            await apiPOST({ action: "no_criar", parent_id: null, nome: nome.trim(), ordem: 0, ativo: 1 });
+            const r = await apiPOST({ action: "no_criar", parent_id: null, nome: nome.trim(), ordem: 0, ativo: 1 });
             await loadInit();
+            if (r?.id) {
+                setSelectedNoId(toInt(r.id));
+                setExpanded((prev) => new Set(prev).add(toInt(r.id)));
+            }
+            setMsg({ ok: true, text: "Menu raiz criado." });
         } catch (e: any) {
             setMsg({ ok: false, text: e?.message || "Erro ao criar." });
         }
@@ -229,8 +319,18 @@ export default function CatalogoRegrasConfigPage() {
 
         try {
             setMsg(null);
-            await apiPOST({ action: "no_criar", parent_id: selectedNoId, nome: nome.trim(), ordem: 0, ativo: 1 });
+            const r = await apiPOST({ action: "no_criar", parent_id: selectedNoId, nome: nome.trim(), ordem: 0, ativo: 1 });
             await loadInit();
+            if (r?.id) {
+                setSelectedNoId(toInt(r.id));
+                setExpanded((prev) => {
+                    const next = new Set(prev);
+                    next.add(selectedNoId);
+                    next.add(toInt(r.id));
+                    return next;
+                });
+            }
+            setMsg({ ok: true, text: "Submenu criado." });
         } catch (e: any) {
             setMsg({ ok: false, text: e?.message || "Erro ao criar." });
         }
@@ -246,6 +346,7 @@ export default function CatalogoRegrasConfigPage() {
             setMsg(null);
             await apiPOST({ action: "no_atualizar", id: selectedNoId, nome: nome.trim() });
             await loadInit();
+            setMsg({ ok: true, text: "Nó renomeado." });
         } catch (e: any) {
             setMsg({ ok: false, text: e?.message || "Erro ao renomear." });
         }
@@ -253,7 +354,7 @@ export default function CatalogoRegrasConfigPage() {
 
     const excluirNo = async () => {
         if (!selectedNoId) return;
-        const ok = confirm("Excluir este nó? (pode excluir filhos também dependendo da regra do backend)");
+        const ok = confirm("Excluir este nó? (se houver filhos, eles podem ser excluídos também)");
         if (!ok) return;
 
         try {
@@ -263,6 +364,7 @@ export default function CatalogoRegrasConfigPage() {
             setNoProdutos([]);
             setSelectedProdutoIds(new Set());
             await loadInit();
+            setMsg({ ok: true, text: "Nó excluído." });
         } catch (e: any) {
             setMsg({ ok: false, text: e?.message || "Erro ao excluir." });
         }
@@ -274,13 +376,21 @@ export default function CatalogoRegrasConfigPage() {
             return;
         }
 
+        setMsg(null);
         setEstoqueLoading(true);
         try {
-            // backend deve retornar: { ok:true, rows:[...] }
+            // ✅ IMPORTANTE:
+            // Seu PHP precisa aceitar esses params:
+            // deposito_id, categoria_id, fabricante_id, classificacao_id
+            // (se não aceitar ainda, ele vai ignorar e a busca vai vir sem filtrar)
             const res = await apiGET({
                 estoque_buscar: 1,
                 q: q.trim(),
                 limit: 80,
+                deposito_id: fDeposito > 0 ? fDeposito : undefined,
+                categoria_id: fCategoria > 0 ? fCategoria : undefined,
+                fabricante_id: fFabricante > 0 ? fFabricante : undefined,
+                classificacao_id: fClassificacao > 0 ? fClassificacao : undefined,
             });
             if (!res) return;
             setEstoqueRows(Array.isArray(res.rows) ? res.rows : []);
@@ -318,6 +428,19 @@ export default function CatalogoRegrasConfigPage() {
         }
     };
 
+    const clearFilters = () => {
+        setFDeposito(0);
+        setFCategoria(0);
+        setFFabricante(0);
+        setFClassificacao(0);
+    };
+
+    const selectedNodeName = useMemo(() => {
+        if (!selectedNoId) return "";
+        const n = nodes.find((x) => x.id === selectedNoId);
+        return String(n?.nome ?? "");
+    }, [nodes, selectedNoId]);
+
     return (
         <div className="p-6">
             <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -329,23 +452,42 @@ export default function CatalogoRegrasConfigPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <button className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={criarNoRaiz}>
+                    <button
+                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
+                        onClick={criarNoRaiz}
+                    >
                         + Menu (Raiz)
                     </button>
 
-                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={criarNoFilho} disabled={!selectedNoId}>
+                    <button
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                        onClick={criarNoFilho}
+                        disabled={!selectedNoId}
+                    >
                         + Submenu (Filho)
                     </button>
 
-                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={renomearNo} disabled={!selectedNoId}>
+                    <button
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                        onClick={renomearNo}
+                        disabled={!selectedNoId}
+                    >
                         Renomear
                     </button>
 
-                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={excluirNo} disabled={!selectedNoId}>
+                    <button
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                        onClick={excluirNo}
+                        disabled={!selectedNoId}
+                    >
                         Excluir
                     </button>
 
-                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={loadInit} disabled={loading}>
+                    <button
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                        onClick={loadInit}
+                        disabled={loading}
+                    >
                         {loading ? "Carregando…" : "Recarregar"}
                     </button>
                 </div>
@@ -353,17 +495,29 @@ export default function CatalogoRegrasConfigPage() {
 
             {msg && (
                 <div
-                    className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
+                    className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-red-200 bg-red-50 text-red-800"
                         }`}
                 >
                     {msg.text}
                 </div>
             )}
 
-            <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+            <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
                 {/* ÁRVORE */}
                 <div className="rounded-xl border bg-background p-3 shadow-sm">
-                    <div className="mb-2 text-sm font-semibold">Menus e Submenus</div>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold">Menus e Submenus</div>
+                        <div className="flex items-center gap-2">
+                            <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted" onClick={expandAll} title="Expandir tudo">
+                                Expandir
+                            </button>
+                            <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted" onClick={collapseAll} title="Encolher tudo">
+                                Encolher
+                            </button>
+                        </div>
+                    </div>
 
                     {tree.length === 0 && !loading ? (
                         <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
@@ -371,15 +525,29 @@ export default function CatalogoRegrasConfigPage() {
                         </div>
                     ) : null}
 
-                    <div className="max-h-[70vh] overflow-auto pr-1">
+                    <div className="max-h-[72vh] overflow-auto pr-1">
                         {tree.map((n: any) => (
-                            <NodeItem key={n.id} node={n} depth={0} selectedId={selectedNoId} onSelect={onSelectNo} />
+                            <NodeItem
+                                key={n.id}
+                                node={n}
+                                depth={0}
+                                selectedId={selectedNoId}
+                                onSelect={onSelectNo}
+                                expanded={expanded}
+                                toggleExpand={toggleExpand}
+                            />
                         ))}
                     </div>
 
                     <div className="mt-3 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
                         Nó selecionado:{" "}
-                        <span className="font-mono font-semibold">{selectedNoId ? String(selectedNoId) : "—"}</span>
+                        <span className="font-mono font-semibold">{selectedNoId ? `#${selectedNoId}` : "—"}</span>
+                        {selectedNoId && selectedNodeName ? (
+                            <>
+                                {" "}
+                                • <span className="font-semibold">{selectedNodeName}</span>
+                            </>
+                        ) : null}
                     </div>
                 </div>
 
@@ -389,7 +557,7 @@ export default function CatalogoRegrasConfigPage() {
                         <div>
                             <div className="text-sm font-semibold">Produtos deste menu/submenu</div>
                             <div className="text-xs text-muted-foreground">
-                                Selecione no estoque (checkbox) e clique em “Salvar”.
+                                Busque no estoque, marque os produtos e clique em “Salvar produtos”.
                             </div>
                         </div>
 
@@ -408,29 +576,120 @@ export default function CatalogoRegrasConfigPage() {
                         </div>
                     ) : (
                         <>
-                            {/* Busca estoque */}
-                            <div className="mt-4 flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                                    <input
-                                        className="w-[320px] max-w-[70vw] bg-transparent text-sm outline-none"
-                                        placeholder="Buscar no estoque: nome, código de barras..."
-                                        value={q}
-                                        onChange={(e) => setQ(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter") buscarEstoque();
-                                        }}
-                                    />
-                                    <button
-                                        className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
-                                        onClick={buscarEstoque}
-                                        disabled={estoqueLoading}
-                                    >
-                                        {estoqueLoading ? "..." : "Buscar"}
-                                    </button>
+                            {/* Busca + filtros */}
+                            <div className="mt-4 grid gap-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="flex flex-1 items-center gap-2 rounded-md border px-3 py-2">
+                                        <input
+                                            className="w-full bg-transparent text-sm outline-none"
+                                            placeholder="Pesquisar: Nome, código, depósito, categoria, fabricante, classificação..."
+                                            value={q}
+                                            onChange={(e) => setQ(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") buscarEstoque();
+                                            }}
+                                        />
+                                        <button
+                                            className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                            onClick={buscarEstoque}
+                                            disabled={estoqueLoading}
+                                        >
+                                            {estoqueLoading ? "..." : "Buscar"}
+                                        </button>
+                                    </div>
+
+                                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                        Selecionados: <span className="font-mono">{selectedProdutoIds.size}</span>
+                                    </div>
                                 </div>
 
-                                <div className="text-xs text-muted-foreground">
-                                    Selecionados: <span className="font-mono">{selectedProdutoIds.size}</span>
+                                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                                    {/* Depósito */}
+                                    <label className="grid gap-1 text-xs">
+                                        <span className="text-muted-foreground">Depósito</span>
+                                        <select
+                                            className="rounded-md border bg-background px-3 py-2 text-sm"
+                                            value={fDeposito}
+                                            onChange={(e) => setFDeposito(toInt(e.target.value))}
+                                        >
+                                            <option value={0}>Todos</option>
+                                            {depositos.map((o) => (
+                                                <option key={o.id} value={o.id}>
+                                                    {o.nome}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+
+                                    {/* Categoria */}
+                                    <label className="grid gap-1 text-xs">
+                                        <span className="text-muted-foreground">Categoria</span>
+                                        <select
+                                            className="rounded-md border bg-background px-3 py-2 text-sm"
+                                            value={fCategoria}
+                                            onChange={(e) => setFCategoria(toInt(e.target.value))}
+                                        >
+                                            <option value={0}>Todas</option>
+                                            {categorias.map((o) => (
+                                                <option key={o.id} value={o.id}>
+                                                    {o.nome}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+
+                                    {/* Fabricante */}
+                                    <label className="grid gap-1 text-xs">
+                                        <span className="text-muted-foreground">Fabricante</span>
+                                        <select
+                                            className="rounded-md border bg-background px-3 py-2 text-sm"
+                                            value={fFabricante}
+                                            onChange={(e) => setFFabricante(toInt(e.target.value))}
+                                        >
+                                            <option value={0}>Todos</option>
+                                            {fabricantes.map((o) => (
+                                                <option key={o.id} value={o.id}>
+                                                    {o.nome}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+
+                                    {/* Classificação */}
+                                    <label className="grid gap-1 text-xs">
+                                        <span className="text-muted-foreground">Classificação</span>
+                                        <select
+                                            className="rounded-md border bg-background px-3 py-2 text-sm"
+                                            value={fClassificacao}
+                                            onChange={(e) => setFClassificacao(toInt(e.target.value))}
+                                        >
+                                            <option value={0}>Todas</option>
+                                            {classificacoes.map((o) => (
+                                                <option key={o.id} value={o.id}>
+                                                    {o.nome}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <button
+                                        className="rounded-md border px-3 py-2 text-xs hover:bg-muted"
+                                        onClick={clearFilters}
+                                        type="button"
+                                    >
+                                        Limpar filtros
+                                    </button>
+
+                                    <button
+                                        className="rounded-md border px-3 py-2 text-xs hover:bg-muted"
+                                        onClick={buscarEstoque}
+                                        type="button"
+                                        disabled={estoqueLoading}
+                                    >
+                                        Aplicar filtros
+                                    </button>
                                 </div>
                             </div>
 
@@ -441,7 +700,7 @@ export default function CatalogoRegrasConfigPage() {
                                         Faça uma busca para listar produtos do estoque.
                                     </div>
                                 ) : (
-                                    <div className="max-h-[52vh] overflow-auto rounded-md border">
+                                    <div className="max-h-[48vh] overflow-auto rounded-md border">
                                         {estoqueRows.map((p) => {
                                             const pid = toInt(p.id);
                                             const checked = selectedProdutoIds.has(pid);
@@ -460,15 +719,28 @@ export default function CatalogoRegrasConfigPage() {
 
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex flex-wrap items-center justify-between gap-2">
-                                                            <div className="font-medium break-words">{p.nome}</div>
-                                                            <div className="text-[11px] text-muted-foreground font-mono">#{pid}</div>
+                                                            <div className="break-words font-medium">{p.nome}</div>
+                                                            <div className="text-[11px] font-mono text-muted-foreground">#{pid}</div>
                                                         </div>
 
                                                         <div className="mt-1 text-xs text-muted-foreground">
-                                                            {p.categoria_nome ? <>Categoria: {p.categoria_nome}</> : null}
-                                                            {p.classificacao_nome ? <> • Sub: {p.classificacao_nome}</> : null}
-                                                            {p.codigo_barras ? <> • CB: <span className="font-mono">{p.codigo_barras}</span></> : null}
+                                                            {p.deposito_nome ? <>Depósito: {p.deposito_nome}</> : null}
+                                                            {p.categoria_nome ? <>{p.deposito_nome ? " • " : ""}Categoria: {p.categoria_nome}</> : null}
+                                                            {p.fabricante_nome ? <> • Fabricante: {p.fabricante_nome}</> : null}
+                                                            {p.classificacao_nome ? <> • Classificação: {p.classificacao_nome}</> : null}
+                                                            {p.codigo_barras ? (
+                                                                <>
+                                                                    {" "}
+                                                                    • CB: <span className="font-mono">{p.codigo_barras}</span>
+                                                                </>
+                                                            ) : null}
                                                         </div>
+
+                                                        {p.descricao ? (
+                                                            <div className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                                                                {p.descricao}
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                 </label>
                                             );
@@ -477,7 +749,7 @@ export default function CatalogoRegrasConfigPage() {
                                 )}
                             </div>
 
-                            {/* Produtos já vinculados (apenas visão rápida) */}
+                            {/* Produtos já vinculados (visão rápida) */}
                             <div className="mt-4 rounded-md border bg-muted/20 p-3">
                                 <div className="text-sm font-medium">Já no menu/submenu</div>
                                 <div className="mt-2 text-sm text-muted-foreground">
@@ -486,10 +758,12 @@ export default function CatalogoRegrasConfigPage() {
                                     ) : (
                                         <ul className="list-disc pl-5">
                                             {noProdutos.slice(0, 12).map((p) => (
-                                                <li key={p.id} className="break-words">{p.nome}</li>
+                                                <li key={p.id} className="break-words">
+                                                    {p.nome}
+                                                </li>
                                             ))}
                                             {noProdutos.length > 12 ? (
-                                                <li className="list-none text-xs text-muted-foreground mt-1">
+                                                <li className="mt-1 list-none text-xs text-muted-foreground">
                                                     +{noProdutos.length - 12} outros…
                                                 </li>
                                             ) : null}
