@@ -1884,9 +1884,7 @@ export default function Page() {
                                         {it.nome}
                                     </button>
 
-                                    <div className="reviewItemMeta">
-                                        {it.linha ? `Linha: ${it.linha}` : ""}
-                                    </div>
+                                    
 
                                     <div className="reviewItemRight">
                                         <div className="reviewItemPrice">
@@ -2827,13 +2825,13 @@ const css = `
     gap: 10px;
   }
   .reviewItemRow{
-    display:grid;
-    grid-template-columns: 1fr auto;
-    gap: 6px 12px;
+    display:flex;
     align-items:center;
+    justify-content: space-between;
+    gap: 12px;
   }
   .reviewItemName{ font-weight: 1000; }
-  .reviewItemMeta{ opacity: 0.9; font-size: 12px; grid-column: 1 / 2; }
+  
   .reviewItemRight{ display:flex; align-items:center; gap: 10px; }
   .reviewItemPrice{ font-weight: 1000; white-space: nowrap; }
   .reviewRemoveBtn{
