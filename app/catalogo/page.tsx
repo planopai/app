@@ -784,6 +784,8 @@ export default function Page() {
     const childrenByParent = useMemo(() => {
         const map = new Map<number, number>();
         for (const n of catalogoNos) {
+            // ✅ só conta filhos ATIVOS (senão você cai em "Nenhum submenu encontrado" em menus)
+            if (Number(n.ativo) !== 1) continue;
             if (n.parent_id != null) map.set(n.parent_id, (map.get(n.parent_id) || 0) + 1);
         }
         return map;
@@ -1346,7 +1348,7 @@ export default function Page() {
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
-                    <div className="listSubTitle">{breadcrumb}</div>
+                    <div className="listSubTitle">{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</div>
 
                     <div className="searchRow">
                         <div className="searchBox">
