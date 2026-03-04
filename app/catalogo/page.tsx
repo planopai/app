@@ -1297,7 +1297,7 @@ export default function Page() {
             ) : null}
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                <SectionPill>{breadcrumb}</SectionPill>
+                <SectionPill>{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</SectionPill>
             </div>
 
             <div className="gridMenu2">
@@ -1334,7 +1334,11 @@ export default function Page() {
             <TopRightNav
                 onBack={() => {
                     setOpenPrices(false);
-                    // volta para menus (mesmo nível atual)
+
+                    // ✅ IMPORTANTE: listagem sempre está num "nó folha"
+                    // ao voltar para menus, precisamos subir 1 nível no noPath
+                    setNoPath((prev) => (prev.length ? prev.slice(0, -1) : prev));
+
                     setStack(["home", "menus"]);
                 }}
                 onHome={home}
