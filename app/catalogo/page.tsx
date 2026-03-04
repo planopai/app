@@ -2,204 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-/**
- * PAGE ÚNICA (page.tsx) — CATÁLOGO + ORÇAMENTOS (com fluxo de "Homenagem")
- *
- * ALTERAÇÕES IMPLEMENTADAS (resumo):
- * 1) Home -> "ELEMENTOS DE HOMENAGEM" abre modal de seleção de Usuário (Operador) via pai_api.php?action=list_users
- * 2) Após selecionar Operador, abre modal "Início da Homenagem" (Responsável/Falecido/Telefone)
- *    - Telefone com teclado numérico (inputMode="numeric")
- *    - Botões: Cancelar / Começar
- * 3) Somente após "Começar" o usuário entra no catálogo (categorias/linhas/produtos)
- * 4) Mesmo item NÃO pode ser adicionado 2x (botão + bloqueia duplicado)
- * 5) No detalhe do produto:
- *    - Remove "PÁGINA DE APRESENTAÇÃO DO PRODUTO"
- *    - Título vira "Linha: <LINHA>" (se houver linha)
- *    - Mostra botões "Retornar" e "Próximo Passo" (ou "Concluir" na última categoria)
- *    - Pode avançar sem selecionar itens
- * 6) "Próximo Passo" navega automaticamente pelas categorias:
- *    URNAS -> APRESENTAÇÃO -> ESPAÇO DE DESPEDIDA -> PREPARAÇÃO E CUIDADO -> AMBIENTAÇÃO -> CUIDADOS ADICIONAIS
- * 7) Ao "Concluir" (ou ✅ no topo), abre modal de revisão com itens agrupados por categoria e botão "Finalizar"
- *    -> Ao finalizar, cria Orçamento e vai para Lista de Orçamentos
- * 8) Removidos textos de "Itens/Total" fora das telas/ações próprias (não aparece em Elementos nem no detalhe)
- * 9) Resumo da Homenagem (UI):
- *    - Logo no canto superior esquerdo ao lado de "ORÇAMENTO" e "Nº ..."
- *    - Remove botão Exportar CSV
- *    - Topo com botões: Voltar (lista) + ✅ + PDF
- * 10) PDF:
- *    - Logo no canto superior esquerdo
- *    - Título "Resumo da Homenagem"
- *    - Abaixo: Nº do orçamento
- *    - Depois: Responsável / Falecido(a) / Telefone
- */
+/* =======================
+   Types
+======================= */
 
-type CatalogGroup =
-    | "home"
-    | "elementos"
-    | "urnas_linhas"
-    | "listagem"
-    | "detalhe"
-    | "orcamentos"
-    | "resumo";
+type CatalogGroup = "home" | "menus" | "listagem" | "detalhe" | "orcamentos" | "resumo";
 
-type CategoriaFluxo =
-    | "URNAS"
-    | "APRESENTACAO"
-    | "ESPACO_DESPEDIDA"
-    | "PREPARACAO_CUIDADO"
-    | "AMBIENTACAO"
-    | "CUIDADOS_ADICIONAIS";
-
-type Linha =
-    | "SERENIDADE"
-    | "HARMONIA"
-    | "ESSENCIA"
-    | "ETERNUM"
-    | "ALVORADA"
-    | "AMPARO";
-
-type Produto = {
-    id: number;
-    categoria: CategoriaFluxo;
-    linha?: Linha;
-    nome: string;
-    preco: number;
-    saldo: number;
-    thumb: string;
-    descricaoCurta: string;
-    inspiracao: string;
-    conceito: string;
-    especificacoes: string;
-};
-
-type OrcamentoItem = {
-    produtoId: number;
-    nome: string;
-    categoria: CategoriaFluxo;
-    linha?: Linha;
-    valorUnit: number;
-    qtd: number;
-};
-
-type Orcamento = {
-    id: string;
-    criadoEmISO: string;
-
-    // operador escolhido no início:
-    operadorId: number;
-    operadorNome: string;
-    operadorUsuario: string;
-
-    // dados da homenagem:
-    responsavel: string;
-    falecido: string;
-    telefone: string;
-
-    itens: OrcamentoItem[];
-};
-
-type Usuario = { id: number; nome: string; usuario: string };
-
-const API_URL = "https://api.planoassistencialintegrado.com.br/pai_api.php";
-const CATALOGO_API_URL =
-    "https://api.planoassistencialintegrado.com.br/catalogo_api.php";
-
-const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
-const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png";
-const LOGO_URL_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png";
-
-// ---------- helpers UI ----------
-function cn(...parts: Array<string | false | null | undefined>) {
-    return parts.filter(Boolean).join(" ");
-}
-function formatBRL(v: number) {
-    return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-function clampInt(v: any) {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.floor(n));
-}
-function normalizeKey(s: string) {
-    return (s || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toUpperCase();
-}
-
-// ---------- parser robusto (tolera BOM/HTML) ----------
-async function safeJsonFetch(
-    input: RequestInfo,
-    init?: RequestInit & { timeoutMs?: number }
-) {
-    const timeoutMs = init?.timeoutMs ?? 15000;
-
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
-
-    try {
-        const { timeoutMs: _omit, ...rest } = init || {};
-        const r = await fetch(input, {
-            cache: "no-store",
-            credentials: "include",
-            signal: ctrl.signal,
-            ...rest,
-        });
-        const txt = await r.text();
-        const cleaned = txt.replace(/^\uFEFF/, "").trim();
-        let json: any = null;
-
-        if (!cleaned.startsWith("<")) {
-            try {
-                json = JSON.parse(cleaned);
-            } catch {
-                const m = cleaned.match(/\{[\s\S]*\}$/m);
-                if (m) json = JSON.parse(m[0]);
-            }
-        }
-
-        if (json == null)
-            throw new Error(
-                `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? "…" : ""
-                }`
-            );
-        if (!r.ok || json?.erro)
-            throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
-        return json;
-    } catch (e: any) {
-        if (e?.name === "AbortError") {
-            throw new Error(
-                "Tempo esgotado ao conectar com o servidor. Tente novamente."
-            );
-        }
-        throw e;
-    } finally {
-        clearTimeout(t);
-    }
-}
-
-// ---------- fluxo/categorias ----------
-const CATEGORIAS_FLUXO: Array<{ id: CategoriaFluxo; label: string }> = [
-    { id: "URNAS", label: "URNAS" },
-    { id: "APRESENTACAO", label: "APRESENTAÇÃO" },
-    { id: "ESPACO_DESPEDIDA", label: "ESPAÇO DE\nDESPEDIDA" },
-    { id: "PREPARACAO_CUIDADO", label: "PREPARAÇÃO E\nCUIDADO" },
-    { id: "AMBIENTACAO", label: "AMBIENTAÇÃO" },
-    { id: "CUIDADOS_ADICIONAIS", label: "CUIDADOS\nADICIONAIS" },
-];
-
-const LINHAS: Array<{ id: Linha; title: string }> = [
-    { id: "SERENIDADE", title: "LINHA\nSERENIDADE" },
-    { id: "HARMONIA", title: "LINHA\nHARMONIA" },
-    { id: "ESSENCIA", title: "LINHA\nESSENCIA" },
-    { id: "ETERNUM", title: "LINHA\nETERNUM" },
-    { id: "ALVORADA", title: "LINHA\nALVORADA" },
-    { id: "AMPARO", title: "LINHA\nAMPARO" },
-];
-
-// ---------- catálogo API types ----------
 type CatalogoNo = {
     id: number;
     parent_id: number | null;
@@ -225,59 +33,167 @@ type CatalogoNoProdutoRow = {
     ordem?: number | null;
 };
 
-// ---------- icons ----------
+type Produto = {
+    id: number;
+    noId: number;
+    nome: string;
+    preco: number;
+    saldo: number;
+    thumb: string;
+    descricaoCurta: string;
+};
+
+type OrcamentoItem = {
+    produtoId: number;
+    nome: string;
+    noId: number;
+    noPath: string;
+    valorUnit: number;
+    qtd: number;
+};
+
+type Orcamento = {
+    id: string;
+    criadoEmISO: string;
+
+    operadorId: number;
+    operadorNome: string;
+    operadorUsuario: string;
+
+    responsavel: string;
+    falecido: string;
+    telefone: string;
+
+    itens: OrcamentoItem[];
+};
+
+type Usuario = { id: number; nome: string; usuario: string };
+
+/* =======================
+   Consts
+======================= */
+
+const API_URL = "https://api.planoassistencialintegrado.com.br/pai_api.php";
+const CATALOGO_API_URL = "https://api.planoassistencialintegrado.com.br/catalogo_api.php";
+
+const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
+const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png";
+const LOGO_URL_PDF = "https://pai.planoassistencialintegrado.com.br/logo.png";
+
+/* =======================
+   Helpers
+======================= */
+
+function cn(...parts: Array<string | false | null | undefined>) {
+    return parts.filter(Boolean).join(" ");
+}
+
+function formatBRL(v: number) {
+    return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function clampInt(v: any) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+}
+
+function normalizeKey(s: string) {
+    return (s || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toUpperCase();
+}
+
+async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutMs?: number }) {
+    const timeoutMs = init?.timeoutMs ?? 15000;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    try {
+        const { timeoutMs: _omit, ...rest } = init || {};
+        const r = await fetch(input, {
+            cache: "no-store",
+            credentials: "include",
+            signal: ctrl.signal,
+            ...rest,
+        });
+
+        const txt = await r.text();
+        const cleaned = txt.replace(/^\uFEFF/, "").trim();
+
+        let json: any = null;
+        if (!cleaned.startsWith("<")) {
+            try {
+                json = JSON.parse(cleaned);
+            } catch {
+                const m = cleaned.match(/\{[\s\S]*\}$/m);
+                if (m) json = JSON.parse(m[0]);
+            }
+        }
+
+        if (json == null) {
+            throw new Error(
+                `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? "…" : ""}`
+            );
+        }
+        if (!r.ok || json?.erro) throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+        return json;
+    } catch (e: any) {
+        if (e?.name === "AbortError") throw new Error("Tempo esgotado ao conectar com o servidor. Tente novamente.");
+        throw e;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+async function toDataUrl(url: string): Promise<string | null> {
+    try {
+        const r = await fetch(url, { mode: "cors", cache: "no-store" });
+        const b = await r.blob();
+        const reader = await new Promise<string>((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onerror = () => reject(new Error("Falha ao ler logo"));
+            fr.onload = () => resolve(String(fr.result || ""));
+            fr.readAsDataURL(b);
+        });
+        return reader;
+    } catch {
+        return null;
+    }
+}
+
+function buildNoPath(path: CatalogoNo[]) {
+    return path.map((n) => n.nome).join(" > ");
+}
+
+/* =======================
+   Icons
+======================= */
+
 function IconBack({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-                d="M10 7L5 12L10 17"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M5 12H20"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
+            <path d="M10 7L5 12L10 17" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M5 12H20" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
 }
 function IconHome({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-                d="M4 10.5L12 4L20 10.5V20H4V10.5Z"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-            />
-            <path
-                d="M9.5 20V14H14.5V20"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-            />
+            <path d="M4 10.5L12 4L20 10.5V20H4V10.5Z" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M9.5 20V14H14.5V20" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
         </svg>
     );
 }
 function IconList({ size = 22 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-                d="M7 6H21M7 12H21M7 18H21"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
-            <path
-                d="M3 6H3.01M3 12H3.01M3 18H3.01"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
+            <path d="M7 6H21M7 12H21M7 18H21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M3 6H3.01M3 12H3.01M3 18H3.01" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
 }
@@ -289,12 +205,7 @@ function IconSearch({ size = 20 }: { size?: number }) {
                 stroke="currentColor"
                 strokeWidth="2.2"
             />
-            <path
-                d="M20.5 20.5L16.8 16.8"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-            />
+            <path d="M20.5 20.5L16.8 16.8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
     );
 }
@@ -302,13 +213,7 @@ function IconChevron({ dir }: { dir: "left" | "right" }) {
     const rotate = dir === "left" ? "180deg" : "0deg";
     return (
         <svg width={22} height={22} viewBox="0 0 24 24" fill="none" style={{ transform: `rotate(${rotate})` }} aria-hidden="true">
-            <path
-                d="M9 6L15 12L9 18"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
+            <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     );
 }
@@ -355,7 +260,10 @@ function IconPrint({ size = 22 }: { size?: number }) {
     );
 }
 
-// ---------- small UI blocks ----------
+/* =======================
+   UI Blocks
+======================= */
+
 function TopRightNav({
     onBack,
     onHome,
@@ -377,14 +285,7 @@ function TopRightNav({
 
     return (
         <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
-            <button
-                type="button"
-                onClick={onBack}
-                disabled={disabledBack}
-                className={cn("iconBtn", disabledBack && "iconBtnDisabled")}
-                aria-label="Voltar"
-                title="Voltar"
-            >
+            <button type="button" onClick={onBack} disabled={disabledBack} className={cn("iconBtn", disabledBack && "iconBtnDisabled")} aria-label="Voltar" title="Voltar">
                 <IconBack />
             </button>
 
@@ -397,13 +298,7 @@ function TopRightNav({
             </button>
 
             {showCheck ? (
-                <button
-                    type="button"
-                    onClick={onCheck}
-                    className="iconBtn iconBtnCheck"
-                    aria-label="Concluir"
-                    title="Concluir"
-                >
+                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Concluir" title="Concluir">
                     <IconCheck />
                     {n > 0 ? (
                         <span className="badgeCount" aria-label={`${n} itens selecionados`}>
@@ -423,6 +318,7 @@ function BigButton({ label, onClick }: { label: string; onClick: () => void }) {
         </button>
     );
 }
+
 function Title({ children }: { children: React.ReactNode }) {
     return (
         <div style={{ textAlign: "center", marginTop: 38, marginBottom: 26 }}>
@@ -430,12 +326,15 @@ function Title({ children }: { children: React.ReactNode }) {
         </div>
     );
 }
+
 function ScreenContainer({ children }: { children: React.ReactNode }) {
     return <div className="screen">{children}</div>;
 }
+
 function SectionPill({ children }: { children: React.ReactNode }) {
     return <div className="pill">{children}</div>;
 }
+
 function ProductCard({ p, onOpen }: { p: Produto; onOpen: () => void }) {
     return (
         <button type="button" className="prodCard" onClick={onOpen} title={p.nome}>
@@ -485,16 +384,9 @@ function Modal({
         >
             <div className="modalCard" style={{ width: `min(${maxWidth}px, 96vw)` }}>
                 <div className="modalHeader">
-                    <button
-                        type="button"
-                        className="modalClose"
-                        onClick={onClose}
-                        aria-label="Fechar modal"
-                        title="Fechar"
-                    >
+                    <button type="button" className="modalClose" onClick={onClose} aria-label="Fechar modal" title="Fechar">
                         ✕
                     </button>
-
                     <div className="modalTitle">{title}</div>
                 </div>
                 <div className="modalBody">{children}</div>
@@ -504,67 +396,49 @@ function Modal({
     );
 }
 
-// ---------- PDF helpers (logo -> dataURL) ----------
-async function toDataUrl(url: string): Promise<string | null> {
-    try {
-        const r = await fetch(url, { mode: "cors", cache: "no-store" });
-        const b = await r.blob();
-        const reader = await new Promise<string>((resolve, reject) => {
-            const fr = new FileReader();
-            fr.onerror = () => reject(new Error("Falha ao ler logo"));
-            fr.onload = () => resolve(String(fr.result || ""));
-            fr.readAsDataURL(b);
-        });
-        return reader;
-    } catch {
-        return null;
-    }
-}
+/* =======================
+   Page
+======================= */
 
-function labelCategoria(c: CategoriaFluxo) {
-    const map: Record<CategoriaFluxo, string> = {
-        URNAS: "URNAS",
-        APRESENTACAO: "APRESENTAÇÃO",
-        ESPACO_DESPEDIDA: "ESPAÇO DE DESPEDIDA",
-        PREPARACAO_CUIDADO: "PREPARAÇÃO E CUIDADO",
-        AMBIENTACAO: "AMBIENTAÇÃO",
-        CUIDADOS_ADICIONAIS: "CUIDADOS ADICIONAIS",
-    };
-    return map[c];
-}
-
-// ---------- main page ----------
 export default function Page() {
     const [stack, setStack] = useState<CatalogGroup[]>(["home"]);
     const current = stack[stack.length - 1];
+    const canBack = stack.length > 1;
 
-    // catálogo
-    const [categoria, setCategoria] = useState<CategoriaFluxo | null>(null);
-    const [linha, setLinha] = useState<Linha | null>(null);
+    const go = useCallback((to: CatalogGroup) => setStack((s) => [...s, to]), []);
+    const back = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
+
+    // Catálogo (árvore infinita)
+    const [catalogoNos, setCatalogoNos] = useState<CatalogoNo[]>([]);
+    const [loadingCatalogo, setLoadingCatalogo] = useState(false);
+    const [catalogoError, setCatalogoError] = useState<string | null>(null);
+
+    // Caminho atual de menus (nós)
+    const [noPath, setNoPath] = useState<CatalogoNo[]>([]);
+    const currentParentId = noPath.length ? noPath[noPath.length - 1].id : null;
+
+    // Produtos
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
     const pageSize = 8;
-    const [selected, setSelected] = useState<Produto | null>(null);
-    const [openPrices, setOpenPrices] = useState(false);
 
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [loadingProdutos, setLoadingProdutos] = useState(false);
     const [produtosError, setProdutosError] = useState<string | null>(null);
 
-    const [catalogoNos, setCatalogoNos] = useState<CatalogoNo[]>([]);
-    const [loadingCatalogo, setLoadingCatalogo] = useState(false);
-    const [catalogoError, setCatalogoError] = useState<string | null>(null);
+    const [selected, setSelected] = useState<Produto | null>(null);
+    const [openPrices, setOpenPrices] = useState(false);
 
     const [produtoIndex, setProdutoIndex] = useState<Record<number, Produto>>({});
 
-    // itens selecionados (não duplica)
+    // Seleção / orçamento (não duplica)
     const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
 
-    // orçamentos
+    // Orçamentos
     const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
     const [orcamentoSelecionadoId, setOrcamentoSelecionadoId] = useState<string | null>(null);
 
-    // ----- fluxo de homenagem (operador + dados iniciais) -----
+    // Fluxo homenagem
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
     const [usersError, setUsersError] = useState<string | null>(null);
@@ -572,10 +446,8 @@ export default function Page() {
     const [openUserPick, setOpenUserPick] = useState(false);
     const [operadorSel, setOperadorSel] = useState<Usuario | null>(null);
 
-    // ✅ typeahead (buscar operador)
     const [userQuery, setUserQuery] = useState("");
     const [userHighlight, setUserHighlight] = useState(0);
-
     const [operadorTemp, setOperadorTemp] = useState<Usuario | null>(null);
 
     const [openInicio, setOpenInicio] = useState(false);
@@ -585,26 +457,14 @@ export default function Page() {
 
     const [openConcluir, setOpenConcluir] = useState(false);
 
-    const canBack = stack.length > 1;
-
-    const go = useCallback((to: CatalogGroup) => {
-        setStack((s) => [...s, to]);
-    }, []);
-
-    const back = useCallback(() => {
-        setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
-    }, []);
-
     const home = useCallback(() => {
         setStack(["home"]);
-        setCategoria(null);
-        setLinha(null);
+        setNoPath([]);
         setQ("");
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
 
-        // não zera orçamentos salvos, mas zera o fluxo atual:
         setDraftItens([]);
         setOperadorSel(null);
         setFormResp("");
@@ -621,14 +481,13 @@ export default function Page() {
         setCatalogoError(null);
     }, []);
 
-    const goBudgets = useCallback(() => {
-        setStack(["home", "orcamentos"]);
-    }, []);
+    const goBudgets = useCallback(() => setStack(["home", "orcamentos"]), []);
 
     const list = useCallback(() => {
-        // ícone "lista": volta para o menu de categorias do fluxo se já começou; senão home->elementos
+        // Ícone "lista": se já iniciou homenagem, volta para o menu raiz de ELEMENTOS (menus); senão home
         if (operadorSel && formResp.trim() && formFalecido.trim() && formTel.trim()) {
-            setStack(["home", "elementos"]);
+            setNoPath([]);
+            setStack(["home", "menus"]);
             return;
         }
         setStack(["home"]);
@@ -639,9 +498,7 @@ export default function Page() {
         setLoadingCatalogo(true);
         setCatalogoError(null);
         try {
-            const j = (await safeJsonFetch(`${CATALOGO_API_URL}?init=1&_=${Date.now()}`, {
-                timeoutMs: 20000,
-            })) as CatalogoInit;
+            const j = (await safeJsonFetch(`${CATALOGO_API_URL}?init=1&_=${Date.now()}`, { timeoutMs: 20000 })) as CatalogoInit;
             setCatalogoNos(Array.isArray(j?.nos) ? j.nos : []);
         } catch (e: any) {
             setCatalogoNos([]);
@@ -651,70 +508,57 @@ export default function Page() {
         }
     }, [loadingCatalogo]);
 
-    const fetchProdutosNo = useCallback(
-        async (noId: number, cat: CategoriaFluxo | null, lin: Linha | null) => {
-            if (!noId || !cat) {
-                setProdutos([]);
-                return;
-            }
+    const fetchProdutosNo = useCallback(async (noId: number) => {
+        if (!noId) {
+            setProdutos([]);
+            return;
+        }
 
-            setLoadingProdutos(true);
-            setProdutosError(null);
-            try {
-                const j = await safeJsonFetch(
-                    `${CATALOGO_API_URL}?no_produtos=1&no_id=${noId}&_=${Date.now()}`,
-                    { timeoutMs: 20000 }
-                );
-                const rows: CatalogoNoProdutoRow[] = Array.isArray(j?.rows) ? j.rows : [];
+        setLoadingProdutos(true);
+        setProdutosError(null);
 
-                const mapped: Produto[] = rows
-                    .map((r) => {
-                        const id = Number(r.id) || 0;
-                        const preco = Number(r.valor) || 0;
-                        const thumb =
-                            r.foto_url && String(r.foto_url).trim() ? String(r.foto_url) : LOGO_URL_UI;
+        try {
+            const j = await safeJsonFetch(`${CATALOGO_API_URL}?no_produtos=1&no_id=${noId}&_=${Date.now()}`, { timeoutMs: 20000 });
+            const rows: CatalogoNoProdutoRow[] = Array.isArray(j?.rows) ? j.rows : [];
 
-                        const p: Produto = {
-                            id,
-                            categoria: cat,
-                            linha: cat === "URNAS" ? (lin ?? undefined) : undefined,
-                            nome: String(r.nome || ""),
-                            preco,
-                            saldo: 0,
-                            thumb,
-                            descricaoCurta: String(r.descricao || ""),
-                            inspiracao: "",
-                            conceito: "",
-                            especificacoes: "",
-                        };
-                        return p;
-                    })
-                    .filter((p) => p.id > 0 && p.nome.trim() !== "");
+            const mapped: Produto[] = rows
+                .map((r) => {
+                    const id = Number(r.id) || 0;
+                    const preco = Number(r.valor) || 0;
+                    const thumb = r.foto_url && String(r.foto_url).trim() ? String(r.foto_url) : LOGO_URL_UI;
 
-                setProdutos(mapped);
-                setProdutoIndex((prev) => {
-                    const next = { ...prev };
-                    for (const p of mapped) next[p.id] = p;
-                    return next;
-                });
-            } catch (e: any) {
-                setProdutos([]);
-                setProdutosError(e?.message || "Erro ao carregar produtos.");
-            } finally {
-                setLoadingProdutos(false);
-            }
-        },
-        []
-    );
+                    return {
+                        id,
+                        noId,
+                        nome: String(r.nome || ""),
+                        preco,
+                        saldo: 0,
+                        thumb,
+                        descricaoCurta: String(r.descricao || ""),
+                    } as Produto;
+                })
+                .filter((p) => p.id > 0 && p.nome.trim() !== "");
 
-    // ---------- usuários ----------
+            setProdutos(mapped);
+            setProdutoIndex((prev) => {
+                const next = { ...prev };
+                for (const p of mapped) next[p.id] = p;
+                return next;
+            });
+        } catch (e: any) {
+            setProdutos([]);
+            setProdutosError(e?.message || "Erro ao carregar produtos.");
+        } finally {
+            setLoadingProdutos(false);
+        }
+    }, []);
+
+    // Usuários
     const fetchUsuarios = useCallback(async () => {
         setLoadingUsers(true);
         setUsersError(null);
         try {
-            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`, {
-                timeoutMs: 15000,
-            });
+            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`, { timeoutMs: 15000 });
             setUsuarios(Array.isArray(j) ? (j as Usuario[]) : []);
         } catch (e: any) {
             setUsuarios([]);
@@ -726,20 +570,11 @@ export default function Page() {
 
     const openFluxoHomenagem = useCallback(async () => {
         setOpenUserPick(true);
-
-        // ✅ reset do typeahead
         setUserQuery("");
         setUserHighlight(0);
         setOperadorTemp(null);
-
-        if (!usuarios.length) {
-            await fetchUsuarios();
-        }
+        if (!usuarios.length) await fetchUsuarios();
     }, [fetchUsuarios, usuarios.length]);
-
-    const selectOperador = useCallback((u: Usuario) => {
-        setOperadorTemp(u);
-    }, []);
 
     const confirmarOperador = useCallback(() => {
         if (!operadorTemp) return;
@@ -747,11 +582,9 @@ export default function Page() {
         setOperadorSel(operadorTemp);
         setOpenUserPick(false);
 
-        // ✅ reset do typeahead
         setUserQuery("");
         setUserHighlight(0);
 
-        // abrir modal de início (dados da homenagem)
         setFormResp("");
         setFormFalecido("");
         setFormTel("");
@@ -760,14 +593,10 @@ export default function Page() {
 
     const filteredUsuarios = useMemo(() => {
         const qq = userQuery.trim().toLowerCase();
-        if (!qq) return []; // ✅ não mostra nada se vazio
-
+        if (!qq) return [];
         return usuarios
-            .filter((u) => {
-                const hay = `${u.nome} ${u.usuario}`.toLowerCase();
-                return hay.includes(qq);
-            })
-            .slice(0, 12); // ✅ limita pra não ficar grande
+            .filter((u) => `${u.nome} ${u.usuario}`.toLowerCase().includes(qq))
+            .slice(0, 12);
     }, [usuarios, userQuery]);
 
     const iniciarHomenagem = useCallback(() => {
@@ -775,113 +604,65 @@ export default function Page() {
         const falecido = formFalecido.trim();
         const telefone = formTel.trim();
 
-        if (!operadorSel) {
-            alert("Selecione o Operador.");
-            return;
-        }
-        if (!responsavel || !falecido || !telefone) {
-            alert("Preencha Responsável, Falecido(a) e Telefone.");
-            return;
-        }
+        if (!operadorSel) return alert("Selecione o Operador.");
+        if (!responsavel || !falecido || !telefone) return alert("Preencha Responsável, Falecido(a) e Telefone.");
 
-        // inicia o fluxo no menu de categorias
         setOpenInicio(false);
         setDraftItens([]);
-        setCategoria(null);
-        setLinha(null);
+        setNoPath([]);
         setQ("");
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
 
-        setStack(["home", "elementos"]);
+        setStack(["home", "menus"]);
     }, [formResp, formFalecido, formTel, operadorSel]);
 
-    // ---------- catálogo ----------
+    // Carrega árvore depois que iniciou homenagem
     useEffect(() => {
-        // URNAS usa LINHAS; demais vão direto para listagem
-        if (categoria !== "URNAS" && linha) setLinha(null);
-    }, [categoria, linha]);
+        if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) return;
+        if (!catalogoNos.length && !loadingCatalogo && !catalogoError) fetchCatalogoInit();
+    }, [operadorSel, formResp, formFalecido, formTel, catalogoNos.length, loadingCatalogo, catalogoError, fetchCatalogoInit]);
 
-    // carrega a árvore quando o fluxo já está iniciado
+    // Monta children do parent atual (raiz = parent_id null)
+    const childrenNodes = useMemo(() => {
+        const arr = catalogoNos
+            .filter((n) => (currentParentId == null ? n.parent_id == null : n.parent_id === currentParentId))
+            .filter((n) => Number(n.ativo) === 1)
+            .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0) || a.nome.localeCompare(b.nome, "pt-BR"));
+        return arr;
+    }, [catalogoNos, currentParentId]);
+
+    const childrenByParent = useMemo(() => {
+        const map = new Map<number, number>();
+        for (const n of catalogoNos) {
+            if (n.parent_id != null) map.set(n.parent_id, (map.get(n.parent_id) || 0) + 1);
+        }
+        return map;
+    }, [catalogoNos]);
+
+    const nodeHasChildren = useCallback(
+        (id: number) => (childrenByParent.get(id) || 0) > 0,
+        [childrenByParent]
+    );
+
+    const breadcrumb = useMemo(() => {
+        if (!noPath.length) return "RAIZ";
+        return buildNoPath(noPath);
+    }, [noPath]);
+
+    // Ao entrar em listagem, buscar produtos do nó atual
     useEffect(() => {
-        if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim())
-            return;
-        if (!catalogoNos.length && !loadingCatalogo && !catalogoError) {
-            fetchCatalogoInit();
-        }
-    }, [
-        operadorSel,
-        formResp,
-        formFalecido,
-        formTel,
-        catalogoNos.length,
-        loadingCatalogo,
-        catalogoError,
-        fetchCatalogoInit,
-    ]);
-
-    const catNoId = useMemo(() => {
-        if (!catalogoNos.length || !categoria) return 0;
-
-        const wanted = normalizeKey(labelCategoria(categoria));
-        const urnasWanted = normalizeKey("URNAS");
-        const urnasNo = catalogoNos.find((n) => normalizeKey(n.nome) === urnasWanted);
-
-        if (categoria === "URNAS") return urnasNo?.id || 0;
-
-        const direct = catalogoNos.find((n) => normalizeKey(n.nome) === wanted);
-        if (direct) return direct.id;
-
-        const contains = catalogoNos.find((n) => normalizeKey(n.nome).includes(wanted));
-        return contains?.id || 0;
-    }, [catalogoNos, categoria]);
-
-    const linhaNoId = useMemo(() => {
-        if (!catalogoNos.length || categoria !== "URNAS" || !linha) return 0;
-
-        const urnasWanted = normalizeKey("URNAS");
-        const urnasNo = catalogoNos.find((n) => normalizeKey(n.nome) === urnasWanted);
-        if (!urnasNo) return 0;
-
-        const children = catalogoNos.filter((n) => n.parent_id === urnasNo.id);
-        const wanted = normalizeKey(linha);
-
-        const exact = children.find((n) => normalizeKey(n.nome) === wanted);
-        if (exact) return exact.id;
-
-        const contains = children.find((n) => normalizeKey(n.nome).includes(wanted));
-        return contains?.id || 0;
-    }, [catalogoNos, categoria, linha]);
-
-    useEffect(() => {
-        if (!categoria) {
-            setProdutos([]);
-            return;
-        }
-        if (!catalogoNos.length) return;
-
-        if (categoria === "URNAS") {
-            const noId = linhaNoId || catNoId;
-            if (noId) fetchProdutosNo(noId, categoria, linha);
-            else setProdutos([]);
-            return;
-        }
-
-        if (catNoId) fetchProdutosNo(catNoId, categoria, null);
-        else setProdutos([]);
-    }, [categoria, linha, catalogoNos.length, catNoId, linhaNoId, fetchProdutosNo]);
+        if (current !== "listagem") return;
+        const node = noPath[noPath.length - 1];
+        if (!node) return;
+        fetchProdutosNo(node.id);
+    }, [current, noPath, fetchProdutosNo]);
 
     const produtosFiltrados = useMemo(() => {
         let arr = produtos.slice();
-
         const qq = q.trim().toLowerCase();
-        if (qq) {
-            arr = arr.filter((p) => {
-                const hay = `${p.nome} ${p.descricaoCurta}`.toLowerCase();
-                return hay.includes(qq);
-            });
-        }
+        if (qq) arr = arr.filter((p) => `${p.nome} ${p.descricaoCurta}`.toLowerCase().includes(qq));
         return arr;
     }, [produtos, q]);
 
@@ -904,157 +685,43 @@ export default function Page() {
         [current, go]
     );
 
-    // ✅ abrir item da revisão no detalhe (apresentação do produto)
-    const openItemFromReview = useCallback(
-        (produtoId: number) => {
-            const p = produtoIndex[produtoId];
-            if (!p) {
-                alert(
-                    "Não foi possível localizar os dados do item. Abra a categoria novamente para carregar."
-                );
-                return;
-            }
-
-            // Ajusta filtros para o detalhe bater com o produto
-            setCategoria(p.categoria);
-
-            if (p.categoria === "URNAS") {
-                setLinha((p.linha as Linha) ?? null);
-                setStack(["home", "elementos", "urnas_linhas", "listagem", "detalhe"]);
-            } else {
-                setLinha(null);
-                setStack(["home", "elementos", "listagem", "detalhe"]);
-            }
-
-            setSelected(p);
-            setOpenConcluir(false); // fecha a revisão ao abrir o detalhe
-        },
-        [produtoIndex]
-    );
-
     useEffect(() => {
         if (current !== "detalhe") return;
         if (!produtosFiltrados.length) {
             setSelected(null);
             return;
         }
-        if (!selected || !produtosFiltrados.some((p) => p.id === selected.id)) {
-            setSelected(produtosFiltrados[0]);
-        }
+        if (!selected || !produtosFiltrados.some((p) => p.id === selected.id)) setSelected(produtosFiltrados[0]);
     }, [current, selected, produtosFiltrados]);
 
-    const tabelaValores = useMemo(() => {
-        if (!selected) return [];
-        return [{ label: "Preço", value: formatBRL(selected.preco) }];
-    }, [selected]);
+    const isSelectedInDraft = useCallback((produtoId: number) => draftItens.some((x) => x.produtoId === produtoId), [draftItens]);
 
-    const isSelectedInDraft = useCallback(
-        (produtoId: number) => {
-            return draftItens.some((x) => x.produtoId === produtoId);
-        },
-        [draftItens]
-    );
+    const toggleDraftItem = useCallback(() => {
+        if (!selected) return;
 
-    // ---------- draft: toggle (adiciona/remove) ----------
-    const toggleDraftItem = useCallback((p: Produto) => {
+        const nodePathText = breadcrumb;
+
         setDraftItens((prev) => {
-            const exists = prev.some((x) => x.produtoId === p.id);
+            const exists = prev.some((x) => x.produtoId === selected.id);
+            if (exists) return prev.filter((x) => x.produtoId !== selected.id);
 
-            // ✅ se já existe, remove (anula seleção)
-            if (exists) return prev.filter((x) => x.produtoId !== p.id);
-
-            // ✅ se não existe, adiciona
             return [
                 ...prev,
                 {
-                    produtoId: p.id,
-                    nome: p.nome,
-                    categoria: p.categoria,
-                    linha: p.linha,
-                    valorUnit: Number(p.preco) || 0,
+                    produtoId: selected.id,
+                    nome: selected.nome,
+                    noId: selected.noId,
+                    noPath: nodePathText,
+                    valorUnit: Number(selected.preco) || 0,
                     qtd: 1,
                 },
             ];
         });
-    }, []);
+    }, [selected, breadcrumb]);
 
-    const removeFromDraft = useCallback((produtoId: number) => {
-        setDraftItens((prev) => prev.filter((x) => x.produtoId !== produtoId));
-    }, []);
-
-    const groupedByCategoria = useMemo(() => {
-        const g: Record<string, OrcamentoItem[]> = {};
-        for (const it of draftItens) {
-            const k = it.categoria;
-            if (!g[k]) g[k] = [];
-            g[k].push(it);
-        }
-        return g as Record<CategoriaFluxo, OrcamentoItem[]>;
-    }, [draftItens]);
-
-    // ---------- navegação Próximo Passo / Retornar ----------
-    const currentCatIndex = useMemo(() => {
-        if (!categoria) return -1;
-        return CATEGORIAS_FLUXO.findIndex((x) => x.id === categoria);
-    }, [categoria]);
-
-    // ✅ mostrar botões Retornar/Próximo somente quando estiver dentro de uma categoria do fluxo
-    const showStepperButtons = useMemo(() => {
-        return Boolean(categoria); // se tem categoria selecionada, está no fluxo
-    }, [categoria]);
-
-    // ✅ última categoria do fluxo? (para trocar "Próximo Passo" por "Concluir")
-    const isLastCategoria = useMemo(() => {
-        if (!categoria) return false;
-        return currentCatIndex === CATEGORIAS_FLUXO.length - 1;
-    }, [categoria, currentCatIndex]);
-
-    const goCategoria = useCallback((cat: CategoriaFluxo) => {
-        setCategoria(cat);
-        setQ("");
-        setPage(1);
-        setSelected(null);
-        setOpenPrices(false);
-
-        if (cat === "URNAS") {
-            setLinha(null);
-            setStack(["home", "elementos", "urnas_linhas"]);
-        } else {
-            setLinha(null);
-            setStack(["home", "elementos", "listagem"]);
-        }
-    }, []);
-
-    const nextCategoria = useCallback(() => {
-        const idx = currentCatIndex;
-        if (idx < 0) return;
-        const next = CATEGORIAS_FLUXO[idx + 1]?.id;
-        if (!next) {
-            setOpenConcluir(true);
-            return;
-        }
-        goCategoria(next);
-    }, [currentCatIndex, goCategoria]);
-
-    const prevCategoria = useCallback(() => {
-        const idx = currentCatIndex;
-        if (idx <= 0) {
-            // se está na primeira, volta para menu de categorias
-            setStack(["home", "elementos"]);
-            setCategoria(null);
-            setLinha(null);
-            setQ("");
-            setPage(1);
-            setSelected(null);
-            return;
-        }
-        const prev = CATEGORIAS_FLUXO[idx - 1]?.id;
-        if (!prev) return;
-        goCategoria(prev);
-    }, [currentCatIndex, goCategoria]);
+    const removeFromDraft = useCallback((produtoId: number) => setDraftItens((prev) => prev.filter((x) => x.produtoId !== produtoId)), []);
 
     const openConcluirModal = useCallback(() => {
-        // pode concluir mesmo sem itens
         if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) {
             alert("Para concluir, inicie a homenagem (Operador + dados).");
             return;
@@ -1062,38 +729,29 @@ export default function Page() {
         setOpenConcluir(true);
     }, [operadorSel, formResp, formFalecido, formTel]);
 
-    // ---------- criar orçamento (somente no Finalizar) ----------
     const finalizarOrcamento = useCallback(() => {
-        if (!operadorSel) {
-            alert("Operador não selecionado.");
-            return;
-        }
+        if (!operadorSel) return alert("Operador não selecionado.");
+
         const responsavel = formResp.trim();
         const falecido = formFalecido.trim();
         const telefone = formTel.trim();
-
-        if (!responsavel || !falecido || !telefone) {
-            alert("Dados da homenagem incompletos.");
-            return;
-        }
+        if (!responsavel || !falecido || !telefone) return alert("Dados da homenagem incompletos.");
 
         const now = new Date();
-        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-            now.getDate()
-        ).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
+        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random()
+            .toString(16)
+            .slice(2, 8)
+            .toUpperCase()}`;
 
         const novo: Orcamento = {
             id,
             criadoEmISO: now.toISOString(),
-
             operadorId: operadorSel.id,
             operadorNome: operadorSel.nome,
             operadorUsuario: operadorSel.usuario,
-
             responsavel,
             falecido,
             telefone,
-
             itens: draftItens.map((x) => ({ ...x, qtd: 1 })),
         };
 
@@ -1101,15 +759,13 @@ export default function Page() {
 
         // reset fluxo atual
         setDraftItens([]);
-        setCategoria(null);
-        setLinha(null);
+        setNoPath([]);
         setQ("");
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
         setOpenConcluir(false);
 
-        // ir para lista
         setOrcamentoSelecionadoId(null);
         setStack(["home", "orcamentos"]);
     }, [draftItens, formFalecido, formResp, formTel, operadorSel]);
@@ -1127,29 +783,20 @@ export default function Page() {
     const totalOrcamentoSelecionado = useMemo(() => {
         if (!orcamentoSelecionado) return 0;
         let t = 0;
-        for (const it of orcamentoSelecionado.itens)
-            t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
+        for (const it of orcamentoSelecionado.itens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
         return t;
     }, [orcamentoSelecionado]);
 
-    // ---------- EXPORT PDF (Resumo) ----------
     const exportarResumoPDF = useCallback(async (o: Orcamento) => {
-        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-            import("jspdf"),
-            import("jspdf-autotable"),
-        ]);
+        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
 
         const logoDataUrl = await toDataUrl(LOGO_URL_PDF);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
         const dt = new Date(o.criadoEmISO);
         const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
-        const geradoEm = new Intl.DateTimeFormat("pt-BR", {
-            dateStyle: "short",
-            timeStyle: "short",
-        }).format(new Date());
+        const geradoEm = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
 
-        // A4 landscape
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
         const pageW = doc.internal.pageSize.getWidth();
         const pageH = doc.internal.pageSize.getHeight();
@@ -1157,20 +804,15 @@ export default function Page() {
 
         let y = 12;
 
-        // Logo (top-left)
         if (logoDataUrl) {
-            const imgW = 40;
-            const imgH = 12;
-            doc.addImage(logoDataUrl, logoFormat as any, marginX, y, imgW, imgH);
+            doc.addImage(logoDataUrl, logoFormat as any, marginX, y, 40, 12);
         }
 
-        // Título (ao lado)
         doc.setTextColor(15, 23, 42);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(16);
         doc.text("Resumo da Homenagem", marginX + 45, y + 8);
 
-        // Gerado em (top-right)
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9.5);
         doc.setTextColor(51, 65, 85);
@@ -1178,7 +820,6 @@ export default function Page() {
 
         y += 18;
 
-        // Número do orçamento embaixo do título
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
@@ -1186,7 +827,6 @@ export default function Page() {
 
         y += 8;
 
-        // Caixa com dados (somente Responsável/Falecido/Telefone + Data)
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
         doc.roundedRect(marginX, y, pageW - marginX * 2, 18, 2, 2, "FD");
@@ -1205,13 +845,12 @@ export default function Page() {
 
         y += 24;
 
-        // Tabela
-        const head = ["Categoria", "Item", "Qtd", "Valor (un)", "Subtotal"];
+        const head = ["Menu", "Item", "Qtd", "Valor (un)", "Subtotal"];
         const body = o.itens.map((it) => {
             const qtd = clampInt(it.qtd);
             const v = Number(it.valorUnit) || 0;
             const sub = qtd * v;
-            return [labelCategoria(it.categoria), it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
+            return [it.noPath || "-", it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
         });
 
         const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
@@ -1236,13 +875,13 @@ export default function Page() {
                 valign: "middle",
             },
             columnStyles: {
-                0: { cellWidth: 48 },
+                0: { cellWidth: 90, overflow: "linebreak" },
                 1: { cellWidth: 150, overflow: "linebreak" },
                 2: { halign: "right", cellWidth: 16 },
                 3: { halign: "right", cellWidth: 32 },
                 4: { halign: "right", cellWidth: 34 },
             },
-            didParseCell: (data) => {
+            didParseCell: (data: any) => {
                 if (data.section === "body" && data.column.index === 2) data.cell.styles.halign = "right";
                 if (data.section === "body" && data.column.index >= 3) data.cell.styles.halign = "right";
             },
@@ -1250,7 +889,6 @@ export default function Page() {
 
         const afterY = (doc as any).lastAutoTable?.finalY ?? y;
 
-        // Total box no canto direito
         const boxW = 54;
         const boxH = 12;
         const boxX = pageW - marginX - boxW;
@@ -1265,14 +903,74 @@ export default function Page() {
         doc.setFontSize(12);
         doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
 
-        const safeName = `orcamento_${o.id}_${new Date()
-            .toISOString()
-            .slice(0, 19)
-            .replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }, []);
 
-    // ---------- screens ----------
+    const openItemFromReview = useCallback(
+        (produtoId: number) => {
+            const p = produtoIndex[produtoId];
+            if (!p) {
+                alert("Não foi possível localizar os dados do item. Abra o menu novamente para carregar.");
+                return;
+            }
+            // Mantém o noPath como está (revisão é global), mas abre detalhe do produto
+            setSelected(p);
+            setOpenConcluir(false);
+            setStack((s) => {
+                // se já estiver em algum fluxo, tenta ir para detalhe direto
+                const base = ["home", "menus", "listagem", "detalhe"] as CatalogGroup[];
+                return base;
+            });
+        },
+        [produtoIndex]
+    );
+
+    /* =======================
+       Menus: navegar árvore
+    ======================== */
+
+    const enterNode = useCallback(
+        (node: CatalogoNo) => {
+            const hasChildren = nodeHasChildren(node.id);
+
+            setNoPath((prev) => [...prev, node]);
+            setQ("");
+            setPage(1);
+            setSelected(null);
+            setOpenPrices(false);
+
+            if (hasChildren) {
+                if (current !== "menus") setStack(["home", "menus"]);
+            } else {
+                setStack(["home", "menus", "listagem"]);
+            }
+        },
+        [current, nodeHasChildren]
+    );
+
+    const menusBack = useCallback(() => {
+        // Volta um nível na árvore, ou para home->menus, ou home
+        setQ("");
+        setPage(1);
+        setSelected(null);
+        setOpenPrices(false);
+
+        setNoPath((prev) => {
+            if (!prev.length) {
+                setStack(["home"]);
+                return prev;
+            }
+            const next = prev.slice(0, -1);
+            setStack(["home", "menus"]);
+            return next;
+        });
+    }, []);
+
+    /* =======================
+       Screens
+    ======================== */
+
     const ScreenHome = (
         <ScreenContainer>
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1289,65 +987,46 @@ export default function Page() {
         </ScreenContainer>
     );
 
-    const ScreenElementos = (
+    const ScreenMenus = (
         <ScreenContainer>
             <TopRightNav
-                onBack={back}
+                onBack={menusBack}
                 onHome={home}
                 onList={list}
                 onCheck={openConcluirModal}
-                disabledBack={!canBack}
+                disabledBack={!canBack && noPath.length === 0}
                 showCheck={true}
                 checkCount={draftItens.length}
             />
+
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
             {catalogoError ? <div className="emptyState" style={{ margin: "0 26px" }}>{catalogoError}</div> : null}
 
-            <div className="gridMenu2">
-                {CATEGORIAS_FLUXO.map((it) => (
-                    <BigButton
-                        key={it.id}
-                        label={it.label}
-                        onClick={() => {
-                            goCategoria(it.id);
-                        }}
-                    />
-                ))}
-            </div>
-        </ScreenContainer>
-    );
-
-    const ScreenLinhas = (
-        <ScreenContainer>
-            <TopRightNav
-                onBack={back}
-                onHome={home}
-                onList={list}
-                onCheck={openConcluirModal}
-                disabledBack={!canBack}
-                showCheck={true}
-                checkCount={draftItens.length}
-            />
-            <Title>ELEMENTOS DE HOMENAGEM</Title>
-
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                <SectionPill>URNAS • LINHAS</SectionPill>
+                <SectionPill>{breadcrumb}</SectionPill>
             </div>
 
             <div className="gridMenu2">
-                {LINHAS.map((l) => (
-                    <BigButton
-                        key={l.id}
-                        label={l.title}
-                        onClick={() => {
-                            setLinha(l.id);
-                            setQ("");
-                            setPage(1);
-                            setStack(["home", "elementos", "urnas_linhas", "listagem"]);
-                        }}
-                    />
-                ))}
+                {loadingCatalogo ? (
+                    <div className="emptyState" style={{ gridColumn: "1 / -1" }}>
+                        Carregando menus...
+                    </div>
+                ) : childrenNodes.length ? (
+                    childrenNodes.map((n) => (
+                        <BigButton
+                            key={n.id}
+                            label={n.nome}
+                            onClick={() => {
+                                enterNode(n);
+                            }}
+                        />
+                    ))
+                ) : (
+                    <div className="emptyState" style={{ gridColumn: "1 / -1" }}>
+                        Nenhum submenu encontrado.
+                    </div>
+                )}
             </div>
         </ScreenContainer>
     );
@@ -1355,7 +1034,11 @@ export default function Page() {
     const ScreenListagem = (
         <ScreenContainer>
             <TopRightNav
-                onBack={back}
+                onBack={() => {
+                    setOpenPrices(false);
+                    // volta para menus (mesmo nível atual)
+                    setStack(["home", "menus"]);
+                }}
                 onHome={home}
                 onList={list}
                 onCheck={openConcluirModal}
@@ -1366,10 +1049,7 @@ export default function Page() {
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
-                    <div className="listSubTitle">
-                        {categoria ? `${labelCategoria(categoria)}` : "CATÁLOGO"}{" "}
-                        {categoria === "URNAS" && linha ? `• LINHA ${linha}` : ""}
-                    </div>
+                    <div className="listSubTitle">{breadcrumb}</div>
 
                     <div className="searchRow">
                         <div className="searchBox">
@@ -1431,12 +1111,6 @@ export default function Page() {
                             <IconChevron dir="right" />
                         </button>
                     </div>
-
-                    {showStepperButtons ? (
-                        <button type="button" className="stepBtn" onClick={nextCategoria}>
-                            {isLastCategoria ? "Concluir" : "Próximo Passo"}
-                        </button>
-                    ) : null}
                 </div>
             </div>
         </ScreenContainer>
@@ -1452,18 +1126,7 @@ export default function Page() {
                 onHome={home}
                 onList={() => {
                     setOpenPrices(false);
-                    // volta para listagem da categoria atual (ou menu se não tiver)
-                    if (categoria === "URNAS") {
-                        setStack((s) => {
-                            const idx = s.lastIndexOf("listagem");
-                            if (idx >= 0) return s.slice(0, idx + 1);
-                            return ["home", "elementos", "urnas_linhas", "listagem"];
-                        });
-                    } else if (categoria) {
-                        setStack(["home", "elementos", "listagem"]);
-                    } else {
-                        setStack(["home", "elementos"]);
-                    }
+                    setStack(["home", "menus", "listagem"]);
                 }}
                 onCheck={openConcluirModal}
                 showCheck={true}
@@ -1472,7 +1135,7 @@ export default function Page() {
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listTitle" style={{ marginBottom: 10 }}>
-                    {selected?.linha ? `Linha: ${selected.linha}` : "Linha: -"}
+                    {breadcrumb}
                 </div>
 
                 {!selected ? (
@@ -1481,13 +1144,11 @@ export default function Page() {
                     </div>
                 ) : (
                     <div className="detailLayout">
-                        {/* esquerda */}
                         <div className="detailLeft">
                             <div className="detailImgCard">
                                 <img src={selected.thumb} alt={selected.nome} className="detailImg" />
                             </div>
 
-                            {/* ✅ abaixo das fotos: somente Saldo */}
                             <div className="detailMeta">
                                 <div className="metaPill">
                                     <b>Saldo:</b> {selected.saldo}
@@ -1495,7 +1156,6 @@ export default function Page() {
                             </div>
                         </div>
 
-                        {/* direita */}
                         <div className="detailRight">
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
@@ -1505,33 +1165,6 @@ export default function Page() {
                                         <span className="bulletDot">•</span>
                                         <div>
                                             <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
-                                        </div>
-                                    </div>
-                                ) : null}
-
-                                {selected.inspiracao ? (
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>INSPIRAÇÃO:</b> {selected.inspiracao}
-                                        </div>
-                                    </div>
-                                ) : null}
-
-                                {selected.conceito ? (
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>CONCEITO:</b> {selected.conceito}
-                                        </div>
-                                    </div>
-                                ) : null}
-
-                                {selected.especificacoes ? (
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>ESPECIFICAÇÕES TÉCNICAS:</b> {selected.especificacoes}
                                         </div>
                                     </div>
                                 ) : null}
@@ -1553,7 +1186,7 @@ export default function Page() {
                                             <button
                                                 type="button"
                                                 className={cn("iconActionBtn", already && "iconActionBtnSelected")}
-                                                onClick={() => toggleDraftItem(selected)} // ✅ toggle
+                                                onClick={toggleDraftItem}
                                                 aria-label={already ? "Remover" : "Adicionar"}
                                                 title={already ? "Remover" : "Adicionar"}
                                             >
@@ -1563,16 +1196,18 @@ export default function Page() {
                                     })()}
                                 </div>
 
-                                {showStepperButtons ? (
-                                    <div className="stepperRow">
-                                        <button type="button" className="stepBtn stepBtnGhost" onClick={prevCategoria}>
-                                            Retornar
-                                        </button>
-                                        <button type="button" className="stepBtn" onClick={nextCategoria}>
-                                            {isLastCategoria ? "Concluir" : "Próximo Passo"}
-                                        </button>
-                                    </div>
-                                ) : null}
+                                <div className="stepperRow">
+                                    <button
+                                        type="button"
+                                        className="stepBtn stepBtnGhost"
+                                        onClick={() => setStack(["home", "menus", "listagem"])}
+                                    >
+                                        Retornar
+                                    </button>
+                                    <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                        Concluir
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1591,22 +1226,19 @@ export default function Page() {
             >
                 {!selected ? null : (
                     <div style={{ display: "grid", gap: 10 }}>
-                        {tabelaValores.map((row) => (
-                            <div
-                                key={row.label}
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    padding: "10px 12px",
-                                    borderRadius: 12,
-                                    background: "rgba(255,255,255,0.08)",
-                                    border: "1px solid rgba(255,255,255,0.14)",
-                                }}
-                            >
-                                <span style={{ opacity: 0.95 }}>{row.label}</span>
-                                <b>{row.value}</b>
-                            </div>
-                        ))}
+                        <div
+                            style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                padding: "10px 12px",
+                                borderRadius: 12,
+                                background: "rgba(255,255,255,0.08)",
+                                border: "1px solid rgba(255,255,255,0.14)",
+                            }}
+                        >
+                            <span style={{ opacity: 0.95 }}>Preço</span>
+                            <b>{formatBRL(selected.preco)}</b>
+                        </div>
                     </div>
                 )}
             </Modal>
@@ -1615,34 +1247,18 @@ export default function Page() {
 
     const ScreenOrcamentos = (
         <ScreenContainer>
-            <TopRightNav
-                onBack={back}
-                onHome={home}
-                onList={list}
-                onCheck={openConcluirModal}
-                disabledBack={!canBack}
-                showCheck={false}
-            />
+            <TopRightNav onBack={back} onHome={home} onList={list} onCheck={openConcluirModal} disabledBack={!canBack} showCheck={false} />
             <Title>LISTA DE ORÇAMENTOS</Title>
 
             <div className="budgetsWrap">
                 {orcamentos.length ? (
                     <div className="budgetGrid">
                         {orcamentos.map((o) => {
-                            const total = o.itens.reduce(
-                                (acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0),
-                                0
-                            );
+                            const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
                             const dt = new Date(o.criadoEmISO);
                             const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
                             return (
-                                <button
-                                    key={o.id}
-                                    type="button"
-                                    className="budgetCard"
-                                    onClick={() => openOrcamentoResumo(o.id)}
-                                    title="Abrir resumo"
-                                >
+                                <button key={o.id} type="button" className="budgetCard" onClick={() => openOrcamentoResumo(o.id)} title="Abrir resumo">
                                     <div className="budgetTop">
                                         <div className="budgetTitle">{o.falecido}</div>
                                         <div className="budgetMeta">
@@ -1675,21 +1291,11 @@ export default function Page() {
     const ScreenResumo = (
         <ScreenContainer>
             <div className="resumoTopBar">
-                <button
-                    type="button"
-                    className="iconBtn resumoBtn"
-                    onClick={() => setStack(["home", "orcamentos"])}
-                    title="Voltar (lista)"
-                >
+                <button type="button" className="iconBtn resumoBtn" onClick={() => setStack(["home", "orcamentos"])} title="Voltar (lista)">
                     <IconBack />
                 </button>
 
-                <button
-                    type="button"
-                    className="iconBtn resumoBtn"
-                    onClick={() => console.info("Visto (sem função por enquanto)")}
-                    title="Visto"
-                >
+                <button type="button" className="iconBtn resumoBtn" onClick={() => console.info("Visto (sem função por enquanto)")} title="Visto">
                     <IconCheck />
                 </button>
 
@@ -1736,16 +1342,14 @@ export default function Page() {
                             <div className="resumoDate">
                                 <div className="resumoLine">
                                     <b>Data:</b>{" "}
-                                    {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(
-                                        new Date(orcamentoSelecionado.criadoEmISO)
-                                    )}
+                                    {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(orcamentoSelecionado.criadoEmISO))}
                                 </div>
                             </div>
                         </div>
 
                         <div className="resumoTable">
                             <div className="resumoTableHead2">
-                                <div>Categoria</div>
+                                <div>Menu</div>
                                 <div>Item</div>
                                 <div style={{ textAlign: "right" }}>Qtd</div>
                                 <div style={{ textAlign: "right" }}>Valor</div>
@@ -1753,12 +1357,10 @@ export default function Page() {
 
                             {orcamentoSelecionado.itens.map((it, idx) => (
                                 <div key={`${it.produtoId}-${idx}`} className="resumoRow2">
-                                    <div className="resumoCat">{labelCategoria(it.categoria)}</div>
+                                    <div className="resumoCat">{it.noPath || "-"}</div>
                                     <div className="resumoItemName">{it.nome}</div>
                                     <div style={{ textAlign: "right" }}>{clampInt(it.qtd)}</div>
-                                    <div style={{ textAlign: "right" }}>
-                                        {formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}
-                                    </div>
+                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
                                 </div>
                             ))}
                         </div>
@@ -1779,11 +1381,9 @@ export default function Page() {
         </ScreenContainer>
     );
 
-    // ---------- render switch ----------
     let screen: React.ReactNode = null;
     if (current === "home") screen = ScreenHome;
-    if (current === "elementos") screen = ScreenElementos;
-    if (current === "urnas_linhas") screen = ScreenLinhas;
+    if (current === "menus") screen = ScreenMenus;
     if (current === "listagem") screen = ScreenListagem;
     if (current === "detalhe") screen = ScreenDetalhe;
     if (current === "orcamentos") screen = ScreenOrcamentos;
@@ -1795,7 +1395,7 @@ export default function Page() {
 
             {screen}
 
-            {/* MODAL: Selecionar Operador */}
+            {/* Modal Operador */}
             <Modal
                 open={openUserPick}
                 title="Selecionar Operador"
@@ -1803,22 +1403,11 @@ export default function Page() {
                 maxWidth={760}
                 footer={
                     <div style={{ display: "flex", gap: 10 }}>
-                        <button
-                            type="button"
-                            className="ctaBtn"
-                            onClick={() => setOpenUserPick(false)}
-                            style={{ minWidth: 180 }}
-                        >
+                        <button type="button" className="ctaBtn" onClick={() => setOpenUserPick(false)} style={{ minWidth: 180 }}>
                             CANCELAR
                         </button>
 
-                        <button
-                            type="button"
-                            className="ctaBtn"
-                            onClick={confirmarOperador}
-                            style={{ minWidth: 220 }}
-                            disabled={!operadorTemp}
-                        >
+                        <button type="button" className="ctaBtn" onClick={confirmarOperador} style={{ minWidth: 220 }} disabled={!operadorTemp}>
                             CONFIRMAR
                         </button>
                     </div>
@@ -1826,7 +1415,6 @@ export default function Page() {
             >
                 {usersError ? <div className="errorBox">{usersError}</div> : null}
 
-                {/* ✅ Barra de busca 100% */}
                 <div className="userPickerSearch">
                     <span className="userPickerIcon">
                         <IconSearch />
@@ -1840,7 +1428,6 @@ export default function Page() {
                         }}
                         onKeyDown={(e) => {
                             if (!filteredUsuarios.length) return;
-
                             if (e.key === "ArrowDown") {
                                 e.preventDefault();
                                 setUserHighlight((i) => Math.min(i + 1, filteredUsuarios.length - 1));
@@ -1852,7 +1439,7 @@ export default function Page() {
                             if (e.key === "Enter") {
                                 e.preventDefault();
                                 const pick = filteredUsuarios[userHighlight];
-                                if (pick) setOperadorTemp(pick); // ✅ só seleciona
+                                if (pick) setOperadorTemp(pick);
                             }
                         }}
                         className="userPickerInput"
@@ -1863,7 +1450,6 @@ export default function Page() {
                     />
                 </div>
 
-                {/* ✅ Lista vertical */}
                 <div className="userPickerResults">
                     {loadingUsers ? (
                         <div className="emptyState" style={{ marginTop: 0 }}>
@@ -1884,7 +1470,7 @@ export default function Page() {
                                     type="button"
                                     className={cn("userRow", active && "userRowActive", selectedU && "userRowSelected")}
                                     onMouseEnter={() => setUserHighlight(idx)}
-                                    onClick={() => selectOperador(u)} // ✅ só marca
+                                    onClick={() => setOperadorTemp(u)}
                                     title="Selecionar"
                                 >
                                     <div className="userRowLeft">
@@ -1904,7 +1490,7 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: Início da Homenagem */}
+            {/* Modal Início */}
             <Modal
                 open={openInicio}
                 title="Início da Homenagem"
@@ -1912,20 +1498,10 @@ export default function Page() {
                 maxWidth={860}
                 footer={
                     <div style={{ display: "flex", gap: 10 }}>
-                        <button
-                            type="button"
-                            className="ctaBtn"
-                            onClick={() => setOpenInicio(false)}
-                            style={{ minWidth: 180 }}
-                        >
+                        <button type="button" className="ctaBtn" onClick={() => setOpenInicio(false)} style={{ minWidth: 180 }}>
                             CANCELAR
                         </button>
-                        <button
-                            type="button"
-                            className="ctaBtn"
-                            onClick={iniciarHomenagem}
-                            style={{ minWidth: 220 }}
-                        >
+                        <button type="button" className="ctaBtn" onClick={iniciarHomenagem} style={{ minWidth: 220 }}>
                             COMEÇAR
                         </button>
                     </div>
@@ -1933,30 +1509,19 @@ export default function Page() {
             >
                 <div className="inicioTopHint">
                     <div>
-                        <b>Operador:</b>{" "}
-                        {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                        <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
                     </div>
                 </div>
 
                 <div className="formGrid">
                     <label className="formField">
                         <span>Responsável</span>
-                        <input
-                            value={formResp}
-                            onChange={(e) => setFormResp(e.target.value)}
-                            className="formInput"
-                            placeholder="Nome do responsável"
-                        />
+                        <input value={formResp} onChange={(e) => setFormResp(e.target.value)} className="formInput" placeholder="Nome do responsável" />
                     </label>
 
                     <label className="formField">
                         <span>Falecido(a)</span>
-                        <input
-                            value={formFalecido}
-                            onChange={(e) => setFormFalecido(e.target.value)}
-                            className="formInput"
-                            placeholder="Nome do falecido(a)"
-                        />
+                        <input value={formFalecido} onChange={(e) => setFormFalecido(e.target.value)} className="formInput" placeholder="Nome do falecido(a)" />
                     </label>
 
                     <label className="formField">
@@ -1974,7 +1539,7 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* MODAL: Concluir (revisão + finalizar) */}
+            {/* Modal Revisão */}
             <Modal
                 open={openConcluir}
                 title="Revisão da Homenagem"
@@ -1982,26 +1547,15 @@ export default function Page() {
                 maxWidth={980}
                 footer={
                     <div style={{ display: "flex", gap: 10 }}>
-                        <button
-                            type="button"
-                            className="ctaBtn"
-                            onClick={() => setOpenConcluir(false)}
-                            style={{ minWidth: 180 }}
-                        >
+                        <button type="button" className="ctaBtn" onClick={() => setOpenConcluir(false)} style={{ minWidth: 180 }}>
                             VOLTAR
                         </button>
-                        <button
-                            type="button"
-                            className="ctaBtn"
-                            onClick={finalizarOrcamento}
-                            style={{ minWidth: 220 }}
-                        >
+                        <button type="button" className="ctaBtn" onClick={finalizarOrcamento} style={{ minWidth: 220 }}>
                             FINALIZAR
                         </button>
                     </div>
                 }
             >
-                {/* ✅ Cabeçalho em 2 linhas (Responsável+Telefone / Falecido+Operador) */}
                 <div className="reviewHeader">
                     <div className="reviewHeaderRow">
                         <div className="reviewLine">
@@ -2017,8 +1571,7 @@ export default function Page() {
                             <b>Falecido(a):</b> {formFalecido.trim() || "-"}
                         </div>
                         <div className="reviewLine">
-                            <b>Operador:</b>{" "}
-                            {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                            <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
                         </div>
                     </div>
                 </div>
@@ -2032,25 +1585,14 @@ export default function Page() {
                         <div className="reviewItems">
                             {draftItens.map((it) => (
                                 <div key={it.produtoId} className="reviewItemRow">
-                                    {/* ✅ Clicar no nome abre a tela de detalhe (apresentação) */}
-                                    <button
-                                        type="button"
-                                        className="reviewItemNameBtn"
-                                        onClick={() => openItemFromReview(it.produtoId)}
-                                        title="Abrir item"
-                                    >
+                                    <button type="button" className="reviewItemNameBtn" onClick={() => openItemFromReview(it.produtoId)} title="Abrir item">
                                         {it.nome}
+                                        <span style={{ opacity: 0.75, fontWeight: 900, marginLeft: 10, fontSize: 12 }}>({it.noPath})</span>
                                     </button>
 
                                     <div className="reviewItemRight">
                                         <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
-                                        <button
-                                            type="button"
-                                            className="reviewRemoveBtn"
-                                            onClick={() => removeFromDraft(it.produtoId)}
-                                            aria-label="Remover item"
-                                            title="Remover"
-                                        >
+                                        <button type="button" className="reviewRemoveBtn" onClick={() => removeFromDraft(it.produtoId)} aria-label="Remover item" title="Remover">
                                             ✕
                                         </button>
                                     </div>
@@ -2064,7 +1606,10 @@ export default function Page() {
     );
 }
 
-// ---------- CSS (self-contained) ----------
+/* =======================
+   CSS
+======================= */
+
 const css = `
   :root{
     --bg1:#2ca3d4;
@@ -2131,17 +1676,14 @@ const css = `
     height: 22px;
     padding: 0 6px;
     border-radius: 999px;
-
     display: flex;
     align-items: center;
     justify-content: center;
-
     background: #029cde;
     color: #fff;
     font-weight: 1000;
     font-size: 12px;
     line-height: 1;
-
     border: 2px solid rgba(255,255,255,0.95);
     box-shadow: 0 10px 18px rgba(0,0,0,0.22);
   }
@@ -2162,6 +1704,10 @@ const css = `
     color: var(--ink);
     font-weight: 700;
     letter-spacing: 0.5px;
+    max-width: 980px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .homeBtns{
@@ -2248,7 +1794,7 @@ const css = `
     text-shadow: 0 10px 20px rgba(0,0,0,0.25);
   }
   .listSubTitle{
-    margin-top: 0px;
+    margin-top: 6px;
     color: var(--ink);
     font-weight: 800;
     letter-spacing: 1px;
@@ -2350,12 +1896,12 @@ const css = `
   }
 
   .pagerRow{
-    display:flex;
-    justify-content:flex-end;
-    align-items:center;
-    gap: 12px;
-    margin-top: 12px;
-  }
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap: 12px;
+  margin-top: 12px;
+}
   .pagerBtns{
     display:flex;
     align-items:center;
@@ -2378,6 +1924,7 @@ const css = `
     justify-content:center;
   }
   .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
+  .pagerInfo{ color: rgba(255,255,255,0.92); font-weight: 700; padding: 0 10px; }
 
   /* detalhe */
   .detailLayout{
@@ -2398,6 +1945,30 @@ const css = `
     height: 330px;
   }
   .detailImg{ width: 100%; height: 100%; object-fit: cover; }
+  .zoomBtn{
+    position:absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.35);
+    background: rgba(0,0,0,0.18);
+    color: rgba(255,255,255,0.92);
+    cursor:pointer;
+  }
+
+  .thumbRow{ display:flex; gap: 10px; align-items:center; }
+  .thumb{
+    width: 62px;
+    height: 44px;
+    border-radius: 10px;
+    overflow:hidden;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.10);
+    cursor:pointer;
+  }
+  .thumbImg{ width:100%; height:100%; object-fit:cover; }
 
   .detailMeta{ display:flex; gap: 10px; flex-wrap:wrap; }
   .metaPill{
@@ -2459,6 +2030,7 @@ const css = `
   }
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
+  .iconActionBtn:disabled{ opacity: 0.70; cursor: not-allowed; }
   .iconActionBtnSelected{
     background: rgba(230, 255, 238, 0.92);
     border-color: rgba(16, 185, 129, 0.35);
@@ -2466,14 +2038,14 @@ const css = `
   }
 
   .stepperRow{
-    position: absolute;
-    right: 26px;
-    bottom: 22px;
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    z-index: 5;
-  }
+  position: absolute;
+  right: 26px;   /* mesma distância da borda direita */
+  bottom: 22px;  /* distância da borda de baixo */
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  z-index: 5;
+}
   .stepBtn{
     border-radius: 14px;
     padding: 12px 14px;
@@ -2512,66 +2084,71 @@ const css = `
 
   /* modal */
   .modalOverlay{
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.55);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding: 18px;
-    z-index: 999;
-  }
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 18px;
+  z-index: 999;
+}
   .modalCard{
-    border-radius: 16px;
-    background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
-    border: 1px solid rgba(255,255,255,0.18);
-    box-shadow: 0 30px 70px rgba(0,0,0,0.5);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    max-height: min(88vh, 740px);
-  }
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 30px 70px rgba(0,0,0,0.5);
+  overflow: hidden;
+
+  display: flex;
+  flex-direction: column;
+
+  /* NÃO estoura tela */
+  max-height: min(88vh, 740px);
+}
   .modalHeader{
-    display:flex;
-    align-items:center;
-    gap: 12px;
-    padding: 14px;
-    border-bottom: 1px solid rgba(255,255,255,0.14);
-  }
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.14);
+}
 
-  .modalTitle{
-    color: rgba(255,255,255,0.95);
-    font-weight: 900;
-    letter-spacing: 0.8px;
-    font-size: 18px;
-    line-height: 1;
-  }
+.modalTitle{
+  color: rgba(255,255,255,0.95);
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  font-size: 18px;
+  line-height: 1;
+}
 
-  .modalClose{
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.92);
-    cursor:pointer;
-    flex: 0 0 auto;
-  }
+.modalClose{
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.92);
+  cursor:pointer;
+  flex: 0 0 auto;
+}
   .modalBody{
-    padding: 14px;
-    color: rgba(255,255,255,0.92);
-    flex: 1 1 auto;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-  }
+  padding: 14px;
+  color: rgba(255,255,255,0.92);
 
-  .modalFooter{
-    flex: 0 0 auto;
-    padding: 14px;
-    border-top: 1px solid rgba(255,255,255,0.14);
-    display:flex;
-    justify-content:flex-end;
-  }
+  /* ✅ área rolável */
+  flex: 1 1 auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modalFooter{
+  flex: 0 0 auto;
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,0.14);
+  display:flex;
+  justify-content:flex-end;
+}
 
   /* forms */
   .formGrid{ display:grid; gap: 12px; }
@@ -2588,7 +2165,33 @@ const css = `
   }
   .formInput::placeholder{ color: rgba(255,255,255,0.65); }
 
-  /* ✅ user picker (lista vertical) */
+  /* users */
+  .usersGrid{
+  display:grid;
+  grid-template-columns: 1fr;     /* ✅ sempre 1 coluna */
+  gap: 12px;
+
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1100px){
+  .usersGrid{ grid-template-columns: 1fr; }
+}
+  .userCard{
+    text-align:left;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    cursor:pointer;
+    color: rgba(255,255,255,0.92);
+    font-weight: 900;
+  }
+
+    /* ✅ user picker (lista vertical) */
   .userPickerSearch{
     width: 100%;
     display:flex;
@@ -2638,6 +2241,7 @@ const css = `
     cursor:pointer;
     color: rgba(255,255,255,0.92);
     font-weight: 900;
+
     display:flex;
     align-items:center;
     justify-content: space-between;
@@ -2686,6 +2290,9 @@ const css = `
     border: 1px solid rgba(16, 185, 129, 0.35);
     flex: 0 0 auto;
   }
+  .userCard:hover{ filter: brightness(1.03); transform: translateY(-1px); }
+  .userName{ font-size: 15px; }
+  .userUser{ margin-top: 4px; opacity: 0.9; font-size: 12px; }
 
   .errorBox{
     margin-bottom: 10px;
@@ -2900,18 +2507,31 @@ const css = `
     -webkit-overflow-scrolling: touch;
   }
 
+  .reviewBlock{
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    overflow:hidden;
+  }
+  .reviewCat{
+    padding: 10px 12px;
+    font-weight: 1000;
+    background: rgba(255,255,255,0.08);
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+  }
   .reviewItems{
     padding: 10px 12px;
     display:grid;
     gap: 10px;
   }
   .reviewItemRow{
-    display:flex;
+    display:grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 12px;
     align-items:center;
-    justify-content: space-between;
-    gap: 12px;
   }
-
+  .reviewItemName{ font-weight: 1000; }
+  
   .reviewItemRight{ display:flex; align-items:center; gap: 10px; }
   .reviewItemPrice{ font-weight: 1000; white-space: nowrap; }
   .reviewRemoveBtn{
@@ -2935,6 +2555,7 @@ const css = `
     .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
     .resumoHeader2{ grid-template-columns: 1fr; }
     .resumoDate{ justify-content:flex-start; }
+    .usersGrid{ grid-template-columns: 1fr; }
   }
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
@@ -2945,7 +2566,7 @@ const css = `
     .stepBtn{ min-width: 0; width: 100%; }
   }
 
-  .reviewHeaderRow{
+    .reviewHeaderRow{
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px 16px;
