@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /* =======================
    Types
@@ -68,6 +68,18 @@ type Orcamento = {
 };
 
 type Usuario = { id: number; nome: string; usuario: string };
+
+/* ✅ NOVO: FluxoStep */
+type FluxoStep = {
+    id: number;
+    fluxo_nome: string;
+    ordem: number;
+    no_id: number | null;
+    titulo: string | null;
+    required: number;
+    max_select: number;
+    ativo: number;
+};
 
 /* =======================
    Consts
@@ -272,6 +284,7 @@ function TopRightNav({
     disabledBack,
     showCheck = true,
     checkCount = 0,
+    checkDisabled = false,
 }: {
     onBack: () => void;
     onHome: () => void;
@@ -280,12 +293,21 @@ function TopRightNav({
     disabledBack?: boolean;
     showCheck?: boolean;
     checkCount?: number;
+    checkDisabled?: boolean;
 }) {
     const n = Math.max(0, Math.floor(checkCount || 0));
+    const checkIsDisabled = checkDisabled || !onCheck;
 
     return (
         <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
-            <button type="button" onClick={onBack} disabled={disabledBack} className={cn("iconBtn", disabledBack && "iconBtnDisabled")} aria-label="Voltar" title="Voltar">
+            <button
+                type="button"
+                onClick={onBack}
+                disabled={disabledBack}
+                className={cn("iconBtn", disabledBack && "iconBtnDisabled")}
+                aria-label="Voltar"
+                title="Voltar"
+            >
                 <IconBack />
             </button>
 
@@ -298,7 +320,14 @@ function TopRightNav({
             </button>
 
             {showCheck ? (
-                <button type="button" onClick={onCheck} className="iconBtn iconBtnCheck" aria-label="Concluir" title="Concluir">
+                <button
+                    type="button"
+                    onClick={checkIsDisabled ? undefined : onCheck}
+                    disabled={checkIsDisabled}
+                    className={cn("iconBtn", "iconBtnCheck", checkIsDisabled && "iconBtnDisabled")}
+                    aria-label="Concluir"
+                    title={checkIsDisabled ? "Concluir (bloqueado)" : "Concluir"}
+                >
                     <IconCheck />
                     {n > 0 ? (
                         <span className="badgeCount" aria-label={`${n} itens selecionados`}>
@@ -457,6 +486,56 @@ export default function Page() {
 
     const [openConcluir, setOpenConcluir] = useState(false);
 
+    /* =======================
+       ✅ NOVO: Fluxo fixo (Próximo Passo)
+    ======================== */
+
+    const FIXED_FLUXO_NOME = "Próximo Passo";
+
+    const [fluxoSteps, setFluxoSteps] = useState<FluxoStep[]>([]);
+    const [stepIndex, setStepIndex] = useState(0);
+    const [visitedSteps, setVisitedSteps] = useState<Record<number, 1>>({});
+    const [loadingSteps, setLoadingSteps] = useState(false);
+    const [stepsError, setStepsError] = useState<string | null>(null);
+
+    const currentStep = fluxoSteps[stepIndex] ?? null;
+    const isLastStep = fluxoSteps.length > 0 && stepIndex >= fluxoSteps.length - 1;
+    const canConcluir = fluxoSteps.length > 0 && isLastStep && currentStep && visitedSteps[currentStep.ordem] === 1;
+    const hasFlow = fluxoSteps.length > 0;
+
+    const restoredRef = useRef(false);
+    const pendingGoToSavedRef = useRef(false);
+
+    // Restore localStorage on mount
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem("pai_fluxo_state");
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            const si = Number(parsed?.stepIndex);
+            const vs = parsed?.visitedSteps;
+            if (Number.isFinite(si) && si >= 0) {
+                setStepIndex(Math.floor(si));
+                pendingGoToSavedRef.current = true;
+            }
+            if (vs && typeof vs === "object") {
+                setVisitedSteps(vs);
+            }
+            restoredRef.current = true;
+        } catch {
+            // ignore
+        }
+    }, []);
+
+    // Persist to localStorage whenever stepIndex or visitedSteps changes
+    useEffect(() => {
+        try {
+            localStorage.setItem("pai_fluxo_state", JSON.stringify({ stepIndex, visitedSteps }));
+        } catch {
+            // ignore
+        }
+    }, [stepIndex, visitedSteps]);
+
     const home = useCallback(() => {
         setStack(["home"]);
         setNoPath([]);
@@ -479,6 +558,20 @@ export default function Page() {
         setProdutoIndex({});
         setCatalogoNos([]);
         setCatalogoError(null);
+
+        // ✅ reset fluxo (e storage)
+        setFluxoSteps([]);
+        setStepIndex(0);
+        setVisitedSteps({});
+        setLoadingSteps(false);
+        setStepsError(null);
+        try {
+            localStorage.removeItem("pai_fluxo_state");
+        } catch {
+            // ignore
+        }
+        restoredRef.current = false;
+        pendingGoToSavedRef.current = false;
     }, []);
 
     const goBudgets = useCallback(() => setStack(["home", "orcamentos"]), []);
@@ -599,6 +692,45 @@ export default function Page() {
             .slice(0, 12);
     }, [usuarios, userQuery]);
 
+    /* =======================
+       ✅ NOVO: fetchFluxoSteps()
+    ======================== */
+
+    const fetchFluxoSteps = useCallback(async () => {
+        if (loadingSteps) return;
+        setLoadingSteps(true);
+        setStepsError(null);
+        try {
+            const url = `${CATALOGO_API_URL}?fluxo_steps=1&fluxo_nome=${encodeURIComponent(FIXED_FLUXO_NOME)}&_=${Date.now()}`;
+            const j = await safeJsonFetch(url, { timeoutMs: 20000 });
+            const rows = Array.isArray(j?.rows) ? (j.rows as any[]) : [];
+
+            const steps: FluxoStep[] = rows
+                .map((x) => ({
+                    id: Number(x?.id) || 0,
+                    fluxo_nome: String(x?.fluxo_nome ?? FIXED_FLUXO_NOME),
+                    ordem: Number(x?.ordem) || 0,
+                    no_id: x?.no_id == null || x?.no_id === "" ? null : Number(x.no_id) || null,
+                    titulo: x?.titulo == null ? null : String(x.titulo),
+                    required: Number(x?.required) === 1 ? 1 : 0,
+                    max_select: Math.max(1, Number(x?.max_select) || 1),
+                    ativo: Number(x?.ativo) === 1 ? 1 : 0,
+                }))
+                .filter((s) => s.id > 0 && s.ordem > 0)
+                .filter((s) => s.ativo === 1)
+                .sort((a, b) => a.ordem - b.ordem || a.id - b.id);
+
+            setFluxoSteps(steps);
+
+            // Se não existir fluxo (0 steps), app segue normal (sem botões)
+        } catch (e: any) {
+            setFluxoSteps([]);
+            setStepsError(e?.message || "Erro ao carregar steps do fluxo.");
+        } finally {
+            setLoadingSteps(false);
+        }
+    }, [CATALOGO_API_URL, FIXED_FLUXO_NOME, loadingSteps]);
+
     const iniciarHomenagem = useCallback(() => {
         const responsavel = formResp.trim();
         const falecido = formFalecido.trim();
@@ -616,13 +748,26 @@ export default function Page() {
         setOpenPrices(false);
 
         setStack(["home", "menus"]);
-    }, [formResp, formFalecido, formTel, operadorSel]);
+
+        // ✅ carrega steps automaticamente ao iniciar homenagem
+        fetchFluxoSteps();
+    }, [formResp, formFalecido, formTel, operadorSel, fetchFluxoSteps]);
 
     // Carrega árvore depois que iniciou homenagem
     useEffect(() => {
         if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) return;
         if (!catalogoNos.length && !loadingCatalogo && !catalogoError) fetchCatalogoInit();
     }, [operadorSel, formResp, formFalecido, formTel, catalogoNos.length, loadingCatalogo, catalogoError, fetchCatalogoInit]);
+
+    // ✅ Também tenta carregar steps quando catálogo já carregou (e steps ainda não)
+    useEffect(() => {
+        if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) return;
+        if (!catalogoNos.length) return;
+        if (fluxoSteps.length > 0) return;
+        if (loadingSteps) return;
+        // se já deu erro, ainda assim pode tentar novamente ao recarregar catálogo
+        fetchFluxoSteps();
+    }, [operadorSel, formResp, formFalecido, formTel, catalogoNos.length, fluxoSteps.length, loadingSteps, fetchFluxoSteps]);
 
     // Monta children do parent atual (raiz = parent_id null)
     const childrenNodes = useMemo(() => {
@@ -641,10 +786,7 @@ export default function Page() {
         return map;
     }, [catalogoNos]);
 
-    const nodeHasChildren = useCallback(
-        (id: number) => (childrenByParent.get(id) || 0) > 0,
-        [childrenByParent]
-    );
+    const nodeHasChildren = useCallback((id: number) => (childrenByParent.get(id) || 0) > 0, [childrenByParent]);
 
     const breadcrumb = useMemo(() => {
         if (!noPath.length) return "RAIZ";
@@ -729,6 +871,117 @@ export default function Page() {
         setOpenConcluir(true);
     }, [operadorSel, formResp, formFalecido, formTel]);
 
+    /* =======================
+       ✅ NOVO: goToStep(i)
+    ======================== */
+
+    const goToStep = useCallback(
+        async (i: number) => {
+            if (!fluxoSteps.length) return;
+
+            const clamped = Math.max(0, Math.min(fluxoSteps.length - 1, Math.floor(i)));
+            const step = fluxoSteps[clamped];
+            if (!step) return;
+
+            // resets fixos
+            setQ("");
+            setPage(1);
+            setSelected(null);
+            setOpenPrices(false);
+
+            if (step.no_id == null) {
+                setNoPath([]);
+                setStack(["home", "menus"]);
+                return;
+            }
+
+            const noId = Number(step.no_id) || 0;
+            const node = catalogoNos.find((n) => n.id === noId) || null;
+
+            if (!node) {
+                // fallback
+                setNoPath([]);
+                setStack(["home", "menus"]);
+                return;
+            }
+
+            // construir caminho do nó até raiz
+            const byId = new Map<number, CatalogoNo>();
+            for (const n of catalogoNos) byId.set(n.id, n);
+
+            const pathRev: CatalogoNo[] = [];
+            const seen = new Set<number>();
+            let cur: CatalogoNo | null = node;
+
+            while (cur && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                pathRev.push(cur);
+                if (cur.parent_id == null) break;
+                cur = byId.get(cur.parent_id) || null;
+            }
+
+            const path = pathRev.reverse();
+            setNoPath(path);
+
+            const hasChildren = nodeHasChildren(node.id);
+
+            if (hasChildren) {
+                setStack(["home", "menus"]);
+            } else {
+                setStack(["home", "menus", "listagem"]);
+                await fetchProdutosNo(node.id);
+            }
+        },
+        [fluxoSteps, catalogoNos, nodeHasChildren, fetchProdutosNo]
+    );
+
+    // ✅ Após catalogoNos + fluxoSteps carregarem, se havia estado salvo, navegar para step salvo
+    useEffect(() => {
+        if (!pendingGoToSavedRef.current) return;
+        if (!catalogoNos.length) return;
+        if (!fluxoSteps.length) return;
+
+        pendingGoToSavedRef.current = false;
+        goToStep(stepIndex);
+    }, [catalogoNos.length, fluxoSteps.length, goToStep, stepIndex]);
+
+    /* =======================
+       ✅ NOVO: nextStep()
+    ======================== */
+
+    const nextStep = useCallback(() => {
+        if (!currentStep) return;
+
+        if (currentStep.required === 1 && currentStep.no_id != null) {
+            const ok = draftItens.some((it) => it.noId === currentStep.no_id);
+            if (!ok) {
+                alert("Selecione ao menos 1 item desta etapa para avançar.");
+                return;
+            }
+        }
+
+        // marca visitado
+        setVisitedSteps((prev) => {
+            const next = { ...prev };
+            next[currentStep.ordem] = 1;
+            return next;
+        });
+
+        if (isLastStep) {
+            // último: libera concluir e pode abrir modal
+            openConcluirModal();
+            return;
+        }
+
+        // avança
+        setStepIndex((prev) => {
+            const nextIdx = Math.min((fluxoSteps.length || 1) - 1, prev + 1);
+            // navega
+            void goToStep(nextIdx);
+            return nextIdx;
+        });
+    }, [currentStep, draftItens, isLastStep, openConcluirModal, fluxoSteps.length, goToStep]);
+
     const finalizarOrcamento = useCallback(() => {
         if (!operadorSel) return alert("Operador não selecionado.");
 
@@ -765,6 +1018,20 @@ export default function Page() {
         setSelected(null);
         setOpenPrices(false);
         setOpenConcluir(false);
+
+        // reset steps e storage para próxima homenagem
+        setFluxoSteps([]);
+        setStepIndex(0);
+        setVisitedSteps({});
+        setLoadingSteps(false);
+        setStepsError(null);
+        try {
+            localStorage.removeItem("pai_fluxo_state");
+        } catch {
+            // ignore
+        }
+        restoredRef.current = false;
+        pendingGoToSavedRef.current = false;
 
         setOrcamentoSelecionadoId(null);
         setStack(["home", "orcamentos"]);
@@ -997,11 +1264,16 @@ export default function Page() {
                 disabledBack={!canBack && noPath.length === 0}
                 showCheck={true}
                 checkCount={draftItens.length}
+                checkDisabled={hasFlow ? !canConcluir : false}
             />
 
             <Title>ELEMENTOS DE HOMENAGEM</Title>
 
-            {catalogoError ? <div className="emptyState" style={{ margin: "0 26px" }}>{catalogoError}</div> : null}
+            {catalogoError ? (
+                <div className="emptyState" style={{ margin: "0 26px" }}>
+                    {catalogoError}
+                </div>
+            ) : null}
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
                 <SectionPill>{breadcrumb}</SectionPill>
@@ -1028,6 +1300,11 @@ export default function Page() {
                     </div>
                 )}
             </div>
+
+            {/* opcional: se quiser depurar erros de steps sem expor fluxo, manter invisível (não mostra nome/progresso) */}
+            {stepsError ? (
+                <div style={{ position: "absolute", left: 18, bottom: 14, opacity: 0.0, pointerEvents: "none" }}>{stepsError}</div>
+            ) : null}
         </ScreenContainer>
     );
 
@@ -1045,6 +1322,7 @@ export default function Page() {
                 disabledBack={!canBack}
                 showCheck={true}
                 checkCount={draftItens.length}
+                checkDisabled={hasFlow ? !canConcluir : false}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
@@ -1073,7 +1351,11 @@ export default function Page() {
                         </div>
                     </div>
 
-                    {produtosError ? <div className="errorBox" style={{ marginTop: 12 }}>{produtosError}</div> : null}
+                    {produtosError ? (
+                        <div className="errorBox" style={{ marginTop: 12 }}>
+                            {produtosError}
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="gridProdutos">
@@ -1111,6 +1393,19 @@ export default function Page() {
                             <IconChevron dir="right" />
                         </button>
                     </div>
+
+                    {/* ✅ NOVO: Próximo Passo / Concluir ao lado das setas */}
+                    {hasFlow ? (
+                        canConcluir ? (
+                            <button type="button" className="flowBtn" onClick={openConcluirModal}>
+                                CONCLUIR
+                            </button>
+                        ) : (
+                            <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps}>
+                                PRÓXIMO PASSO
+                            </button>
+                        )
+                    ) : null}
                 </div>
             </div>
         </ScreenContainer>
@@ -1131,6 +1426,7 @@ export default function Page() {
                 onCheck={openConcluirModal}
                 showCheck={true}
                 checkCount={draftItens.length}
+                checkDisabled={hasFlow ? !canConcluir : false}
             />
 
             <div style={{ padding: "22px 26px 0 26px" }}>
@@ -1197,16 +1493,26 @@ export default function Page() {
                                 </div>
 
                                 <div className="stepperRow">
-                                    <button
-                                        type="button"
-                                        className="stepBtn stepBtnGhost"
-                                        onClick={() => setStack(["home", "menus", "listagem"])}
-                                    >
+                                    <button type="button" className="stepBtn stepBtnGhost" onClick={() => setStack(["home", "menus", "listagem"])}>
                                         Retornar
                                     </button>
-                                    <button type="button" className="stepBtn" onClick={openConcluirModal}>
-                                        Concluir
-                                    </button>
+
+                                    {/* ✅ NOVO: Próximo Passo / Concluir no rodapé */}
+                                    {hasFlow ? (
+                                        canConcluir ? (
+                                            <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                                Concluir
+                                            </button>
+                                        ) : (
+                                            <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
+                                                PRÓXIMO PASSO
+                                            </button>
+                                        )
+                                    ) : (
+                                        <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                            Concluir
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1928,6 +2234,27 @@ const css = `
   }
   .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
 
+  /* ✅ NOVO: botão do fluxo na listagem (ao lado do pager) */
+  .flowBtn{
+    border-radius: 999px;
+    padding: 12px 16px;
+    background: #029cde;
+    border: 2px solid rgba(255,255,255,0.35);
+    box-shadow: var(--shadow);
+    color: #fff;
+    font-weight: 1000;
+    letter-spacing: 1px;
+    cursor:pointer;
+    min-width: 190px;
+    height: 46px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
+  .flowBtn:active{ transform: translateY(0px) scale(0.995); }
+  .flowBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
+
   .detailLayout{
     display:grid;
     grid-template-columns: 520px 1fr;
@@ -2037,6 +2364,7 @@ const css = `
   }
   .stepBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .stepBtn:active{ transform: translateY(0px) scale(0.995); }
+  .stepBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
   .stepBtnGhost{
     background: rgba(220,233,246,0.92);
     color: #111;
@@ -2504,5 +2832,7 @@ const css = `
     .stepperRow{ justify-content: space-between; left: 16px; right: 16px; }
     .stepBtn{ min-width: 0; width: 100%; }
     .reviewHeaderRow{ grid-template-columns: 1fr; }
+    .pagerRow{ justify-content: space-between; }
+    .flowBtn{ min-width: 0; width: 100%; }
   }
 `;
