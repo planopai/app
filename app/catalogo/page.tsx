@@ -797,6 +797,28 @@ export default function Page() {
         [current, go]
     );
 
+    // ✅ abrir item da revisão no detalhe (apresentação do produto)
+    const openItemFromReview = useCallback((produtoId: number) => {
+        const p = mockProdutos.find((x) => x.id === produtoId);
+        if (!p) return;
+
+        // Ajusta filtros para o detalhe bater com o produto
+        setCategoria(p.categoria);
+
+        if (p.categoria === "URNAS") {
+            setLinha((p.linha as Linha) ?? null);
+            setStack(["home", "elementos", "urnas_linhas", "listagem", "detalhe"]);
+        } else {
+            setLinha(null);
+            setStack(["home", "elementos", "listagem", "detalhe"]);
+        }
+
+        setSelected(p);
+        setOpenConcluir(false); // fecha a revisão ao abrir o detalhe
+    }, []);
+
+    
+
     useEffect(() => {
         if (current !== "detalhe") return;
         if (!produtosFiltrados.length) {
@@ -836,11 +858,15 @@ export default function Page() {
 
     
 
-    // ---------- draft: add (sem duplicar) ----------
-    const addToDraft = useCallback((p: Produto) => {
+    // ---------- draft: toggle (adiciona/remove) ----------
+    const toggleDraftItem = useCallback((p: Produto) => {
         setDraftItens((prev) => {
             const exists = prev.some((x) => x.produtoId === p.id);
-            if (exists) return prev; // já está selecionado (ícone muda no botão)
+
+            // ✅ se já existe, remove (anula seleção)
+            if (exists) return prev.filter((x) => x.produtoId !== p.id);
+
+            // ✅ se não existe, adiciona
             return [
                 ...prev,
                 {
@@ -1413,21 +1439,20 @@ export default function Page() {
                                         <IconDollar />
                                     </button>
 
-                                    {(() => {
-                                        const already = isSelectedInDraft(selected.id);
-                                        return (
-                                            <button
-                                                type="button"
-                                                className={cn("iconActionBtn", already && "iconActionBtnSelected")}
-                                                onClick={() => addToDraft(selected)}
-                                                aria-label={already ? "Selecionado" : "Adicionar"}
-                                                title={already ? "Selecionado" : "Adicionar"}
-                                                disabled={already}
-                                            >
-                                                {already ? <IconCheck /> : <IconPlus />}
-                                            </button>
-                                        );
-                                    })()}
+                                        {(() => {
+                                            const already = isSelectedInDraft(selected.id);
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    className={cn("iconActionBtn", already && "iconActionBtnSelected")}
+                                                    onClick={() => toggleDraftItem(selected)} // ✅ toggle
+                                                    aria-label={already ? "Remover" : "Adicionar"}
+                                                    title={already ? "Remover" : "Adicionar"}
+                                                >
+                                                    {already ? <IconCheck /> : <IconPlus />}
+                                                </button>
+                                            );
+                                        })()}
                                 </div>
 
                                 {showStepperButtons ? (
@@ -1798,27 +1823,44 @@ export default function Page() {
                 maxWidth={980}
                 footer={
                     <div style={{ display: "flex", gap: 10 }}>
-                        <button type="button" className="ctaBtn" onClick={() => setOpenConcluir(false)} style={{ minWidth: 180 }}>
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={() => setOpenConcluir(false)}
+                            style={{ minWidth: 180 }}
+                        >
                             VOLTAR
                         </button>
-                        <button type="button" className="ctaBtn" onClick={finalizarOrcamento} style={{ minWidth: 220 }}>
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={finalizarOrcamento}
+                            style={{ minWidth: 220 }}
+                        >
                             FINALIZAR
                         </button>
                     </div>
                 }
             >
+                {/* ✅ Cabeçalho em 2 linhas (Responsável+Telefone / Falecido+Operador) */}
                 <div className="reviewHeader">
-                    <div className="reviewLine">
-                        <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                    <div className="reviewHeaderRow">
+                        <div className="reviewLine">
+                            <b>Responsável:</b> {formResp.trim() || "-"}
+                        </div>
+                        <div className="reviewLine">
+                            <b>Telefone:</b> {formTel.trim() || "-"}
+                        </div>
                     </div>
-                    <div className="reviewLine">
-                        <b>Responsável:</b> {formResp.trim() || "-"}
-                    </div>
-                    <div className="reviewLine">
-                        <b>Falecido(a):</b> {formFalecido.trim() || "-"}
-                    </div>
-                    <div className="reviewLine">
-                        <b>Telefone:</b> {formTel.trim() || "-"}
+
+                    <div className="reviewHeaderRow">
+                        <div className="reviewLine">
+                            <b>Falecido(a):</b> {formFalecido.trim() || "-"}
+                        </div>
+                        <div className="reviewLine">
+                            <b>Operador:</b>{" "}
+                            {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
+                        </div>
                     </div>
                 </div>
 
@@ -1827,36 +1869,42 @@ export default function Page() {
                         Nenhum item selecionado. Você pode finalizar mesmo assim.
                     </div>
                 ) : (
+                    // ✅ Sem categorias: lista “reta” de itens
                     <div className="reviewWrap">
-                        {CATEGORIAS_FLUXO.map((c) => {
-                            const items = groupedByCategoria[c.id];
-                            if (!items?.length) return null;
-                            return (
-                                <div key={c.id} className="reviewBlock">
-                                    <div className="reviewCat">{labelCategoria(c.id)}</div>
-                                    <div className="reviewItems">
-                                        {items.map((it) => (
-                                            <div key={it.produtoId} className="reviewItemRow">
-                                                <div className="reviewItemName">{it.nome}</div>
-                                                <div className="reviewItemMeta">{it.linha ? `Linha: ${it.linha}` : ""}</div>
-                                                <div className="reviewItemRight">
-                                                    <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
-                                                    <button
-                                                        type="button"
-                                                        className="reviewRemoveBtn"
-                                                        onClick={() => removeFromDraft(it.produtoId)}
-                                                        aria-label="Remover item"
-                                                        title="Remover"
-                                                    >
-                                                        ✕
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
+                        <div className="reviewItems">
+                            {draftItens.map((it) => (
+                                <div key={it.produtoId} className="reviewItemRow">
+                                    {/* ✅ Clicar no nome abre a tela de detalhe (apresentação) */}
+                                    <button
+                                        type="button"
+                                        className="reviewItemNameBtn"
+                                        onClick={() => openItemFromReview(it.produtoId)}
+                                        title="Abrir item"
+                                    >
+                                        {it.nome}
+                                    </button>
+
+                                    <div className="reviewItemMeta">
+                                        {it.linha ? `Linha: ${it.linha}` : ""}
+                                    </div>
+
+                                    <div className="reviewItemRight">
+                                        <div className="reviewItemPrice">
+                                            {formatBRL(Number(it.valorUnit) || 0)}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="reviewRemoveBtn"
+                                            onClick={() => removeFromDraft(it.produtoId)}
+                                            aria-label="Remover item"
+                                            title="Remover"
+                                        >
+                                            ✕
+                                        </button>
                                     </div>
                                 </div>
-                            );
-                        })}
+                            ))}
+                        </div>
                     </div>
                 )}
             </Modal>
@@ -2818,5 +2866,35 @@ const css = `
     .resumoTableHead2, .resumoRow2{ grid-template-columns: 140px 1fr 60px 110px; }
     .stepperRow{ justify-content: space-between; }
     .stepBtn{ min-width: 0; width: 100%; }
+  }
+
+    .reviewHeaderRow{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+    align-items: center;
+  }
+
+  @media (max-width: 760px){
+    .reviewHeaderRow{
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .reviewItemNameBtn{
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    cursor: pointer;
+    color: rgba(255,255,255,0.95);
+    font-weight: 1000;
+    font-size: 14px;
+  }
+
+  .reviewItemNameBtn:hover{
+    text-decoration: underline;
+    filter: brightness(1.05);
   }
 `;
