@@ -506,6 +506,9 @@ export default function Page() {
     const restoredRef = useRef(false);
     const pendingGoToSavedRef = useRef(false);
 
+    // ✅ NOVO: quando o usuário navega manualmente, não force goToStep() automaticamente
+    const userNavRef = useRef(false);
+
     // Restore localStorage on mount
     useEffect(() => {
         try {
@@ -941,6 +944,12 @@ export default function Page() {
         if (!catalogoNos.length) return;
         if (!fluxoSteps.length) return;
 
+        // ✅ se o usuário navegou manualmente, não força o step (senão "prende" a navegação)
+        if (userNavRef.current) {
+            pendingGoToSavedRef.current = false;
+            return;
+        }
+
         pendingGoToSavedRef.current = false;
         goToStep(stepIndex);
     }, [catalogoNos.length, fluxoSteps.length, goToStep, stepIndex]);
@@ -954,6 +963,9 @@ export default function Page() {
     console.log("draftItens", draftItens);
 
     const nextStep = useCallback(() => {
+        // ✅ voltou a seguir o fluxo
+        userNavRef.current = false;
+
         if (!currentStep) return;
 
         if (currentStep.required === 1 && currentStep.no_id != null) {
@@ -1221,6 +1233,9 @@ export default function Page() {
     );
 
     const menusBack = useCallback(() => {
+        // ✅ usuário está navegando manualmente (não force o step atual via goToStep)
+        userNavRef.current = true;
+
         // Volta um nível na árvore, ou para home->menus, ou home
         setQ("");
         setPage(1);
