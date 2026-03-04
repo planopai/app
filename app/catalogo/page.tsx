@@ -1261,7 +1261,7 @@ export default function Page() {
 
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="listHeader">
-                    <div className="listTitle">{categoria ? labelCategoria(categoria) : "CATÁLOGO"}</div>
+                    
 
                     <div className="listSubTitle">
                         {categoria ? `${labelCategoria(categoria)}` : "CATÁLOGO"}{" "}
@@ -2094,7 +2094,7 @@ const css = `
     text-shadow: 0 10px 20px rgba(0,0,0,0.25);
   }
   .listSubTitle{
-    margin-top: 6px;
+    margin-top: 0px;
     color: var(--ink);
     font-weight: 800;
     letter-spacing: 1px;
