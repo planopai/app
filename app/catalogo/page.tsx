@@ -1130,12 +1130,12 @@ export default function Page() {
 
         y += 24;
 
-        const head = ["Menu", "Item", "Qtd", "Valor (un)", "Subtotal"];
+        const head = ["Item", "Valor"];
         const body = o.itens.map((it) => {
             const qtd = clampInt(it.qtd);
             const v = Number(it.valorUnit) || 0;
-            const sub = qtd * v;
-            return [it.noPath || "-", it.nome, String(qtd), formatBRL(v), formatBRL(sub)];
+            const totalLinha = qtd * v;
+            return [it.nome, formatBRL(totalLinha)];
         });
 
         const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
@@ -1147,9 +1147,9 @@ export default function Page() {
             margin: { left: marginX, right: marginX },
             styles: {
                 font: "helvetica",
-                fontSize: 9.5,
-                cellPadding: 2.4,
-                valign: "top",
+                fontSize: 10,
+                cellPadding: 3,
+                valign: "middle",
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
@@ -1160,15 +1160,11 @@ export default function Page() {
                 valign: "middle",
             },
             columnStyles: {
-                0: { cellWidth: 90, overflow: "linebreak" },
-                1: { cellWidth: 150, overflow: "linebreak" },
-                2: { halign: "right", cellWidth: 16 },
-                3: { halign: "right", cellWidth: 32 },
-                4: { halign: "right", cellWidth: 34 },
+                0: { cellWidth: pageW - marginX * 2 - 50, overflow: "linebreak" }, // Item
+                1: { cellWidth: 50, halign: "right" }, // Valor
             },
             didParseCell: (data: any) => {
-                if (data.section === "body" && data.column.index === 2) data.cell.styles.halign = "right";
-                if (data.section === "body" && data.column.index >= 3) data.cell.styles.halign = "right";
+                if (data.section === "body" && data.column.index === 1) data.cell.styles.halign = "right";
             },
         });
 
@@ -1177,7 +1173,7 @@ export default function Page() {
         const boxW = 54;
         const boxH = 12;
         const boxX = pageW - marginX - boxW;
-        const boxY = Math.min(afterY + 6, pageH - marginX - boxH);
+        const boxY = afterY + 8;
 
         doc.setFillColor(2, 156, 222);
         doc.setDrawColor(2, 156, 222);
@@ -1678,34 +1674,26 @@ export default function Page() {
                             </div>
                         </div>
 
-                        <div className="resumoTable">
-                            <div className="resumoTableHead2">
-                                <div>Menu</div>
-                                <div>Item</div>
-                                <div style={{ textAlign: "right" }}>Qtd</div>
-                                <div style={{ textAlign: "right" }}>Valor</div>
-                            </div>
-
-                            {orcamentoSelecionado.itens.map((it, idx) => (
-                                <div key={`${it.produtoId}-${idx}`} className="resumoRow2">
-                                    <div className="resumoCat">{it.noPath || "-"}</div>
-                                    <div className="resumoItemName">{it.nome}</div>
-                                    <div style={{ textAlign: "right" }}>{clampInt(it.qtd)}</div>
-                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
+                            <div className="resumoTable">
+                                <div className="resumoTableHead2 resumoTableHead2Cols">
+                                    <div>Item</div>
+                                    <div style={{ textAlign: "right" }}>Valor</div>
                                 </div>
-                            ))}
-                        </div>
 
-                        <div className="resumoBottom">
-                            <div className="resumoValidade">
-                                Orçamento válido por <b>07</b> dias
+                                {orcamentoSelecionado.itens.map((it, idx) => (
+                                    <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
+                                        <div className="resumoItemName">{it.nome}</div>
+                                        <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
+                                    </div>
+                                ))}
                             </div>
 
-                            <div className="resumoTotalBox">
-                                <div className="resumoTotalLabel">Total</div>
-                                <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
+                            <div className="resumoBottom resumoBottomOnlyTotal">
+                                <div className="resumoTotalBox">
+                                    <div className="resumoTotalLabel">Total</div>
+                                    <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
+                                </div>
                             </div>
-                        </div>
                     </div>
                 )}
             </div>
@@ -1918,7 +1906,6 @@ export default function Page() {
                                 <div key={it.produtoId} className="reviewItemRow">
                                     <button type="button" className="reviewItemNameBtn" onClick={() => openItemFromReview(it.produtoId)} title="Abrir item">
                                         {it.nome}
-                                        <span style={{ opacity: 0.75, fontWeight: 900, marginLeft: 10, fontSize: 12 }}>({it.noPath})</span>
                                     </button>
 
                                     <div className="reviewItemRight">
@@ -2846,6 +2833,20 @@ const css = `
     filter: brightness(1.05);
   }
 
+  /* ✅ Resumo: tabela com 2 colunas (Item | Valor) */
+.resumoTableHead2Cols{
+  grid-template-columns: 1fr 180px;
+}
+
+.resumoRow2Cols{
+  grid-template-columns: 1fr 180px;
+}
+
+/* ✅ Resumo: rodapé somente com total alinhado */
+.resumoBottomOnlyTotal{
+  justify-content: flex-end;
+}
+
   @media (max-width: 1100px){
     .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
     .detailLayout{ grid-template-columns: 1fr; }
@@ -2858,7 +2859,7 @@ const css = `
     .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
     .budgetGrid{ grid-template-columns: 1fr; }
-    .resumoTableHead2, .resumoRow2{ grid-template-columns: 160px 1fr 60px 110px; }
+    .resumoTableHead2Cols, .resumoRow2Cols{ grid-template-columns: 1fr 140px; }
     .stepperRow{ justify-content: space-between; left: 16px; right: 16px; }
     .stepBtn{ min-width: 0; width: 100%; }
     .reviewHeaderRow{ grid-template-columns: 1fr; }
