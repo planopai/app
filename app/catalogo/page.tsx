@@ -949,6 +949,10 @@ export default function Page() {
        ✅ NOVO: nextStep()
     ======================== */
 
+    console.log("currentStep.no_id", currentStep?.no_id);
+    console.log("draftItens noId", draftItens.map((x) => x.noId));
+    console.log("draftItens", draftItens);
+
     const nextStep = useCallback(() => {
         if (!currentStep) return;
 
