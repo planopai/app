@@ -27,6 +27,19 @@ type Produto = {
 
 type Option = { id: number; nome: string };
 
+// ✅ NOVO: fluxo
+type FluxoInfo = { fluxo_nome: string; total: number | string };
+type FluxoStep = {
+    id?: number;
+    fluxo_nome: string;
+    ordem: number;
+    no_id: number | null;
+    titulo?: string | null;
+    required: number | boolean;
+    max_select: number;
+    ativo: number | boolean;
+};
+
 function asBool(v: any) {
     return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
 }
@@ -204,7 +217,7 @@ export default function CatalogoConfigPage() {
     const [estoqueLoading, setEstoqueLoading] = useState(false);
     const [estoqueRows, setEstoqueRows] = useState<Produto[]>([]);
 
-    // combos (se seu backend ainda não tiver, a UI funciona com "Todos/Todas")
+    // combos
     const [depositos, setDepositos] = useState<Option[]>([]);
     const [categorias, setCategorias] = useState<Option[]>([]);
     const [fabricantes, setFabricantes] = useState<Option[]>([]);
@@ -214,6 +227,15 @@ export default function CatalogoConfigPage() {
     const [fCategoria, setFCategoria] = useState<number>(0);
     const [fFabricante, setFFabricante] = useState<number>(0);
     const [fClassificacao, setFClassificacao] = useState<number>(0);
+
+    /* ============================================================
+       ✅ NOVO: Fluxos / Steps
+    ============================================================ */
+
+    const [fluxos, setFluxos] = useState<FluxoInfo[]>([]);
+    const [fluxoNome, setFluxoNome] = useState<string>(""); // fluxo selecionado/ativo
+    const [fluxoSteps, setFluxoSteps] = useState<FluxoStep[]>([]);
+    const [fluxoLoading, setFluxoLoading] = useState(false);
 
     const loadInit = useCallback(async () => {
         setMsg(null);
@@ -225,7 +247,6 @@ export default function CatalogoConfigPage() {
             const raw = Array.isArray(res.nos) ? res.nos : [];
             setNodes(raw);
 
-            // ✅ se o PHP retornar listas (opcional), preenche; senão fica vazio e a UI continua
             const optMap = (arr: any): Option[] =>
                 Array.isArray(arr) ? arr.map((x) => ({ id: toInt(x.id), nome: String(x.nome ?? x.descricao ?? "") })) : [];
 
@@ -234,7 +255,19 @@ export default function CatalogoConfigPage() {
             setFabricantes(optMap(res.fabricantes));
             setClassificacoes(optMap(res.classificacoes));
 
-            // dica: expandir automaticamente raízes ao abrir
+            // ✅ NOVO: fluxos listados pelo PHP
+            const fl: FluxoInfo[] = Array.isArray(res.fluxos)
+                ? res.fluxos.map((x: any) => ({ fluxo_nome: String(x.fluxo_nome ?? ""), total: x.total ?? 0 })).filter((x) => x.fluxo_nome)
+                : [];
+            setFluxos(fl);
+
+            // se não tiver fluxo selecionado ainda, tenta pegar o primeiro existente
+            setFluxoNome((prev) => {
+                if (prev) return prev;
+                if (fl.length > 0) return fl[0].fluxo_nome;
+                return "";
+            });
+
             setExpanded((prev) => {
                 if (prev.size > 0) return prev;
                 const roots = new Set<number>();
@@ -245,6 +278,7 @@ export default function CatalogoConfigPage() {
             });
         } catch (e: any) {
             setNodes([]);
+            setFluxos([]);
             setMsg({ ok: false, text: e?.message || "Falha ao carregar." });
         } finally {
             setLoading(false);
@@ -281,7 +315,6 @@ export default function CatalogoConfigPage() {
             setQ("");
             loadNoProdutos(id);
 
-            // garante que o caminho (e o próprio) fique expandido
             setExpanded((prev) => {
                 const next = new Set(prev);
                 next.add(id);
@@ -379,10 +412,6 @@ export default function CatalogoConfigPage() {
         setMsg(null);
         setEstoqueLoading(true);
         try {
-            // ✅ IMPORTANTE:
-            // Seu PHP precisa aceitar esses params:
-            // deposito_id, categoria_id, fabricante_id, classificacao_id
-            // (se não aceitar ainda, ele vai ignorar e a busca vai vir sem filtrar)
             const res = await apiGET({
                 estoque_buscar: 1,
                 q: q.trim(),
@@ -441,53 +470,189 @@ export default function CatalogoConfigPage() {
         return String(n?.nome ?? "");
     }, [nodes, selectedNoId]);
 
+    /* ============================================================
+       ✅ NOVO: handlers do fluxo
+    ============================================================ */
+
+    const loadFluxoSteps = useCallback(async (nome: string) => {
+        if (!nome) {
+            setFluxoSteps([]);
+            return;
+        }
+        setFluxoLoading(true);
+        setMsg(null);
+        try {
+            const res = await apiGET({ fluxo_steps: 1, fluxo_nome: nome });
+            if (!res) return;
+            const rows: FluxoStep[] = Array.isArray(res.rows)
+                ? res.rows.map((x: any) => ({
+                    id: toInt(x.id),
+                    fluxo_nome: String(x.fluxo_nome ?? nome),
+                    ordem: toInt(x.ordem, 0),
+                    no_id: x.no_id === null || x.no_id === undefined ? null : toInt(x.no_id, 0),
+                    titulo: x.titulo ?? null,
+                    required: asBool(x.required) ? 1 : 0,
+                    max_select: Math.max(1, toInt(x.max_select, 1)),
+                    ativo: asBool(x.ativo) ? 1 : 0,
+                }))
+                : [];
+            rows.sort((a, b) => toInt(a.ordem) - toInt(b.ordem));
+            setFluxoSteps(rows);
+        } catch (e: any) {
+            setFluxoSteps([]);
+            setMsg({ ok: false, text: e?.message || "Falha ao carregar steps do fluxo." });
+        } finally {
+            setFluxoLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (fluxoNome) loadFluxoSteps(fluxoNome);
+        else setFluxoSteps([]);
+    }, [fluxoNome, loadFluxoSteps]);
+
+    const criarFluxo = async () => {
+        const nome = prompt("Nome do fluxo (ex: FuneralCompleto):");
+        if (!nome) return;
+        const clean = nome.trim();
+        if (!clean) return;
+
+        // cria “virtualmente” (não tem tabela de fluxos, então criamos o 1º step)
+        try {
+            setMsg(null);
+            // cria step 1 sem nó (você ajusta depois)
+            await apiPOST({
+                action: "fluxo_step_criar",
+                fluxo_nome: clean,
+                ordem: 1,
+                no_id: null,
+                titulo: "Passo 1",
+                required: 1,
+                max_select: 1,
+                ativo: 1,
+            });
+            await loadInit();
+            setFluxoNome(clean);
+            setMsg({ ok: true, text: `Fluxo "${clean}" criado (com Step 1).` });
+        } catch (e: any) {
+            setMsg({ ok: false, text: e?.message || "Erro ao criar fluxo." });
+        }
+    };
+
+    const addStep = () => {
+        if (!fluxoNome) {
+            alert("Selecione/crie um fluxo primeiro.");
+            return;
+        }
+        const nextOrd = (fluxoSteps.reduce((m, s) => Math.max(m, toInt(s.ordem)), 0) || 0) + 1;
+        setFluxoSteps((prev) => [
+            ...prev,
+            {
+                fluxo_nome: fluxoNome,
+                ordem: nextOrd,
+                no_id: null,
+                titulo: `Passo ${nextOrd}`,
+                required: 1,
+                max_select: 1,
+                ativo: 1,
+            },
+        ]);
+    };
+
+    const removeStepLocal = (idx: number) => {
+        setFluxoSteps((prev) => prev.filter((_, i) => i !== idx));
+    };
+
+    const moveStep = (idx: number, dir: -1 | 1) => {
+        setFluxoSteps((prev) => {
+            const arr = [...prev];
+            const j = idx + dir;
+            if (j < 0 || j >= arr.length) return prev;
+            const tmp = arr[idx];
+            arr[idx] = arr[j];
+            arr[j] = tmp;
+            return arr;
+        });
+    };
+
+    const saveFluxo = async () => {
+        if (!fluxoNome) {
+            alert("Selecione/crie um fluxo primeiro.");
+            return;
+        }
+
+        // renumera ordem 1..N (evita gaps)
+        const normalized = [...fluxoSteps]
+            .filter((s) => String(s.fluxo_nome || fluxoNome))
+            .map((s) => ({ ...s, fluxo_nome: fluxoNome }))
+            .sort((a, b) => toInt(a.ordem) - toInt(b.ordem));
+
+        const finalSteps = normalized.map((s, i) => ({
+            ordem: i + 1,
+            no_id: s.no_id ?? null,
+            titulo: (s.titulo ?? "").trim() || null,
+            required: asBool(s.required) ? 1 : 0,
+            max_select: Math.max(1, toInt(s.max_select, 1)),
+            ativo: asBool(s.ativo) ? 1 : 0,
+        }));
+
+        try {
+            setMsg(null);
+            await apiPOST({
+                action: "fluxo_steps_set",
+                fluxo_nome: fluxoNome,
+                steps: finalSteps,
+            });
+            await loadInit();
+            await loadFluxoSteps(fluxoNome);
+            setMsg({ ok: true, text: "Fluxo salvo com sucesso." });
+        } catch (e: any) {
+            setMsg({ ok: false, text: e?.message || "Erro ao salvar fluxo." });
+        }
+    };
+
+    const useSelectedNoInStep = (idx: number) => {
+        if (!selectedNoId) {
+            alert("Selecione um nó na árvore primeiro.");
+            return;
+        }
+        setFluxoSteps((prev) =>
+            prev.map((s, i) => (i === idx ? { ...s, no_id: selectedNoId } : s))
+        );
+    };
+
+    const updateStep = (idx: number, patch: Partial<FluxoStep>) => {
+        setFluxoSteps((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+    };
+
     return (
         <div className="p-6">
             <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-semibold">Configuração do Catálogo</h1>
                     <p className="text-sm text-muted-foreground">
-                        Crie menus/submenus em árvore e selecione produtos do estoque para cada item.
+                        Crie menus/submenus em árvore, selecione produtos por nó e configure o Fluxo (“Próximo passo”).
                     </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <button
-                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
-                        onClick={criarNoRaiz}
-                    >
+                    <button className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={criarNoRaiz}>
                         + Menu (Raiz)
                     </button>
 
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                        onClick={criarNoFilho}
-                        disabled={!selectedNoId}
-                    >
+                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={criarNoFilho} disabled={!selectedNoId}>
                         + Submenu (Filho)
                     </button>
 
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                        onClick={renomearNo}
-                        disabled={!selectedNoId}
-                    >
+                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={renomearNo} disabled={!selectedNoId}>
                         Renomear
                     </button>
 
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                        onClick={excluirNo}
-                        disabled={!selectedNoId}
-                    >
+                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={excluirNo} disabled={!selectedNoId}>
                         Excluir
                     </button>
 
-                    <button
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
-                        onClick={loadInit}
-                        disabled={loading}
-                    >
+                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={loadInit} disabled={loading}>
                         {loading ? "Carregando…" : "Recarregar"}
                     </button>
                 </div>
@@ -495,14 +660,196 @@ export default function CatalogoConfigPage() {
 
             {msg && (
                 <div
-                    className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border-red-200 bg-red-50 text-red-800"
+                    className={`mb-4 rounded-md border px-3 py-2 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
                         }`}
                 >
                     {msg.text}
                 </div>
             )}
+
+            {/* ✅ NOVO: CONFIGURAÇÃO DO FLUXO */}
+            <div className="mb-4 rounded-xl border bg-background p-3 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <div className="text-sm font-semibold">Fluxo (“Próximo passo”)</div>
+                        <div className="text-xs text-muted-foreground">
+                            Defina a sequência de nós que o catálogo vai seguir ao clicar em “Próximo passo”.
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        <select
+                            className="rounded-md border bg-background px-3 py-2 text-sm"
+                            value={fluxoNome}
+                            onChange={(e) => setFluxoNome(e.target.value)}
+                            disabled={loading}
+                        >
+                            <option value="">— Selecione um fluxo —</option>
+                            {fluxos.map((f) => (
+                                <option key={f.fluxo_nome} value={f.fluxo_nome}>
+                                    {f.fluxo_nome} ({toInt(f.total)})
+                                </option>
+                            ))}
+                        </select>
+
+                        <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={criarFluxo} type="button">
+                            + Criar fluxo
+                        </button>
+
+                        <button
+                            className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            onClick={addStep}
+                            type="button"
+                            disabled={!fluxoNome}
+                        >
+                            + Step
+                        </button>
+
+                        <button
+                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                            onClick={saveFluxo}
+                            type="button"
+                            disabled={!fluxoNome || fluxoLoading}
+                        >
+                            {fluxoLoading ? "Salvando…" : "Salvar fluxo"}
+                        </button>
+                    </div>
+                </div>
+
+                {!fluxoNome ? (
+                    <div className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                        Selecione um fluxo ou crie um novo.
+                    </div>
+                ) : (
+                    <div className="mt-3 overflow-auto rounded-md border">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/30 text-xs text-muted-foreground">
+                                <tr>
+                                    <th className="p-2 text-left w-[70px]">Ordem</th>
+                                    <th className="p-2 text-left">Título</th>
+                                    <th className="p-2 text-left w-[140px]">Nó</th>
+                                    <th className="p-2 text-left w-[110px]">Obrigatório</th>
+                                    <th className="p-2 text-left w-[120px]">Máx. seleção</th>
+                                    <th className="p-2 text-left w-[90px]">Ativo</th>
+                                    <th className="p-2 text-right w-[260px]">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {fluxoSteps.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="p-3 text-sm text-muted-foreground">
+                                            Nenhum step. Clique em “+ Step”.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    fluxoSteps
+                                        .slice()
+                                        .sort((a, b) => toInt(a.ordem) - toInt(b.ordem))
+                                        .map((s, idx) => {
+                                            const noLabel = s.no_id ? `#${s.no_id}` : "—";
+                                            return (
+                                                <tr key={`${idx}-${s.ordem}`} className="border-t">
+                                                    <td className="p-2 font-mono">{idx + 1}</td>
+
+                                                    <td className="p-2">
+                                                        <input
+                                                            className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                                                            value={String(s.titulo ?? "")}
+                                                            onChange={(e) => updateStep(idx, { titulo: e.target.value })}
+                                                            placeholder={`Passo ${idx + 1}`}
+                                                        />
+                                                    </td>
+
+                                                    <td className="p-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-mono text-xs text-muted-foreground">{noLabel}</span>
+                                                            <button
+                                                                type="button"
+                                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                                onClick={() => useSelectedNoInStep(idx)}
+                                                                disabled={!selectedNoId}
+                                                                title="Usar nó selecionado na árvore"
+                                                            >
+                                                                Usar nó selecionado
+                                                            </button>
+                                                        </div>
+                                                    </td>
+
+                                                    <td className="p-2">
+                                                        <select
+                                                            className="rounded-md border bg-background px-2 py-1 text-sm"
+                                                            value={asBool(s.required) ? 1 : 0}
+                                                            onChange={(e) => updateStep(idx, { required: toInt(e.target.value) })}
+                                                        >
+                                                            <option value={1}>Sim</option>
+                                                            <option value={0}>Não</option>
+                                                        </select>
+                                                    </td>
+
+                                                    <td className="p-2">
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                                                            value={toInt(s.max_select, 1)}
+                                                            onChange={(e) => updateStep(idx, { max_select: Math.max(1, toInt(e.target.value, 1)) })}
+                                                        />
+                                                    </td>
+
+                                                    <td className="p-2">
+                                                        <select
+                                                            className="rounded-md border bg-background px-2 py-1 text-sm"
+                                                            value={asBool(s.ativo) ? 1 : 0}
+                                                            onChange={(e) => updateStep(idx, { ativo: toInt(e.target.value) })}
+                                                        >
+                                                            <option value={1}>Ativo</option>
+                                                            <option value={0}>Inativo</option>
+                                                        </select>
+                                                    </td>
+
+                                                    <td className="p-2">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                                onClick={() => moveStep(idx, -1)}
+                                                                disabled={idx === 0}
+                                                                type="button"
+                                                                title="Subir"
+                                                            >
+                                                                ↑
+                                                            </button>
+                                                            <button
+                                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                                onClick={() => moveStep(idx, 1)}
+                                                                disabled={idx === fluxoSteps.length - 1}
+                                                                type="button"
+                                                                title="Descer"
+                                                            >
+                                                                ↓
+                                                            </button>
+                                                            <button
+                                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                                                onClick={() => removeStepLocal(idx)}
+                                                                type="button"
+                                                                title="Remover"
+                                                            >
+                                                                Remover
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                )}
+                            </tbody>
+                        </table>
+
+                        <div className="p-2 text-xs text-muted-foreground">
+                            Dica: selecione um nó na árvore (esquerda) e clique em <b>“Usar nó selecionado”</b> no step desejado.
+                        </div>
+                    </div>
+                )}
+            </div>
 
             <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
                 {/* ÁRVORE */}
@@ -510,38 +857,27 @@ export default function CatalogoConfigPage() {
                     <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="text-sm font-semibold">Menus e Submenus</div>
                         <div className="flex items-center gap-2">
-                            <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted" onClick={expandAll} title="Expandir tudo">
+                            <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted" onClick={expandAll} title="Expandir tudo" type="button">
                                 Expandir
                             </button>
-                            <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted" onClick={collapseAll} title="Encolher tudo">
+                            <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted" onClick={collapseAll} title="Encolher tudo" type="button">
                                 Encolher
                             </button>
                         </div>
                     </div>
 
                     {tree.length === 0 && !loading ? (
-                        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                            Nenhum menu criado ainda.
-                        </div>
+                        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Nenhum menu criado ainda.</div>
                     ) : null}
 
                     <div className="max-h-[72vh] overflow-auto pr-1">
                         {tree.map((n: any) => (
-                            <NodeItem
-                                key={n.id}
-                                node={n}
-                                depth={0}
-                                selectedId={selectedNoId}
-                                onSelect={onSelectNo}
-                                expanded={expanded}
-                                toggleExpand={toggleExpand}
-                            />
+                            <NodeItem key={n.id} node={n} depth={0} selectedId={selectedNoId} onSelect={onSelectNo} expanded={expanded} toggleExpand={toggleExpand} />
                         ))}
                     </div>
 
                     <div className="mt-3 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
-                        Nó selecionado:{" "}
-                        <span className="font-mono font-semibold">{selectedNoId ? `#${selectedNoId}` : "—"}</span>
+                        Nó selecionado: <span className="font-mono font-semibold">{selectedNoId ? `#${selectedNoId}` : "—"}</span>
                         {selectedNoId && selectedNodeName ? (
                             <>
                                 {" "}
@@ -556,15 +892,14 @@ export default function CatalogoConfigPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                             <div className="text-sm font-semibold">Produtos deste menu/submenu</div>
-                            <div className="text-xs text-muted-foreground">
-                                Busque no estoque, marque os produtos e clique em “Salvar produtos”.
-                            </div>
+                            <div className="text-xs text-muted-foreground">Busque no estoque, marque os produtos e clique em “Salvar produtos”.</div>
                         </div>
 
                         <button
                             className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-60"
                             onClick={salvarProdutosNo}
                             disabled={!selectedNoId}
+                            type="button"
                         >
                             Salvar produtos
                         </button>
@@ -593,6 +928,7 @@ export default function CatalogoConfigPage() {
                                             className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
                                             onClick={buscarEstoque}
                                             disabled={estoqueLoading}
+                                            type="button"
                                         >
                                             {estoqueLoading ? "..." : "Buscar"}
                                         </button>
@@ -674,11 +1010,7 @@ export default function CatalogoConfigPage() {
                                 </div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <button
-                                        className="rounded-md border px-3 py-2 text-xs hover:bg-muted"
-                                        onClick={clearFilters}
-                                        type="button"
-                                    >
+                                    <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={clearFilters} type="button">
                                         Limpar filtros
                                     </button>
 
@@ -706,16 +1038,8 @@ export default function CatalogoConfigPage() {
                                             const checked = selectedProdutoIds.has(pid);
 
                                             return (
-                                                <label
-                                                    key={pid}
-                                                    className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-b-0 hover:bg-muted/30"
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        className="mt-1"
-                                                        checked={checked}
-                                                        onChange={() => toggleProduto(pid)}
-                                                    />
+                                                <label key={pid} className="flex cursor-pointer items-start gap-3 border-b p-3 last:border-b-0 hover:bg-muted/30">
+                                                    <input type="checkbox" className="mt-1" checked={checked} onChange={() => toggleProduto(pid)} />
 
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -737,9 +1061,7 @@ export default function CatalogoConfigPage() {
                                                         </div>
 
                                                         {p.descricao ? (
-                                                            <div className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                                                                {p.descricao}
-                                                            </div>
+                                                            <div className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">{p.descricao}</div>
                                                         ) : null}
                                                     </div>
                                                 </label>
@@ -763,9 +1085,7 @@ export default function CatalogoConfigPage() {
                                                 </li>
                                             ))}
                                             {noProdutos.length > 12 ? (
-                                                <li className="mt-1 list-none text-xs text-muted-foreground">
-                                                    +{noProdutos.length - 12} outros…
-                                                </li>
+                                                <li className="mt-1 list-none text-xs text-muted-foreground">+{noProdutos.length - 12} outros…</li>
                                             ) : null}
                                         </ul>
                                     )}
