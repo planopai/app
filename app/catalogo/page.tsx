@@ -457,6 +457,7 @@ export default function Page() {
 
     const [selected, setSelected] = useState<Produto | null>(null);
     const [openPrices, setOpenPrices] = useState(false);
+    const [openZoom, setOpenZoom] = useState(false);
 
     const [produtoIndex, setProdutoIndex] = useState<Record<number, Produto>>({});
 
@@ -1462,9 +1463,20 @@ export default function Page() {
                 ) : (
                     <div className="detailLayout">
                         <div className="detailLeft">
-                            <div className="detailImgCard">
-                                <img src={selected.thumb} alt={selected.nome} className="detailImg" />
-                            </div>
+                                <div className="detailImgCard">
+                                    <img src={selected.thumb} alt={selected.nome} className="detailImg" />
+
+                                    {/* 🔍 Lupa no canto inferior direito */}
+                                    <button
+                                        type="button"
+                                        className="zoomBtn"
+                                        onClick={() => setOpenZoom(true)}
+                                        aria-label="Ampliar imagem"
+                                        title="Ampliar"
+                                    >
+                                        🔍
+                                    </button>
+                                </div>
 
                             <div className="detailMeta">
                                 <div className="metaPill">
@@ -1566,6 +1578,24 @@ export default function Page() {
                             <span style={{ opacity: 0.95 }}>Preço</span>
                             <b>{formatBRL(selected.preco)}</b>
                         </div>
+                    </div>
+                )}
+            </Modal>
+
+            <Modal
+                open={openZoom}
+                title="Imagem do produto"
+                onClose={() => setOpenZoom(false)}
+                maxWidth={1100}
+                footer={
+                    <button type="button" className="ctaBtn" onClick={() => setOpenZoom(false)}>
+                        FECHAR
+                    </button>
+                }
+            >
+                {!selected ? null : (
+                    <div className="zoomWrap">
+                        <img src={selected.thumb} alt={selected.nome} className="zoomImg" />
                     </div>
                 )}
             </Modal>
@@ -2289,6 +2319,45 @@ const css = `
     box-shadow: 0 20px 46px rgba(0,0,0,0.26);
     height: 330px;
   }
+
+  .zoomBtn{
+  position:absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.92);
+  border: 2px solid rgba(2,156,222,0.55);
+  color: #0b2b4d;
+  font-size: 18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow: 0 14px 30px rgba(0,0,0,0.22);
+}
+.zoomBtn:hover{ filter: brightness(1.03); transform: translateY(-1px); }
+.zoomBtn:active{ transform: translateY(0px) scale(0.98); }
+
+.zoomWrap{
+  width: 100%;
+  max-height: min(72vh, 720px);
+  overflow: auto;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 10px;
+}
+
+/* imagem grande, pode "dar zoom" usando scroll (e no mobile, pinch-zoom do navegador) */
+.zoomImg{
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
+  display:block;
+}
   .detailImg{ width: 100%; height: 100%; object-fit: cover; }
 
   .detailMeta{ display:flex; gap: 10px; flex-wrap:wrap; }
