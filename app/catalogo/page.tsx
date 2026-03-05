@@ -350,7 +350,7 @@ function BigButton({ label, onClick }: { label: string; onClick: () => void }) {
 
 function Title({ children }: { children: React.ReactNode }) {
     return (
-        <div style={{ textAlign: "center", marginTop: 38, marginBottom: 26 }}>
+        <div className="pageTitleWrap">
             <div className="title">{children}</div>
         </div>
     );
@@ -2125,6 +2125,7 @@ const css = `
 
   .menusWrap{
   height: 100%;
+  min-height: 0;              /* ✅ importante pra não estourar */
   display: flex;
   flex-direction: column;
   padding: 0 18px 18px 18px;
@@ -2132,42 +2133,50 @@ const css = `
 }
 
   .gridMenu2{
-  width:100%;
-  max-width:900px;
-  margin:0 auto;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
 
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap:28px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr)); /* ✅ garante 2 colunas */
+  gap: clamp(10px, 2vh, 28px);                         /* ✅ diminui no tablet */
 
-  /* ✅ NOVO: a grid vira a área flexível */
   flex: 1 1 auto;
+  min-height: 0;                                       /* ✅ chave: permite encolher */
   align-content: start;
 }
 
   .bigBtn{
-    width:100%;
-    height:84px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:0 24px;
-    border-radius:20px;
-    font-family: var(--font-nunito), Nunito, sans-serif;
-    font-weight:800;
-    font-size:22px;
-    letter-spacing:.8px;
-    white-space:nowrap;
-    text-align:center;
-    color:#fff;
-    background:#029cde;
-    border:2px solid rgba(255,255,255,.35);
-    box-shadow: 0 14px 32px rgba(2,156,222,.35), inset 0 1px 0 rgba(255,255,255,.25);
-    cursor:pointer;
-    transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
-    position:relative;
-    overflow:hidden;
-  }
+  width: 100%;
+
+  /* ✅ altura adaptável ao viewport */
+  height: clamp(56px, 8vh, 84px);
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 0 clamp(14px, 2vw, 24px);
+
+  border-radius: clamp(14px, 2.2vh, 20px);
+
+  font-family: var(--font-nunito), Nunito, sans-serif;
+  font-weight: 800;
+
+  /* ✅ fonte adaptável */
+  font-size: clamp(16px, 2.2vh, 22px);
+  letter-spacing: .8px;
+
+  white-space: nowrap;
+  text-align:center;
+  color:#fff;
+  background:#029cde;
+  border:2px solid rgba(255,255,255,.35);
+  box-shadow: 0 14px 32px rgba(2,156,222,.35), inset 0 1px 0 rgba(255,255,255,.25);
+  cursor:pointer;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+  position:relative;
+  overflow:hidden;
+}
   .bigBtn:hover{ background:#03a7ec; transform:translateY(-3px); }
   .bigBtn:active{ transform:scale(.97); }
   .btnLabel{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -2528,6 +2537,12 @@ const css = `
     border: 2px solid rgba(255,255,255,0.55);
     min-width: 140px;
   }
+
+  .pageTitleWrap{
+  text-align:center;
+  margin-top: clamp(14px, 3vh, 38px);
+  margin-bottom: clamp(10px, 2.5vh, 26px);
+}
 
   .ctaBtn{
     border-radius: 14px;
@@ -3012,6 +3027,13 @@ const css = `
   .gridMenu2{ gap: 16px; }
   .bigBtn{ height: 70px; font-size: 20px; border-radius: 18px; }
   .pill{ padding: 8px 12px; }
+}
+
+@media (max-width: 900px){
+  .gridMenu2{
+    grid-template-columns: 1fr;  /* ✅ vira 1 coluna se precisar */
+    max-width: 520px;
+  }
 }
 
 @media (max-height: 660px){
