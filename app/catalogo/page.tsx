@@ -460,7 +460,17 @@ export default function Page() {
     // Produtos
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
-    const pageSize = 8;
+    const [pageSize, setPageSize] = useState(8);
+
+    // ✅ Tablet landscape (ex.: iPad): 1 linha com 4 colunas
+    useEffect(() => {
+        const mq = window.matchMedia("(min-width: 761px) and (max-width: 1100px)");
+        const apply = () => setPageSize(mq.matches ? 4 : 8);
+
+        apply();
+        mq.addEventListener?.("change", apply);
+        return () => mq.removeEventListener?.("change", apply);
+    }, []);
 
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [loadingProdutos, setLoadingProdutos] = useState(false);
@@ -3084,6 +3094,19 @@ const css = `
     .resumoHeader2{ grid-template-columns: 1fr; }
     .resumoDate{ justify-content:flex-start; }
   }
+
+  @media (min-width: 761px) and (max-width: 1100px){
+  /* garante 4 colunas no tablet */
+  .gridProdutos{
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    gap: 14px;
+    margin-top: 10px;
+  }
+
+  /* opcional: deixa o card um pouco mais “baixo” */
+  .prodImgWrap{ height: 120px; }
+  .prodName{ font-size: 13px; min-height: 30px; }
+}
   @media (max-width: 760px){
     .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
