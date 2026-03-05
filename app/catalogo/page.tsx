@@ -1296,44 +1296,46 @@ export default function Page() {
                 checkDisabled={hasFlow ? !canConcluir : false}
             />
 
-            <Title>ELEMENTOS DE HOMENAGEM</Title>
+            {/* ✅ NOVO: wrapper pra controlar layout e altura no tablet */}
+            <div className="menusWrap">
+                <Title>ELEMENTOS DE HOMENAGEM</Title>
 
-            {catalogoError ? (
-                <div className="emptyState" style={{ margin: "0 26px" }}>
-                    {catalogoError}
+                {catalogoError ? (
+                    <div className="emptyState" style={{ margin: "0 26px" }}>
+                        {catalogoError}
+                    </div>
+                ) : null}
+
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+                    <SectionPill>{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</SectionPill>
                 </div>
-            ) : null}
 
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                <SectionPill>{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</SectionPill>
+                <div className="gridMenu2">
+                    {loadingCatalogo ? (
+                        <div className="emptyState" style={{ gridColumn: "1 / -1" }}>
+                            Carregando menus...
+                        </div>
+                    ) : childrenNodes.length ? (
+                        childrenNodes.map((n) => (
+                            <BigButton
+                                key={n.id}
+                                label={n.nome}
+                                onClick={() => {
+                                    enterNode(n);
+                                }}
+                            />
+                        ))
+                    ) : (
+                        <div className="emptyState" style={{ gridColumn: "1 / -1" }}>
+                            Nenhum submenu encontrado.
+                        </div>
+                    )}
+                </div>
+
+                {stepsError ? (
+                    <div style={{ position: "absolute", left: 18, bottom: 14, opacity: 0.0, pointerEvents: "none" }}>{stepsError}</div>
+                ) : null}
             </div>
-
-            <div className="gridMenu2">
-                {loadingCatalogo ? (
-                    <div className="emptyState" style={{ gridColumn: "1 / -1" }}>
-                        Carregando menus...
-                    </div>
-                ) : childrenNodes.length ? (
-                    childrenNodes.map((n) => (
-                        <BigButton
-                            key={n.id}
-                            label={n.nome}
-                            onClick={() => {
-                                enterNode(n);
-                            }}
-                        />
-                    ))
-                ) : (
-                    <div className="emptyState" style={{ gridColumn: "1 / -1" }}>
-                        Nenhum submenu encontrado.
-                    </div>
-                )}
-            </div>
-
-            {/* opcional: se quiser depurar erros de steps sem expor fluxo, manter invisível (não mostra nome/progresso) */}
-            {stepsError ? (
-                <div style={{ position: "absolute", left: 18, bottom: 14, opacity: 0.0, pointerEvents: "none" }}>{stepsError}</div>
-            ) : null}
         </ScreenContainer>
     );
 
@@ -2121,14 +2123,27 @@ const css = `
     box-shadow: 0 6px 14px rgba(2,156,222,0.35), inset 0 2px 6px rgba(0,0,0,0.25);
   }
 
+  .menusWrap{
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0 18px 18px 18px;
+  box-sizing: border-box;
+}
+
   .gridMenu2{
-    width:100%;
-    max-width:900px;
-    margin:0 auto;
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap:28px;
-  }
+  width:100%;
+  max-width:900px;
+  margin:0 auto;
+
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:28px;
+
+  /* ✅ NOVO: a grid vira a área flexível */
+  flex: 1 1 auto;
+  align-content: start;
+}
 
   .bigBtn{
     width:100%;
@@ -2991,6 +3006,19 @@ const css = `
     .pagerRow{ justify-content: space-between; }
     .flowBtn{ min-width: 0; width: 100%; }
   }
+
+  @media (max-height: 740px){
+  .title{ font-size: 28px; }
+  .gridMenu2{ gap: 16px; }
+  .bigBtn{ height: 70px; font-size: 20px; border-radius: 18px; }
+  .pill{ padding: 8px 12px; }
+}
+
+@media (max-height: 660px){
+  .title{ font-size: 24px; }
+  .gridMenu2{ gap: 12px; }
+  .bigBtn{ height: 62px; font-size: 18px; }
+}
 
   @media (max-height: 720px){
     .screen{
