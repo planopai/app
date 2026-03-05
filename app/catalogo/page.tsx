@@ -1489,14 +1489,11 @@ export default function Page() {
                             <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
                             <div className="bulletBox">
-                                {selected.descricaoCurta ? (
-                                    <div className="bulletItem">
-                                        <span className="bulletDot">•</span>
-                                        <div>
-                                            <b>DESCRIÇÃO:</b> {selected.descricaoCurta}
+                                    {selected.descricaoCurta ? (
+                                        <div className="descText">
+                                            {selected.descricaoCurta}
                                         </div>
-                                    </div>
-                                ) : null}
+                                    ) : null}
 
                                 <div className="detailActions">
                                     <button
@@ -2395,6 +2392,14 @@ const css = `
     line-height: 1.35;
     font-size: 14px;
   }
+
+  .descText{
+  color: rgba(255,255,255,0.92);
+  font-weight: 700;
+  line-height: 1.45;
+  font-size: 14px;
+  white-space: pre-wrap;   /* ✅ respeita quebras de linha do textarea */
+}
   .bulletDot{ color: rgba(255,255,255,0.92); font-size: 18px; line-height: 1; margin-top: 2px; }
 
   .detailActions{
