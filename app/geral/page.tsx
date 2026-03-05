@@ -392,9 +392,21 @@ function normalizeImgUrl(u?: string | null) {
     const t = (u ?? "").toString().trim();
     if (!t || t === "null" || t === "undefined") return null;
 
+    // ✅ base64
+    if (/^data:image\//i.test(t)) return t;
+
+    // ✅ blob preview (se algum dia usar)
+    if (/^blob:/i.test(t)) return t;
+
+    // ✅ url completa
     if (/^https?:\/\//i.test(t)) return t;
-    if (t.startsWith("/")) return `${IMG_BASE}${t}`;
-    return `${IMG_BASE}/uploads/produtos/${t}`;
+
+    // ✅ caminhos já em uploads
+    const clean = t.startsWith("/") ? t : `/${t}`;
+    if (clean.startsWith("/uploads/")) return `${IMG_BASE}${clean}`;
+
+    // ✅ só nome do arquivo
+    return `${IMG_BASE}/uploads/produtos/${t.replace(/^\/+/, "")}`;
 }
 
 async function safeJson<T>(r: Response): Promise<T> {
