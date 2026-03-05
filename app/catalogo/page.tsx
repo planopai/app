@@ -1360,8 +1360,8 @@ export default function Page() {
                 checkDisabled={hasFlow ? !canConcluir : false}
             />
 
-            {/* ✅ TROCA: wrapper com altura fixa + flex column (evita cortar pager no tablet) */}
             <div className="listagemWrap">
+                {/* Cabeçalho */}
                 <div className="listHeader">
                     <div className="listSubTitle">{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</div>
 
@@ -1394,54 +1394,59 @@ export default function Page() {
                     ) : null}
                 </div>
 
-                <div className="gridProdutos">
-                    {loadingProdutos ? (
-                        <div className="emptyState">Carregando produtos...</div>
-                    ) : (
-                        <>
-                            {paged.map((p) => (
-                                <ProductCard key={p.id} p={p} onOpen={() => openProduct(p)} />
-                            ))}
-                            {paged.length === 0 ? <div className="emptyState">Nenhum produto encontrado.</div> : null}
-                        </>
-                    )}
+                {/* ✅ Miolo (grade) */}
+                <div className="gridProdutosWrap">
+                    <div className="gridProdutos">
+                        {loadingProdutos ? (
+                            <div className="emptyState">Carregando produtos...</div>
+                        ) : (
+                            <>
+                                {paged.map((p) => (
+                                    <ProductCard key={p.id} p={p} onOpen={() => openProduct(p)} />
+                                ))}
+                                {paged.length === 0 ? <div className="emptyState">Nenhum produto encontrado.</div> : null}
+                            </>
+                        )}
+                    </div>
                 </div>
 
-                <div className="pagerRow">
-                    <div className="pagerBtns">
-                        <button
-                            type="button"
-                            className="pagerBtn"
-                            onClick={() => setPage((x) => Math.max(1, x - 1))}
-                            disabled={page <= 1}
-                            aria-label="Página anterior"
-                        >
-                            <IconChevron dir="left" />
-                        </button>
+                {/* ✅ Rodapé fixo (sempre visível) */}
+                <div className="listagemFooter">
+                    <div className="pagerRow">
+                        <div className="pagerBtns">
+                            <button
+                                type="button"
+                                className="pagerBtn"
+                                onClick={() => setPage((x) => Math.max(1, x - 1))}
+                                disabled={page <= 1}
+                                aria-label="Página anterior"
+                            >
+                                <IconChevron dir="left" />
+                            </button>
 
-                        <button
-                            type="button"
-                            className="pagerBtn"
-                            onClick={() => setPage((x) => Math.min(totalPages, x + 1))}
-                            disabled={page >= totalPages}
-                            aria-label="Próxima página"
-                        >
-                            <IconChevron dir="right" />
-                        </button>
+                            <button
+                                type="button"
+                                className="pagerBtn"
+                                onClick={() => setPage((x) => Math.min(totalPages, x + 1))}
+                                disabled={page >= totalPages}
+                                aria-label="Próxima página"
+                            >
+                                <IconChevron dir="right" />
+                            </button>
+                        </div>
+
+                        {hasFlow ? (
+                            canConcluir ? (
+                                <button type="button" className="flowBtn" onClick={openConcluirModal}>
+                                    CONCLUIR
+                                </button>
+                            ) : (
+                                <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps}>
+                                    PRÓXIMO PASSO
+                                </button>
+                            )
+                        ) : null}
                     </div>
-
-                    {/* ✅ Próximo Passo / Concluir ao lado das setas */}
-                    {hasFlow ? (
-                        canConcluir ? (
-                            <button type="button" className="flowBtn" onClick={openConcluirModal}>
-                                CONCLUIR
-                            </button>
-                        ) : (
-                            <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps}>
-                                PRÓXIMO PASSO
-                            </button>
-                        )
-                    ) : null}
                 </div>
             </div>
         </ScreenContainer>
@@ -2253,6 +2258,51 @@ const css = `
     margin-top: 14px;
     
   }
+
+  /* =======================
+   ✅ LISTAGEM: rodapé sempre visível no tablet
+======================= */
+
+.listagemWrap{
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 26px 0 26px;   /* bottom 0 aqui */
+  box-sizing: border-box;
+}
+
+/* ✅ area do meio (grade) pode rolar se precisar */
+.gridProdutosWrap{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;              /* ✅ se faltar espaço, rola aqui */
+  padding-bottom: 12px;        /* respiro antes do rodapé */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ✅ rodapé fica sempre visível */
+.listagemFooter{
+  flex: 0 0 auto;
+  padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+}
+
+/* mantém pagerRow como está, mas garante que não “grude” fora */
+.pagerRow{
+  margin-top: 0;               /* não precisa mais auto aqui */
+}
+
+/* Tablet/altura pequena: diminui um pouco o footer */
+@media (max-height: 720px){
+  .listagemFooter{
+    padding-top: 6px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+  .flowBtn{
+    height: 42px;
+    padding: 10px 14px;
+  }
+}
 
   .prodCard{
     border-radius: 18px;
