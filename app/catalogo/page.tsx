@@ -462,9 +462,12 @@ export default function Page() {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(8);
 
-    // ✅ Tablet landscape (ex.: iPad): 1 linha com 4 colunas
+    // ✅ Detecta tablet de verdade (iPad/Android tablet), inclusive landscape 1366px
     useEffect(() => {
-        const mq = window.matchMedia("(min-width: 761px) and (max-width: 1100px)");
+        const mq = window.matchMedia(
+            "(pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px)"
+        );
+
         const apply = () => setPageSize(mq.matches ? 4 : 8);
 
         apply();
@@ -1997,42 +2000,42 @@ const css = `
     --shadow: 0 16px 34px rgba(0,0,0,0.25);
   }
 
-  html, body {
+html, body{
   height: 100%;
 }
 
-  .root{
-    width: 100%;
-    height: 100%;
-    min-height: 100%;
-    overflow: hidden;           /* ✅ sem rolagem */
-    background-image:
+.root{
+  width: 100%;
+  height: 100dvh;          /* ✅ trocado */
+  min-height: 100dvh;      /* ✅ trocado */
+  overflow: hidden;
+  background-image:
     linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
     url("${BG_IMAGE}");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-family: var(--font-nunito), Nunito, sans-serif;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family: var(--font-nunito), Nunito, sans-serif;
 }
 
-  .screen{
-    position: relative;
+.screen{
+  position: relative;
 
-    /* ✅ ocupa o container do conteúdo (que muda quando o menu abre/fecha) */
-    width: min(1200px, 100%);
-    height: min(680px, 100%);
+  width: min(1200px, 100%);
 
-    /* ✅ garante que nunca estoure e não crie scroll */
-    max-width: calc(100% - 24px);
-    max-height: calc(100% - 24px);
+  /* ✅ usa a altura real visível do tablet */
+  max-height: calc(100dvh - 24px);
+  height: min(680px, calc(100dvh - 24px));
 
-    border-radius: 14px;
-    overflow: hidden;
-    background: transparent;
+  max-width: calc(100% - 24px);
+
+  border-radius: 14px;
+  overflow: hidden;
+  background: transparent;
 }
 
   .iconBtn{
@@ -2269,8 +2272,8 @@ const css = `
     
   }
 
-  /* =======================
-   ✅ LISTAGEM: rodapé sempre visível no tablet
+/* =======================
+   ✅ LISTAGEM: rodapé sempre visível
 ======================= */
 
 .listagemWrap{
@@ -2278,28 +2281,30 @@ const css = `
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 22px 26px 0 26px;   /* bottom 0 aqui */
+  padding: 22px 26px 0 26px;
   box-sizing: border-box;
 }
 
-/* ✅ area do meio (grade) pode rolar se precisar */
 .gridProdutosWrap{
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;              /* ✅ se faltar espaço, rola aqui */
-  padding-bottom: 12px;        /* respiro antes do rodapé */
+  overflow: auto;                 /* ✅ se faltar espaço, só a grade rola */
+  padding-bottom: 10px;
   -webkit-overflow-scrolling: touch;
 }
 
-/* ✅ rodapé fica sempre visível */
+/* ✅ rodapé sempre visível */
 .listagemFooter{
   flex: 0 0 auto;
   padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
 }
 
-/* mantém pagerRow como está, mas garante que não “grude” fora */
 .pagerRow{
-  margin-top: 0;               /* não precisa mais auto aqui */
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap: 12px;
+  margin: 0;                      /* ✅ sem auto / sem 12px aqui */
 }
 
 /* Tablet/altura pequena: diminui um pouco o footer */
@@ -2569,6 +2574,28 @@ const css = `
   justify-content: flex-end;  /* ✅ joga os botões pro canto direito */
   gap: 12px;
   z-index: 6;
+}
+
+/* ✅ TABLET (inclui iPad 1366): 1 linha com 4 colunas e cards mais compactos */
+@media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
+  .gridProdutos{
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+    gap: 14px;
+    margin-top: 10px;
+  }
+
+  .prodCard{ padding: 10px; }
+  .prodImgWrap{ height: 110px; }
+  .prodName{ font-size: 13px; min-height: 28px; }
+
+  .pagerRow{ justify-content: space-between; }
+  .flowBtn{ min-width: 170px; height: 44px; }
+}
+
+  .flowBtn{
+    min-width: 170px; /* um pouco menor no tablet */
+    height: 44px;
+  }
 }
 
 /* mobile */
