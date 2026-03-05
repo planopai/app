@@ -2439,7 +2439,15 @@ const css = `
   }
 
   /* ✅ não usar mais absolute */
-.stepperRow{ position: static; }
+.stepperRow{
+  position: absolute;
+  right: 16px;      /* ✅ mesmo valor do padding do .detailRight */
+  bottom: 16px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  z-index: 6;
+}
 
 /* ✅ rodapé abaixo do container da direita */
 .detailFooterRow{
