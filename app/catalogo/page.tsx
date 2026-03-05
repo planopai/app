@@ -2444,8 +2444,8 @@ const css = `
 /* ✅ rodapé abaixo do container da direita */
 .detailFooterRow{
   position: absolute;
-  right: 18px;      /* ✅ mesmo “gap” do grid */
-  bottom: 16px;     /* ✅ canto inferior */
+  right: 34px;   /* ✅ empurra mais pra direita (18 + padding 16 do card) */
+  bottom: 12px;  /* ✅ desce um pouco */
   display: flex;
   gap: 10px;
   z-index: 6;
