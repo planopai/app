@@ -2304,12 +2304,14 @@ const css = `
   .flowBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
 
   .detailLayout{
-    display:grid;
-    grid-template-columns: 520px 1fr;
-    gap: 18px;
-    align-items: start;
-    margin-top: 12px;
-  }
+  position: relative; /* ✅ necessário pro footer absoluto */
+  display:grid;
+  grid-template-columns: 520px 1fr;
+  gap: 18px;
+  align-items: start;
+  margin-top: 12px;
+  padding-bottom: 74px; /* ✅ reserva espaço pros botões não encostarem */
+}
   .detailLeft{ display:flex; flex-direction:column; gap: 12px; }
   .detailImgCard{
     position:relative;
@@ -2441,11 +2443,12 @@ const css = `
 
 /* ✅ rodapé abaixo do container da direita */
 .detailFooterRow{
-  margin-top: 12px;
+  position: absolute;
+  right: 18px;      /* ✅ mesmo “gap” do grid */
+  bottom: 16px;     /* ✅ canto inferior */
   display: flex;
   gap: 10px;
-  justify-content: flex-end;  /* fica alinhado à direita */
-  padding-right: 16px;        /* casa com o padding interno do card */
+  z-index: 6;
 }
 
 /* mobile */
