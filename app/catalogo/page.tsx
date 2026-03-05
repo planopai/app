@@ -299,7 +299,7 @@ function TopRightNav({
     const checkIsDisabled = checkDisabled || !onCheck;
 
     return (
-        <div style={{ position: "absolute", top: 18, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
+        <div style={{ position: "absolute", top: 6, right: 18, display: "flex", gap: 10, zIndex: 5 }}>
             <button
                 type="button"
                 onClick={onBack}
@@ -1485,67 +1485,71 @@ export default function Page() {
                             </div>
                         </div>
 
-                        <div className="detailRight">
-                            <div className="detailTitle">{selected.nome.toUpperCase()}</div>
+                            <div className="detailRight">
+                                <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
-                            <div className="bulletBox">
+                                <div className="bulletBox">
                                     {selected.descricaoCurta ? (
                                         <div className="descText">
                                             {selected.descricaoCurta}
                                         </div>
                                     ) : null}
 
-                                <div className="detailActions">
-                                    <button
-                                        type="button"
-                                        className="iconActionBtn"
-                                        onClick={() => setOpenPrices(true)}
-                                        aria-label="Tabela de valores"
-                                        title="Tabela de valores"
-                                    >
-                                        <IconDollar />
-                                    </button>
+                                    <div className="detailActions">
+                                        <button
+                                            type="button"
+                                            className="iconActionBtn"
+                                            onClick={() => setOpenPrices(true)}
+                                            aria-label="Tabela de valores"
+                                            title="Tabela de valores"
+                                        >
+                                            <IconDollar />
+                                        </button>
 
-                                    {(() => {
-                                        const already = isSelectedInDraft(selected.id);
-                                        return (
-                                            <button
-                                                type="button"
-                                                className={cn("iconActionBtn", already && "iconActionBtnSelected")}
-                                                onClick={toggleDraftItem}
-                                                aria-label={already ? "Remover" : "Adicionar"}
-                                                title={already ? "Remover" : "Adicionar"}
-                                            >
-                                                {already ? <IconCheck /> : <IconPlus />}
-                                            </button>
-                                        );
-                                    })()}
+                                        {(() => {
+                                            const already = isSelectedInDraft(selected.id);
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    className={cn("iconActionBtn", already && "iconActionBtnSelected")}
+                                                    onClick={toggleDraftItem}
+                                                    aria-label={already ? "Remover" : "Adicionar"}
+                                                    title={already ? "Remover" : "Adicionar"}
+                                                >
+                                                    {already ? <IconCheck /> : <IconPlus />}
+                                                </button>
+                                            );
+                                        })()}
+                                    </div>
                                 </div>
+                            </div>
 
-                                <div className="stepperRow">
-                                    <button type="button" className="stepBtn stepBtnGhost" onClick={() => setStack(["home", "menus", "listagem"])}>
-                                        Retornar
-                                    </button>
+                            {/* ✅ Rodapé FORA do container da direita */}
+                            <div className="detailFooterRow">
+                                <button
+                                    type="button"
+                                    className="stepBtn stepBtnGhost"
+                                    onClick={() => setStack(["home", "menus", "listagem"])}
+                                >
+                                    Retornar
+                                </button>
 
-                                    {/* ✅ NOVO: Próximo Passo / Concluir no rodapé */}
-                                    {hasFlow ? (
-                                        canConcluir ? (
-                                            <button type="button" className="stepBtn" onClick={openConcluirModal}>
-                                                Concluir
-                                            </button>
-                                        ) : (
-                                            <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
-                                                PRÓXIMO PASSO
-                                            </button>
-                                        )
-                                    ) : (
+                                {hasFlow ? (
+                                    canConcluir ? (
                                         <button type="button" className="stepBtn" onClick={openConcluirModal}>
                                             Concluir
                                         </button>
-                                    )}
-                                </div>
+                                    ) : (
+                                        <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
+                                            PRÓXIMO PASSO
+                                        </button>
+                                    )
+                                ) : (
+                                    <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                        Concluir
+                                    </button>
+                                )}
                             </div>
-                        </div>
                     </div>
                 )}
             </div>
@@ -2432,15 +2436,25 @@ const css = `
     color: #065f46;
   }
 
-  .stepperRow{
-    position: absolute;
-    right: 16px;
-    bottom: 16px;
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    z-index: 5;
+  /* ✅ não usar mais absolute */
+.stepperRow{ position: static; }
+
+/* ✅ rodapé abaixo do container da direita */
+.detailFooterRow{
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;  /* fica alinhado à direita */
+  padding-right: 16px;        /* casa com o padding interno do card */
+}
+
+/* mobile */
+@media (max-width: 760px){
+  .detailFooterRow{
+    justify-content: space-between;
+    padding-right: 0;
   }
+}
   .stepBtn{
     border-radius: 14px;
     padding: 12px 14px;
