@@ -16,6 +16,7 @@ type Classificacao = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_e
 type Produto = {
     id: ID;
     nome: string;
+    descricao?: string | null; // ✅ NOVO
     codigo_barras: string;
     valor: string | number;
     minimo: number;
@@ -1291,6 +1292,7 @@ export default function Page() {
 
     // campos do cadastro
     const [editNome, setEditNome] = useState("");
+    const [editDescricao, setEditDescricao] = useState<string>(""); // ✅ NOVO
     const [editValor, setEditValor] = useState<string>("R$ 0,00");
     const [editMin, setEditMin] = useState<number>(0);
     const [editMax, setEditMax] = useState<number>(0); // (produto / padrão)
@@ -3116,6 +3118,7 @@ export default function Page() {
         setProdEditId(produtoId);
 
         setEditNome(p.nome || "");
+        setEditDescricao((p as any).descricao || ""); // ✅ NOVO
 
         const valorNum = Number(p.valor) || 0;
         const valorDigits = String(Math.round(Math.max(0, valorNum) * 100));
@@ -3158,6 +3161,7 @@ export default function Page() {
                 action: "produto_atualizar",
                 produto_id: prodEditId,
                 nome: editNome.trim(),
+                descricao: editDescricao.trim() || "", // ✅ NOVO
                 valor: parseBRLToNumber(editValor),
                 minimo: clampInt(editMin),
                 maximo: clampInt(editMax), // ✅ NOVO
@@ -5246,8 +5250,26 @@ export default function Page() {
                                     </Field>
 
                                     <Field label="Valor (R$)">
-                                        <TextInput type="text" inputMode="numeric" value={editValor} onChange={(e) => setEditValor(maskBRLInput(e.target.value))} placeholder="R$ 0,00" />
+                                        <TextInput
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={editValor}
+                                            onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
+                                            placeholder="R$ 0,00"
+                                        />
                                     </Field>
+
+                                    {/* ✅ NOVO: DESCRIÇÃO */}
+                                    <div className="sm:col-span-2">
+                                        <Field label="Descrição (opcional)" hint="Texto livre, aparece no cadastro do produto.">
+                                            <TextArea
+                                                value={editDescricao}
+                                                onChange={(e) => setEditDescricao(e.target.value)}
+                                                placeholder="Ex: Observações do produto, especificações, etc..."
+                                                rows={3}
+                                            />
+                                        </Field>
+                                    </div>
 
                                     <Field label="Mínimo (padrão do produto)">
                                         <TextInput
