@@ -386,7 +386,7 @@ function escapeCsvCell(v: any, sep = ";") {
     return mustQuote ? `"${escaped}"` : escaped;
 }
 
-const IMG_BASE = "https://planoassistencialintegrado.com.br";
+const IMG_BASE = ENDPOINT; // ✅
 
 function normalizeImgUrl(u?: string | null) {
     const t = (u ?? "").toString().trim();
