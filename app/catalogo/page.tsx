@@ -2340,23 +2340,23 @@ const css = `
 .zoomBtn:hover{ filter: brightness(1.03); transform: translateY(-1px); }
 .zoomBtn:active{ transform: translateY(0px) scale(0.98); }
 
+/* container do zoom: sem scroll */
 .zoomWrap{
   width: 100%;
-  max-height: min(72vh, 720px);
-  overflow: auto;
+  overflow: hidden;
   border-radius: 14px;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.14);
   padding: 10px;
 }
 
-/* imagem grande, pode "dar zoom" usando scroll (e no mobile, pinch-zoom do navegador) */
+/* imagem encaixada */
 .zoomImg{
   width: 100%;
-  height: auto;
-  object-fit: contain;
+  height: min(72vh, 680px);   /* controla o tamanho no PC */
+  object-fit: contain;        /* ✅ encaixa sem cortar */
+  display: block;
   border-radius: 12px;
-  display:block;
 }
   .detailImg{ width: 100%; height: 100%; object-fit: cover; }
 
