@@ -2444,10 +2444,12 @@ const css = `
 /* ✅ rodapé abaixo do container da direita */
 .detailFooterRow{
   position: absolute;
-  right: 34px;   /* ✅ empurra mais pra direita (18 + padding 16 do card) */
-  bottom: 12px;  /* ✅ desce um pouco */
+  left: 16px;         /* ✅ mesma margem interna do card */
+  right: 16px;        /* ✅ mesma margem interna do card */
+  bottom: 12px;       /* ✅ distância do fundo */
   display: flex;
-  gap: 10px;
+  justify-content: flex-end;  /* ✅ joga os botões pro canto direito */
+  gap: 12px;
   z-index: 6;
 }
 
