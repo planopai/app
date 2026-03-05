@@ -1535,6 +1535,32 @@ export default function Page() {
                                         })()}
                                     </div>
                                 </div>
+                                {/* ✅ Rodapé FORA do container da direita */}
+                                <div className="detailFooterRow">
+                                    <button
+                                        type="button"
+                                        className="stepBtn stepBtnGhost"
+                                        onClick={() => setStack(["home", "menus", "listagem"])}
+                                    >
+                                        Retornar
+                                    </button>
+
+                                    {hasFlow ? (
+                                        canConcluir ? (
+                                            <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                                Concluir
+                                            </button>
+                                        ) : (
+                                            <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
+                                                PRÓXIMO PASSO
+                                            </button>
+                                        )
+                                    ) : (
+                                        <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                            Concluir
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {/* ✅ Rodapé FORA do container da direita */}
