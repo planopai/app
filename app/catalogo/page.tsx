@@ -430,6 +430,17 @@ function Modal({
 ======================= */
 
 export default function Page() {
+    useEffect(() => {
+        const prevHtml = document.documentElement.style.overflow;
+        const prevBody = document.body.style.overflow;
+        document.documentElement.style.overflow = "hidden";
+        document.body.style.overflow = "hidden";
+        return () => {
+            document.documentElement.style.overflow = prevHtml;
+            document.body.style.overflow = prevBody;
+        };
+    }, []);
+    
     const [stack, setStack] = useState<CatalogGroup[]>(["home"]);
     const current = stack[stack.length - 1];
     const canBack = stack.length > 1;
@@ -1967,30 +1978,43 @@ const css = `
     --shadow: 0 16px 34px rgba(0,0,0,0.25);
   }
 
+  html, body {
+  height: 100%;
+}
+
   .root{
-    width:100vw;
-    height:100vh;
-    overflow:hidden;
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;           /* ✅ sem rolagem */
     background-image:
-      linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
-      url("${BG_IMAGE}");
+    linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
+    url("${BG_IMAGE}");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
+
     display:flex;
     align-items:center;
     justify-content:center;
     font-family: var(--font-nunito), Nunito, sans-serif;
-  }
+}
 
   .screen{
     position: relative;
-    width: min(1200px, 98vw);
-    height: min(680px, 92vh);
+
+    /* ✅ ocupa o container do conteúdo (que muda quando o menu abre/fecha) */
+    width: min(1200px, 100%);
+    height: min(680px, 100%);
+
+    /* ✅ garante que nunca estoure e não crie scroll */
+    max-width: calc(100% - 24px);
+    max-height: calc(100% - 24px);
+
     border-radius: 14px;
-    overflow:hidden;
+    overflow: hidden;
     background: transparent;
-  }
+}
 
   .iconBtn{
     width: 44px;
@@ -2966,5 +2990,11 @@ const css = `
     .reviewHeaderRow{ grid-template-columns: 1fr; }
     .pagerRow{ justify-content: space-between; }
     .flowBtn{ min-width: 0; width: 100%; }
+  }
+
+  @media (max-height: 720px){
+    .screen{
+      max-height: calc(100% - 12px);
+    }
   }
 `;
