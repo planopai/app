@@ -2441,7 +2441,7 @@ const css = `
   /* ✅ não usar mais absolute */
 .stepperRow{
   position: absolute;
-  right: 16px;      /* ✅ mesmo valor do padding do .detailRight */
+  right: 12px;      /* ✅ mesmo valor do padding do .detailRight */
   bottom: 16px;
   display: flex;
   gap: 10px;
