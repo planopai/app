@@ -1360,7 +1360,8 @@ export default function Page() {
                 checkDisabled={hasFlow ? !canConcluir : false}
             />
 
-            <div style={{ padding: "22px 26px 0 26px" }}>
+            {/* ✅ TROCA: wrapper com altura fixa + flex column (evita cortar pager no tablet) */}
+            <div className="listagemWrap">
                 <div className="listHeader">
                     <div className="listSubTitle">{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</div>
 
@@ -1429,7 +1430,7 @@ export default function Page() {
                         </button>
                     </div>
 
-                    {/* ✅ NOVO: Próximo Passo / Concluir ao lado das setas */}
+                    {/* ✅ Próximo Passo / Concluir ao lado das setas */}
                     {hasFlow ? (
                         canConcluir ? (
                             <button type="button" className="flowBtn" onClick={openConcluirModal}>
@@ -1563,32 +1564,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            {/* ✅ Rodapé FORA do container da direita */}
-                            <div className="detailFooterRow">
-                                <button
-                                    type="button"
-                                    className="stepBtn stepBtnGhost"
-                                    onClick={() => setStack(["home", "menus", "listagem"])}
-                                >
-                                    Retornar
-                                </button>
-
-                                {hasFlow ? (
-                                    canConcluir ? (
-                                        <button type="button" className="stepBtn" onClick={openConcluirModal}>
-                                            Concluir
-                                        </button>
-                                    ) : (
-                                        <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
-                                            PRÓXIMO PASSO
-                                        </button>
-                                    )
-                                ) : (
-                                    <button type="button" className="stepBtn" onClick={openConcluirModal}>
-                                        Concluir
-                                    </button>
-                                )}
-                            </div>
+                            
                     </div>
                 )}
             </div>
@@ -3017,6 +2993,28 @@ const css = `
   /* ✅ Resumo: tabela com 2 colunas (Item | Valor) */
 .resumoTableHead2Cols{
   grid-template-columns: 1fr 180px;
+}
+
+/* ✅ LISTAGEM: garante que o rodapé (pager + próximo passo) não seja cortado */
+.listagemWrap{
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 26px 18px 26px; /* era inline */
+  box-sizing: border-box;
+}
+
+/* ✅ a grade vira “miolo” elástico */
+.gridProdutos{
+  flex: 1 1 auto;
+  min-height: 0;      /* chave */
+}
+
+/* ✅ o rodapé vai sempre pro fim da tela */
+.pagerRow{
+  margin-top: auto;   /* chave */
+  padding-top: 10px;
 }
 
 .resumoRow2Cols{
