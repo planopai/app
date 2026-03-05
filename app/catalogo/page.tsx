@@ -2251,7 +2251,7 @@ const css = `
     grid-template-columns: repeat(4, minmax(170px, 1fr));
     gap: 18px;
     margin-top: 14px;
-    min-height: 420px;
+    
   }
 
   .prodCard{
