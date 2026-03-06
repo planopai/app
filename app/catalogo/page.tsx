@@ -2002,7 +2002,7 @@ const css = `
     overflow: hidden;
     background-image:
       linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
-      url("\${BG_IMAGE}");
+      url("${BG_IMAGE}");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -2299,7 +2299,7 @@ const css = `
   .gridProdutosWrap{
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
+    overflow: auto; /* se faltar espaço, só a grade rola */
     padding-bottom: 5px;
     -webkit-overflow-scrolling: touch;
   }
@@ -2312,16 +2312,16 @@ const css = `
   }
 
   .listagemFooter{
-    flex: 0 0 auto;
-    padding: 6px 18px 6px;
-  }
+  flex: 0 0 auto;
+  padding: 6px 18px 6px;
+}
 
   .pagerRow{
     display:flex;
     justify-content:flex-end;
     align-items:center;
-    gap: 8px;
-    flex-wrap: nowrap;
+    gap: 8px;          /* setas coladas no botão */
+    flex-wrap: nowrap; /* não quebra linha */
     margin: 0;
   }
 
@@ -3079,7 +3079,7 @@ const css = `
      Responsive
   ======================= */
 
-  /* TABLET: aumentar altura dos produtos (cards mais altos) APENAS no tablet */
+  /* Tablet: 4 colunas x 2 linhas (8 itens/página) + cards menores + botões mais pra cima */
   @media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
     .listagemWrap{
       padding: 14px 18px 0 18px;
@@ -3097,10 +3097,9 @@ const css = `
       margin-top: 10px;
     }
 
-    /* ✅ AQUI aumenta a “altura” dos produtos no tablet */
-    .prodCard{ padding: 10px; border-radius: 14px; }
-    .prodImgWrap{ height: 118px; border-radius: 12px; }     /* era 92px */
-    .prodName{ margin-top: 8px; font-size: 13px; min-height: 32px; line-height: 1.2; } /* era menor */
+    .prodCard{ padding: 8px; border-radius: 14px; }
+    .prodImgWrap{ height: 92px; border-radius: 12px; }
+    .prodName{ margin-top: 6px; font-size: 12px; min-height: 24px; line-height: 1.15; }
 
     .pagerBtns{ padding: 8px 10px; gap: 8px; }
     .pagerBtn{ width: 40px; height: 32px; }
@@ -3110,12 +3109,6 @@ const css = `
       height: 40px;
       padding: 10px 12px;
       font-size: 13px;
-    }
-
-    /* deixa o footer enxuto no tablet, pra sobrar área útil */
-    .listagemFooter{
-      padding-top: 4px;
-      padding-bottom: calc(6px + env(safe-area-inset-bottom));
     }
   }
 
@@ -3175,23 +3168,7 @@ const css = `
     .bigBtn{ height: 62px; font-size: 18px; }
   }
 
-  /* =======================
-     DESKTOP: subir o rodapé (pager + próximo passo)
-  ======================= */
-  @media (pointer: fine) and (hover: hover){
-    .listagemWrap{
-      position: relative;
-      padding-bottom: 110px;
-    }
-
-    .listagemFooter{
-      position: absolute;
-      left: 26px;
-      right: 26px;
-      bottom: 40px;
-      padding: 0;
-    }
-  }
+  
 
   @media (max-height: 720px){
     .screen{
