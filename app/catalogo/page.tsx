@@ -2312,10 +2312,9 @@ const css = `
   }
 
   .listagemFooter{
-    flex: 0 0 auto;
-    /* ✅ afasta das bordas no tablet e evita corte */
-    padding: 10px 18px calc(14px + env(safe-area-inset-bottom));
-  }
+  flex: 0 0 auto;
+  padding: 6px 18px 6px;
+}
 
   .pagerRow{
     display:flex;
@@ -3117,7 +3116,7 @@ const css = `
   @media (max-height: 720px){
     .listagemFooter{
       padding-top: 6px;
-      padding-bottom: calc(40px + env(safe-area-inset-bottom));
+      padding-bottom: calc(60px + env(safe-area-inset-bottom));
     }
     .flowBtn{
       height: 42px;
