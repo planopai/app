@@ -460,20 +460,7 @@ export default function Page() {
     // Produtos
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(8);
-
-    // ✅ Detecta tablet de verdade (iPad/Android tablet), inclusive landscape 1366px
-    useEffect(() => {
-        const mq = window.matchMedia(
-            "(pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px)"
-        );
-
-        const apply = () => setPageSize(mq.matches ? 4 : 8);
-
-        apply();
-        mq.addEventListener?.("change", apply);
-        return () => mq.removeEventListener?.("change", apply);
-    }, []);
+    const pageSize = 8; // 4 colunas x 2 linhas no tablet
 
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [loadingProdutos, setLoadingProdutos] = useState(false);
@@ -2000,43 +1987,51 @@ const css = `
     --shadow: 0 16px 34px rgba(0,0,0,0.25);
   }
 
-html, body{
-  height: 100%;
-}
+  html, body{
+    height: 100%;
+  }
 
-.root{
-  width: 100%;
-  height: 100dvh;          /* ✅ trocado */
-  min-height: 100dvh;      /* ✅ trocado */
-  overflow: hidden;
-  background-image:
-    linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
-    url("${BG_IMAGE}");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  /* =======================
+     Root / Screen
+  ======================= */
 
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-family: var(--font-nunito), Nunito, sans-serif;
-}
+  .root{
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    background-image:
+      linear-gradient(rgba(8,32,70,0.45), rgba(8,32,70,0.65)),
+      url("${BG_IMAGE}");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
 
-.screen{
-  position: relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family: var(--font-nunito), Nunito, sans-serif;
+  }
 
-  width: min(1200px, 100%);
+  .screen{
+    position: relative;
 
-  /* ✅ usa a altura real visível do tablet */
-  max-height: calc(100dvh - 24px);
-  height: min(680px, calc(100dvh - 24px));
+    width: min(1200px, 100%);
 
-  max-width: calc(100% - 24px);
+    /* altura real visível */
+    max-height: calc(100dvh - 24px);
+    height: min(680px, calc(100dvh - 24px));
 
-  border-radius: 14px;
-  overflow: hidden;
-  background: transparent;
-}
+    max-width: calc(100% - 24px);
+
+    border-radius: 14px;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  /* =======================
+     Top Nav Buttons
+  ======================= */
 
   .iconBtn{
     width: 44px;
@@ -2083,6 +2078,16 @@ html, body{
     box-shadow: 0 10px 18px rgba(0,0,0,0.22);
   }
 
+  /* =======================
+     Titles / Pills
+  ======================= */
+
+  .pageTitleWrap{
+    text-align:center;
+    margin-top: clamp(14px, 3vh, 38px);
+    margin-bottom: clamp(10px, 2.5vh, 26px);
+  }
+
   .title{
     color: var(--ink);
     font-weight: 800;
@@ -2105,6 +2110,10 @@ html, body{
     white-space: nowrap;
   }
 
+  /* =======================
+     Home
+  ======================= */
+
   .homeBtns{
     width:100%;
     max-width:900px;
@@ -2114,6 +2123,7 @@ html, body{
     align-items:center;
     justify-content:center;
   }
+
   .homeBtn{
     flex:1;
     padding:22px 28px;
@@ -2143,65 +2153,70 @@ html, body{
     box-shadow: 0 6px 14px rgba(2,156,222,0.35), inset 0 2px 6px rgba(0,0,0,0.25);
   }
 
+  /* =======================
+     Menus
+  ======================= */
+
   .menusWrap{
-  height: 100%;
-  min-height: 0;              /* ✅ importante pra não estourar */
-  display: flex;
-  flex-direction: column;
-  padding: 0 18px 18px 18px;
-  box-sizing: border-box;
-}
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 18px 18px 18px;
+    box-sizing: border-box;
+  }
 
   .gridMenu2{
-  width: 100%;
-  max-width: 900px;
-  margin: 0 auto;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
 
-  display: grid;
-  grid-template-columns: repeat(2, minmax(240px, 1fr)); /* ✅ garante 2 colunas */
-  gap: clamp(10px, 2vh, 28px);                         /* ✅ diminui no tablet */
+    display: grid;
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    gap: clamp(10px, 2vh, 28px);
 
-  flex: 1 1 auto;
-  min-height: 0;                                       /* ✅ chave: permite encolher */
-  align-content: start;
-}
+    flex: 1 1 auto;
+    min-height: 0;
+    align-content: start;
+  }
 
   .bigBtn{
-  width: 100%;
+    width: 100%;
+    height: clamp(56px, 8vh, 84px);
 
-  /* ✅ altura adaptável ao viewport */
-  height: clamp(56px, 8vh, 84px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 0 clamp(14px, 2vw, 24px);
 
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding: 0 clamp(14px, 2vw, 24px);
+    border-radius: clamp(14px, 2.2vh, 20px);
 
-  border-radius: clamp(14px, 2.2vh, 20px);
+    font-family: var(--font-nunito), Nunito, sans-serif;
+    font-weight: 800;
+    font-size: clamp(16px, 2.2vh, 22px);
+    letter-spacing: .8px;
 
-  font-family: var(--font-nunito), Nunito, sans-serif;
-  font-weight: 800;
-
-  /* ✅ fonte adaptável */
-  font-size: clamp(16px, 2.2vh, 22px);
-  letter-spacing: .8px;
-
-  white-space: nowrap;
-  text-align:center;
-  color:#fff;
-  background:#029cde;
-  border:2px solid rgba(255,255,255,.35);
-  box-shadow: 0 14px 32px rgba(2,156,222,.35), inset 0 1px 0 rgba(255,255,255,.25);
-  cursor:pointer;
-  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
-  position:relative;
-  overflow:hidden;
-}
+    white-space: nowrap;
+    text-align:center;
+    color:#fff;
+    background:#029cde;
+    border:2px solid rgba(255,255,255,.35);
+    box-shadow: 0 14px 32px rgba(2,156,222,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    cursor:pointer;
+    transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    position:relative;
+    overflow:hidden;
+  }
   .bigBtn:hover{ background:#03a7ec; transform:translateY(-3px); }
   .bigBtn:active{ transform:scale(.97); }
   .btnLabel{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
+  /* =======================
+     Listagem Header
+  ======================= */
+
   .listHeader{ margin-bottom: 14px; }
+
   .listTitle{
     color: #ffe600;
     font-weight: 900;
@@ -2210,10 +2225,10 @@ html, body{
     text-shadow: 0 10px 20px rgba(0,0,0,0.25);
   }
 
-  /* ✅ NOVO: no detalhe, título do breadcrumb deve ser branco e sem amarelo */
   .detailCrumb{
     color: rgba(255,255,255,0.95) !important;
   }
+
   .listSubTitle{
     margin-top: 0px;
     color: var(--ink);
@@ -2231,6 +2246,7 @@ html, body{
     gap: 12px;
     align-items:center;
   }
+
   .searchBox{
     flex: 1;
     display:flex;
@@ -2242,7 +2258,9 @@ html, body{
     border: 1px solid rgba(255,255,255,0.22);
     box-shadow: 0 14px 30px rgba(0,0,0,0.18);
   }
+
   .searchIcon{ color: rgba(255,255,255,0.92); display:flex; }
+
   .searchInput{
     width: 100%;
     border: none;
@@ -2253,6 +2271,7 @@ html, body{
     font-size: 15px;
   }
   .searchInput::placeholder{ color: rgba(255,255,255,0.75); }
+
   .chip{
     border-radius: 999px;
     padding: 10px 14px;
@@ -2264,60 +2283,96 @@ html, body{
     text-align:center;
   }
 
+  /* =======================
+     Listagem Layout (rodapé fixo)
+  ======================= */
+
+  .listagemWrap{
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 22px 26px 0 26px;
+    box-sizing: border-box;
+  }
+
+  .gridProdutosWrap{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto; /* se faltar espaço, só a grade rola */
+    padding-bottom: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .gridProdutos{
     display:grid;
     grid-template-columns: repeat(4, minmax(170px, 1fr));
     gap: 18px;
     margin-top: 14px;
-    
   }
 
-/* =======================
-   ✅ LISTAGEM: rodapé sempre visível
-======================= */
-
-.listagemWrap{
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 22px 26px 0 26px;
-  box-sizing: border-box;
-}
-
-.gridProdutosWrap{
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;                 /* ✅ se faltar espaço, só a grade rola */
-  padding-bottom: 10px;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* ✅ rodapé sempre visível */
-.listagemFooter{
-  flex: 0 0 auto;
-  padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
-}
-
-.pagerRow{
-  display:flex;
-  justify-content:flex-end;
-  align-items:center;
-  gap: 12px;
-  margin: 0;                      /* ✅ sem auto / sem 12px aqui */
-}
-
-/* Tablet/altura pequena: diminui um pouco o footer */
-@media (max-height: 720px){
   .listagemFooter{
-    padding-top: 6px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    flex: 0 0 auto;
+    /* ✅ afasta das bordas no tablet e evita corte */
+    padding: 10px 18px calc(14px + env(safe-area-inset-bottom));
   }
+
+  .pagerRow{
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    gap: 8px;          /* setas coladas no botão */
+    flex-wrap: nowrap; /* não quebra linha */
+    margin: 0;
+  }
+
+  .pagerBtns{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+
+  .pagerBtn{
+    width: 42px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.35);
+    background: rgba(220,233,246,0.90);
+    color: #0b2b4d;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
+
   .flowBtn{
-    height: 42px;
-    padding: 10px 14px;
+    border-radius: 999px;
+    padding: 12px 16px;
+    background: #029cde;
+    border: 2px solid rgba(255,255,255,0.35);
+    box-shadow: var(--shadow);
+    color: #fff;
+    font-weight: 1000;
+    letter-spacing: 1px;
+    cursor:pointer;
+    min-width: 190px;
+    height: 46px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
   }
-}
+  .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
+  .flowBtn:active{ transform: translateY(0px) scale(0.995); }
+  .flowBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
+
+  /* =======================
+     Product Cards
+  ======================= */
 
   .prodCard{
     border-radius: 18px;
@@ -2342,6 +2397,7 @@ html, body{
     align-items:center;
     justify-content:center;
   }
+
   .prodImg{ width: 100%; height: 100%; object-fit: cover; transform: scale(1.02); }
 
   .prodName{
@@ -2367,67 +2423,22 @@ html, body{
     text-align:center;
   }
 
-  .pagerRow{
-    display:flex;
-    justify-content:flex-end;
-    align-items:center;
-    gap: 12px;
-    margin-top: 12px;
-  }
-  .pagerBtns{
-    display:flex;
-    align-items:center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.18);
-  }
-  .pagerBtn{
-    width: 42px;
-    height: 34px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.35);
-    background: rgba(220,233,246,0.90);
-    color: #0b2b4d;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
-  .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
-
-  /* ✅ NOVO: botão do fluxo na listagem (ao lado do pager) */
-  .flowBtn{
-    border-radius: 999px;
-    padding: 12px 16px;
-    background: #029cde;
-    border: 2px solid rgba(255,255,255,0.35);
-    box-shadow: var(--shadow);
-    color: #fff;
-    font-weight: 1000;
-    letter-spacing: 1px;
-    cursor:pointer;
-    min-width: 190px;
-    height: 46px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
-  .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
-  .flowBtn:active{ transform: translateY(0px) scale(0.995); }
-  .flowBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
+  /* =======================
+     Detalhe
+  ======================= */
 
   .detailLayout{
-  position: relative; /* ✅ necessário pro footer absoluto */
-  display:grid;
-  grid-template-columns: 520px 1fr;
-  gap: 18px;
-  align-items: start;
-  margin-top: 12px;
-  padding-bottom: 74px; /* ✅ reserva espaço pros botões não encostarem */
-}
+    position: relative;
+    display:grid;
+    grid-template-columns: 520px 1fr;
+    gap: 18px;
+    align-items: start;
+    margin-top: 12px;
+    padding-bottom: 74px;
+  }
+
   .detailLeft{ display:flex; flex-direction:column; gap: 12px; }
+
   .detailImgCard{
     position:relative;
     border-radius: 18px;
@@ -2438,47 +2449,47 @@ html, body{
     height: 330px;
   }
 
-  .zoomBtn{
-  position:absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.92);
-  border: 2px solid rgba(2,156,222,0.55);
-  color: #0b2b4d;
-  font-size: 18px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  box-shadow: 0 14px 30px rgba(0,0,0,0.22);
-}
-.zoomBtn:hover{ filter: brightness(1.03); transform: translateY(-1px); }
-.zoomBtn:active{ transform: translateY(0px) scale(0.98); }
-
-/* container do zoom: sem scroll */
-.zoomWrap{
-  width: 100%;
-  overflow: hidden;
-  border-radius: 14px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-  padding: 10px;
-}
-
-/* imagem encaixada */
-.zoomImg{
-  width: 100%;
-  height: min(72vh, 680px);   /* controla o tamanho no PC */
-  object-fit: contain;        /* ✅ encaixa sem cortar */
-  display: block;
-  border-radius: 12px;
-}
   .detailImg{ width: 100%; height: 100%; object-fit: cover; }
 
+  .zoomBtn{
+    position:absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.92);
+    border: 2px solid rgba(2,156,222,0.55);
+    color: #0b2b4d;
+    font-size: 18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.22);
+  }
+  .zoomBtn:hover{ filter: brightness(1.03); transform: translateY(-1px); }
+  .zoomBtn:active{ transform: translateY(0px) scale(0.98); }
+
+  .zoomWrap{
+    width: 100%;
+    overflow: hidden;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    padding: 10px;
+  }
+
+  .zoomImg{
+    width: 100%;
+    height: min(72vh, 680px);
+    object-fit: contain;
+    display: block;
+    border-radius: 12px;
+  }
+
   .detailMeta{ display:flex; gap: 10px; flex-wrap:wrap; }
+
   .metaPill{
     padding: 9px 12px;
     border-radius: 999px;
@@ -2497,6 +2508,7 @@ html, body{
     min-height: 468px;
     position: relative;
   }
+
   .detailTitle{
     color: rgba(255,255,255,0.95);
     font-weight: 900;
@@ -2504,24 +2516,16 @@ html, body{
     font-size: 28px;
     margin-bottom: 10px;
   }
+
   .bulletBox{ margin-top: 6px; display:flex; flex-direction:column; gap: 10px; }
-  .bulletItem{
-    display:flex;
-    gap: 10px;
-    color: rgba(255,255,255,0.92);
-    font-weight: 700;
-    line-height: 1.35;
-    font-size: 14px;
-  }
 
   .descText{
-  color: rgba(255,255,255,0.92);
-  font-weight: 700;
-  line-height: 1.45;
-  font-size: 14px;
-  white-space: pre-wrap;   /* ✅ respeita quebras de linha do textarea */
-}
-  .bulletDot{ color: rgba(255,255,255,0.92); font-size: 18px; line-height: 1; margin-top: 2px; }
+    color: rgba(255,255,255,0.92);
+    font-weight: 700;
+    line-height: 1.45;
+    font-size: 14px;
+    white-space: pre-wrap;
+  }
 
   .detailActions{
     margin-top: 10px;
@@ -2531,6 +2535,7 @@ html, body{
     align-items:center;
     flex-wrap: wrap;
   }
+
   .iconActionBtn{
     width: 54px;
     height: 54px;
@@ -2547,64 +2552,24 @@ html, body{
   }
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
+
   .iconActionBtnSelected{
     background: rgba(230, 255, 238, 0.92);
     border-color: rgba(16, 185, 129, 0.35);
     color: #065f46;
   }
 
-  /* ✅ não usar mais absolute */
-.stepperRow{
-  position: absolute;
-  right: 12px;      /* ✅ mesmo valor do padding do .detailRight */
-  bottom: 16px;
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  z-index: 6;
-}
-
-/* ✅ rodapé abaixo do container da direita */
-.detailFooterRow{
-  position: absolute;
-  left: 16px;         /* ✅ mesma margem interna do card */
-  right: 16px;        /* ✅ mesma margem interna do card */
-  bottom: 12px;       /* ✅ distância do fundo */
-  display: flex;
-  justify-content: flex-end;  /* ✅ joga os botões pro canto direito */
-  gap: 12px;
-  z-index: 6;
-}
-
-/* ✅ TABLET (inclui iPad 1366): 1 linha com 4 colunas e cards mais compactos */
-@media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
-  .gridProdutos{
-    grid-template-columns: repeat(4, minmax(140px, 1fr));
-    gap: 14px;
-    margin-top: 10px;
-  }
-
-  .prodCard{ padding: 10px; }
-  .prodImgWrap{ height: 110px; }
-  .prodName{ font-size: 13px; min-height: 28px; }
-
-  .pagerRow{ justify-content: space-between; }
-  .flowBtn{ min-width: 170px; height: 44px; }
-}
-
-  .flowBtn{
-    min-width: 170px; /* um pouco menor no tablet */
-    height: 44px;
-  }
-}
-
-/* mobile */
-@media (max-width: 760px){
   .detailFooterRow{
-    justify-content: space-between;
-    padding-right: 0;
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 12px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    z-index: 6;
   }
-}
+
   .stepBtn{
     border-radius: 14px;
     padding: 12px 14px;
@@ -2620,6 +2585,7 @@ html, body{
   .stepBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .stepBtn:active{ transform: translateY(0px) scale(0.995); }
   .stepBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
+
   .stepBtnGhost{
     background: rgba(220,233,246,0.92);
     color: #111;
@@ -2627,26 +2593,9 @@ html, body{
     min-width: 140px;
   }
 
-  .pageTitleWrap{
-  text-align:center;
-  margin-top: clamp(14px, 3vh, 38px);
-  margin-bottom: clamp(10px, 2.5vh, 26px);
-}
-
-  .ctaBtn{
-    border-radius: 14px;
-    padding: 14px 16px;
-    background: rgba(220,233,246,0.92);
-    border: 2px solid rgba(255,255,255,0.55);
-    box-shadow: var(--shadow);
-    color: #111;
-    font-weight: 900;
-    letter-spacing: 1px;
-    cursor:pointer;
-    min-width: 220px;
-  }
-  .ctaBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
-  .ctaBtn:active{ transform: translateY(0px) scale(0.995); }
+  /* =======================
+     Modals
+  ======================= */
 
   .modalOverlay{
     position: fixed;
@@ -2658,6 +2607,7 @@ html, body{
     padding: 18px;
     z-index: 999;
   }
+
   .modalCard{
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(20,68,120,0.98), rgba(12,46,92,0.98));
@@ -2668,6 +2618,7 @@ html, body{
     flex-direction: column;
     max-height: min(88vh, 740px);
   }
+
   .modalHeader{
     display:flex;
     align-items:center;
@@ -2694,6 +2645,7 @@ html, body{
     cursor:pointer;
     flex: 0 0 auto;
   }
+
   .modalBody{
     padding: 14px;
     color: rgba(255,255,255,0.92);
@@ -2710,9 +2662,30 @@ html, body{
     justify-content:flex-end;
   }
 
+  .ctaBtn{
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: rgba(220,233,246,0.92);
+    border: 2px solid rgba(255,255,255,0.55);
+    box-shadow: var(--shadow);
+    color: #111;
+    font-weight: 900;
+    letter-spacing: 1px;
+    cursor:pointer;
+    min-width: 220px;
+  }
+  .ctaBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
+  .ctaBtn:active{ transform: translateY(0px) scale(0.995); }
+
+  /* =======================
+     Forms / User picker
+  ======================= */
+
   .formGrid{ display:grid; gap: 12px; }
+
   .formField{ display:grid; gap: 6px; font-weight: 900; color: rgba(255,255,255,0.95); }
   .formField span{ font-size: 12px; letter-spacing: 0.6px; opacity: 0.95; }
+
   .formInput{
     border: 1px solid rgba(255,255,255,0.18);
     background: rgba(255,255,255,0.08);
@@ -2737,11 +2710,7 @@ html, body{
     margin-bottom: 12px;
   }
 
-  .userPickerIcon{
-    color: rgba(255,255,255,0.92);
-    display:flex;
-    flex: 0 0 auto;
-  }
+  .userPickerIcon{ color: rgba(255,255,255,0.92); display:flex; flex: 0 0 auto; }
 
   .userPickerInput{
     width: 100%;
@@ -2841,12 +2810,18 @@ html, body{
     font-weight: 900;
   }
 
+  /* =======================
+     Budgets
+  ======================= */
+
   .budgetsWrap{ padding: 0 26px 24px 26px; }
+
   .budgetGrid{
     display:grid;
     grid-template-columns: repeat(3, minmax(240px, 1fr));
     gap: 16px;
   }
+
   .budgetCard{
     text-align:left;
     padding: 14px;
@@ -2860,9 +2835,11 @@ html, body{
   }
   .budgetCard:hover{ transform: translateY(-2px); filter: brightness(1.03); }
   .budgetCard:active{ transform: translateY(0px) scale(0.995); }
+
   .budgetTop{ display:grid; gap: 6px; }
   .budgetTitle{ font-weight: 1000; font-size: 18px; letter-spacing: 0.5px; }
   .budgetMeta{ font-weight: 800; opacity: 0.95; }
+
   .budgetBottom{
     margin-top: 12px;
     display:flex;
@@ -2870,7 +2847,9 @@ html, body{
     justify-content: space-between;
     gap: 10px;
   }
+
   .budgetSmall{ font-weight: 800; opacity: 0.95; }
+
   .budgetTotal{
     font-weight: 1000;
     background: rgba(2,156,222,0.30);
@@ -2879,6 +2858,10 @@ html, body{
     border-radius: 999px;
     white-space: nowrap;
   }
+
+  /* =======================
+     Resumo
+  ======================= */
 
   .resumoTopBar{
     position:absolute;
@@ -2889,6 +2872,7 @@ html, body{
     z-index: 5;
   }
   .resumoBtn{ background: rgba(222,234,246,0.92); }
+
   .resumoTitle{
     text-align:center;
     color: rgba(255,255,255,0.95);
@@ -2898,6 +2882,7 @@ html, body{
     text-shadow: 0 10px 22px rgba(0,0,0,0.25);
     margin-top: 10px;
   }
+
   .resumoCard{
     margin-top: 16px;
     border-radius: 14px;
@@ -2916,23 +2901,28 @@ html, body{
     border-bottom: 1px solid rgba(2, 156, 222, 0.22);
     align-items: start;
   }
+
   .resumoHeaderLeft{
     display:flex;
     align-items:flex-start;
     gap: 12px;
   }
+
   .resumoLogoTopLeft{
     width: 120px;
     height: auto;
     object-fit: contain;
   }
+
   .resumoOrcBlock{ display:flex; flex-direction:column; }
+
   .resumoOrcMain{
     font-weight: 1000;
     color: #0b2b4d;
     letter-spacing: 1px;
     font-size: 22px;
   }
+
   .resumoOrcSub{
     margin-top: 2px;
     font-weight: 900;
@@ -2946,6 +2936,7 @@ html, body{
     font-size: 13px;
     line-height: 1.35;
   }
+
   .resumoInfo{ display:grid; gap: 2px; }
   .resumoDate{ display:flex; justify-content:flex-end; }
 
@@ -2953,6 +2944,7 @@ html, body{
     padding: 0 14px;
     background: rgba(255,255,255,0.92);
   }
+
   .resumoTableHead2{
     display:grid;
     grid-template-columns: 260px 1fr 90px 140px;
@@ -2962,6 +2954,7 @@ html, body{
     color: #0b2b4d;
     font-weight: 1000;
   }
+
   .resumoRow2{
     display:grid;
     grid-template-columns: 260px 1fr 90px 140px;
@@ -2971,8 +2964,8 @@ html, body{
     color: #0b2b4d;
     font-weight: 800;
   }
+
   .resumoItemName{ text-transform: uppercase; }
-  .resumoCat{ font-weight: 1000; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .resumoBottom{
     display:flex;
@@ -2982,17 +2975,15 @@ html, body{
     padding: 12px 14px;
     background: rgba(255,255,255,0.92);
   }
-  .resumoValidade{
-    color: #0b2b4d;
-    font-weight: 900;
-    font-size: 16px;
-  }
+
   .resumoTotalBox{
     display:flex;
     align-items:center;
     gap: 12px;
   }
+
   .resumoTotalLabel{ color: #0b2b4d; font-weight: 1000; }
+
   .resumoTotalValue{
     background: #029cde;
     color: #fff;
@@ -3005,6 +2996,14 @@ html, body{
     letter-spacing: 0.5px;
   }
 
+  .resumoTableHead2Cols{ grid-template-columns: 1fr 180px; }
+  .resumoRow2Cols{ grid-template-columns: 1fr 180px; }
+  .resumoBottomOnlyTotal{ justify-content: flex-end; }
+
+  /* =======================
+     Review (Concluir)
+  ======================= */
+
   .reviewHeader{
     padding: 10px 12px;
     border-radius: 12px;
@@ -3015,6 +3014,7 @@ html, body{
     font-weight: 900;
     margin-bottom: 12px;
   }
+
   .reviewLine{ font-weight: 900; }
 
   .reviewWrap{
@@ -3031,6 +3031,7 @@ html, body{
     display:grid;
     gap: 10px;
   }
+
   .reviewItemRow{
     display:flex;
     align-items:center;
@@ -3040,6 +3041,7 @@ html, body{
 
   .reviewItemRight{ display:flex; align-items:center; gap: 10px; }
   .reviewItemPrice{ font-weight: 1000; white-space: nowrap; }
+
   .reviewRemoveBtn{
     width: 34px;
     height: 34px;
@@ -3072,49 +3074,58 @@ html, body{
     font-weight: 1000;
     font-size: 14px;
   }
-  .reviewItemNameBtn:hover{
-    text-decoration: underline;
-    filter: brightness(1.05);
+  .reviewItemNameBtn:hover{ text-decoration: underline; filter: brightness(1.05); }
+
+  /* =======================
+     Responsive
+  ======================= */
+
+  /* Tablet: 4 colunas x 2 linhas (8 itens/página) + cards menores + botões mais pra cima */
+  @media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
+    .listagemWrap{
+      padding: 14px 18px 0 18px;
+    }
+
+    .listHeader{ margin-bottom: 8px; }
+    .searchRow{ margin-top: 8px; gap: 10px; }
+
+    .searchBox{ padding: 8px 10px; border-radius: 12px; }
+    .chip{ padding: 8px 10px; min-width: 96px; font-size: 13px; }
+
+    .gridProdutos{
+      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .prodCard{ padding: 8px; border-radius: 14px; }
+    .prodImgWrap{ height: 92px; border-radius: 12px; }
+    .prodName{ margin-top: 6px; font-size: 12px; min-height: 24px; line-height: 1.15; }
+
+    .pagerBtns{ padding: 8px 10px; gap: 8px; }
+    .pagerBtn{ width: 40px; height: 32px; }
+
+    .flowBtn{
+      min-width: 150px;
+      height: 40px;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
   }
 
-  /* ✅ Resumo: tabela com 2 colunas (Item | Valor) */
-.resumoTableHead2Cols{
-  grid-template-columns: 1fr 180px;
-}
-
-/* ✅ LISTAGEM: garante que o rodapé (pager + próximo passo) não seja cortado */
-.listagemWrap{
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 22px 26px 18px 26px; /* era inline */
-  box-sizing: border-box;
-}
-
-/* ✅ a grade vira “miolo” elástico */
-.gridProdutos{
-  flex: 1 1 auto;
-  min-height: 0;      /* chave */
-}
-
-/* ✅ o rodapé vai sempre pro fim da tela */
-.pagerRow{
-  margin-top: auto;   /* chave */
-  padding-top: 10px;
-}
-
-.resumoRow2Cols{
-  grid-template-columns: 1fr 180px;
-}
-
-/* ✅ Resumo: rodapé somente com total alinhado */
-.resumoBottomOnlyTotal{
-  justify-content: flex-end;
-}
+  /* Tablet/altura pequena: footer menor */
+  @media (max-height: 720px){
+    .listagemFooter{
+      padding-top: 6px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    }
+    .flowBtn{
+      height: 42px;
+      padding: 10px 14px;
+    }
+  }
 
   @media (max-width: 1100px){
-    .gridProdutos{ grid-template-columns: repeat(3, minmax(170px, 1fr)); }
     .detailLayout{ grid-template-columns: 1fr; }
     .detailImgCard{ height: 300px; }
     .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
@@ -3122,49 +3133,41 @@ html, body{
     .resumoDate{ justify-content:flex-start; }
   }
 
-  @media (min-width: 761px) and (max-width: 1100px){
-  /* garante 4 colunas no tablet */
-  .gridProdutos{
-    grid-template-columns: repeat(4, minmax(150px, 1fr));
-    gap: 14px;
-    margin-top: 10px;
+  @media (max-width: 900px){
+    .gridMenu2{
+      grid-template-columns: 1fr;
+      max-width: 520px;
+    }
   }
 
-  /* opcional: deixa o card um pouco mais “baixo” */
-  .prodImgWrap{ height: 120px; }
-  .prodName{ font-size: 13px; min-height: 30px; }
-}
+  /* Mobile */
   @media (max-width: 760px){
-    .gridMenu2{ grid-template-columns: 1fr; }
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
     .budgetGrid{ grid-template-columns: 1fr; }
+
     .resumoTableHead2Cols, .resumoRow2Cols{ grid-template-columns: 1fr 140px; }
-    .stepperRow{ justify-content: space-between; left: 16px; right: 16px; }
+
+    .detailFooterRow{ justify-content: space-between; padding-right: 0; }
     .stepBtn{ min-width: 0; width: 100%; }
+
     .reviewHeaderRow{ grid-template-columns: 1fr; }
+
     .pagerRow{ justify-content: space-between; }
     .flowBtn{ min-width: 0; width: 100%; }
   }
 
   @media (max-height: 740px){
-  .title{ font-size: 28px; }
-  .gridMenu2{ gap: 16px; }
-  .bigBtn{ height: 70px; font-size: 20px; border-radius: 18px; }
-  .pill{ padding: 8px 12px; }
-}
-
-@media (max-width: 900px){
-  .gridMenu2{
-    grid-template-columns: 1fr;  /* ✅ vira 1 coluna se precisar */
-    max-width: 520px;
+    .title{ font-size: 28px; }
+    .gridMenu2{ gap: 16px; }
+    .bigBtn{ height: 70px; font-size: 20px; border-radius: 18px; }
+    .pill{ padding: 8px 12px; }
   }
-}
 
-@media (max-height: 660px){
-  .title{ font-size: 24px; }
-  .gridMenu2{ gap: 12px; }
-  .bigBtn{ height: 62px; font-size: 18px; }
-}
+  @media (max-height: 660px){
+    .title{ font-size: 24px; }
+    .gridMenu2{ gap: 12px; }
+    .bigBtn{ height: 62px; font-size: 18px; }
+  }
 
   @media (max-height: 720px){
     .screen{
