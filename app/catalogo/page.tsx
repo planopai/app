@@ -2300,7 +2300,7 @@ const css = `
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto; /* se faltar espaço, só a grade rola */
-    padding-bottom: 10px;
+    padding-bottom: 5px;
     -webkit-overflow-scrolling: touch;
   }
 
