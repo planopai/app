@@ -3168,6 +3168,28 @@ const css = `
     .bigBtn{ height: 62px; font-size: 18px; }
   }
 
+  /* =======================
+   DESKTOP: subir o rodapé (pager + próximo passo)
+   (PC: pointer fine + hover)
+======================= */
+@media (pointer: fine) and (hover: hover){
+
+  /* reserva espaço pra não sobrepor a grade */
+  .listagemWrap{
+    position: relative;          /* necessário pro absolute do footer */
+    padding-bottom: 110px;       /* ✅ ajuste: quanto MAIOR, mais “respiro” */
+  }
+
+  /* coloca o rodapé “flutuando” mais pra cima */
+  .listagemFooter{
+    position: absolute;
+    left: 26px;
+    right: 26px;
+    bottom: 40px;               /* ✅ AQUI você sobe MUITO no PC */
+    padding: 0;                 /* evita aumentar altura do footer */
+  }
+}
+
   @media (max-height: 720px){
     .screen{
       max-height: calc(100% - 12px);
