@@ -3117,7 +3117,7 @@ const css = `
   @media (max-height: 720px){
     .listagemFooter{
       padding-top: 6px;
-      padding-bottom: calc(10px + env(safe-area-inset-bottom));
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
     }
     .flowBtn{
       height: 42px;
