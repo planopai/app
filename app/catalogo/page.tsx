@@ -54,6 +54,7 @@ type OrcamentoItem = {
 
 type Orcamento = {
     id: string;
+    codigo: string;
     criadoEmISO: string;
 
     operadorId: number;
@@ -64,12 +65,15 @@ type Orcamento = {
     falecido: string;
     telefone: string;
 
+    status?: string;
+    valorTotal?: number;
+    observacoes?: string;
+
     itens: OrcamentoItem[];
 };
 
 type Usuario = { id: number; nome: string; usuario: string };
 
-/* ✅ NOVO: FluxoStep */
 type FluxoStep = {
     id: number;
     fluxo_nome: string;
@@ -151,7 +155,11 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutM
                 `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? "…" : ""}`
             );
         }
-        if (!r.ok || json?.erro) throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+
+        if (!r.ok || json?.erro || json?.ok === false) {
+            throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+        }
+
         return json;
     } catch (e: any) {
         if (e?.name === "AbortError") throw new Error("Tempo esgotado ao conectar com o servidor. Tente novamente.");
@@ -179,6 +187,35 @@ async function toDataUrl(url: string): Promise<string | null> {
 
 function buildNoPath(path: CatalogoNo[]) {
     return path.map((n) => n.nome).join(" > ");
+}
+
+function mapOrcamentoRowToState(r: any): Orcamento {
+    return {
+        id: String(r?.id ?? ""),
+        codigo: String(r?.codigo ?? r?.id ?? ""),
+        criadoEmISO: String(r?.criado_em ?? r?.criadoEmISO ?? ""),
+        operadorId: Number(r?.operador_id ?? r?.operadorId) || 0,
+        operadorNome: String(r?.operador_nome ?? r?.operadorNome ?? ""),
+        operadorUsuario: String(r?.operador_usuario ?? r?.operadorUsuario ?? ""),
+        responsavel: String(r?.responsavel ?? ""),
+        falecido: String(r?.falecido ?? ""),
+        telefone: String(r?.telefone ?? ""),
+        status: r?.status ? String(r.status) : undefined,
+        valorTotal: Number(r?.valor_total ?? r?.valorTotal) || 0,
+        observacoes: r?.observacoes ? String(r.observacoes) : undefined,
+        itens: [],
+    };
+}
+
+function mapOrcamentoItemRowToState(r: any): OrcamentoItem {
+    return {
+        produtoId: Number(r?.produto_id ?? r?.produtoId) || 0,
+        nome: String(r?.produto_nome ?? r?.nome ?? ""),
+        noId: r?.no_id == null && r?.noId == null ? 0 : Number(r?.no_id ?? r?.noId) || 0,
+        noPath: String(r?.no_path ?? r?.noPath ?? ""),
+        valorUnit: Number(r?.valor_unit ?? r?.valorUnit) || 0,
+        qtd: clampInt(r?.qtd ?? 1) || 1,
+    };
 }
 
 /* =======================
@@ -440,7 +477,7 @@ export default function Page() {
             document.body.style.overflow = prevBody;
         };
     }, []);
-    
+
     const [stack, setStack] = useState<CatalogGroup[]>(["home"]);
     const current = stack[stack.length - 1];
     const canBack = stack.length > 1;
@@ -448,19 +485,19 @@ export default function Page() {
     const go = useCallback((to: CatalogGroup) => setStack((s) => [...s, to]), []);
     const back = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
 
-    // Catálogo (árvore infinita)
+    // Catálogo
     const [catalogoNos, setCatalogoNos] = useState<CatalogoNo[]>([]);
     const [loadingCatalogo, setLoadingCatalogo] = useState(false);
     const [catalogoError, setCatalogoError] = useState<string | null>(null);
 
-    // Caminho atual de menus (nós)
+    // Caminho atual
     const [noPath, setNoPath] = useState<CatalogoNo[]>([]);
     const currentParentId = noPath.length ? noPath[noPath.length - 1].id : null;
 
     // Produtos
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
-    const pageSize = 8; // 4 colunas x 2 linhas no tablet
+    const pageSize = 8;
 
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [loadingProdutos, setLoadingProdutos] = useState(false);
@@ -472,12 +509,15 @@ export default function Page() {
 
     const [produtoIndex, setProdutoIndex] = useState<Record<number, Produto>>({});
 
-    // Seleção / orçamento (não duplica)
+    // Draft
     const [draftItens, setDraftItens] = useState<OrcamentoItem[]>([]);
 
     // Orçamentos
     const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
     const [orcamentoSelecionadoId, setOrcamentoSelecionadoId] = useState<string | null>(null);
+    const [loadingOrcamentos, setLoadingOrcamentos] = useState(false);
+    const [orcamentosError, setOrcamentosError] = useState<string | null>(null);
+    const [loadingResumo, setLoadingResumo] = useState(false);
 
     // Fluxo homenagem
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -497,10 +537,7 @@ export default function Page() {
     const [formTel, setFormTel] = useState("");
 
     const [openConcluir, setOpenConcluir] = useState(false);
-
-    /* =======================
-       ✅ NOVO: Fluxo fixo (Próximo Passo)
-    ======================== */
+    const [savingOrcamento, setSavingOrcamento] = useState(false);
 
     const FIXED_FLUXO_NOME = "Próximo Passo";
 
@@ -517,11 +554,8 @@ export default function Page() {
 
     const restoredRef = useRef(false);
     const pendingGoToSavedRef = useRef(false);
-
-    // ✅ NOVO: quando o usuário navega manualmente, não force goToStep() automaticamente
     const userNavRef = useRef(false);
 
-    // Restore localStorage on mount
     useEffect(() => {
         try {
             const raw = localStorage.getItem("pai_fluxo_state");
@@ -542,7 +576,6 @@ export default function Page() {
         }
     }, []);
 
-    // Persist to localStorage whenever stepIndex or visitedSteps changes
     useEffect(() => {
         try {
             localStorage.setItem("pai_fluxo_state", JSON.stringify({ stepIndex, visitedSteps }));
@@ -551,6 +584,22 @@ export default function Page() {
         }
     }, [stepIndex, visitedSteps]);
 
+    const resetFluxoState = useCallback(() => {
+        setFluxoSteps([]);
+        setStepIndex(0);
+        setVisitedSteps({});
+        setLoadingSteps(false);
+        setStepsError(null);
+        try {
+            localStorage.removeItem("pai_fluxo_state");
+        } catch {
+            // ignore
+        }
+        restoredRef.current = false;
+        pendingGoToSavedRef.current = false;
+        userNavRef.current = false;
+    }, []);
+
     const home = useCallback(() => {
         setStack(["home"]);
         setNoPath([]);
@@ -558,6 +607,7 @@ export default function Page() {
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
+        setOpenZoom(false);
 
         setDraftItens([]);
         setOperadorSel(null);
@@ -574,25 +624,59 @@ export default function Page() {
         setCatalogoNos([]);
         setCatalogoError(null);
 
-        // ✅ reset fluxo (e storage)
-        setFluxoSteps([]);
-        setStepIndex(0);
-        setVisitedSteps({});
-        setLoadingSteps(false);
-        setStepsError(null);
+        setOrcamentoSelecionadoId(null);
+        setOrcamentosError(null);
+
+        resetFluxoState();
+    }, [resetFluxoState]);
+
+    const fetchOrcamentos = useCallback(async () => {
+        setLoadingOrcamentos(true);
+        setOrcamentosError(null);
         try {
-            localStorage.removeItem("pai_fluxo_state");
-        } catch {
-            // ignore
+            const j = await safeJsonFetch(`${CATALOGO_API_URL}?orcamentos_list=1&limit=200&_=${Date.now()}`, {
+                timeoutMs: 20000,
+            });
+
+            const rows = Array.isArray(j?.rows) ? j.rows : [];
+            const mapped: Orcamento[] = rows.map((r: any) => ({
+                ...mapOrcamentoRowToState(r),
+                itens: [],
+            }));
+
+            setOrcamentos(mapped);
+        } catch (e: any) {
+            setOrcamentos([]);
+            setOrcamentosError(e?.message || "Erro ao carregar orçamentos.");
+        } finally {
+            setLoadingOrcamentos(false);
         }
-        restoredRef.current = false;
-        pendingGoToSavedRef.current = false;
     }, []);
 
-    const goBudgets = useCallback(() => setStack(["home", "orcamentos"]), []);
+    const fetchOrcamentoById = useCallback(async (id: string): Promise<Orcamento> => {
+        const j = await safeJsonFetch(`${CATALOGO_API_URL}?orcamento_get=1&id=${encodeURIComponent(id)}&_=${Date.now()}`, {
+            timeoutMs: 20000,
+        });
+
+        const orc = mapOrcamentoRowToState(j?.orcamento ?? {});
+        const itensRows = Array.isArray(j?.itens) ? j.itens : [];
+        const itens = itensRows.map(mapOrcamentoItemRowToState);
+
+        return {
+            ...orc,
+            itens,
+            valorTotal:
+                Number(orc.valorTotal) ||
+                itens.reduce((acc: number, it: OrcamentoItem) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0)
+        };
+    }, []);
+
+    const goBudgets = useCallback(async () => {
+        setStack(["home", "orcamentos"]);
+        await fetchOrcamentos();
+    }, [fetchOrcamentos]);
 
     const list = useCallback(() => {
-        // Ícone "lista": se já iniciou homenagem, volta para o menu raiz de ELEMENTOS (menus); senão home
         if (operadorSel && formResp.trim() && formFalecido.trim() && formTel.trim()) {
             setNoPath([]);
             setStack(["home", "menus"]);
@@ -661,7 +745,6 @@ export default function Page() {
         }
     }, []);
 
-    // Usuários
     const fetchUsuarios = useCallback(async () => {
         setLoadingUsers(true);
         setUsersError(null);
@@ -707,10 +790,6 @@ export default function Page() {
             .slice(0, 12);
     }, [usuarios, userQuery]);
 
-    /* =======================
-       ✅ NOVO: fetchFluxoSteps()
-    ======================== */
-
     const fetchFluxoSteps = useCallback(async () => {
         if (loadingSteps) return;
         setLoadingSteps(true);
@@ -736,15 +815,13 @@ export default function Page() {
                 .sort((a, b) => a.ordem - b.ordem || a.id - b.id);
 
             setFluxoSteps(steps);
-
-            // Se não existir fluxo (0 steps), app segue normal (sem botões)
         } catch (e: any) {
             setFluxoSteps([]);
             setStepsError(e?.message || "Erro ao carregar steps do fluxo.");
         } finally {
             setLoadingSteps(false);
         }
-    }, [CATALOGO_API_URL, FIXED_FLUXO_NOME, loadingSteps]);
+    }, [FIXED_FLUXO_NOME, loadingSteps]);
 
     const iniciarHomenagem = useCallback(() => {
         const responsavel = formResp.trim();
@@ -761,30 +838,31 @@ export default function Page() {
         setPage(1);
         setSelected(null);
         setOpenPrices(false);
+        setOpenZoom(false);
 
         setStack(["home", "menus"]);
-
-        // ✅ carrega steps automaticamente ao iniciar homenagem
         fetchFluxoSteps();
     }, [formResp, formFalecido, formTel, operadorSel, fetchFluxoSteps]);
 
-    // Carrega árvore depois que iniciou homenagem
     useEffect(() => {
         if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) return;
         if (!catalogoNos.length && !loadingCatalogo && !catalogoError) fetchCatalogoInit();
     }, [operadorSel, formResp, formFalecido, formTel, catalogoNos.length, loadingCatalogo, catalogoError, fetchCatalogoInit]);
 
-    // ✅ Também tenta carregar steps quando catálogo já carregou (e steps ainda não)
     useEffect(() => {
         if (!operadorSel || !formResp.trim() || !formFalecido.trim() || !formTel.trim()) return;
         if (!catalogoNos.length) return;
         if (fluxoSteps.length > 0) return;
         if (loadingSteps) return;
-        // se já deu erro, ainda assim pode tentar novamente ao recarregar catálogo
         fetchFluxoSteps();
     }, [operadorSel, formResp, formFalecido, formTel, catalogoNos.length, fluxoSteps.length, loadingSteps, fetchFluxoSteps]);
 
-    // Monta children do parent atual (raiz = parent_id null)
+    useEffect(() => {
+        if (current === "orcamentos") {
+            void fetchOrcamentos();
+        }
+    }, [current, fetchOrcamentos]);
+
     const childrenNodes = useMemo(() => {
         const arr = catalogoNos
             .filter((n) => (currentParentId == null ? n.parent_id == null : n.parent_id === currentParentId))
@@ -796,7 +874,6 @@ export default function Page() {
     const childrenByParent = useMemo(() => {
         const map = new Map<number, number>();
         for (const n of catalogoNos) {
-            // ✅ só conta filhos ATIVOS (senão você cai em "Nenhum submenu encontrado" em menus)
             if (Number(n.ativo) !== 1) continue;
             if (n.parent_id != null) map.set(n.parent_id, (map.get(n.parent_id) || 0) + 1);
         }
@@ -810,7 +887,6 @@ export default function Page() {
         return buildNoPath(noPath);
     }, [noPath]);
 
-    // Ao entrar em listagem, buscar produtos do nó atual
     useEffect(() => {
         if (current !== "listagem") return;
         const node = noPath[noPath.length - 1];
@@ -888,10 +964,6 @@ export default function Page() {
         setOpenConcluir(true);
     }, [operadorSel, formResp, formFalecido, formTel]);
 
-    /* =======================
-       ✅ NOVO: goToStep(i)
-    ======================== */
-
     const goToStep = useCallback(
         async (i: number) => {
             if (!fluxoSteps.length) return;
@@ -900,7 +972,6 @@ export default function Page() {
             const step = fluxoSteps[clamped];
             if (!step) return;
 
-            // resets fixos
             setQ("");
             setPage(1);
             setSelected(null);
@@ -916,13 +987,11 @@ export default function Page() {
             const node = catalogoNos.find((n) => n.id === noId) || null;
 
             if (!node) {
-                // fallback
                 setNoPath([]);
                 setStack(["home", "menus"]);
                 return;
             }
 
-            // construir caminho do nó até raiz
             const byId = new Map<number, CatalogoNo>();
             for (const n of catalogoNos) byId.set(n.id, n);
 
@@ -952,32 +1021,21 @@ export default function Page() {
         [fluxoSteps, catalogoNos, nodeHasChildren, fetchProdutosNo]
     );
 
-    // ✅ Após catalogoNos + fluxoSteps carregarem, se havia estado salvo, navegar para step salvo
     useEffect(() => {
         if (!pendingGoToSavedRef.current) return;
         if (!catalogoNos.length) return;
         if (!fluxoSteps.length) return;
 
-        // ✅ se o usuário navegou manualmente, não força o step (senão "prende" a navegação)
         if (userNavRef.current) {
             pendingGoToSavedRef.current = false;
             return;
         }
 
         pendingGoToSavedRef.current = false;
-        goToStep(stepIndex);
+        void goToStep(stepIndex);
     }, [catalogoNos.length, fluxoSteps.length, goToStep, stepIndex]);
 
-    /* =======================
-       ✅ NOVO: nextStep()
-    ======================== */
-
-    console.log("currentStep.no_id", currentStep?.no_id);
-    console.log("draftItens noId", draftItens.map((x) => x.noId));
-    console.log("draftItens", draftItens);
-
     const nextStep = useCallback(() => {
-        // ✅ voltou a seguir o fluxo
         userNavRef.current = false;
 
         if (!currentStep) return;
@@ -990,7 +1048,6 @@ export default function Page() {
             }
         }
 
-        // marca visitado
         setVisitedSteps((prev) => {
             const next = { ...prev };
             next[currentStep.ordem] = 1;
@@ -998,79 +1055,101 @@ export default function Page() {
         });
 
         if (isLastStep) {
-            // último: libera concluir e pode abrir modal
             openConcluirModal();
             return;
         }
 
-        // avança
         setStepIndex((prev) => {
             const nextIdx = Math.min((fluxoSteps.length || 1) - 1, prev + 1);
-            // navega
             void goToStep(nextIdx);
             return nextIdx;
         });
     }, [currentStep, draftItens, isLastStep, openConcluirModal, fluxoSteps.length, goToStep]);
 
-    const finalizarOrcamento = useCallback(() => {
+    const finalizarOrcamento = useCallback(async () => {
         if (!operadorSel) return alert("Operador não selecionado.");
 
         const responsavel = formResp.trim();
         const falecido = formFalecido.trim();
         const telefone = formTel.trim();
-        if (!responsavel || !falecido || !telefone) return alert("Dados da homenagem incompletos.");
 
-        const now = new Date();
-        const id = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random()
-            .toString(16)
-            .slice(2, 8)
-            .toUpperCase()}`;
-
-        const novo: Orcamento = {
-            id,
-            criadoEmISO: now.toISOString(),
-            operadorId: operadorSel.id,
-            operadorNome: operadorSel.nome,
-            operadorUsuario: operadorSel.usuario,
-            responsavel,
-            falecido,
-            telefone,
-            itens: draftItens.map((x) => ({ ...x, qtd: 1 })),
-        };
-
-        setOrcamentos((prev) => [novo, ...prev]);
-
-        // reset fluxo atual
-        setDraftItens([]);
-        setNoPath([]);
-        setQ("");
-        setPage(1);
-        setSelected(null);
-        setOpenPrices(false);
-        setOpenConcluir(false);
-
-        // reset steps e storage para próxima homenagem
-        setFluxoSteps([]);
-        setStepIndex(0);
-        setVisitedSteps({});
-        setLoadingSteps(false);
-        setStepsError(null);
-        try {
-            localStorage.removeItem("pai_fluxo_state");
-        } catch {
-            // ignore
+        if (!responsavel || !falecido || !telefone) {
+            return alert("Dados da homenagem incompletos.");
         }
-        restoredRef.current = false;
-        pendingGoToSavedRef.current = false;
 
-        setOrcamentoSelecionadoId(null);
-        setStack(["home", "orcamentos"]);
-    }, [draftItens, formFalecido, formResp, formTel, operadorSel]);
+        try {
+            setSavingOrcamento(true);
 
-    const openOrcamentoResumo = useCallback((id: string) => {
-        setOrcamentoSelecionadoId(id);
-        setStack(["home", "orcamentos", "resumo"]);
-    }, []);
+            const payload = {
+                action: "orcamento_criar",
+                operador_id: operadorSel.id,
+                responsavel,
+                falecido,
+                telefone,
+                itens: draftItens.map((x) => ({
+                    produto_id: x.produtoId,
+                    nome: x.nome,
+                    no_id: x.noId,
+                    no_path: x.noPath,
+                    valor_unit: Number(x.valorUnit) || 0,
+                    qtd: clampInt(x.qtd) || 1,
+                })),
+            };
+
+            const j = await safeJsonFetch(CATALOGO_API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                timeoutMs: 20000,
+            });
+
+            setDraftItens([]);
+            setNoPath([]);
+            setQ("");
+            setPage(1);
+            setSelected(null);
+            setOpenPrices(false);
+            setOpenZoom(false);
+            setOpenConcluir(false);
+
+            resetFluxoState();
+
+            setOrcamentoSelecionadoId(null);
+            setStack(["home", "orcamentos"]);
+
+            await fetchOrcamentos();
+
+            if (j?.id != null) {
+                setOrcamentoSelecionadoId(String(j.id));
+            }
+        } catch (e: any) {
+            alert(e?.message || "Erro ao finalizar orçamento.");
+        } finally {
+            setSavingOrcamento(false);
+        }
+    }, [operadorSel, formResp, formFalecido, formTel, draftItens, fetchOrcamentos, resetFluxoState]);
+
+    const openOrcamentoResumo = useCallback(
+        async (id: string) => {
+            try {
+                setLoadingResumo(true);
+                const loaded = await fetchOrcamentoById(id);
+
+                setOrcamentos((prev) => {
+                    const others = prev.filter((x) => x.id !== loaded.id);
+                    return [loaded, ...others];
+                });
+
+                setOrcamentoSelecionadoId(loaded.id);
+                setStack(["home", "orcamentos", "resumo"]);
+            } catch (e: any) {
+                alert(e?.message || "Erro ao abrir resumo.");
+            } finally {
+                setLoadingResumo(false);
+            }
+        },
+        [fetchOrcamentoById]
+    );
 
     const orcamentoSelecionado = useMemo(() => {
         if (!orcamentoSelecionadoId) return null;
@@ -1079,6 +1158,7 @@ export default function Page() {
 
     const totalOrcamentoSelecionado = useMemo(() => {
         if (!orcamentoSelecionado) return 0;
+        if (Number(orcamentoSelecionado.valorTotal) > 0) return Number(orcamentoSelecionado.valorTotal) || 0;
         let t = 0;
         for (const it of orcamentoSelecionado.itens) t += clampInt(it.qtd) * (Number(it.valorUnit) || 0);
         return t;
@@ -1096,7 +1176,6 @@ export default function Page() {
 
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
         const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
         const marginX = 12;
 
         let y = 12;
@@ -1120,7 +1199,7 @@ export default function Page() {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
-        doc.text(`Nº ${o.id}`, marginX + 45, y);
+        doc.text(`Nº ${o.codigo || o.id}`, marginX + 45, y);
 
         y += 8;
 
@@ -1150,7 +1229,7 @@ export default function Page() {
             return [it.nome, formatBRL(totalLinha)];
         });
 
-        const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+        const total = Number(o.valorTotal) || o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
 
         autoTable(doc, {
             startY: y,
@@ -1172,8 +1251,8 @@ export default function Page() {
                 valign: "middle",
             },
             columnStyles: {
-                0: { cellWidth: pageW - marginX * 2 - 50, overflow: "linebreak" }, // Item
-                1: { cellWidth: 50, halign: "right" }, // Valor
+                0: { cellWidth: pageW - marginX * 2 - 50, overflow: "linebreak" },
+                1: { cellWidth: 50, halign: "right" },
             },
             didParseCell: (data: any) => {
                 if (data.section === "body" && data.column.index === 1) data.cell.styles.halign = "right";
@@ -1196,7 +1275,7 @@ export default function Page() {
         doc.setFontSize(12);
         doc.text(formatBRL(total), boxX + boxW - 3, boxY + 8, { align: "right" });
 
-        const safeName = `orcamento_${o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        const safeName = `orcamento_${o.codigo || o.id}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }, []);
 
@@ -1207,21 +1286,12 @@ export default function Page() {
                 alert("Não foi possível localizar os dados do item. Abra o menu novamente para carregar.");
                 return;
             }
-            // Mantém o noPath como está (revisão é global), mas abre detalhe do produto
             setSelected(p);
             setOpenConcluir(false);
-            setStack((s) => {
-                // se já estiver em algum fluxo, tenta ir para detalhe direto
-                const base = ["home", "menus", "listagem", "detalhe"] as CatalogGroup[];
-                return base;
-            });
+            setStack(["home", "menus", "listagem", "detalhe"]);
         },
         [produtoIndex]
     );
-
-    /* =======================
-       Menus: navegar árvore
-    ======================== */
 
     const enterNode = useCallback(
         (node: CatalogoNo) => {
@@ -1243,10 +1313,8 @@ export default function Page() {
     );
 
     const menusBack = useCallback(() => {
-        // ✅ usuário está navegando manualmente (não force o step atual via goToStep)
         userNavRef.current = true;
 
-        // Volta um nível na árvore, ou para home->menus, ou home
         setQ("");
         setPage(1);
         setSelected(null);
@@ -1263,10 +1331,6 @@ export default function Page() {
         });
     }, []);
 
-    /* =======================
-       Screens
-    ======================== */
-
     const ScreenHome = (
         <ScreenContainer>
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1275,7 +1339,7 @@ export default function Page() {
                         ELEMENTOS DE HOMENAGEM
                     </button>
 
-                    <button type="button" className="homeBtn" onClick={goBudgets}>
+                    <button type="button" className="homeBtn" onClick={() => void goBudgets()}>
                         LISTA DE ORÇAMENTOS
                     </button>
                 </div>
@@ -1296,7 +1360,6 @@ export default function Page() {
                 checkDisabled={hasFlow ? !canConcluir : false}
             />
 
-            {/* ✅ NOVO: wrapper pra controlar layout e altura no tablet */}
             <div className="menusWrap">
                 <Title>ELEMENTOS DE HOMENAGEM</Title>
 
@@ -1333,7 +1396,7 @@ export default function Page() {
                 </div>
 
                 {stepsError ? (
-                    <div style={{ position: "absolute", left: 18, bottom: 14, opacity: 0.0, pointerEvents: "none" }}>{stepsError}</div>
+                    <div style={{ position: "absolute", left: 18, bottom: 14, opacity: 0, pointerEvents: "none" }}>{stepsError}</div>
                 ) : null}
             </div>
         </ScreenContainer>
@@ -1344,11 +1407,7 @@ export default function Page() {
             <TopRightNav
                 onBack={() => {
                     setOpenPrices(false);
-
-                    // ✅ IMPORTANTE: listagem sempre está num "nó folha"
-                    // ao voltar para menus, precisamos subir 1 nível no noPath
                     setNoPath((prev) => (prev.length ? prev.slice(0, -1) : prev));
-
                     setStack(["home", "menus"]);
                 }}
                 onHome={home}
@@ -1361,7 +1420,6 @@ export default function Page() {
             />
 
             <div className="listagemWrap">
-                {/* Cabeçalho */}
                 <div className="listHeader">
                     <div className="listSubTitle">{noPath.length ? noPath[noPath.length - 1].nome : "RAIZ"}</div>
 
@@ -1394,7 +1452,6 @@ export default function Page() {
                     ) : null}
                 </div>
 
-                {/* ✅ Miolo (grade) */}
                 <div className="gridProdutosWrap">
                     <div className="gridProdutos">
                         {loadingProdutos ? (
@@ -1410,7 +1467,6 @@ export default function Page() {
                     </div>
                 </div>
 
-                {/* ✅ Rodapé fixo (sempre visível) */}
                 <div className="listagemFooter">
                     <div className="pagerRow">
                         <div className="pagerBtns">
@@ -1482,20 +1538,18 @@ export default function Page() {
                 ) : (
                     <div className="detailLayout">
                         <div className="detailLeft">
-                                <div className="detailImgCard">
-                                    <img src={selected.thumb} alt={selected.nome} className="detailImg" />
-
-                                    {/* 🔍 Lupa no canto inferior direito */}
-                                    <button
-                                        type="button"
-                                        className="zoomBtn"
-                                        onClick={() => setOpenZoom(true)}
-                                        aria-label="Ampliar imagem"
-                                        title="Ampliar"
-                                    >
-                                        🔍
-                                    </button>
-                                </div>
+                            <div className="detailImgCard">
+                                <img src={selected.thumb} alt={selected.nome} className="detailImg" />
+                                <button
+                                    type="button"
+                                    className="zoomBtn"
+                                    onClick={() => setOpenZoom(true)}
+                                    aria-label="Ampliar imagem"
+                                    title="Ampliar"
+                                >
+                                    🔍
+                                </button>
+                            </div>
 
                             <div className="detailMeta">
                                 <div className="metaPill">
@@ -1504,72 +1558,66 @@ export default function Page() {
                             </div>
                         </div>
 
-                            <div className="detailRight">
-                                <div className="detailTitle">{selected.nome.toUpperCase()}</div>
+                        <div className="detailRight">
+                            <div className="detailTitle">{selected.nome.toUpperCase()}</div>
 
-                                <div className="bulletBox">
-                                    {selected.descricaoCurta ? (
-                                        <div className="descText">
-                                            {selected.descricaoCurta}
-                                        </div>
-                                    ) : null}
+                            <div className="bulletBox">
+                                {selected.descricaoCurta ? <div className="descText">{selected.descricaoCurta}</div> : null}
 
-                                    <div className="detailActions">
-                                        <button
-                                            type="button"
-                                            className="iconActionBtn"
-                                            onClick={() => setOpenPrices(true)}
-                                            aria-label="Tabela de valores"
-                                            title="Tabela de valores"
-                                        >
-                                            <IconDollar />
-                                        </button>
-
-                                        {(() => {
-                                            const already = isSelectedInDraft(selected.id);
-                                            return (
-                                                <button
-                                                    type="button"
-                                                    className={cn("iconActionBtn", already && "iconActionBtnSelected")}
-                                                    onClick={toggleDraftItem}
-                                                    aria-label={already ? "Remover" : "Adicionar"}
-                                                    title={already ? "Remover" : "Adicionar"}
-                                                >
-                                                    {already ? <IconCheck /> : <IconPlus />}
-                                                </button>
-                                            );
-                                        })()}
-                                    </div>
-                                </div>
-                                {/* ✅ Rodapé FORA do container da direita */}
-                                <div className="detailFooterRow">
+                                <div className="detailActions">
                                     <button
                                         type="button"
-                                        className="stepBtn stepBtnGhost"
-                                        onClick={() => setStack(["home", "menus", "listagem"])}
+                                        className="iconActionBtn"
+                                        onClick={() => setOpenPrices(true)}
+                                        aria-label="Tabela de valores"
+                                        title="Tabela de valores"
                                     >
-                                        Retornar
+                                        <IconDollar />
                                     </button>
 
-                                    {hasFlow ? (
-                                        canConcluir ? (
-                                            <button type="button" className="stepBtn" onClick={openConcluirModal}>
-                                                Concluir
+                                    {(() => {
+                                        const already = isSelectedInDraft(selected.id);
+                                        return (
+                                            <button
+                                                type="button"
+                                                className={cn("iconActionBtn", already && "iconActionBtnSelected")}
+                                                onClick={toggleDraftItem}
+                                                aria-label={already ? "Remover" : "Adicionar"}
+                                                title={already ? "Remover" : "Adicionar"}
+                                            >
+                                                {already ? <IconCheck /> : <IconPlus />}
                                             </button>
-                                        ) : (
-                                            <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
-                                                PRÓXIMO PASSO
-                                            </button>
-                                        )
-                                    ) : (
-                                        <button type="button" className="stepBtn" onClick={openConcluirModal}>
-                                            Concluir
-                                        </button>
-                                    )}
+                                        );
+                                    })()}
                                 </div>
                             </div>
 
-                            
+                            <div className="detailFooterRow">
+                                <button
+                                    type="button"
+                                    className="stepBtn stepBtnGhost"
+                                    onClick={() => setStack(["home", "menus", "listagem"])}
+                                >
+                                    Retornar
+                                </button>
+
+                                {hasFlow ? (
+                                    canConcluir ? (
+                                        <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                            Concluir
+                                        </button>
+                                    ) : (
+                                        <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
+                                            PRÓXIMO PASSO
+                                        </button>
+                                    )
+                                ) : (
+                                    <button type="button" className="stepBtn" onClick={openConcluirModal}>
+                                        Concluir
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -1629,18 +1677,35 @@ export default function Page() {
             <Title>LISTA DE ORÇAMENTOS</Title>
 
             <div className="budgetsWrap">
-                {orcamentos.length ? (
+                {orcamentosError ? (
+                    <div className="emptyState" style={{ margin: "0 26px 16px" }}>
+                        {orcamentosError}
+                    </div>
+                ) : null}
+
+                {loadingOrcamentos ? (
+                    <div className="emptyState" style={{ margin: "0 26px" }}>
+                        Carregando orçamentos...
+                    </div>
+                ) : orcamentos.length ? (
                     <div className="budgetGrid">
                         {orcamentos.map((o) => {
-                            const total = o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+                            const total =
+                                Number(o.valorTotal) ||
+                                o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
                             const dt = new Date(o.criadoEmISO);
                             const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
+                            const itensCount = o.itens.length;
+
                             return (
-                                <button key={o.id} type="button" className="budgetCard" onClick={() => openOrcamentoResumo(o.id)} title="Abrir resumo">
+                                <button key={o.id} type="button" className="budgetCard" onClick={() => void openOrcamentoResumo(o.id)} title="Abrir resumo">
                                     <div className="budgetTop">
                                         <div className="budgetTitle">{o.falecido}</div>
                                         <div className="budgetMeta">
                                             Responsável: <b>{o.responsavel}</b>
+                                        </div>
+                                        <div className="budgetMeta">
+                                            Nº: <b>{o.codigo || o.id}</b>
                                         </div>
                                     </div>
 
@@ -1649,7 +1714,7 @@ export default function Page() {
                                             Data: <b>{dataBR}</b>
                                         </div>
                                         <div className="budgetSmall">
-                                            Itens: <b>{o.itens.length}</b>
+                                            Itens: <b>{itensCount}</b>
                                         </div>
                                         <div className="budgetTotal">{formatBRL(total)}</div>
                                     </div>
@@ -1690,7 +1755,11 @@ export default function Page() {
             <div style={{ padding: "22px 26px 0 26px" }}>
                 <div className="resumoTitle">RESUMO DA HOMENAGEM</div>
 
-                {!orcamentoSelecionado ? (
+                {loadingResumo ? (
+                    <div className="emptyState" style={{ marginTop: 18 }}>
+                        Carregando orçamento...
+                    </div>
+                ) : !orcamentoSelecionado ? (
                     <div className="emptyState" style={{ marginTop: 18 }}>
                         Orçamento não encontrado.
                     </div>
@@ -1701,7 +1770,7 @@ export default function Page() {
                                 <img src={LOGO_URL_UI} alt="PAI" className="resumoLogoTopLeft" />
                                 <div className="resumoOrcBlock">
                                     <div className="resumoOrcMain">ORÇAMENTO</div>
-                                    <div className="resumoOrcSub">Nº {orcamentoSelecionado.id}</div>
+                                    <div className="resumoOrcSub">Nº {orcamentoSelecionado.codigo || orcamentoSelecionado.id}</div>
                                 </div>
                             </div>
 
@@ -1725,26 +1794,26 @@ export default function Page() {
                             </div>
                         </div>
 
-                            <div className="resumoTable">
-                                <div className="resumoTableHead2 resumoTableHead2Cols">
-                                    <div>Item</div>
-                                    <div style={{ textAlign: "right" }}>Valor</div>
-                                </div>
-
-                                {orcamentoSelecionado.itens.map((it, idx) => (
-                                    <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
-                                        <div className="resumoItemName">{it.nome}</div>
-                                        <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
-                                    </div>
-                                ))}
+                        <div className="resumoTable">
+                            <div className="resumoTableHead2 resumoTableHead2Cols">
+                                <div>Item</div>
+                                <div style={{ textAlign: "right" }}>Valor</div>
                             </div>
 
-                            <div className="resumoBottom resumoBottomOnlyTotal">
-                                <div className="resumoTotalBox">
-                                    <div className="resumoTotalLabel">Total</div>
-                                    <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
+                            {orcamentoSelecionado.itens.map((it, idx) => (
+                                <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
+                                    <div className="resumoItemName">{it.nome}</div>
+                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
                                 </div>
+                            ))}
+                        </div>
+
+                        <div className="resumoBottom resumoBottomOnlyTotal">
+                            <div className="resumoTotalBox">
+                                <div className="resumoTotalLabel">Total</div>
+                                <div className="resumoTotalValue">{formatBRL(totalOrcamentoSelecionado)}</div>
                             </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -1765,7 +1834,6 @@ export default function Page() {
 
             {screen}
 
-            {/* Modal Operador */}
             <Modal
                 open={openUserPick}
                 title="Selecionar Operador"
@@ -1860,7 +1928,6 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* Modal Início */}
             <Modal
                 open={openInicio}
                 title="Início da Homenagem"
@@ -1909,7 +1976,6 @@ export default function Page() {
                 </div>
             </Modal>
 
-            {/* Modal Revisão */}
             <Modal
                 open={openConcluir}
                 title="Revisão da Homenagem"
@@ -1920,8 +1986,14 @@ export default function Page() {
                         <button type="button" className="ctaBtn" onClick={() => setOpenConcluir(false)} style={{ minWidth: 180 }}>
                             VOLTAR
                         </button>
-                        <button type="button" className="ctaBtn" onClick={finalizarOrcamento} style={{ minWidth: 220 }}>
-                            FINALIZAR
+                        <button
+                            type="button"
+                            className="ctaBtn"
+                            onClick={() => void finalizarOrcamento()}
+                            style={{ minWidth: 220 }}
+                            disabled={savingOrcamento}
+                        >
+                            {savingOrcamento ? "SALVANDO..." : "FINALIZAR"}
                         </button>
                     </div>
                 }
@@ -1961,7 +2033,13 @@ export default function Page() {
 
                                     <div className="reviewItemRight">
                                         <div className="reviewItemPrice">{formatBRL(Number(it.valorUnit) || 0)}</div>
-                                        <button type="button" className="reviewRemoveBtn" onClick={() => removeFromDraft(it.produtoId)} aria-label="Remover item" title="Remover">
+                                        <button
+                                            type="button"
+                                            className="reviewRemoveBtn"
+                                            onClick={() => removeFromDraft(it.produtoId)}
+                                            aria-label="Remover item"
+                                            title="Remover"
+                                        >
                                             ✕
                                         </button>
                                     </div>
@@ -1991,10 +2069,6 @@ const css = `
     height: 100%;
   }
 
-  /* =======================
-     Root / Screen
-  ======================= */
-
   .root{
     width: 100%;
     height: 100dvh;
@@ -2015,23 +2089,14 @@ const css = `
 
   .screen{
     position: relative;
-
     width: min(1200px, 100%);
-
-    /* altura real visível */
     max-height: calc(100dvh - 24px);
     height: min(680px, calc(100dvh - 24px));
-
     max-width: calc(100% - 24px);
-
     border-radius: 14px;
     overflow: hidden;
     background: transparent;
   }
-
-  /* =======================
-     Top Nav Buttons
-  ======================= */
 
   .iconBtn{
     width: 44px;
@@ -2078,10 +2143,6 @@ const css = `
     box-shadow: 0 10px 18px rgba(0,0,0,0.22);
   }
 
-  /* =======================
-     Titles / Pills
-  ======================= */
-
   .pageTitleWrap{
     text-align:center;
     margin-top: clamp(14px, 3vh, 38px);
@@ -2109,10 +2170,6 @@ const css = `
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  /* =======================
-     Home
-  ======================= */
 
   .homeBtns{
     width:100%;
@@ -2153,10 +2210,6 @@ const css = `
     box-shadow: 0 6px 14px rgba(2,156,222,0.35), inset 0 2px 6px rgba(0,0,0,0.25);
   }
 
-  /* =======================
-     Menus
-  ======================= */
-
   .menusWrap{
     height: 100%;
     min-height: 0;
@@ -2170,11 +2223,9 @@ const css = `
     width: 100%;
     max-width: 900px;
     margin: 0 auto;
-
     display: grid;
     grid-template-columns: repeat(2, minmax(240px, 1fr));
     gap: clamp(10px, 2vh, 28px);
-
     flex: 1 1 auto;
     min-height: 0;
     align-content: start;
@@ -2183,19 +2234,15 @@ const css = `
   .bigBtn{
     width: 100%;
     height: clamp(56px, 8vh, 84px);
-
     display:flex;
     align-items:center;
     justify-content:center;
     padding: 0 clamp(14px, 2vw, 24px);
-
     border-radius: clamp(14px, 2.2vh, 20px);
-
     font-family: var(--font-nunito), Nunito, sans-serif;
     font-weight: 800;
     font-size: clamp(16px, 2.2vh, 22px);
     letter-spacing: .8px;
-
     white-space: nowrap;
     text-align:center;
     color:#fff;
@@ -2210,10 +2257,6 @@ const css = `
   .bigBtn:hover{ background:#03a7ec; transform:translateY(-3px); }
   .bigBtn:active{ transform:scale(.97); }
   .btnLabel{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-  /* =======================
-     Listagem Header
-  ======================= */
 
   .listHeader{ margin-bottom: 14px; }
 
@@ -2283,10 +2326,6 @@ const css = `
     text-align:center;
   }
 
-  /* =======================
-     Listagem Layout (rodapé fixo)
-  ======================= */
-
   .listagemWrap{
     height: 100%;
     min-height: 0;
@@ -2299,7 +2338,7 @@ const css = `
   .gridProdutosWrap{
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto; /* se faltar espaço, só a grade rola */
+    overflow: auto;
     padding-bottom: 5px;
     -webkit-overflow-scrolling: touch;
   }
@@ -2312,16 +2351,16 @@ const css = `
   }
 
   .listagemFooter{
-  flex: 0 0 auto;
-  padding: 6px 18px 6px;
-}
+    flex: 0 0 auto;
+    padding: 6px 18px 6px;
+  }
 
   .pagerRow{
     display:flex;
     justify-content:flex-end;
     align-items:center;
-    gap: 8px;          /* setas coladas no botão */
-    flex-wrap: nowrap; /* não quebra linha */
+    gap: 8px;
+    flex-wrap: nowrap;
     margin: 0;
   }
 
@@ -2368,10 +2407,6 @@ const css = `
   .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .flowBtn:active{ transform: translateY(0px) scale(0.995); }
   .flowBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
-
-  /* =======================
-     Product Cards
-  ======================= */
 
   .prodCard{
     border-radius: 18px;
@@ -2421,10 +2456,6 @@ const css = `
     font-weight: 800;
     text-align:center;
   }
-
-  /* =======================
-     Detalhe
-  ======================= */
 
   .detailLayout{
     position: relative;
@@ -2592,10 +2623,6 @@ const css = `
     min-width: 140px;
   }
 
-  /* =======================
-     Modals
-  ======================= */
-
   .modalOverlay{
     position: fixed;
     inset: 0;
@@ -2675,10 +2702,7 @@ const css = `
   }
   .ctaBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .ctaBtn:active{ transform: translateY(0px) scale(0.995); }
-
-  /* =======================
-     Forms / User picker
-  ======================= */
+  .ctaBtn:disabled{ opacity: .65; cursor: not-allowed; transform: none; }
 
   .formGrid{ display:grid; gap: 12px; }
 
@@ -2809,10 +2833,6 @@ const css = `
     font-weight: 900;
   }
 
-  /* =======================
-     Budgets
-  ======================= */
-
   .budgetsWrap{ padding: 0 26px 24px 26px; }
 
   .budgetGrid{
@@ -2857,10 +2877,6 @@ const css = `
     border-radius: 999px;
     white-space: nowrap;
   }
-
-  /* =======================
-     Resumo
-  ======================= */
 
   .resumoTopBar{
     position:absolute;
@@ -2999,10 +3015,6 @@ const css = `
   .resumoRow2Cols{ grid-template-columns: 1fr 180px; }
   .resumoBottomOnlyTotal{ justify-content: flex-end; }
 
-  /* =======================
-     Review (Concluir)
-  ======================= */
-
   .reviewHeader{
     padding: 10px 12px;
     border-radius: 12px;
@@ -3075,11 +3087,6 @@ const css = `
   }
   .reviewItemNameBtn:hover{ text-decoration: underline; filter: brightness(1.05); }
 
-  /* =======================
-     Responsive
-  ======================= */
-
-  /* Tablet: 4 colunas x 2 linhas (8 itens/página) + cards menores + botões mais pra cima */
   @media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
     .listagemWrap{
       padding: 14px 18px 0 18px;
@@ -3112,7 +3119,6 @@ const css = `
     }
   }
 
-  /* Tablet/altura pequena: footer menor */
   @media (max-height: 720px){
     .listagemFooter{
       padding-top: 6px;
@@ -3139,7 +3145,6 @@ const css = `
     }
   }
 
-  /* Mobile */
   @media (max-width: 760px){
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
     .budgetGrid{ grid-template-columns: 1fr; }
@@ -3167,7 +3172,6 @@ const css = `
     .gridMenu2{ gap: 12px; }
     .bigBtn{ height: 62px; font-size: 18px; }
   }
-    
 
   @media (max-height: 720px){
     .screen{
