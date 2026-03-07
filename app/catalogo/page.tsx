@@ -2336,12 +2336,12 @@ const css = `
   }
 
   .gridProdutosWrap{
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding-bottom: 30px; /* antes estava 5px */
-  -webkit-overflow-scrolling: touch;
-}
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: 5px;
+    -webkit-overflow-scrolling: touch;
+  }
 
   .gridProdutos{
     display:grid;
@@ -2351,9 +2351,10 @@ const css = `
   }
 
   .listagemFooter{
-    flex: 0 0 auto;
-    padding: 6px 18px 6px;
-  }
+  flex: 0 0 auto;
+  padding: 6px 18px 6px;
+  transform: translateY(-20px);
+}
 
   .pagerRow{
     display:flex;
