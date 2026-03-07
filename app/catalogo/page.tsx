@@ -123,6 +123,24 @@ function normalizeKey(s: string) {
         .toUpperCase();
 }
 
+function onlyDateISO(input: string) {
+    if (!input) return "";
+    const s = String(input).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "";
+    const year = d.getFullYear();
+    const month = `${d.getMonth() + 1}`.padStart(2, "0");
+    const day = `${d.getDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function formatDateBR(input: string) {
+    const d = new Date(input);
+    if (Number.isNaN(d.getTime())) return "-";
+    return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(d);
+}
+
 async function safeJsonFetch(input: RequestInfo, init?: RequestInit & { timeoutMs?: number }) {
     const timeoutMs = init?.timeoutMs ?? 15000;
     const ctrl = new AbortController();
@@ -519,6 +537,12 @@ export default function Page() {
     const [orcamentosError, setOrcamentosError] = useState<string | null>(null);
     const [loadingResumo, setLoadingResumo] = useState(false);
 
+    // Filtros/paginação dos orçamentos
+    const [orcamentoBuscaNome, setOrcamentoBuscaNome] = useState("");
+    const [orcamentoBuscaData, setOrcamentoBuscaData] = useState("");
+    const [orcamentoPage, setOrcamentoPage] = useState(1);
+    const orcamentoPageSize = 5;
+
     // Fluxo homenagem
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
@@ -627,6 +651,10 @@ export default function Page() {
         setOrcamentoSelecionadoId(null);
         setOrcamentosError(null);
 
+        setOrcamentoBuscaNome("");
+        setOrcamentoBuscaData("");
+        setOrcamentoPage(1);
+
         resetFluxoState();
     }, [resetFluxoState]);
 
@@ -672,6 +700,9 @@ export default function Page() {
     }, []);
 
     const goBudgets = useCallback(async () => {
+        setOrcamentoBuscaNome("");
+        setOrcamentoBuscaData("");
+        setOrcamentoPage(1);
         setStack(["home", "orcamentos"]);
         await fetchOrcamentos();
     }, [fetchOrcamentos]);
@@ -912,6 +943,46 @@ export default function Page() {
         if (page < 1) setPage(1);
     }, [totalPages, page]);
 
+    const orcamentosFiltrados = useMemo(() => {
+        let arr = orcamentos.slice();
+
+        const nomeBusca = normalizeKey(orcamentoBuscaNome);
+        const dataBusca = onlyDateISO(orcamentoBuscaData);
+
+        if (nomeBusca) {
+            arr = arr.filter((o) => {
+                const nomeComposto = normalizeKey(`${o.falecido} ${o.responsavel} ${o.codigo}`);
+                return nomeComposto.includes(nomeBusca);
+            });
+        }
+
+        if (dataBusca) {
+            arr = arr.filter((o) => onlyDateISO(o.criadoEmISO) === dataBusca);
+        }
+
+        return arr.sort((a, b) => {
+            const ta = new Date(a.criadoEmISO).getTime() || 0;
+            const tb = new Date(b.criadoEmISO).getTime() || 0;
+            return tb - ta;
+        });
+    }, [orcamentos, orcamentoBuscaNome, orcamentoBuscaData]);
+
+    const totalOrcamentoPages = Math.max(1, Math.ceil(orcamentosFiltrados.length / orcamentoPageSize));
+
+    const orcamentosPaginados = useMemo(() => {
+        const start = (orcamentoPage - 1) * orcamentoPageSize;
+        return orcamentosFiltrados.slice(start, start + orcamentoPageSize);
+    }, [orcamentosFiltrados, orcamentoPage, orcamentoPageSize]);
+
+    useEffect(() => {
+        setOrcamentoPage(1);
+    }, [orcamentoBuscaNome, orcamentoBuscaData]);
+
+    useEffect(() => {
+        if (orcamentoPage > totalOrcamentoPages) setOrcamentoPage(totalOrcamentoPages);
+        if (orcamentoPage < 1) setOrcamentoPage(1);
+    }, [orcamentoPage, totalOrcamentoPages]);
+
     const openProduct = useCallback(
         (p: Produto) => {
             setSelected(p);
@@ -1116,6 +1187,10 @@ export default function Page() {
 
             setOrcamentoSelecionadoId(null);
             setStack(["home", "orcamentos"]);
+
+            setOrcamentoBuscaNome("");
+            setOrcamentoBuscaData("");
+            setOrcamentoPage(1);
 
             await fetchOrcamentos();
 
@@ -1683,48 +1758,112 @@ export default function Page() {
                     </div>
                 ) : null}
 
+                <div className="budgetFilters">
+                    <div className="searchBox budgetSearchBox">
+                        <span className="searchIcon">
+                            <IconSearch />
+                        </span>
+                        <input
+                            value={orcamentoBuscaNome}
+                            onChange={(e) => setOrcamentoBuscaNome(e.target.value)}
+                            className="searchInput"
+                            placeholder="Buscar por nome, responsável ou número..."
+                            aria-label="Buscar orçamento por nome"
+                        />
+                    </div>
+
+                    <div className="budgetDateBox">
+                        <input
+                            type="date"
+                            value={orcamentoBuscaData}
+                            onChange={(e) => setOrcamentoBuscaData(e.target.value)}
+                            className="budgetDateInput"
+                            aria-label="Filtrar orçamento por data"
+                        />
+                    </div>
+
+                    <div className="chip budgetChip">
+                        Resultados: <b style={{ marginLeft: 6 }}>{orcamentosFiltrados.length}</b>
+                    </div>
+                </div>
+
                 {loadingOrcamentos ? (
                     <div className="emptyState" style={{ margin: "0 26px" }}>
                         Carregando orçamentos...
                     </div>
-                ) : orcamentos.length ? (
-                    <div className="budgetGrid">
-                        {orcamentos.map((o) => {
-                            const total =
-                                Number(o.valorTotal) ||
-                                o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
-                            const dt = new Date(o.criadoEmISO);
-                            const dataBR = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(dt);
-                            const itensCount = o.itens.length;
+                ) : orcamentosFiltrados.length ? (
+                    <>
+                        <div className="budgetList">
+                            {orcamentosPaginados.map((o) => {
+                                const total =
+                                    Number(o.valorTotal) ||
+                                    o.itens.reduce((acc, it) => acc + clampInt(it.qtd) * (Number(it.valorUnit) || 0), 0);
+                                const dataBR = formatDateBR(o.criadoEmISO);
+                                const itensCount = o.itens.length;
 
-                            return (
-                                <button key={o.id} type="button" className="budgetCard" onClick={() => void openOrcamentoResumo(o.id)} title="Abrir resumo">
-                                    <div className="budgetTop">
-                                        <div className="budgetTitle">{o.falecido}</div>
-                                        <div className="budgetMeta">
-                                            Responsável: <b>{o.responsavel}</b>
-                                        </div>
-                                        <div className="budgetMeta">
-                                            Nº: <b>{o.codigo || o.id}</b>
-                                        </div>
-                                    </div>
+                                return (
+                                    <div key={o.id} className="budgetListItem">
+                                        <button
+                                            type="button"
+                                            className="budgetListNameBtn"
+                                            onClick={() => void openOrcamentoResumo(o.id)}
+                                            title="Abrir resumo"
+                                        >
+                                            {o.falecido || `Orçamento ${o.codigo || o.id}`}
+                                        </button>
 
-                                    <div className="budgetBottom">
-                                        <div className="budgetSmall">
-                                            Data: <b>{dataBR}</b>
+                                        <div className="budgetListMeta">
+                                            <span>
+                                                Responsável: <b>{o.responsavel || "-"}</b>
+                                            </span>
+                                            <span>
+                                                Nº: <b>{o.codigo || o.id}</b>
+                                            </span>
+                                            <span>
+                                                Data: <b>{dataBR}</b>
+                                            </span>
+                                            <span>
+                                                Itens: <b>{itensCount}</b>
+                                            </span>
                                         </div>
-                                        <div className="budgetSmall">
-                                            Itens: <b>{itensCount}</b>
-                                        </div>
-                                        <div className="budgetTotal">{formatBRL(total)}</div>
+
+                                        <div className="budgetListValue">{formatBRL(total)}</div>
                                     </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="budgetPager">
+                            <div className="pagerBtns">
+                                <button
+                                    type="button"
+                                    className="pagerBtn"
+                                    onClick={() => setOrcamentoPage((x) => Math.max(1, x - 1))}
+                                    disabled={orcamentoPage <= 1}
+                                    aria-label="Página anterior dos orçamentos"
+                                >
+                                    <IconChevron dir="left" />
                                 </button>
-                            );
-                        })}
-                    </div>
+
+                                <div className="budgetPagerInfo">
+                                    Página <b>{orcamentoPage}</b> de <b>{totalOrcamentoPages}</b>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="pagerBtn"
+                                    onClick={() => setOrcamentoPage((x) => Math.min(totalOrcamentoPages, x + 1))}
+                                    disabled={orcamentoPage >= totalOrcamentoPages}
+                                    aria-label="Próxima página dos orçamentos"
+                                >
+                                    <IconChevron dir="right" />
+                                </button>
+                            </div>
+                        </div>
+                    </>
                 ) : (
                     <div className="emptyState" style={{ margin: "0 26px" }}>
-                        Nenhum orçamento ainda.
+                        Nenhum orçamento encontrado.
                     </div>
                 )}
             </div>
@@ -2351,10 +2490,10 @@ const css = `
   }
 
   .listagemFooter{
-  flex: 0 0 auto;
-  padding: 6px 18px 6px;
-  transform: translateY(-30px);
-}
+    flex: 0 0 auto;
+    padding: 6px 18px 6px;
+    transform: translateY(-30px);
+  }
 
   .pagerRow{
     display:flex;
@@ -2834,49 +2973,126 @@ const css = `
     font-weight: 900;
   }
 
-  .budgetsWrap{ padding: 0 26px 24px 26px; }
-
-  .budgetGrid{
-    display:grid;
-    grid-template-columns: repeat(3, minmax(240px, 1fr));
-    gap: 16px;
+  .budgetsWrap{
+    padding: 0 26px 24px 26px;
+    height: calc(100% - 110px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
   }
 
-  .budgetCard{
-    text-align:left;
-    padding: 14px;
+  .budgetFilters{
+    display: grid;
+    grid-template-columns: minmax(300px, 1fr) 180px 170px;
+    gap: 12px;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .budgetSearchBox{
+    min-width: 0;
+  }
+
+  .budgetDateBox{
+    display:flex;
+    align-items:center;
+  }
+
+  .budgetDateInput{
+    width: 100%;
+    height: 48px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.95);
+    font-weight: 800;
+    padding: 0 12px;
+    outline: none;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.18);
+  }
+
+  .budgetDateInput::-webkit-calendar-picker-indicator{
+    filter: invert(1);
+    cursor: pointer;
+  }
+
+  .budgetChip{
+    min-width: 0;
+  }
+
+  .budgetList{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .budgetListItem{
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.2fr) 160px;
+    gap: 14px;
+    align-items: center;
+    padding: 14px 16px;
     border-radius: 18px;
     background: rgba(255,255,255,0.10);
     border: 1px solid rgba(255,255,255,0.18);
     box-shadow: 0 18px 34px rgba(0,0,0,0.18);
-    cursor:pointer;
     color: rgba(255,255,255,0.94);
-    transition: transform .12s ease, filter .12s ease;
-  }
-  .budgetCard:hover{ transform: translateY(-2px); filter: brightness(1.03); }
-  .budgetCard:active{ transform: translateY(0px) scale(0.995); }
-
-  .budgetTop{ display:grid; gap: 6px; }
-  .budgetTitle{ font-weight: 1000; font-size: 18px; letter-spacing: 0.5px; }
-  .budgetMeta{ font-weight: 800; opacity: 0.95; }
-
-  .budgetBottom{
-    margin-top: 12px;
-    display:flex;
-    align-items:center;
-    justify-content: space-between;
-    gap: 10px;
   }
 
-  .budgetSmall{ font-weight: 800; opacity: 0.95; }
+  .budgetListNameBtn{
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    color: rgba(255,255,255,0.96);
+    font-weight: 1000;
+    font-size: 18px;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+  }
+  .budgetListNameBtn:hover{
+    text-decoration: underline;
+    filter: brightness(1.05);
+  }
 
-  .budgetTotal{
+  .budgetListMeta{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    font-weight: 800;
+    opacity: 0.95;
+    font-size: 14px;
+  }
+
+  .budgetListValue{
+    justify-self: end;
     font-weight: 1000;
     background: rgba(2,156,222,0.30);
     border: 1px solid rgba(2,156,222,0.40);
     padding: 8px 10px;
     border-radius: 999px;
     white-space: nowrap;
+  }
+
+  .budgetPager{
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding-top: 4px;
+  }
+
+  .budgetPagerInfo{
+    color: rgba(255,255,255,0.95);
+    font-weight: 800;
+    min-width: 130px;
+    text-align: center;
   }
 
   .resumoTopBar{
@@ -3134,9 +3350,15 @@ const css = `
   @media (max-width: 1100px){
     .detailLayout{ grid-template-columns: 1fr; }
     .detailImgCard{ height: 300px; }
-    .budgetGrid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); }
     .resumoHeader2{ grid-template-columns: 1fr; }
     .resumoDate{ justify-content:flex-start; }
+    .budgetListItem{
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+    .budgetListValue{
+      justify-self: start;
+    }
   }
 
   @media (max-width: 900px){
@@ -3144,11 +3366,14 @@ const css = `
       grid-template-columns: 1fr;
       max-width: 520px;
     }
+
+    .budgetFilters{
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 760px){
     .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
-    .budgetGrid{ grid-template-columns: 1fr; }
 
     .resumoTableHead2Cols, .resumoRow2Cols{ grid-template-columns: 1fr 140px; }
 
@@ -3159,6 +3384,16 @@ const css = `
 
     .pagerRow{ justify-content: space-between; }
     .flowBtn{ min-width: 0; width: 100%; }
+
+    .budgetPager .pagerBtns{
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .budgetPagerInfo{
+      min-width: 0;
+      flex: 1;
+    }
   }
 
   @media (max-height: 740px){
