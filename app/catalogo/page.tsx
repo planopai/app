@@ -2353,7 +2353,7 @@ const css = `
   .listagemFooter{
   flex: 0 0 auto;
   padding: 6px 18px 6px;
-  transform: translateY(-20px);
+  transform: translateY(-30px);
 }
 
   .pagerRow{
