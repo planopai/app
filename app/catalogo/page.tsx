@@ -21,6 +21,16 @@ type CatalogoInit = {
     nos: CatalogoNo[];
 };
 
+type ProdutoFotoRow = {
+    id?: number;
+    produto_id?: number;
+    arquivo?: string | null;
+    foto_url?: string | null;
+    legenda?: string | null;
+    ordem?: number | null;
+    is_principal?: number | null;
+};
+
 type CatalogoNoProdutoRow = {
     id: number;
     nome: string;
@@ -28,11 +38,23 @@ type CatalogoNoProdutoRow = {
     valor?: number | string | null;
     saldo?: number | string | null;
     foto_url?: string | null;
+    fotos?: ProdutoFotoRow[] | null;
     descricao?: string | null;
     categoria_nome?: string | null;
     classificacao_nome?: string | null;
     ordem?: number | null;
 };
+
+type ProdutoFoto = {
+    id: number;
+    produtoId: number;
+    arquivo: string;
+    url: string;
+    legenda: string;
+    ordem: number;
+    isPrincipal: boolean;
+};
+
 type Produto = {
     id: number;
     noId: number;
@@ -40,6 +62,7 @@ type Produto = {
     preco: number;
     saldo: number;
     thumb: string;
+    fotos: ProdutoFoto[];
     descricaoCurta: string;
 };
 
@@ -219,6 +242,17 @@ async function toDataUrl(url: string): Promise<string | null> {
 
 function buildNoPath(path: CatalogoNo[]) {
     return path.map((n) => n.nome).join(" > ");
+}
+
+function pickProdutoThumb(fotos: ProdutoFoto[], fallback?: string | null) {
+    const principal = fotos.find((f) => f.isPrincipal && f.url);
+    if (principal?.url) return principal.url;
+
+    const primeira = fotos.find((f) => f.url);
+    if (primeira?.url) return primeira.url;
+
+    if (fallback && String(fallback).trim()) return String(fallback);
+    return LOGO_URL_UI;
 }
 
 function mapOrcamentoRowToState(r: any): Orcamento {
@@ -536,6 +570,7 @@ export default function Page() {
     const [produtosError, setProdutosError] = useState<string | null>(null);
 
     const [selected, setSelected] = useState<Produto | null>(null);
+    const [selectedFoto, setSelectedFoto] = useState<string>("");
     const [openPrices, setOpenPrices] = useState(false);
     const [openZoom, setOpenZoom] = useState(false);
 
@@ -842,7 +877,22 @@ export default function Page() {
                 .map((r) => {
                     const id = Number(r.id) || 0;
                     const preco = Number(r.valor) || 0;
-                    const thumb = r.foto_url && String(r.foto_url).trim() ? String(r.foto_url) : LOGO_URL_UI;
+
+                    const fotosRaw = Array.isArray(r.fotos) ? r.fotos : [];
+
+                    const fotos: ProdutoFoto[] = fotosRaw
+                        .map((f) => ({
+                            id: Number(f?.id) || 0,
+                            produtoId: Number(f?.produto_id) || id,
+                            arquivo: String(f?.arquivo || ""),
+                            url: String(f?.foto_url || "").trim(),
+                            legenda: String(f?.legenda || ""),
+                            ordem: Number(f?.ordem) || 0,
+                            isPrincipal: Number(f?.is_principal) === 1,
+                        }))
+                        .filter((f) => !!f.url);
+
+                    const thumb = pickProdutoThumb(fotos, r.foto_url);
 
                     return {
                         id,
@@ -851,6 +901,7 @@ export default function Page() {
                         preco,
                         saldo: Number(r.saldo) || 0,
                         thumb,
+                        fotos,
                         descricaoCurta: String(r.descricao || ""),
                     } as Produto;
                 })
@@ -1080,6 +1131,7 @@ export default function Page() {
     const openProduct = useCallback(
         (p: Produto) => {
             setSelected(p);
+            setSelectedFoto(p.thumb || p.fotos?.[0]?.url || LOGO_URL_UI);
             if (current !== "detalhe") go("detalhe");
         },
         [current, go]
@@ -1093,6 +1145,16 @@ export default function Page() {
         }
         if (!selected || !produtosFiltrados.some((p) => p.id === selected.id)) setSelected(produtosFiltrados[0]);
     }, [current, selected, produtosFiltrados]);
+
+    useEffect(() => {
+        if (!selected) {
+            setSelectedFoto("");
+            return;
+        }
+
+        const fotoPrincipal = selected.thumb || selected.fotos?.[0]?.url || LOGO_URL_UI;
+        setSelectedFoto(fotoPrincipal);
+    }, [selected]);
 
     const isSelectedInDraft = useCallback((produtoId: number) => draftItens.some((x) => x.produtoId === produtoId), [draftItens]);
 
@@ -1760,18 +1822,51 @@ export default function Page() {
                 ) : (
                     <div className="detailLayout">
                         <div className="detailLeft">
-                            <div className="detailImgCard">
-                                <img src={selected.thumb} alt={selected.nome} className="detailImg" />
-                                <button
-                                    type="button"
-                                    className="zoomBtn"
-                                    onClick={() => setOpenZoom(true)}
-                                    aria-label="Ampliar imagem"
-                                    title="Ampliar"
-                                >
-                                    🔍
-                                </button>
-                            </div>
+                                <div className="detailImgCard">
+                                    <img
+                                        src={selectedFoto || selected.thumb || LOGO_URL_UI}
+                                        alt={selected.nome}
+                                        className="detailImg"
+                                    />
+                                    <button
+                                        type="button"
+                                        className="zoomBtn"
+                                        onClick={() => setOpenZoom(true)}
+                                        aria-label="Ampliar imagem"
+                                        title="Ampliar"
+                                    >
+                                        🔍
+                                    </button>
+                                </div>
+
+                                {selected.fotos?.length > 0 ? (
+                                    <div className="thumbsRow">
+                                        {selected.fotos.map((foto, idx) => {
+                                            const ativa = (selectedFoto || selected.thumb) === foto.url;
+                                            return (
+                                                <button
+                                                    key={`${foto.id || idx}-${foto.url}`}
+                                                    type="button"
+                                                    className={cn("thumbMiniBtn", ativa && "thumbMiniBtnActive")}
+                                                    onClick={() => setSelectedFoto(foto.url)}
+                                                    title={foto.legenda || `Foto ${idx + 1}`}
+                                                >
+                                                    <img
+                                                        src={foto.url}
+                                                        alt={foto.legenda || `${selected.nome} ${idx + 1}`}
+                                                        className="thumbMiniImg"
+                                                    />
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ) : null}
+
+                                <div className="detailMeta">
+                                    <div className="metaPill">
+                                        <b>Saldo:</b> {selected.saldo}
+                                    </div>
+                                </div>
 
                             <div className="detailMeta">
                                 <div className="metaPill">
@@ -1886,7 +1981,7 @@ export default function Page() {
             >
                 {!selected ? null : (
                     <div className="zoomWrap">
-                        <img src={selected.thumb} alt={selected.nome} className="zoomImg" />
+                        <img src={selectedFoto || selected.thumb || LOGO_URL_UI} alt={selected.nome} className="zoomImg" />
                     </div>
                 )}
             </Modal>
@@ -2868,6 +2963,43 @@ const css = `
     object-fit: contain;
     display: block;
     border-radius: 12px;
+  }
+
+    .thumbsRow{
+    display:flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+
+  .thumbMiniBtn{
+    width: 76px;
+    height: 76px;
+    padding: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.12);
+    border: 2px solid rgba(255,255,255,0.18);
+    cursor: pointer;
+    box-shadow: 0 10px 22px rgba(0,0,0,0.18);
+    transition: transform .12s ease, filter .12s ease, border-color .12s ease;
+  }
+
+  .thumbMiniBtn:hover{
+    transform: translateY(-1px);
+    filter: brightness(1.03);
+  }
+
+  .thumbMiniBtnActive{
+    border-color: rgba(2,156,222,0.95);
+    box-shadow: 0 12px 26px rgba(2,156,222,0.28);
+  }
+
+  .thumbMiniImg{
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .detailMeta{ display:flex; gap: 10px; flex-wrap:wrap; }
