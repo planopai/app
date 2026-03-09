@@ -3306,7 +3306,7 @@ const css = `
 
   @media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
   .listagemWrap{
-    padding: 26px 18px 0 18px;
+    padding: 22px 18px 0 18px;
   }
 
   .listHeader{
@@ -3330,18 +3330,17 @@ const css = `
   }
 
   .gridProdutos{
-    grid-template-columns: repeat(4, minmax(150px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(4, minmax(148px, 1fr)); margin-top: 12px;
     margin-top: 18px;
   }
 
   .prodCard{
-    padding: 10px;
+    padding: 9px;
     border-radius: 14px;
   }
 
   .prodImgWrap{
-    height: 112px;
+    height: 104px;
     border-radius: 12px;
   }
 
