@@ -825,10 +825,10 @@ export default function Page() {
         }
     }, [loadingCatalogo]);
 
-    const fetchProdutosNo = useCallback(async (noId: number) => {
+    const fetchProdutosNo = useCallback(async (noId: number): Promise<Produto[]> => {
         if (!noId) {
             setProdutos([]);
-            return;
+            return [];
         }
 
         setLoadingProdutos(true);
@@ -862,9 +862,12 @@ export default function Page() {
                 for (const p of mapped) next[p.id] = p;
                 return next;
             });
+
+            return mapped;
         } catch (e: any) {
             setProdutos([]);
             setProdutosError(e?.message || "Erro ao carregar produtos.");
+            return [];
         } finally {
             setLoadingProdutos(false);
         }
@@ -1498,24 +1501,18 @@ export default function Page() {
             setOpenPrices(false);
             setNoPath(path);
 
-            await fetchProdutosNo(noId);
+            const loadedProdutos = await fetchProdutosNo(noId);
 
-            const p =
-                produtoIndex[produtoId] ||
-                {
-                    id: draft.produtoId,
-                    noId: draft.noId,
-                    nome: draft.nome,
-                    preco: Number(draft.valorUnit) || 0,
-                    saldo: 0,
-                    thumb: LOGO_URL_UI,
-                    descricaoCurta: "",
-                };
+            const p = loadedProdutos.find((x) => x.id === produtoId);
+            if (!p) {
+                alert("Não foi possível localizar os dados completos do item.");
+                return;
+            }
 
             setSelected(p);
             setStack(["home", "menus", "listagem", "detalhe"]);
         },
-        [draftItens, catalogoNos, fetchProdutosNo, produtoIndex]
+        [draftItens, catalogoNos, fetchProdutosNo]
     );
 
     const enterNode = useCallback(
