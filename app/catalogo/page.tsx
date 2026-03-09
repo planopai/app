@@ -108,6 +108,20 @@ function formatBRL(v: number) {
     return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function parseBRL(input: string) {
+    const s = String(input || "")
+        .replace(/\./g, "")
+        .replace(",", ".")
+        .replace(/[^\d.-]/g, "");
+
+    const n = Number(s);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+function formatBRLInput(v: number) {
+    return Number(v || 0).toFixed(2).replace(".", ",");
+}
+
 function clampInt(v: any) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
@@ -533,6 +547,8 @@ export default function Page() {
     // Orçamentos
     const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
     const [orcamentoSelecionadoId, setOrcamentoSelecionadoId] = useState<string | null>(null);
+    const [editingItemIdx, setEditingItemIdx] = useState<number | null>(null);
+    const [editingValue, setEditingValue] = useState("");
     const [loadingOrcamentos, setLoadingOrcamentos] = useState(false);
     const [orcamentosError, setOrcamentosError] = useState<string | null>(null);
     const [loadingResumo, setLoadingResumo] = useState(false);
@@ -2025,12 +2041,77 @@ export default function Page() {
                                 <div style={{ textAlign: "right" }}>Valor</div>
                             </div>
 
-                            {orcamentoSelecionado.itens.map((it, idx) => (
-                                <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
-                                    <div className="resumoItemName">{it.nome}</div>
-                                    <div style={{ textAlign: "right" }}>{formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}</div>
-                                </div>
-                            ))}
+                                    {orcamentoSelecionado.itens.map((it, idx) => {
+                                        const emEdicao = editingItemIdx === idx;
+
+                                        const salvar = () => {
+                                            const novoValor = parseBRL(editingValue);
+
+                                            setOrcamentos(prev =>
+                                                prev.map(orc => {
+                                                    if (orc.id !== orcamentoSelecionado.id) return orc;
+
+                                                    const itens = [...orc.itens];
+
+                                                    itens[idx] = {
+                                                        ...itens[idx],
+                                                        valorUnit: novoValor
+                                                    };
+
+                                                    const valorTotal = itens.reduce(
+                                                        (acc, i) => acc + clampInt(i.qtd) * (Number(i.valorUnit) || 0),
+                                                        0
+                                                    );
+
+                                                    return {
+                                                        ...orc,
+                                                        itens,
+                                                        valorTotal
+                                                    };
+                                                })
+                                            );
+
+                                            setEditingItemIdx(null);
+                                            setEditingValue("");
+                                        };
+
+                                        return (
+                                            <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
+                                                <div className="resumoItemName">{it.nome}</div>
+
+                                                <div style={{ textAlign: "right" }}>
+                                                    {emEdicao ? (
+                                                        <div className="valorEditWrap">
+                                                            <input
+                                                                className="valorEditInput"
+                                                                value={editingValue}
+                                                                onChange={(e) => setEditingValue(e.target.value)}
+                                                                inputMode="decimal"
+                                                                autoFocus
+                                                            />
+
+                                                            <button
+                                                                className="valorEditBtn"
+                                                                onClick={salvar}
+                                                            >
+                                                                Salvar
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            className="valorInlineBtn"
+                                                            onClick={() => {
+                                                                setEditingItemIdx(idx);
+                                                                setEditingValue(formatBRLInput(Number(it.valorUnit) || 0));
+                                                            }}
+                                                        >
+                                                            {formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                         </div>
 
                         <div className="resumoBottom resumoBottomOnlyTotal">
@@ -3389,6 +3470,41 @@ const css = `
     font-size: 14px;
   }
   .reviewItemNameBtn:hover{ text-decoration: underline; filter: brightness(1.05); }
+
+  .valorInlineBtn{
+  background: transparent;
+  border: none;
+  color: #0b2b4d;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.valorEditWrap{
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.valorEditInput{
+  width: 100px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15,23,42,0.15);
+  padding: 0 8px;
+  text-align: right;
+  font-weight: 700;
+}
+
+.valorEditBtn{
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: none;
+  background: #029cde;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
 
   @media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
   .listagemWrap{
