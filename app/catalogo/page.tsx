@@ -26,13 +26,13 @@ type CatalogoNoProdutoRow = {
     nome: string;
     codigo_barras?: string | null;
     valor?: number | string | null;
+    saldo?: number | string | null;
     foto_url?: string | null;
     descricao?: string | null;
     categoria_nome?: string | null;
     classificacao_nome?: string | null;
     ordem?: number | null;
 };
-
 type Produto = {
     id: number;
     noId: number;
@@ -849,7 +849,7 @@ export default function Page() {
                         noId,
                         nome: String(r.nome || ""),
                         preco,
-                        saldo: 0,
+                        saldo: Number(r.saldo) || 0,
                         thumb,
                         descricaoCurta: String(r.descricao || ""),
                     } as Produto;
