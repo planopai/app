@@ -1457,17 +1457,65 @@ export default function Page() {
     }, []);
 
     const openItemFromReview = useCallback(
-        (produtoId: number) => {
-            const p = produtoIndex[produtoId];
-            if (!p) {
-                alert("Não foi possível localizar os dados do item. Abra o menu novamente para carregar.");
+        async (produtoId: number) => {
+            const draft = draftItens.find((x) => x.produtoId === produtoId);
+            if (!draft) {
+                alert("Item não encontrado na revisão.");
                 return;
             }
-            setSelected(p);
+
+            const noId = Number(draft.noId) || 0;
+            if (!noId) {
+                alert("Não foi possível localizar a categoria do item.");
+                return;
+            }
+
+            const byId = new Map<number, CatalogoNo>();
+            for (const n of catalogoNos) byId.set(n.id, n);
+
+            const node = byId.get(noId) || null;
+            if (!node) {
+                alert("Não foi possível localizar o menu do item.");
+                return;
+            }
+
+            const pathRev: CatalogoNo[] = [];
+            const seen = new Set<number>();
+            let cur: CatalogoNo | null = node;
+
+            while (cur && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                pathRev.push(cur);
+                if (cur.parent_id == null) break;
+                cur = byId.get(cur.parent_id) || null;
+            }
+
+            const path = pathRev.reverse();
+
             setOpenConcluir(false);
+            setQ("");
+            setPage(1);
+            setOpenPrices(false);
+            setNoPath(path);
+
+            await fetchProdutosNo(noId);
+
+            const p =
+                produtoIndex[produtoId] ||
+                {
+                    id: draft.produtoId,
+                    noId: draft.noId,
+                    nome: draft.nome,
+                    preco: Number(draft.valorUnit) || 0,
+                    saldo: 0,
+                    thumb: LOGO_URL_UI,
+                    descricaoCurta: "",
+                };
+
+            setSelected(p);
             setStack(["home", "menus", "listagem", "detalhe"]);
         },
-        [produtoIndex]
+        [draftItens, catalogoNos, fetchProdutosNo, produtoIndex]
     );
 
     const enterNode = useCallback(
