@@ -3305,36 +3305,70 @@ const css = `
   .reviewItemNameBtn:hover{ text-decoration: underline; filter: brightness(1.05); }
 
   @media (pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px){
-    .listagemWrap{
-      padding: 14px 18px 0 18px;
-    }
-
-    .listHeader{ margin-bottom: 8px; }
-    .searchRow{ margin-top: 8px; gap: 10px; }
-
-    .searchBox{ padding: 8px 10px; border-radius: 12px; }
-    .chip{ padding: 8px 10px; min-width: 96px; font-size: 13px; }
-
-    .gridProdutos{
-      grid-template-columns: repeat(4, minmax(140px, 1fr));
-      gap: 10px;
-      margin-top: 10px;
-    }
-
-    .prodCard{ padding: 8px; border-radius: 14px; }
-    .prodImgWrap{ height: 92px; border-radius: 12px; }
-    .prodName{ margin-top: 6px; font-size: 12px; min-height: 24px; line-height: 1.15; }
-
-    .pagerBtns{ padding: 8px 10px; gap: 8px; }
-    .pagerBtn{ width: 40px; height: 32px; }
-
-    .flowBtn{
-      min-width: 150px;
-      height: 40px;
-      padding: 10px 12px;
-      font-size: 13px;
-    }
+  .listagemWrap{
+    padding: 26px 18px 0 18px;
   }
+
+  .listHeader{
+    margin-bottom: 14px;
+  }
+
+  .searchRow{
+    margin-top: 12px;
+    gap: 10px;
+  }
+
+  .searchBox{
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .chip{
+    padding: 8px 10px;
+    min-width: 96px;
+    font-size: 13px;
+  }
+
+  .gridProdutos{
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .prodCard{
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .prodImgWrap{
+    height: 112px;
+    border-radius: 12px;
+  }
+
+  .prodName{
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 28px;
+    line-height: 1.15;
+  }
+
+  .pagerBtns{
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .pagerBtn{
+    width: 40px;
+    height: 32px;
+  }
+
+  .flowBtn{
+    min-width: 150px;
+    height: 40px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+}
 
   @media (max-height: 720px){
     .listagemFooter{
