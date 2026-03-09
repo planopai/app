@@ -564,6 +564,7 @@ export default function Page() {
     const [savingOrcamento, setSavingOrcamento] = useState(false);
 
     const FIXED_FLUXO_NOME = "Próximo Passo";
+    const FLUXO_STORAGE_KEY = "pai_fluxo_draft";
 
     const [fluxoSteps, setFluxoSteps] = useState<FluxoStep[]>([]);
     const [stepIndex, setStepIndex] = useState(0);
@@ -602,6 +603,79 @@ export default function Page() {
 
     useEffect(() => {
         try {
+            const raw = localStorage.getItem(FLUXO_STORAGE_KEY);
+            if (!raw) return;
+
+            const parsed = JSON.parse(raw);
+
+            const operador = parsed?.operadorSel;
+            const responsavel = String(parsed?.formResp ?? "");
+            const falecido = String(parsed?.formFalecido ?? "");
+            const telefone = String(parsed?.formTel ?? "");
+            const itens = Array.isArray(parsed?.draftItens) ? parsed.draftItens : [];
+
+            if (
+                operador &&
+                Number(operador?.id) > 0 &&
+                String(operador?.nome ?? "").trim() &&
+                String(operador?.usuario ?? "").trim()
+            ) {
+                setOperadorSel({
+                    id: Number(operador.id),
+                    nome: String(operador.nome),
+                    usuario: String(operador.usuario),
+                });
+            }
+
+            setFormResp(responsavel);
+            setFormFalecido(falecido);
+            setFormTel(telefone);
+            setDraftItens(
+                itens.map((x: any) => ({
+                    produtoId: Number(x?.produtoId) || 0,
+                    nome: String(x?.nome ?? ""),
+                    noId: Number(x?.noId) || 0,
+                    noPath: String(x?.noPath ?? ""),
+                    valorUnit: Number(x?.valorUnit) || 0,
+                    qtd: clampInt(x?.qtd ?? 1) || 1,
+                }))
+            );
+        } catch {
+            // ignore
+        }
+    }, []);
+
+    useEffect(() => {
+        try {
+            const hasAnyData =
+                !!operadorSel ||
+                !!formResp.trim() ||
+                !!formFalecido.trim() ||
+                !!formTel.trim() ||
+                draftItens.length > 0;
+
+            if (!hasAnyData) {
+                localStorage.removeItem(FLUXO_STORAGE_KEY);
+                return;
+            }
+
+            localStorage.setItem(
+                FLUXO_STORAGE_KEY,
+                JSON.stringify({
+                    operadorSel,
+                    formResp,
+                    formFalecido,
+                    formTel,
+                    draftItens,
+                })
+            );
+        } catch {
+            // ignore
+        }
+    }, [operadorSel, formResp, formFalecido, formTel, draftItens]);
+
+    useEffect(() => {
+        try {
             localStorage.setItem("pai_fluxo_state", JSON.stringify({ stepIndex, visitedSteps }));
         } catch {
             // ignore
@@ -633,11 +707,13 @@ export default function Page() {
         setOpenPrices(false);
         setOpenZoom(false);
 
-        setDraftItens([]);
-        setOperadorSel(null);
-        setFormResp("");
-        setFormFalecido("");
-        setFormTel("");
+        // NÃO limpar dados do fluxo aqui
+        // setDraftItens([]);
+        // setOperadorSel(null);
+        // setFormResp("");
+        // setFormFalecido("");
+        // setFormTel("");
+
         setOpenUserPick(false);
         setOpenInicio(false);
         setOpenConcluir(false);
@@ -655,8 +731,10 @@ export default function Page() {
         setOrcamentoBuscaData("");
         setOrcamentoPage(1);
 
-        resetFluxoState();
-    }, [resetFluxoState]);
+        // NÃO resetar fluxo ao voltar para home
+        // resetFluxoState();
+
+    }, []);
 
     const fetchOrcamentos = useCallback(async () => {
         setLoadingOrcamentos(true);
@@ -807,9 +885,6 @@ export default function Page() {
         setUserQuery("");
         setUserHighlight(0);
 
-        setFormResp("");
-        setFormFalecido("");
-        setFormTel("");
         setOpenInicio(true);
     }, [operadorTemp]);
 
@@ -1183,7 +1258,18 @@ export default function Page() {
             setOpenZoom(false);
             setOpenConcluir(false);
 
+            setOperadorSel(null);
+            setFormResp("");
+            setFormFalecido("");
+            setFormTel("");
+
             resetFluxoState();
+
+            try {
+                localStorage.removeItem(FLUXO_STORAGE_KEY);
+            } catch {
+                // ignore
+            }
 
             setOrcamentoSelecionadoId(null);
             setStack(["home", "orcamentos"]);
