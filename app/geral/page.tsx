@@ -13,22 +13,32 @@ type Fabricante = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: 
 // ✅ NOVO
 type Classificacao = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em: string };
 
+type ProdutoFoto = {
+    id?: ID;
+    produto_id?: ID;
+    arquivo?: string | null;
+    foto_url?: string | null;
+    legenda?: string | null;
+    ordem?: number;
+    is_principal?: 0 | 1 | number;
+};
+
 type Produto = {
     id: ID;
     nome: string;
-    descricao?: string | null; // ✅ NOVO
+    descricao?: string | null;
     codigo_barras: string;
     valor: string | number;
     minimo: number;
-    maximo?: number; // ✅ NOVO
+    maximo?: number;
     foto_url?: string | null;
+    fotos?: ProdutoFoto[];
     ativo: 0 | 1 | number;
     atualizado_em: string;
 
     categoria_id?: ID | null;
     fabricante_id?: ID | null;
 
-    // ✅ NOVO
     classificacao_id?: ID | null;
     classificacao_nome?: string | null;
 
@@ -408,6 +418,46 @@ function normalizeImgUrl(u?: string | null) {
 
     // ✅ só nome do arquivo
     return `${IMG_BASE}/uploads/produtos/${t.replace(/^\/+/, "")}`;
+}
+
+function resolveProdutoFotoUrl(f?: ProdutoFoto | null) {
+    if (!f) return null;
+    return normalizeImgUrl(f.foto_url || f.arquivo || null);
+}
+
+function getProdutoFotos(p?: Produto | null): ProdutoFoto[] {
+    if (!p) return [];
+    if (Array.isArray(p.fotos) && p.fotos.length) {
+        return [...p.fotos].sort((a, b) => {
+            const pa = Number(a.is_principal || 0) === 1 ? 0 : 1;
+            const pb = Number(b.is_principal || 0) === 1 ? 0 : 1;
+            if (pa !== pb) return pa - pb;
+            return Number(a.ordem || 0) - Number(b.ordem || 0);
+        });
+    }
+
+    if (p.foto_url) {
+        return [
+            {
+                id: 0,
+                produto_id: p.id,
+                arquivo: p.foto_url,
+                foto_url: p.foto_url,
+                legenda: null,
+                ordem: 1,
+                is_principal: 1,
+            },
+        ];
+    }
+
+    return [];
+}
+
+function getProdutoFotoPrincipal(p?: Produto | null) {
+    const fotos = getProdutoFotos(p);
+    if (!fotos.length) return normalizeImgUrl(p?.foto_url || null);
+    const principal = fotos.find((f) => Number(f.is_principal || 0) === 1) || fotos[0];
+    return resolveProdutoFotoUrl(principal);
 }
 
 async function safeJson<T>(r: Response): Promise<T> {
@@ -1305,8 +1355,16 @@ export default function Page() {
     const [editFabId, setEditFabId] = useState<ID>(0);
     const [editClassId, setEditClassId] = useState<ID>(0);
 
-    // foto: “nova foto”
-    const [editFotoNova, setEditFotoNova] = useState<string>("");
+    // galeria de fotos do produto
+    const [editFotosExistentes, setEditFotosExistentes] = useState<ProdutoFoto[]>([]);
+    const [editFotosNovas, setEditFotosNovas] = useState<Array<{
+        temp_id: string;
+        foto_url: string;
+        legenda: string;
+        is_principal: 0 | 1;
+        ordem: number;
+    }>>([]);
+    const [editFotoNova, setEditFotoNova] = useState<string>(""); // legado / compatibilidade
 
     // saldos editáveis por depósito
 
@@ -2824,10 +2882,45 @@ export default function Page() {
         });
     }
 
-    async function onNovoProdutoFoto(file?: File | null) {
-        if (!file) return;
-        const url = await fileToDataUrl(file);
-        setNovoFoto(url);
+    async function onNovoProdutoFoto(files?: FileList | File[] | null) {
+        if (!files || !files.length) return;
+
+        const lista = Array.from(files);
+        const novas: Array<{
+            temp_id: string;
+            foto_url: string;
+            legenda: string;
+            is_principal: 0 | 1;
+            ordem: number;
+        }> = [];
+
+        for (const file of lista) {
+            const url = await fileToDataUrl(file);
+            novas.push({
+                temp_id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                foto_url: url,
+                legenda: "",
+                is_principal: 0,
+                ordem: 0,
+            });
+        }
+
+        setNovoFotos((prev) => {
+            const merged = [...prev, ...novas].map((f, idx) => ({
+                ...f,
+                ordem: idx + 1,
+            }));
+
+            if (!merged.some((f) => Number(f.is_principal) === 1) && merged.length) {
+                merged[0].is_principal = 1;
+            }
+
+            return merged;
+        });
+
+        if (!novoFoto && novas[0]?.foto_url) {
+            setNovoFoto(novas[0].foto_url);
+        }
     }
 
     async function criarNovoProdutoAvancado() {
@@ -2858,7 +2951,14 @@ export default function Page() {
             categoria_id: novoCategoriaId ? Number(novoCategoriaId) : 0,
             fabricante_id: novoFabricanteId ? Number(novoFabricanteId) : 0,
             classificacao_id: novoClassificacaoId ? Number(novoClassificacaoId) : 0,
-            foto_url: novoFoto || "",
+            foto_url: (novoFotos.find((f) => Number(f.is_principal) === 1)?.foto_url || novoFoto || ""),
+            fotos: novoFotos.map((f, idx) => ({
+                foto_url: f.foto_url,
+                legenda: f.legenda || "",
+                ordem: idx + 1,
+                is_principal: Number(f.is_principal) === 1 ? 1 : 0,
+                nova: 1,
+            })),
         };
 
 
@@ -2872,6 +2972,7 @@ export default function Page() {
         setNovoMin(0);
         setNovoMax(0);
         setNovoFoto("");
+        setNovoFotos([]);
         setNovoCategoriaId(0);
         setNovoFabricanteId(0);
         setNovoClassificacaoId(0);
@@ -3131,6 +3232,9 @@ export default function Page() {
         setEditCatId(Number(p.categoria_id || 0));
         setEditFabId(Number(p.fabricante_id || 0));
         setEditClassId(Number(p.classificacao_id || 0));
+
+        setEditFotosExistentes(getProdutoFotos(p));
+        setEditFotosNovas([]);
         setEditFotoNova("");
 
         // ✅ seleciona depósito vindo da linha do estoque (ou fallback)
@@ -3145,10 +3249,109 @@ export default function Page() {
         setProdEditOpen(true);
     }
 
-    async function onProdutoFotoNova(file?: File | null) {
-        if (!file) return;
-        const url = await fileToDataUrl(file);
-        setEditFotoNova(url);
+    async function onProdutoFotoNova(files?: FileList | File[] | null) {
+        if (!files || !files.length) return;
+
+        const lista = Array.from(files);
+        const novas: Array<{
+            temp_id: string;
+            foto_url: string;
+            legenda: string;
+            is_principal: 0 | 1;
+            ordem: number;
+        }> = [];
+
+        for (const file of lista) {
+            const url = await fileToDataUrl(file);
+            novas.push({
+                temp_id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                foto_url: url,
+                legenda: "",
+                is_principal: 0,
+                ordem: 0,
+            });
+        }
+
+        setEditFotosNovas((prev) => {
+            const hadPrincipal =
+                prev.some((f) => Number(f.is_principal) === 1) ||
+                editFotosExistentes.some((f) => Number(f.is_principal || 0) === 1);
+
+            const merged = [...prev, ...novas].map((f, idx) => ({
+                ...f,
+                ordem: idx + 1,
+            }));
+
+            if (!hadPrincipal && merged.length) {
+                merged[0].is_principal = 1;
+            }
+
+            return merged;
+        });
+    }
+
+    function marcarFotoPrincipalExistente(fotoId?: ID) {
+        if (!fotoId) return;
+
+        setEditFotosExistentes((prev) =>
+            prev.map((f) => ({
+                ...f,
+                is_principal: Number(f.id) === Number(fotoId) ? 1 : 0,
+            }))
+        );
+
+        setEditFotosNovas((prev) =>
+            prev.map((f) => ({
+                ...f,
+                is_principal: 0,
+            }))
+        );
+    }
+
+    function marcarFotoPrincipalNova(tempId: string) {
+        setEditFotosExistentes((prev) =>
+            prev.map((f) => ({
+                ...f,
+                is_principal: 0,
+            }))
+        );
+
+        setEditFotosNovas((prev) =>
+            prev.map((f) => ({
+                ...f,
+                is_principal: f.temp_id === tempId ? 1 : 0,
+            }))
+        );
+    }
+
+    function removerFotoExistente(fotoId?: ID) {
+        if (!fotoId) return;
+
+        setEditFotosExistentes((prev) => {
+            const next = prev.filter((f) => Number(f.id) !== Number(fotoId));
+
+            const hasPrincipal = next.some((f) => Number(f.is_principal || 0) === 1);
+            if (!hasPrincipal && next.length) next[0].is_principal = 1;
+
+            return next.map((f, idx) => ({
+                ...f,
+                ordem: idx + 1,
+            }));
+        });
+    }
+
+    function removerFotoNova(tempId: string) {
+        setEditFotosNovas((prev) => {
+            const next = prev.filter((f) => f.temp_id !== tempId);
+            const hasPrincipal = next.some((f) => Number(f.is_principal) === 1);
+
+            if (!hasPrincipal && next.length) next[0].is_principal = 1;
+
+            return next.map((f, idx) => ({
+                ...f,
+                ordem: idx + 1,
+            }));
+        });
     }
 
     async function salvarCadastroProduto() {
@@ -3161,16 +3364,48 @@ export default function Page() {
                 action: "produto_atualizar",
                 produto_id: prodEditId,
                 nome: editNome.trim(),
-                descricao: editDescricao.trim() || "", // ✅ NOVO
+                descricao: editDescricao.trim() || "",
                 valor: parseBRLToNumber(editValor),
                 minimo: clampInt(editMin),
-                maximo: clampInt(editMax), // ✅ NOVO
+                maximo: clampInt(editMax),
                 categoria_id: editCatId ? Number(editCatId) : 0,
                 fabricante_id: editFabId ? Number(editFabId) : 0,
                 classificacao_id: editClassId ? Number(editClassId) : 0,
+
+                // ✅ nova estrutura de galeria
+                fotos: [
+                    ...editFotosExistentes.map((f, idx) => ({
+                        id: f.id,
+                        arquivo: f.arquivo || f.foto_url || null,
+                        legenda: f.legenda || "",
+                        ordem: idx + 1,
+                        is_principal: Number(f.is_principal || 0) === 1 ? 1 : 0,
+                        removida: 0,
+                    })),
+                    ...editFotosNovas.map((f, idx) => ({
+                        foto_url: f.foto_url,
+                        legenda: f.legenda || "",
+                        ordem: editFotosExistentes.length + idx + 1,
+                        is_principal: Number(f.is_principal) === 1 ? 1 : 0,
+                        nova: 1,
+                    })),
+                ],
             };
 
-            if (editFotoNova) payload.foto_url = editFotoNova;
+            // fallback legado: mantém compatibilidade com backend antigo
+            const principalExistente =
+                editFotosExistentes.find((f) => Number(f.is_principal || 0) === 1) || editFotosExistentes[0];
+
+            const principalNova =
+                editFotosNovas.find((f) => Number(f.is_principal) === 1) || editFotosNovas[0];
+
+            if (principalNova?.foto_url) {
+                payload.foto_url = principalNova.foto_url;
+            } else if (principalExistente) {
+                payload.foto_url = principalExistente.arquivo || principalExistente.foto_url || "";
+            } else if (editFotoNova) {
+                payload.foto_url = editFotoNova;
+            }
 
             const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
             if (!r.ok) return alert(r.msg || "Falha ao salvar cadastro.");
@@ -3942,6 +4177,13 @@ export default function Page() {
     const [novoMin, setNovoMin] = useState<number>(0);
     const [novoMax, setNovoMax] = useState<number>(0);
     const [novoFoto, setNovoFoto] = useState<string>("");
+    const [novoFotos, setNovoFotos] = useState<Array<{
+        temp_id: string;
+        foto_url: string;
+        legenda: string;
+        is_principal: 0 | 1;
+        ordem: number;
+    }>>([]);
 
     const [novoCategoriaId, setNovoCategoriaId] = useState<ID>(0);
     const [novoFabricanteId, setNovoFabricanteId] = useState<ID>(0);
@@ -5217,8 +5459,19 @@ export default function Page() {
             >
                 {(() => {
                     const p = prodEditId ? prodById.get(prodEditId) : null;
-                    const fotoAtual = p?.foto_url ? normalizeImgUrl(p.foto_url) : null;
-                    const fotoPreview = editFotoNova || fotoAtual;
+
+                    const fotoAtual = getProdutoFotoPrincipal(p);
+                    const fotoPrincipalExistente =
+                        editFotosExistentes.find((f) => Number(f.is_principal || 0) === 1) || editFotosExistentes[0];
+
+                    const fotoPrincipalNova =
+                        editFotosNovas.find((f) => Number(f.is_principal) === 1) || editFotosNovas[0];
+
+                    const fotoPreview =
+                        fotoPrincipalNova?.foto_url ||
+                        resolveProdutoFotoUrl(fotoPrincipalExistente) ||
+                        editFotoNova ||
+                        fotoAtual;
 
                     return (
                         <div className="space-y-4">
@@ -5390,31 +5643,120 @@ export default function Page() {
                                     </Field>
 
                                     <div className="sm:col-span-2">
-                                        <Field label="Nova foto (opcional)" hint="Envie uma imagem para substituir a atual.">
-                                            <input type="file" accept="image/*" onChange={(e) => onProdutoFotoNova(e.target.files?.[0])} className="block w-full text-sm text-slate-700" />
+                                        <Field label="Galeria de fotos" hint="Envie uma foto principal e quantas fotos pequenas quiser.">
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                multiple
+                                                onChange={(e) => onProdutoFotoNova(e.target.files)}
+                                                className="block w-full text-sm text-slate-700"
+                                            />
                                         </Field>
 
-                                        <div className="mt-2 flex flex-wrap gap-2">
-                                            {fotoPreview ? (
-                                                <Button
-                                                    variant="ghost"
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setImgUrl(fotoPreview);
-                                                        setImgTitle(p?.nome || "Imagem do produto");
-                                                        setImgOpen(true);
-                                                    }}
-                                                >
-                                                    Ver imagem
-                                                </Button>
-                                            ) : null}
+                                        <div className="mt-3">
+                                            <p className="mb-2 text-xs font-medium text-slate-700">Foto principal</p>
 
-                                            {editFotoNova ? (
-                                                <Button variant="ghost" type="button" onClick={() => setEditFotoNova("")}>
-                                                    Remover nova foto
-                                                </Button>
-                                            ) : null}
+                                            <div className="h-28 w-28 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                                                {fotoPreview ? (
+                                                    <img src={fotoPreview} alt="Foto principal" className="h-28 w-28 object-cover" />
+                                                ) : (
+                                                    <div className="flex h-28 w-28 items-center justify-center text-2xl">🖼️</div>
+                                                )}
+                                            </div>
+
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                {fotoPreview ? (
+                                                    <Button
+                                                        variant="ghost"
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setImgUrl(fotoPreview);
+                                                            setImgTitle(p?.nome || "Imagem do produto");
+                                                            setImgOpen(true);
+                                                        }}
+                                                    >
+                                                        Ver imagem principal
+                                                    </Button>
+                                                ) : null}
+                                            </div>
                                         </div>
+
+                                        {(editFotosExistentes.length > 0 || editFotosNovas.length > 0) ? (
+                                            <div className="mt-4">
+                                                <p className="mb-2 text-xs font-medium text-slate-700">Miniaturas</p>
+
+                                                <div className="flex flex-wrap gap-3">
+                                                    {editFotosExistentes.map((foto) => {
+                                                        const url = resolveProdutoFotoUrl(foto);
+                                                        const isPrincipal = Number(foto.is_principal || 0) === 1;
+
+                                                        return (
+                                                            <div key={`exist_${foto.id}`} className="w-[110px] rounded-2xl border border-slate-200 bg-white p-2">
+                                                                <div className="h-20 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                                                    {url ? (
+                                                                        <img src={url} alt="Foto do produto" className="h-20 w-full object-cover" />
+                                                                    ) : (
+                                                                        <div className="flex h-20 items-center justify-center text-lg">🖼️</div>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="mt-2 flex flex-col gap-1">
+                                                                    <Button
+                                                                        variant={isPrincipal ? "solid" : "ghost"}
+                                                                        type="button"
+                                                                        className="px-2 py-1 text-xs"
+                                                                        onClick={() => marcarFotoPrincipalExistente(foto.id)}
+                                                                    >
+                                                                        {isPrincipal ? "Principal" : "Tornar principal"}
+                                                                    </Button>
+
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        type="button"
+                                                                        className="px-2 py-1 text-xs"
+                                                                        onClick={() => removerFotoExistente(foto.id)}
+                                                                    >
+                                                                        Remover
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {editFotosNovas.map((foto) => {
+                                                        const isPrincipal = Number(foto.is_principal) === 1;
+
+                                                        return (
+                                                            <div key={`new_${foto.temp_id}`} className="w-[110px] rounded-2xl border border-slate-200 bg-white p-2">
+                                                                <div className="h-20 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                                                    <img src={foto.foto_url} alt="Nova foto" className="h-20 w-full object-cover" />
+                                                                </div>
+
+                                                                <div className="mt-2 flex flex-col gap-1">
+                                                                    <Button
+                                                                        variant={isPrincipal ? "solid" : "ghost"}
+                                                                        type="button"
+                                                                        className="px-2 py-1 text-xs"
+                                                                        onClick={() => marcarFotoPrincipalNova(foto.temp_id)}
+                                                                    >
+                                                                        {isPrincipal ? "Principal" : "Tornar principal"}
+                                                                    </Button>
+
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        type="button"
+                                                                        className="px-2 py-1 text-xs"
+                                                                        onClick={() => removerFotoNova(foto.temp_id)}
+                                                                    >
+                                                                        Remover
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 </div>
 
@@ -6591,12 +6933,77 @@ export default function Page() {
                         </div>
 
                         <div className="sm:col-span-6">
-                            <Field label="Foto (opcional)" hint="Envie uma imagem ou cole uma URL/base64 (data:).">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                    <input type="file" accept="image/*" onChange={(e) => onNovoProdutoFoto(e.target.files?.[0])} className="block w-full text-sm" />
-                                    <TextInput value={novoFoto} onChange={(e) => setNovoFoto(e.target.value)} placeholder="...ou cole URL / base64 (data:)" />
+                            <Field label="Galeria de fotos (opcional)" hint="Pode enviar uma principal e várias miniaturas.">
+                                <div className="flex flex-col gap-2">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={(e) => onNovoProdutoFoto(e.target.files)}
+                                        className="block w-full text-sm"
+                                    />
+
+                                    <TextInput
+                                        value={novoFoto}
+                                        onChange={(e) => setNovoFoto(e.target.value)}
+                                        placeholder="...ou cole URL/base64 da principal"
+                                    />
                                 </div>
                             </Field>
+
+                            {(novoFotos.length > 0 || novoFoto) ? (
+                                <div className="mt-3 flex flex-wrap gap-3">
+                                    {novoFotos.map((foto) => {
+                                        const isPrincipal = Number(foto.is_principal) === 1;
+                                        return (
+                                            <div key={foto.temp_id} className="w-[110px] rounded-2xl border border-slate-200 bg-white p-2">
+                                                <div className="h-20 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                                    <img src={foto.foto_url} alt="Nova foto" className="h-20 w-full object-cover" />
+                                                </div>
+
+                                                <div className="mt-2 flex flex-col gap-1">
+                                                    <Button
+                                                        variant={isPrincipal ? "solid" : "ghost"}
+                                                        type="button"
+                                                        className="px-2 py-1 text-xs"
+                                                        onClick={() => {
+                                                            setNovoFotos((prev) =>
+                                                                prev.map((f) => ({
+                                                                    ...f,
+                                                                    is_principal: f.temp_id === foto.temp_id ? 1 : 0,
+                                                                }))
+                                                            );
+                                                            setNovoFoto(foto.foto_url);
+                                                        }}
+                                                    >
+                                                        {isPrincipal ? "Principal" : "Tornar principal"}
+                                                    </Button>
+
+                                                    <Button
+                                                        variant="ghost"
+                                                        type="button"
+                                                        className="px-2 py-1 text-xs"
+                                                        onClick={() => {
+                                                            setNovoFotos((prev) => {
+                                                                const next = prev.filter((f) => f.temp_id !== foto.temp_id);
+                                                                if (!next.some((f) => Number(f.is_principal) === 1) && next.length) {
+                                                                    next[0].is_principal = 1;
+                                                                    setNovoFoto(next[0].foto_url);
+                                                                } else if (!next.length) {
+                                                                    setNovoFoto("");
+                                                                }
+                                                                return next.map((f, idx) => ({ ...f, ordem: idx + 1 }));
+                                                            });
+                                                        }}
+                                                    >
+                                                        Remover
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
                         </div>
                     </div>
 
