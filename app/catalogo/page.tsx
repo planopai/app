@@ -628,9 +628,19 @@ export default function Page() {
     const canConcluir = fluxoSteps.length > 0 && isLastStep && currentStep && visitedSteps[currentStep.ordem] === 1;
     const hasFlow = fluxoSteps.length > 0;
 
+    const canAdvanceStep = useMemo(() => {
+        if (!currentStep) return false;
+        if (currentStep.required !== 1 || currentStep.no_id == null) return true;
+        return draftItens.some((it) => it.noId === currentStep.no_id);
+    }, [currentStep, draftItens]);
+
     const restoredRef = useRef(false);
     const pendingGoToSavedRef = useRef(false);
     const userNavRef = useRef(false);
+
+    // refs para sempre ler o valor mais recente, inclusive em toque rápido no tablet
+    const draftItensRef = useRef<OrcamentoItem[]>([]);
+    const currentStepRef = useRef<FluxoStep | null>(null);
 
     useEffect(() => {
         try {
@@ -732,6 +742,14 @@ export default function Page() {
             // ignore
         }
     }, [stepIndex, visitedSteps]);
+
+    useEffect(() => {
+        draftItensRef.current = draftItens;
+    }, [draftItens]);
+
+    useEffect(() => {
+        currentStepRef.current = currentStep;
+    }, [currentStep]);
 
     const resetFluxoState = useCallback(() => {
         setFluxoSteps([]);
@@ -1182,19 +1200,25 @@ export default function Page() {
 
         setDraftItens((prev) => {
             const exists = prev.some((x) => x.produtoId === selected.id);
-            if (exists) return prev.filter((x) => x.produtoId !== selected.id);
 
-            return [
-                ...prev,
-                {
-                    produtoId: selected.id,
-                    nome: selected.nome,
-                    noId: selected.noId,
-                    noPath: nodePathText,
-                    valorUnit: Number(selected.preco) || 0,
-                    qtd: 1,
-                },
-            ];
+            const next = exists
+                ? prev.filter((x) => x.produtoId !== selected.id)
+                : [
+                    ...prev,
+                    {
+                        produtoId: selected.id,
+                        nome: selected.nome,
+                        noId: selected.noId,
+                        noPath: nodePathText,
+                        valorUnit: Number(selected.preco) || 0,
+                        qtd: 1,
+                    },
+                ];
+
+            // mantém a ref sincronizada imediatamente, evitando race condition em toque rápido
+            draftItensRef.current = next;
+
+            return next;
         });
     }, [selected, breadcrumb]);
 
@@ -1280,36 +1304,42 @@ export default function Page() {
         void goToStep(stepIndex);
     }, [catalogoNos.length, fluxoSteps.length, goToStep, stepIndex]);
 
+    useEffect(() => {
+        if (!fluxoSteps.length) return;
+        if (!catalogoNos.length) return;
+        if (pendingGoToSavedRef.current) return;
+
+        void goToStep(stepIndex);
+    }, [stepIndex, fluxoSteps.length, catalogoNos.length, goToStep]);
+
     const nextStep = useCallback(() => {
         userNavRef.current = false;
 
-        if (!currentStep) return;
+        const step = currentStepRef.current;
+        if (!step) return;
 
-        if (currentStep.required === 1 && currentStep.no_id != null) {
-            const ok = draftItens.some((it) => it.noId === currentStep.no_id);
+        const itensAtuais = draftItensRef.current;
+
+        if (step.required === 1 && step.no_id != null) {
+            const ok = itensAtuais.some((it) => it.noId === step.no_id);
             if (!ok) {
                 alert("Selecione ao menos 1 item desta etapa para avançar.");
                 return;
             }
         }
 
-        setVisitedSteps((prev) => {
-            const next = { ...prev };
-            next[currentStep.ordem] = 1;
-            return next;
-        });
+        setVisitedSteps((prev) => ({
+            ...prev,
+            [step.ordem]: 1,
+        }));
 
         if (isLastStep) {
             openConcluirModal();
             return;
         }
 
-        setStepIndex((prev) => {
-            const nextIdx = Math.min((fluxoSteps.length || 1) - 1, prev + 1);
-            void goToStep(nextIdx);
-            return nextIdx;
-        });
-    }, [currentStep, draftItens, isLastStep, openConcluirModal, fluxoSteps.length, goToStep]);
+        setStepIndex((prev) => Math.min((fluxoSteps.length || 1) - 1, prev + 1));
+    }, [isLastStep, openConcluirModal, fluxoSteps.length]);
 
     const finalizarOrcamento = useCallback(async () => {
         if (!operadorSel) return alert("Operador não selecionado.");
@@ -1804,9 +1834,9 @@ export default function Page() {
                                     CONCLUIR
                                 </button>
                             ) : (
-                                <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps}>
-                                    PRÓXIMO PASSO
-                                </button>
+                                    <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps || !canAdvanceStep}>
+                                        PRÓXIMO PASSO
+                                    </button>
                             )
                         ) : null}
                     </div>
@@ -1945,9 +1975,9 @@ export default function Page() {
                                             Concluir
                                         </button>
                                     ) : (
-                                        <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps}>
-                                            PRÓXIMO PASSO
-                                        </button>
+                                                <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps || !canAdvanceStep}>
+                                                    PRÓXIMO PASSO
+                                                </button>
                                     )
                                 ) : (
                                     <button type="button" className="stepBtn" onClick={openConcluirModal}>
