@@ -2868,8 +2868,8 @@ const css = `
 
   .listagemFooter{
   flex: 0 0 auto;
-  padding: 6px 18px 6px;
-  margin-top: -30px;
+  padding: 6px 18px 18px;
+  margin-top: -18px;
   position: relative;
   z-index: 20;
 }
