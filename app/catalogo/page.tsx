@@ -2837,12 +2837,12 @@ const css = `
   }
 
   .listagemFooter{
-    flex: 0 0 auto;
-    padding: 6px 18px 6px;
-    margin-top: -30px;
-    position: relative;
-    z-index: 8;
-  }
+  flex: 0 0 auto;
+  padding: 6px 18px 6px;
+  margin-top: -30px;
+  position: relative;
+  z-index: 20;
+}
 
   .pagerRow{
     display:flex;
@@ -2878,21 +2878,23 @@ const css = `
   .pagerBtn:disabled{ opacity: 0.55; cursor:not-allowed; }
 
   .flowBtn{
-    border-radius: 999px;
-    padding: 12px 16px;
-    background: #029cde;
-    border: 2px solid rgba(255,255,255,0.35);
-    box-shadow: var(--shadow);
-    color: #fff;
-    font-weight: 1000;
-    letter-spacing: 1px;
-    cursor:pointer;
-    min-width: 190px;
-    height: 46px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
+  border-radius: 999px;
+  padding: 12px 16px;
+  background: #029cde;
+  border: 2px solid rgba(255,255,255,0.35);
+  box-shadow: var(--shadow);
+  color: #fff;
+  font-weight: 1000;
+  letter-spacing: 1px;
+  cursor:pointer;
+  min-width: 190px;
+  height: 46px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  position: relative;
+  z-index: 30;
+}
   .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .flowBtn:active{ transform: translateY(0px) scale(0.995); }
   .flowBtn:disabled{ opacity: 0.55; cursor:not-allowed; transform: none; }
