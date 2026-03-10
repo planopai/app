@@ -2873,26 +2873,28 @@ const css = `
   position: relative;
   z-index: 20;
 }
-}
+
 
   .pagerRow{
-    display:flex;
-    justify-content:flex-end;
-    align-items:center;
-    gap: 8px;
-    flex-wrap: nowrap;
-    margin: 0;
-  }
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  margin: 0;
+  width: 100%;
+}
 
   .pagerBtns{
-    display:flex;
-    align-items:center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.18);
-  }
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.18);
+  flex: 0 0 auto;
+}
 
   .pagerBtn{
     width: 42px;
@@ -2923,6 +2925,8 @@ const css = `
   display:flex;
   align-items:center;
   justify-content:center;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
   .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .flowBtn:active{ transform: translateY(0px) scale(0.995); }
@@ -3903,28 +3907,37 @@ const css = `
   }
 
   @media (max-width: 760px){
-    .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+  .gridProdutos{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
 
-    .resumoTableHead2Cols, .resumoRow2Cols{ grid-template-columns: 1fr 140px; }
+  .resumoTableHead2Cols, .resumoRow2Cols{ grid-template-columns: 1fr 140px; }
 
-    .detailFooterRow{ justify-content: space-between; padding-right: 0; }
-    .stepBtn{ min-width: 0; width: 100%; }
+  .detailFooterRow{ justify-content: space-between; padding-right: 0; }
+  .stepBtn{ min-width: 0; width: 100%; }
 
-    .reviewHeaderRow{ grid-template-columns: 1fr; }
+  .reviewHeaderRow{ grid-template-columns: 1fr; }
 
-    .pagerRow{ justify-content: space-between; }
-    .flowBtn{ min-width: 0; width: 100%; }
-
-    .budgetPager .pagerBtns{
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .budgetPagerInfo{
-      min-width: 0;
-      flex: 1;
-    }
+  .pagerRow{
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: nowrap;
   }
+
+  .flowBtn{
+    min-width: 150px;
+    width: auto;
+    flex: 0 0 auto;
+  }
+
+  .budgetPager .pagerBtns{
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .budgetPagerInfo{
+    min-width: 0;
+    flex: 1;
+  }
+}
 
   @media (max-height: 740px){
     .title{ font-size: 28px; }
