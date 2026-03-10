@@ -1868,11 +1868,7 @@ export default function Page() {
                                     </div>
                                 </div>
 
-                            <div className="detailMeta">
-                                <div className="metaPill">
-                                    <b>Saldo:</b> {selected.saldo}
-                                </div>
-                            </div>
+                            
                         </div>
 
                         <div className="detailRight">
