@@ -2892,8 +2892,6 @@ const css = `
   display:flex;
   align-items:center;
   justify-content:center;
-  position: relative;
-  z-index: 30;
 }
   .flowBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .flowBtn:active{ transform: translateY(0px) scale(0.995); }
