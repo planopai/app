@@ -2584,11 +2584,12 @@ const css = `
   .iconBtn:active{ transform: translateY(0px) scale(0.99); }
   .iconBtnDisabled{ opacity: 0.55; cursor: not-allowed; }
 
-    .prodCard,
+  .prodCard,
   .iconActionBtn,
   .zoomBtn,
   .thumbMiniBtn,
   .stepBtn,
+  .flowBtn,
   .ctaBtn,
   .pagerBtn,
   .homeBtn,
@@ -2838,7 +2839,9 @@ const css = `
   .listagemFooter{
     flex: 0 0 auto;
     padding: 6px 18px 6px;
-    transform: translateY(-30px);
+    margin-top: -30px;
+    position: relative;
+    z-index: 8;
   }
 
   .pagerRow{
