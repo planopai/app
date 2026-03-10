@@ -3755,7 +3755,7 @@ const css = `
   }
 
   .gridProdutos{
-    grid-template-columns: repeat(4, minmax(146px, 1fr)); margin-top: 8px;
+    grid-template-columns: repeat(4, minmax(146px, 1fr));
     margin-top: 18px;
   }
 
@@ -3776,9 +3776,18 @@ const css = `
     line-height: 1.15;
   }
 
+  .listagemFooter{
+    transform: none;
+    margin-top: -30px;
+    position: relative;
+    z-index: 20;
+  }
+
   .pagerBtns{
     padding: 8px 10px;
     gap: 8px;
+    position: relative;
+    z-index: 30;
   }
 
   .pagerBtn{
@@ -3786,20 +3795,13 @@ const css = `
     height: 32px;
   }
 
-  .detailActions{
-    gap: 18px;
-  }
-
-  .iconActionBtn{
-    min-width: 58px;
-    min-height: 58px;
-  }
-
   .flowBtn{
     min-width: 150px;
     height: 40px;
     padding: 10px 12px;
     font-size: 13px;
+    position: relative;
+    z-index: 30;
   }
 }
 
