@@ -1139,12 +1139,19 @@ export default function Page() {
 
     useEffect(() => {
         if (current !== "detalhe") return;
+
         if (!produtosFiltrados.length) {
             setSelected(null);
             return;
         }
-        if (!selected || !produtosFiltrados.some((p) => p.id === selected.id)) setSelected(produtosFiltrados[0]);
-    }, [current, selected, produtosFiltrados]);
+
+        setSelected((prev) => {
+            if (prev && produtosFiltrados.some((p) => p.id === prev.id)) {
+                return prev;
+            }
+            return produtosFiltrados[0];
+        });
+    }, [current, produtosFiltrados]);
 
     useEffect(() => {
         if (!selected) {
