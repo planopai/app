@@ -1130,9 +1130,14 @@ export default function Page() {
 
     const openProduct = useCallback(
         (p: Produto) => {
-            setSelected(p);
-            setSelectedFoto(p.thumb || p.fotos?.[0]?.url || LOGO_URL_UI);
-            if (current !== "detalhe") go("detalhe");
+            if (current !== "detalhe") {
+                go("detalhe");
+            }
+
+            requestAnimationFrame(() => {
+                setSelected(p);
+                setSelectedFoto(p.thumb || p.fotos?.[0]?.url || LOGO_URL_UI);
+            });
         },
         [current, go]
     );
