@@ -755,6 +755,7 @@ export default function Page() {
         setQ("");
         setPage(1);
         setSelected(null);
+        setSelectedFoto("");
         setOpenPrices(false);
         setOpenZoom(false);
 
@@ -1013,9 +1014,9 @@ export default function Page() {
         setQ("");
         setPage(1);
         setSelected(null);
+        setSelectedFoto("");
         setOpenPrices(false);
         setOpenZoom(false);
-
         setStack(["home", "menus"]);
         fetchFluxoSteps();
     }, [formResp, formFalecido, formTel, operadorSel, fetchFluxoSteps]);
@@ -1130,6 +1131,9 @@ export default function Page() {
 
     const openProduct = useCallback(
         (p: Produto) => {
+            setOpenPrices(false);
+            setOpenZoom(false);
+
             if (current !== "detalhe") {
                 go("detalhe");
             }
@@ -1147,6 +1151,7 @@ export default function Page() {
 
         if (!produtosFiltrados.length) {
             setSelected(null);
+            setSelectedFoto("");
             return;
         }
 
@@ -1214,6 +1219,7 @@ export default function Page() {
             setQ("");
             setPage(1);
             setSelected(null);
+            setSelectedFoto("");
             setOpenPrices(false);
 
             if (step.no_id == null) {
@@ -1584,6 +1590,7 @@ export default function Page() {
             }
 
             setSelected(p);
+            setSelectedFoto(p.thumb || p.fotos?.[0]?.url || LOGO_URL_UI);
             setStack(["home", "menus", "listagem", "detalhe"]);
         },
         [draftItens, catalogoNos, fetchProdutosNo]
@@ -1597,6 +1604,7 @@ export default function Page() {
             setQ("");
             setPage(1);
             setSelected(null);
+            setSelectedFoto("");
             setOpenPrices(false);
 
             if (hasChildren) {
@@ -1614,6 +1622,7 @@ export default function Page() {
         setQ("");
         setPage(1);
         setSelected(null);
+        setSelectedFoto("");
         setOpenPrices(false);
 
         setNoPath((prev) => {
@@ -1703,6 +1712,8 @@ export default function Page() {
             <TopRightNav
                 onBack={() => {
                     setOpenPrices(false);
+                    setSelected(null);
+                    setSelectedFoto("");
                     setNoPath((prev) => (prev.length ? prev.slice(0, -1) : prev));
                     setStack(["home", "menus"]);
                 }}
@@ -1809,11 +1820,13 @@ export default function Page() {
             <TopRightNav
                 onBack={() => {
                     setOpenPrices(false);
+                    setOpenZoom(false);
                     back();
                 }}
                 onHome={home}
                 onList={() => {
                     setOpenPrices(false);
+                    setOpenZoom(false);
                     setStack(["home", "menus", "listagem"]);
                 }}
                 onCheck={openConcluirModal}
@@ -2571,6 +2584,24 @@ const css = `
   .iconBtn:active{ transform: translateY(0px) scale(0.99); }
   .iconBtnDisabled{ opacity: 0.55; cursor: not-allowed; }
 
+    .prodCard,
+  .iconActionBtn,
+  .zoomBtn,
+  .thumbMiniBtn,
+  .stepBtn,
+  .ctaBtn,
+  .pagerBtn,
+  .homeBtn,
+  .bigBtn,
+  .iconBtn,
+  .reviewRemoveBtn,
+  .reviewItemNameBtn,
+  .budgetListNameBtn,
+  .userRow {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .iconBtnCheck{
     background: rgba(230, 255, 238, 0.92);
     border-color: rgba(16, 185, 129, 0.35);
@@ -3049,16 +3080,18 @@ const css = `
     white-space: pre-wrap;
   }
 
-  .detailActions{
+    .detailActions{
     margin-top: 10px;
     display:flex;
     gap: 14px;
     justify-content:flex-start;
     align-items:center;
     flex-wrap: wrap;
+    position: relative;
+    z-index: 20;
   }
 
-  .iconActionBtn{
+    .iconActionBtn{
     width: 54px;
     height: 54px;
     border-radius: 999px;
@@ -3071,6 +3104,8 @@ const css = `
     justify-content:center;
     cursor:pointer;
     transition: transform .12s ease, filter .12s ease;
+    position: relative;
+    z-index: 21;
   }
   .iconActionBtn:hover{ filter: brightness(1.02); transform: translateY(-1px); }
   .iconActionBtn:active{ transform: translateY(0px) scale(0.995); }
@@ -3746,6 +3781,15 @@ const css = `
   .pagerBtn{
     width: 40px;
     height: 32px;
+  }
+
+  .detailActions{
+    gap: 18px;
+  }
+
+  .iconActionBtn{
+    min-width: 58px;
+    min-height: 58px;
   }
 
   .flowBtn{
