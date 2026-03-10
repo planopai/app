@@ -2868,10 +2868,11 @@ const css = `
 
   .listagemFooter{
   flex: 0 0 auto;
-  padding: 6px 18px 18px;
-  margin-top: -18px;
+  padding: 6px 18px 30px;
+  margin-top: -34px;
   position: relative;
   z-index: 20;
+}
 }
 
   .pagerRow{
@@ -3106,15 +3107,31 @@ const css = `
     margin-bottom: 10px;
   }
 
-  .bulletBox{ margin-top: 6px; display:flex; flex-direction:column; gap: 10px; }
+  .bulletBox{
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 
   .descText{
-    color: rgba(255,255,255,0.92);
-    font-weight: 700;
-    line-height: 1.45;
-    font-size: 14px;
-    white-space: pre-wrap;
-  }
+  color: rgba(255,255,255,0.92);
+  font-weight: 700;
+  line-height: 1.35;
+  font-size: clamp(11px, 1.05vw, 14px);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 210px;
+  overflow: auto;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
 
     .detailActions{
     margin-top: 10px;
@@ -3153,14 +3170,15 @@ const css = `
   }
 
   .detailFooterRow{
-    margin-top: auto;
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding-top: 18px;
-    position: relative;
-    z-index: 30;
-  }
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 18px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 30;
+}
 
   .stepBtn{
     border-radius: 14px;
