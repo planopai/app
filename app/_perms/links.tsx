@@ -15,6 +15,7 @@ import {
     IconReportAnalytics,
     IconHeadset,
     IconDoor,
+    IconBook,
 } from "@tabler/icons-react";
 
 export type LinkItem = {
@@ -35,6 +36,7 @@ export const LINK_GROUPS: LinkGroup[] = [
         items: [
             { slug: "quadro-acompanhamento", title: "Quadro de Acompanhamento", href: "/quadro-acompanhamento", Icon: IconLayoutDashboard },
             { slug: "acompanhamento", title: "Atendimentos", href: "/acompanhamento", Icon: IconClipboardList },
+            { slug: "catalogo", title: "Catálogo", href: "/catalogo", Icon: IconBook },
             { slug: "obituario", title: "Obituário", href: "/obituario", Icon: IconFileText },
             { slug: "memorial", title: "Memorial", href: "/memorial", Icon: IconBuildingSkyscraper },
             { slug: "coroa-de-flores", title: "Coroa de Flores", href: "/coroa-de-flores", Icon: IconFlower },
@@ -58,6 +60,7 @@ export const LINK_GROUPS: LinkGroup[] = [
         items: [
             { slug: "usuarios", title: "Usuários", href: "/usuarios", Icon: IconUserCog },
             { slug: "permissoes", title: "Permissões", href: "/permissoes", Icon: IconShieldLock },
+            { slug: "config-catalogo", title: "Configurações do Catálogo", href: "/config-catalogo", Icon: IconBook },
             { slug: "relatorio", title: "Relatório", href: "/relatorio", Icon: IconReportAnalytics },
             { slug: "leads", title: "Leads", href: "/leads", Icon: IconUsersGroup },
         ],

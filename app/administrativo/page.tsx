@@ -8,6 +8,7 @@ import {
     IconSettings,
     IconReportAnalytics,
     IconUsersGroup,
+    IconBook
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular (padrão global do app) ========= */
@@ -39,6 +40,11 @@ const items = [
         title: "Permissões",
         href: "/permissoes",
         icon: IconShieldLock,
+    },
+    {
+        title: "Configurações do Catálogo",
+        href: "/config-catalogo",
+        icon: IconBook,
     },
     {
         title: "Relatório",
