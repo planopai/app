@@ -9,6 +9,7 @@ import {
     IconBuildingSkyscraper,
     IconFlower,
     IconBell,
+    IconBook,
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular ========= */
@@ -40,6 +41,11 @@ const items = [
         title: "Atendimentos",
         href: "/acompanhamento",
         icon: IconClipboardList,
+    },
+    {
+        title: "Catálogo",
+        href: "/catalogo",
+        icon: IconBook,
     },
     {
         title: "Obituário",
