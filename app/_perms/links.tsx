@@ -16,6 +16,7 @@ import {
     IconHeadset,
     IconDoor,
     IconBook,
+    IconChartBar,
 } from "@tabler/icons-react";
 
 export type LinkItem = {
@@ -51,6 +52,7 @@ export const LINK_GROUPS: LinkGroup[] = [
             { slug: "parceiros", title: "Descontos", href: "/parceiros", Icon: IconUsersGroup },
             { slug: "noticias", title: "Enviar Notícias", href: "/noticias", Icon: IconSend },
             { slug: "medicos", title: "Médicos Parceiros", href: "/medicos", Icon: IconStethoscope },
+            { slug: "relatorio-guias", title: "Relatório de Consultas", href: "/relatorio-guias", Icon: IconChartBar },
             { slug: "sorteios", title: "Sorteios", href: "/sorteios", Icon: IconGift },
         ],
     },

@@ -7,6 +7,7 @@ import {
     IconSend,
     IconStethoscope,
     IconUserStar,
+    IconChartBar,
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular (padrão global) ========= */
@@ -48,6 +49,11 @@ const items = [
         title: "Médicos Parceiros",
         href: "/medicos",
         icon: IconStethoscope,
+    },
+    {
+        title: "Relatório de Consultas",
+        href: "/relatorio-guias",
+        icon: IconChartBar,
     },
     {
         title: "Sorteios",
