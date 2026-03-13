@@ -14,13 +14,6 @@ type Sorteio = {
     created_at?: string;
 };
 
-type Premio = {
-    id: number;
-    nome: string;
-    ordem: number;
-    created_at?: string;
-};
-
 type Resultado = {
     id?: number;
     cpf: string;
@@ -34,7 +27,7 @@ type Resultado = {
 type DashboardResp = {
     ok: boolean;
     sorteio: Sorteio | null;
-    premios: Premio[];
+    premios: Array<{ id: number; nome: string; ordem: number }>;
     resultados: Resultado[];
     error?: string;
 };
@@ -62,7 +55,6 @@ type ApiResp<T = Record<string, never>> = { ok: boolean; error?: string } & T;
 
 type NewSorteioForm = {
     titulo: string;
-    descricao: string;
     premiosText: string;
     scheduledAtInput: string;
 };
@@ -73,7 +65,7 @@ type PageDataState = {
     history: Sorteio[];
 };
 
-type ModalStep = "hidden" | "progress" | "form" | "success";
+type ModalStep = "hidden" | "progress" | "form";
 
 type SubmitKind = "idle" | "running" | "scheduling";
 
@@ -174,7 +166,6 @@ function sanitizeStatus(value?: string | null): SorteioStatus {
 function getDefaultForm(): NewSorteioForm {
     return {
         titulo: DEFAULT_TITLE,
-        descricao: "",
         premiosText: "",
         scheduledAtInput: toLocalInputValue(addOneHour()),
     };
@@ -302,7 +293,7 @@ function ProgressModal({
 
                     <div className="h-3 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
                         <div
-                            className="h-full rounded-full bg-emerald-600 transition-[width] duration-150 ease-linear"
+                            className="h-full rounded-full bg-emerald-600 transition-[width] duration-100 ease-linear"
                             style={{ width: `${progress}%` }}
                         />
                     </div>
@@ -341,136 +332,129 @@ function NovoSorteioModal({
     const loading = submitKind !== "idle";
 
     return (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4 backdrop-blur-[2px]">
-            <div className="w-full max-w-2xl rounded-3xl border border-white/15 bg-white shadow-2xl dark:bg-gray-950">
-                <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-                    <div>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                            Novo Sorteio
-                        </h3>
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                            Configure o sorteio e escolha entre realizar agora ou agendar.
-                        </p>
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px]">
+            <div className="flex min-h-dvh items-center justify-center p-4">
+                <div className="flex w-full max-w-2xl max-h-[92dvh] flex-col overflow-hidden rounded-3xl border border-white/15 bg-white shadow-2xl dark:bg-gray-950">
+                    <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                                Novo Sorteio
+                            </h3>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                                Configure o sorteio e escolha entre realizar agora ou agendar.
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={onClose}
+                            disabled={loading}
+                            className="rounded-xl border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
+                        >
+                            Fechar
+                        </button>
                     </div>
 
-                    <button
-                        onClick={onClose}
-                        disabled={loading}
-                        className="rounded-xl border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
-                    >
-                        Fechar
-                    </button>
-                </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                        <div className="space-y-5">
+                            {eligibleTotal !== null ? (
+                                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
+                                    Elegíveis encontrados: <strong>{eligibleTotal}</strong>
+                                </div>
+                            ) : null}
 
-                <div className="space-y-5 p-6">
-                    {eligibleTotal !== null ? (
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
-                            Elegíveis encontrados: <strong>{eligibleTotal}</strong>
-                        </div>
-                    ) : null}
+                            {successMessage ? (
+                                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
+                                    <strong>Concluído.</strong> {successMessage}
+                                </div>
+                            ) : null}
 
-                    {successMessage ? (
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
-                            <strong>Concluído.</strong> {successMessage}
-                        </div>
-                    ) : null}
+                            {errorMessage ? (
+                                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                                    {errorMessage}
+                                </div>
+                            ) : null}
 
-                    {errorMessage ? (
-                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
-                            {errorMessage}
-                        </div>
-                    ) : null}
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                        Nome do sorteio
+                                    </label>
+                                    <input
+                                        value={form.titulo}
+                                        onChange={(e) =>
+                                            setForm((prev) => ({ ...prev, titulo: e.target.value }))
+                                        }
+                                        maxLength={140}
+                                        placeholder="Ex.: Sorteio de Páscoa"
+                                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                    />
+                                </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2 md:col-span-2">
-                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                Nome do sorteio
-                            </label>
-                            <input
-                                value={form.titulo}
-                                onChange={(e) =>
-                                    setForm((prev) => ({ ...prev, titulo: e.target.value }))
-                                }
-                                maxLength={140}
-                                placeholder="Ex.: Sorteio de Páscoa"
-                                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            />
-                        </div>
-
-                        <div className="space-y-2 md:col-span-2">
-                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                Descrição
-                            </label>
-                            <textarea
-                                value={form.descricao}
-                                onChange={(e) =>
-                                    setForm((prev) => ({ ...prev, descricao: e.target.value }))
-                                }
-                                rows={3}
-                                maxLength={1200}
-                                placeholder="Descrição opcional"
-                                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            />
-                        </div>
-
-                        <div className="space-y-2 md:col-span-2">
-                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                Prêmios (1 por linha)
-                            </label>
-                            <textarea
-                                value={form.premiosText}
-                                onChange={(e) =>
-                                    setForm((prev) => ({ ...prev, premiosText: e.target.value }))
-                                }
-                                rows={8}
-                                placeholder={`Ex.:
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                        Prêmios (1 por linha)
+                                    </label>
+                                    <textarea
+                                        value={form.premiosText}
+                                        onChange={(e) =>
+                                            setForm((prev) => ({
+                                                ...prev,
+                                                premiosText: e.target.value,
+                                            }))
+                                        }
+                                        rows={8}
+                                        placeholder={`Ex.:
 1 Televisor 50"
 1 Smartphone
 1 Air Fryer`}
-                                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            />
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                                Total único: <strong>{premiosList.length}</strong> prêmio(s)
+                                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                    />
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                        Total único: <strong>{premiosList.length}</strong> prêmio(s)
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                        Data/Hora para agendar
+                                    </label>
+                                    <input
+                                        type="datetime-local"
+                                        value={form.scheduledAtInput}
+                                        onChange={(e) =>
+                                            setForm((prev) => ({
+                                                ...prev,
+                                                scheduledAtInput: e.target.value,
+                                            }))
+                                        }
+                                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                    />
+                                </div>
                             </div>
                         </div>
+                    </div>
 
-                        <div className="space-y-2 md:col-span-2">
-                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                Data/Hora para agendar
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={form.scheduledAtInput}
-                                onChange={(e) =>
-                                    setForm((prev) => ({
-                                        ...prev,
-                                        scheduledAtInput: e.target.value,
-                                    }))
-                                }
-                                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                            />
+                    <div className="border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                            <button
+                                onClick={onSchedule}
+                                disabled={loading}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-950/30"
+                            >
+                                {submitKind === "scheduling" ? <Spinner size={16} /> : null}
+                                {submitKind === "scheduling" ? "Agendando..." : "Agendar"}
+                            </button>
+
+                            <button
+                                onClick={onRunNow}
+                                disabled={loading}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {submitKind === "running" ? <Spinner size={16} /> : null}
+                                {submitKind === "running" ? "Realizando..." : "Realizar Agora"}
+                            </button>
                         </div>
                     </div>
-                </div>
-
-                <div className="flex flex-col gap-3 border-t border-gray-200 px-6 py-4 sm:flex-row sm:justify-end dark:border-gray-800">
-                    <button
-                        onClick={onSchedule}
-                        disabled={loading}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-950/30"
-                    >
-                        {submitKind === "scheduling" ? <Spinner size={16} /> : null}
-                        {submitKind === "scheduling" ? "Agendando..." : "Agendar"}
-                    </button>
-
-                    <button
-                        onClick={onRunNow}
-                        disabled={loading}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {submitKind === "running" ? <Spinner size={16} /> : null}
-                        {submitKind === "running" ? "Realizando..." : "Realizar Agora"}
-                    </button>
                 </div>
             </div>
         </div>
@@ -482,7 +466,7 @@ export default function SorteiosAdminPage() {
     const historyAbortRef = useRef<AbortController | null>(null);
     const statsAbortRef = useRef<AbortController | null>(null);
     const progressIntervalRef = useRef<number | null>(null);
-    const progressDoneRef = useRef(false);
+    const progressTimeoutRef = useRef<number | null>(null);
     const isMountedRef = useRef(true);
 
     const [pageLoading, setPageLoading] = useState(true);
@@ -512,53 +496,49 @@ export default function SorteiosAdminPage() {
 
     const premiosList = useMemo(() => uniqueTrimmedLines(form.premiosText), [form.premiosText]);
 
-    const clearProgressLoop = useCallback(() => {
+    const clearProgressTimers = useCallback(() => {
         if (progressIntervalRef.current !== null) {
             window.clearInterval(progressIntervalRef.current);
             progressIntervalRef.current = null;
         }
+        if (progressTimeoutRef.current !== null) {
+            window.clearTimeout(progressTimeoutRef.current);
+            progressTimeoutRef.current = null;
+        }
     }, []);
 
     const startProgressLoop = useCallback(() => {
-        clearProgressLoop();
-        progressDoneRef.current = false;
+        clearProgressTimers();
         setProgressValue(0);
 
         progressIntervalRef.current = window.setInterval(() => {
             setProgressValue((prev) => {
-                if (progressDoneRef.current) {
-                    const next = Math.min(100, prev + 4);
-                    return next;
-                }
-
-                const remaining = 100 - prev;
-                const delta =
-                    prev < 20 ? 2.4 : prev < 45 ? 1.9 : prev < 70 ? 1.4 : prev < 88 ? 0.95 : 0.55;
-
-                return Math.min(98, prev + Math.min(delta, Math.max(0.35, remaining * 0.02)));
+                if (prev >= 95) return prev;
+                return Math.min(95, prev + 1);
             });
-        }, 90);
-    }, [clearProgressLoop]);
+        }, 120);
+    }, [clearProgressTimers]);
 
-    const waitForProgressCompletion = useCallback(async () => {
-        progressDoneRef.current = true;
+    const finishProgressSmoothly = useCallback(async () => {
+        clearProgressTimers();
 
         await new Promise<void>((resolve) => {
-            const watcher = window.setInterval(() => {
-                setProgressValue((current) => {
-                    if (current >= 100) {
-                        window.clearInterval(watcher);
+            progressIntervalRef.current = window.setInterval(() => {
+                setProgressValue((prev) => {
+                    const next = Math.min(100, prev + 1);
+                    if (next >= 100) {
+                        clearProgressTimers();
                         resolve();
-                        return 100;
                     }
-                    return current;
+                    return next;
                 });
-            }, 50);
+            }, 80);
         });
 
-        clearProgressLoop();
-        await new Promise((resolve) => window.setTimeout(resolve, 220));
-    }, [clearProgressLoop]);
+        await new Promise((resolve) => {
+            progressTimeoutRef.current = window.setTimeout(resolve, 220);
+        });
+    }, [clearProgressTimers]);
 
     const resetModalState = useCallback(() => {
         setForm(getDefaultForm());
@@ -612,11 +592,6 @@ export default function SorteiosAdminPage() {
 
             return Array.isArray(data.sorteios) ? data.sorteios : [];
         } catch {
-            /**
-             * Fallback:
-             * caso a API ainda não tenha o endpoint admin_history,
-             * a página continua funcional exibindo ao menos o sorteio atual.
-             */
             return null;
         }
     }, []);
@@ -663,7 +638,6 @@ export default function SorteiosAdminPage() {
             }
 
             if (!isMountedRef.current) return;
-
             setEligibleTotal(data.eligible_total ?? null);
             setStatsError(null);
         } catch (error) {
@@ -671,11 +645,11 @@ export default function SorteiosAdminPage() {
             if (!isMountedRef.current) return;
             setStatsError(getErrorMessage(error, "Falha ao consultar elegíveis."));
         } finally {
-            await waitForProgressCompletion();
+            await finishProgressSmoothly();
             if (!isMountedRef.current) return;
             setModalStep("form");
         }
-    }, [resetModalState, startProgressLoop, waitForProgressCompletion]);
+    }, [finishProgressSmoothly, resetModalState, startProgressLoop]);
 
     const createBaseSorteio = useCallback(
         async (status: SorteioStatus) => {
@@ -697,8 +671,9 @@ export default function SorteiosAdminPage() {
                 "POST",
                 {
                     titulo,
-                    descricao: form.descricao.trim(),
-                    scheduled_at: status === "scheduled" ? localInputToMysql(form.scheduledAtInput) : "",
+                    descricao: "",
+                    scheduled_at:
+                        status === "scheduled" ? localInputToMysql(form.scheduledAtInput) : "",
                     status,
                 }
             );
@@ -724,7 +699,7 @@ export default function SorteiosAdminPage() {
 
             return sorteioId;
         },
-        [form.descricao, form.scheduledAtInput, form.titulo, premiosList]
+        [form.scheduledAtInput, form.titulo, premiosList]
     );
 
     const runNow = useCallback(async () => {
@@ -814,9 +789,9 @@ export default function SorteiosAdminPage() {
             dashboardAbortRef.current?.abort();
             historyAbortRef.current?.abort();
             statsAbortRef.current?.abort();
-            clearProgressLoop();
+            clearProgressTimers();
         };
-    }, [clearProgressLoop, refreshPageData]);
+    }, [clearProgressTimers, refreshPageData]);
 
     if (pageLoading) {
         return (
@@ -929,13 +904,8 @@ export default function SorteiosAdminPage() {
                                                 <td className="px-6 py-3 text-sm text-gray-800 dark:text-gray-200">
                                                     #{item.id}
                                                 </td>
-                                                <td className="px-6 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                                    <div className="font-semibold">{item.titulo}</div>
-                                                    {item.descricao ? (
-                                                        <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                                            {item.descricao}
-                                                        </div>
-                                                    ) : null}
+                                                <td className="px-6 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                    {item.titulo}
                                                 </td>
                                                 <td className="px-6 py-3 text-sm">
                                                     <span
