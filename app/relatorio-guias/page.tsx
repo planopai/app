@@ -102,14 +102,6 @@ function onlyDigits(value?: string | null) {
     return String(value ?? "").replace(/\D+/g, "");
 }
 
-function fmtDatePtBr(date = new Date()) {
-    return new Intl.DateTimeFormat("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-    }).format(date);
-}
-
 function fmtDateTimePtBr(dateString?: string | null) {
     if (!dateString) return "—";
     const d = new Date(String(dateString).replace(" ", "T"));
@@ -291,7 +283,7 @@ function Card({
     return (
         <div
             className={[
-                "rounded-3xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]",
+                "w-full max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]",
                 "dark:border-slate-800 dark:bg-slate-900",
                 className,
             ].join(" ")}
@@ -311,15 +303,15 @@ function StatCard({
     subtitle?: string;
 }) {
     return (
-        <Card className="p-5">
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+        <Card className="p-4 sm:p-5">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 {title}
             </p>
-            <p className="mt-3 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+            <p className="mt-2 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
                 {value}
             </p>
             {subtitle ? (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
             ) : null}
         </Card>
     );
@@ -334,11 +326,11 @@ function SectionTitle({
 }) {
     return (
         <div className="mb-4">
-            <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
+            <h2 className="text-base font-black tracking-tight text-slate-900 dark:text-white sm:text-lg">
                 {title}
             </h2>
             {subtitle ? (
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">{subtitle}</p>
             ) : null}
         </div>
     );
@@ -346,7 +338,7 @@ function SectionTitle({
 
 function EmptyState({ message }: { message: string }) {
     return (
-        <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
             {message}
         </div>
     );
@@ -355,7 +347,7 @@ function EmptyState({ message }: { message: string }) {
 function SimpleBarChart({
     data,
     color = "#039adc",
-    height = 260,
+    height = 240,
 }: {
     data: ChartDatum[];
     color?: string;
@@ -368,37 +360,35 @@ function SimpleBarChart({
     }
 
     return (
-        <div className="overflow-x-auto">
-            <div className="min-w-[560px]">
-                <div
-                    className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
-                    style={{ height }}
-                >
-                    {data.map((item) => {
-                        const barHeight = Math.max((item.value / max) * (height - 90), 8);
+        <div className="w-full">
+            <div
+                className="flex h-auto min-h-[220px] items-end gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:gap-3 sm:p-4 dark:border-slate-800 dark:bg-slate-950"
+                style={{ height }}
+            >
+                {data.map((item) => {
+                    const barHeight = Math.max((item.value / max) * (height - 90), 8);
 
-                        return (
-                            <div key={item.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                                    {item.value}
-                                </span>
+                    return (
+                        <div key={item.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 sm:text-xs">
+                                {item.value}
+                            </span>
 
-                                <div
-                                    className="w-full rounded-t-xl transition-all"
-                                    style={{
-                                        height: `${barHeight}px`,
-                                        background: color,
-                                    }}
-                                    title={`${item.label}: ${item.value}`}
-                                />
+                            <div
+                                className="w-full rounded-t-xl transition-all"
+                                style={{
+                                    height: `${barHeight}px`,
+                                    background: color,
+                                }}
+                                title={`${item.label}: ${item.value}`}
+                            />
 
-                                <span className="line-clamp-2 text-center text-[11px] font-semibold leading-tight text-slate-500 dark:text-slate-400">
-                                    {item.label}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
+                            <span className="line-clamp-3 break-words text-center text-[10px] font-semibold leading-tight text-slate-500 dark:text-slate-400 sm:text-[11px]">
+                                {item.label}
+                            </span>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -422,12 +412,12 @@ function DonutChart({
     let cumulative = 0;
 
     return (
-        <div className="grid gap-5 md:grid-cols-[220px_1fr] md:items-center">
+        <div className="grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
             <div className="flex items-center justify-center">
-                <div className="relative h-[180px] w-[180px]">
+                <div className="relative h-[170px] w-[170px] sm:h-[180px] sm:w-[180px]">
                     <svg
-                        width="180"
-                        height="180"
+                        width="100%"
+                        height="100%"
                         viewBox="0 0 180 180"
                         className="-rotate-90"
                     >
@@ -464,7 +454,7 @@ function DonutChart({
                     </svg>
 
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
                             Total
                         </span>
                         <span className="mt-1 text-3xl font-black text-slate-900 dark:text-white">
@@ -474,36 +464,227 @@ function DonutChart({
                 </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
                 {data.map((item) => {
                     const pct = total ? ((item.value / total) * 100).toFixed(1) : "0.0";
 
                     return (
                         <div
                             key={item.label}
-                            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
+                            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 sm:px-4 dark:border-slate-800 dark:bg-slate-950"
                         >
                             <div className="flex min-w-0 items-center gap-3">
                                 <span
-                                    className="h-3.5 w-3.5 rounded-full"
+                                    className="h-3.5 w-3.5 shrink-0 rounded-full"
                                     style={{ backgroundColor: item.color }}
                                 />
-                                <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                <span className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100 sm:text-sm">
                                     {item.label}
                                 </span>
                             </div>
 
-                            <div className="text-right">
-                                <div className="text-sm font-black text-slate-900 dark:text-white">
+                            <div className="shrink-0 text-right">
+                                <div className="text-xs font-black text-slate-900 dark:text-white sm:text-sm">
                                     {item.value}
                                 </div>
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 sm:text-xs">
                                     {pct}%
                                 </div>
                             </div>
                         </div>
                     );
                 })}
+            </div>
+        </div>
+    );
+}
+
+function FilterField({
+    label,
+    children,
+}: {
+    label: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <label className="block">
+            <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-200">
+                {label}
+            </span>
+            {children}
+        </label>
+    );
+}
+
+function StatusBadge({ status }: { status: GuiaStatus }) {
+    const palette: Record<GuiaStatus, string> = {
+        ativa: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200",
+        utilizada: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200",
+        expirada: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200",
+        cancelada: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200",
+        bloqueada: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    };
+
+    return (
+        <span
+            className={[
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.16em] sm:text-xs",
+                palette[status],
+            ].join(" ")}
+        >
+            {STATUS_LABELS[status]}
+        </span>
+    );
+}
+
+function FiltersModal({
+    open,
+    onClose,
+    filters,
+    onChangeFilter,
+    onApply,
+    onReset,
+    loading,
+}: {
+    open: boolean;
+    onClose: () => void;
+    filters: Filtros;
+    onChangeFilter: (key: keyof Filtros, value: string) => void;
+    onApply: () => void;
+    onReset: () => void;
+    loading: boolean;
+}) {
+    useEffect(() => {
+        if (!open) return;
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") onClose();
+        };
+
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [open, onClose]);
+
+    if (!open) return null;
+
+    return (
+        <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={(e) => {
+                if (e.target === e.currentTarget) onClose();
+            }}
+        >
+            <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-4 shadow-2xl sm:rounded-3xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                        Filtros
+                    </h2>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        Fechar
+                    </button>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <FilterField label="Data inicial">
+                        <input
+                            type="date"
+                            value={filters.dataInicio}
+                            onChange={(e) => onChangeFilter("dataInicio", e.target.value)}
+                            className={inputClassName}
+                        />
+                    </FilterField>
+
+                    <FilterField label="Data final">
+                        <input
+                            type="date"
+                            value={filters.dataFim}
+                            onChange={(e) => onChangeFilter("dataFim", e.target.value)}
+                            className={inputClassName}
+                        />
+                    </FilterField>
+
+                    <FilterField label="Status">
+                        <select
+                            value={filters.status}
+                            onChange={(e) => onChangeFilter("status", e.target.value)}
+                            className={inputClassName}
+                        >
+                            <option value="">Todos</option>
+                            <option value="ativa">Ativa</option>
+                            <option value="utilizada">Utilizada</option>
+                            <option value="expirada">Expirada</option>
+                            <option value="cancelada">Cancelada</option>
+                            <option value="bloqueada">Bloqueada</option>
+                        </select>
+                    </FilterField>
+
+                    <FilterField label="CPF do associado">
+                        <input
+                            type="text"
+                            value={filters.cpf}
+                            onChange={(e) => onChangeFilter("cpf", e.target.value)}
+                            placeholder="Somente números"
+                            className={inputClassName}
+                        />
+                    </FilterField>
+
+                    <FilterField label="Convênio">
+                        <input
+                            type="text"
+                            value={filters.conveniadoNome}
+                            onChange={(e) => onChangeFilter("conveniadoNome", e.target.value)}
+                            placeholder="Nome do convênio"
+                            className={inputClassName}
+                        />
+                    </FilterField>
+
+                    <FilterField label="Titular">
+                        <input
+                            type="text"
+                            value={filters.titularNome}
+                            onChange={(e) => onChangeFilter("titularNome", e.target.value)}
+                            placeholder="Nome do titular"
+                            className={inputClassName}
+                        />
+                    </FilterField>
+
+                    <FilterField label="Beneficiário">
+                        <input
+                            type="text"
+                            value={filters.beneficiarioNome}
+                            onChange={(e) => onChangeFilter("beneficiarioNome", e.target.value)}
+                            placeholder="Nome do beneficiário"
+                            className={inputClassName}
+                        />
+                    </FilterField>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        onClick={onReset}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        Limpar filtros
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onApply();
+                            onClose();
+                        }}
+                        disabled={loading}
+                        className="rounded-2xl bg-[#039adc] px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-110 disabled:opacity-60"
+                    >
+                        {loading ? "Carregando..." : "Aplicar filtros"}
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -526,9 +707,22 @@ export default function RelatorioGuiasPage() {
     const [items, setItems] = useState<GuiaRow[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showFilters, setShowFilters] = useState(false);
 
     const handleChangeFilter = (key: keyof Filtros, value: string) => {
         setFilters((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const handleResetFilters = () => {
+        setFilters({
+            dataInicio: startOfMonthInput(),
+            dataFim: todayInput(),
+            status: "",
+            conveniadoNome: "",
+            titularNome: "",
+            beneficiarioNome: "",
+            cpf: "",
+        });
     };
 
     const loadData = async () => {
@@ -612,7 +806,6 @@ export default function RelatorioGuiasPage() {
         }));
 
         const conveniosUnicos = porConvenioMap.size;
-        const maisUsado = topConvenios[0];
         const ticketsDia = porDiaMap.size ? (total / porDiaMap.size).toFixed(1) : "0";
 
         return {
@@ -624,175 +817,92 @@ export default function RelatorioGuiasPage() {
             porCategoria,
             porPlano,
             conveniosUnicos,
-            maisUsado,
             ticketsDia,
         };
     }, [items]);
 
     const ultimasGuias = useMemo(() => items.slice(0, 12), [items]);
 
+    const filtrosResumo = useMemo(() => {
+        const tags: string[] = [];
+
+        if (filters.dataInicio) tags.push(`De ${fmtDateIsoToPtBr(filters.dataInicio)}`);
+        if (filters.dataFim) tags.push(`Até ${fmtDateIsoToPtBr(filters.dataFim)}`);
+        if (filters.status) tags.push(`Status: ${STATUS_LABELS[filters.status]}`);
+        if (filters.conveniadoNome.trim()) tags.push(`Convênio: ${filters.conveniadoNome.trim()}`);
+        if (filters.titularNome.trim()) tags.push(`Titular: ${filters.titularNome.trim()}`);
+        if (filters.beneficiarioNome.trim()) tags.push(`Beneficiário: ${filters.beneficiarioNome.trim()}`);
+        if (onlyDigits(filters.cpf)) tags.push(`CPF: ${onlyDigits(filters.cpf)}`);
+
+        return tags;
+    }, [filters]);
+
     return (
-        <main className="min-h-screen bg-slate-50 px-4 py-6 font-[Nunito] dark:bg-slate-950 md:px-8">
-            <div className="mx-auto max-w-7xl">
-                <header className="mb-6">
-                    <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-                        Relatório de Guias
-                    </h1>
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Acompanhe emissões, convênios mais utilizados, distribuição por status e evolução por período.
-                    </p>
-                </header>
+        <main className="min-h-screen overflow-x-hidden bg-slate-50 px-3 py-5 font-[Nunito] dark:bg-slate-950 sm:px-4 md:px-6">
+            <div className="mx-auto w-full max-w-7xl">
+                <header className="mb-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <h1 className="text-2xl font-normal tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                            Relatório de Guias
+                        </h1>
 
-                <Card className="mb-6 p-5 md:p-6">
-                    <SectionTitle
-                        title="Filtros"
-                        subtitle="Use os filtros abaixo para consultar as guias emitidas no período desejado."
-                    />
-
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        <FilterField label="Data inicial">
-                            <input
-                                type="date"
-                                value={filters.dataInicio}
-                                onChange={(e) => handleChangeFilter("dataInicio", e.target.value)}
-                                className={inputClassName}
-                            />
-                        </FilterField>
-
-                        <FilterField label="Data final">
-                            <input
-                                type="date"
-                                value={filters.dataFim}
-                                onChange={(e) => handleChangeFilter("dataFim", e.target.value)}
-                                className={inputClassName}
-                            />
-                        </FilterField>
-
-                        <FilterField label="Status">
-                            <select
-                                value={filters.status}
-                                onChange={(e) => handleChangeFilter("status", e.target.value)}
-                                className={inputClassName}
-                            >
-                                <option value="">Todos</option>
-                                <option value="ativa">Ativa</option>
-                                <option value="utilizada">Utilizada</option>
-                                <option value="expirada">Expirada</option>
-                                <option value="cancelada">Cancelada</option>
-                                <option value="bloqueada">Bloqueada</option>
-                            </select>
-                        </FilterField>
-
-                        <FilterField label="CPF do associado">
-                            <input
-                                type="text"
-                                value={filters.cpf}
-                                onChange={(e) => handleChangeFilter("cpf", e.target.value)}
-                                placeholder="Somente números"
-                                className={inputClassName}
-                            />
-                        </FilterField>
-
-                        <FilterField label="Convênio">
-                            <input
-                                type="text"
-                                value={filters.conveniadoNome}
-                                onChange={(e) => handleChangeFilter("conveniadoNome", e.target.value)}
-                                placeholder="Nome do convênio"
-                                className={inputClassName}
-                            />
-                        </FilterField>
-
-                        <FilterField label="Titular">
-                            <input
-                                type="text"
-                                value={filters.titularNome}
-                                onChange={(e) => handleChangeFilter("titularNome", e.target.value)}
-                                placeholder="Nome do titular"
-                                className={inputClassName}
-                            />
-                        </FilterField>
-
-                        <FilterField label="Beneficiário">
-                            <input
-                                type="text"
-                                value={filters.beneficiarioNome}
-                                onChange={(e) => handleChangeFilter("beneficiarioNome", e.target.value)}
-                                placeholder="Nome do beneficiário"
-                                className={inputClassName}
-                            />
-                        </FilterField>
-
-                        <div className="flex flex-col justify-end gap-3 sm:col-span-2 xl:col-span-1">
+                        <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
-                                onClick={loadData}
-                                disabled={loading}
-                                className="rounded-2xl bg-[#039adc] px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-110 disabled:opacity-60"
+                                onClick={() => setShowFilters(true)}
+                                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                             >
-                                {loading ? "Carregando..." : "Aplicar filtros"}
+                                Filtro
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    downloadCsv(
+                                        `relatorio-guias-${filters.dataInicio || "inicio"}-${filters.dataFim || "fim"}.csv`,
+                                        items,
+                                    )
+                                }
+                                disabled={!items.length}
+                                className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                            >
+                                Exportar CSV
                             </button>
                         </div>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const reset: Filtros = {
-                                    dataInicio: startOfMonthInput(),
-                                    dataFim: todayInput(),
-                                    status: "",
-                                    conveniadoNome: "",
-                                    titularNome: "",
-                                    beneficiarioNome: "",
-                                    cpf: "",
-                                };
-                                setFilters(reset);
-                            }}
-                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                        >
-                            Limpar filtros
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() =>
-                                downloadCsv(
-                                    `relatorio-guias-${filters.dataInicio || "inicio"}-${filters.dataFim || "fim"}.csv`,
-                                    items,
-                                )
-                            }
-                            disabled={!items.length}
-                            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
-                        >
-                            Exportar CSV
-                        </button>
-                    </div>
-                </Card>
+                    {filtrosResumo.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {filtrosResumo.map((tag) => (
+                                <span
+                                    key={tag}
+                                    className="inline-flex max-w-full break-words rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                >
+                                    {tag}
+                                </span>
+                            ))}
+                        </div>
+                    ) : null}
+                </header>
 
                 {error ? (
-                    <Card className="mb-6 p-6">
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-100">
+                    <Card className="mb-5 p-4 sm:p-6">
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-100">
                             {error}
                         </div>
                     </Card>
                 ) : null}
 
-                <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     <StatCard title="Total de guias" value={resumo.total} subtitle="No filtro atual" />
                     <StatCard title="Guias ativas" value={resumo.statusMap.ativa} />
                     <StatCard title="Guias utilizadas" value={resumo.statusMap.utilizada} />
                     <StatCard title="Convênios únicos" value={resumo.conveniosUnicos} />
-                    <StatCard
-                        title="Média por dia"
-                        value={resumo.ticketsDia}
-                        subtitle="Considerando dias com emissão"
-                    />
+                    <StatCard title="Média por dia" value={resumo.ticketsDia} subtitle="Considerando dias com emissão" />
                 </div>
 
-                <div className="grid gap-6 xl:grid-cols-2">
-                    <Card className="p-5 md:p-6">
+                <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                    <Card className="p-4 sm:p-5 md:p-6">
                         <SectionTitle
                             title="Distribuição por status"
                             subtitle="Quantidade de guias em cada situação."
@@ -800,47 +910,47 @@ export default function RelatorioGuiasPage() {
                         <DonutChart data={resumo.statusDonut} />
                     </Card>
 
-                    <Card className="p-5 md:p-6">
+                    <Card className="p-4 sm:p-5 md:p-6">
                         <SectionTitle
                             title="Top convênios"
                             subtitle="Convênios com mais emissões no período."
                         />
-                        <SimpleBarChart data={resumo.topConvenios} color="#039adc" />
+                        <SimpleBarChart data={resumo.topConvenios} color="#039adc" height={220} />
                     </Card>
 
-                    <Card className="p-5 md:p-6">
+                    <Card className="p-4 sm:p-5 md:p-6">
                         <SectionTitle
                             title="Emissões por dia"
                             subtitle="Últimos dias com emissão dentro do filtro selecionado."
                         />
-                        <SimpleBarChart data={resumo.porDia} color="#14b8a6" />
+                        <SimpleBarChart data={resumo.porDia} color="#14b8a6" height={220} />
                     </Card>
 
-                    <Card className="p-5 md:p-6">
+                    <Card className="p-4 sm:p-5 md:p-6">
                         <SectionTitle
                             title="Por categoria de convênio"
                             subtitle="Ranking das categorias mais acionadas."
                         />
-                        <SimpleBarChart data={resumo.porCategoria} color="#8b5cf6" />
+                        <SimpleBarChart data={resumo.porCategoria} color="#8b5cf6" height={220} />
                     </Card>
 
-                    <Card className="p-5 md:p-6 xl:col-span-2">
+                    <Card className="p-4 sm:p-5 md:p-6 xl:col-span-2">
                         <SectionTitle
                             title="Planos mais emitidos"
                             subtitle="Distribuição por nome do plano registrado na guia."
                         />
-                        <SimpleBarChart data={resumo.porPlano} color="#f97316" />
+                        <SimpleBarChart data={resumo.porPlano} color="#f97316" height={220} />
                     </Card>
                 </div>
 
-                <Card className="mt-6 p-5 md:p-6">
+                <Card className="mt-5 p-4 sm:p-5 md:p-6">
                     <SectionTitle
                         title="Últimas guias emitidas"
                         subtitle="Visualização rápida das emissões mais recentes."
                     />
 
                     {loading ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
                             Carregando relatório...
                         </div>
                     ) : !ultimasGuias.length ? (
@@ -889,7 +999,7 @@ export default function RelatorioGuiasPage() {
                                     >
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
-                                                <p className="text-sm font-black text-slate-900 dark:text-white">
+                                                <p className="break-words text-sm font-black text-slate-900 dark:text-white">
                                                     {fallback(row.beneficiario_nome)}
                                                 </p>
                                                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -899,7 +1009,7 @@ export default function RelatorioGuiasPage() {
                                             <StatusBadge status={row.status} />
                                         </div>
 
-                                        <div className="mt-3 space-y-1.5 text-sm text-slate-600 dark:text-slate-300">
+                                        <div className="mt-3 space-y-1.5 break-words text-sm text-slate-600 dark:text-slate-300">
                                             <p>
                                                 <strong>Titular:</strong> {fallback(row.titular_nome)}
                                             </p>
@@ -917,45 +1027,17 @@ export default function RelatorioGuiasPage() {
                     )}
                 </Card>
             </div>
+
+            <FiltersModal
+                open={showFilters}
+                onClose={() => setShowFilters(false)}
+                filters={filters}
+                onChangeFilter={handleChangeFilter}
+                onApply={loadData}
+                onReset={handleResetFilters}
+                loading={loading}
+            />
         </main>
-    );
-}
-
-function FilterField({
-    label,
-    children,
-}: {
-    label: string;
-    children: React.ReactNode;
-}) {
-    return (
-        <label className="block">
-            <span className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-200">
-                {label}
-            </span>
-            {children}
-        </label>
-    );
-}
-
-function StatusBadge({ status }: { status: GuiaStatus }) {
-    const palette: Record<GuiaStatus, string> = {
-        ativa: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200",
-        utilizada: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200",
-        expirada: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200",
-        cancelada: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200",
-        bloqueada: "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    };
-
-    return (
-        <span
-            className={[
-                "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold uppercase tracking-[0.18em]",
-                palette[status],
-            ].join(" ")}
-        >
-            {STATUS_LABELS[status]}
-        </span>
     );
 }
 
