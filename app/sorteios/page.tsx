@@ -2,11 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * =========================================================
- * Tipos
- * =========================================================
- */
 type SorteioStatus = "draft" | "scheduled" | "running" | "done" | "canceled";
 
 type Sorteio = {
@@ -53,39 +48,22 @@ type PoolStatsResp = {
     diag?: Record<string, unknown>;
     error?: string;
     detail?: string;
+    rule?: string;
 };
 
 type ApiResp<T = unknown> = { ok: boolean; error?: string } & T;
 
-/**
- * =========================================================
- * Configurações
- * =========================================================
- */
 const API_URL =
     process.env.NEXT_PUBLIC_SORTEIOS_API_URL ||
     "https://api.planoassistencialintegrado.com.br/sorteios.php";
 
-/**
- * Uso opcional.
- * Atenção: NEXT_PUBLIC_* fica exposto ao browser.
- * O ideal é usar proxy server-side ou sessão protegida.
- */
 const ADMIN_TOKEN = process.env.NEXT_PUBLIC_SORTEIOS_ADMIN_TOKEN || "";
 
 /**
- * Se true, carrega estatísticas automaticamente
- * após o dashboard. Como o backend agora está otimizado,
- * isso pode ser usado, mas continua sendo uma operação
- * potencialmente mais pesada que o dashboard.
+ * Como o pool agora é completo, deixar manual tende a ser melhor.
  */
-const AUTO_LOAD_STATS = true;
+const AUTO_LOAD_STATS = false;
 
-/**
- * =========================================================
- * Helpers de data / hora
- * =========================================================
- */
 function pad2(value: number) {
     return String(value).padStart(2, "0");
 }
@@ -133,11 +111,6 @@ function maskCpf(cpf: string) {
     return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 }
 
-/**
- * =========================================================
- * API helper
- * =========================================================
- */
 async function apiJson<T = unknown>(
     url: string,
     method: "GET" | "POST",
@@ -185,54 +158,24 @@ async function apiJson<T = unknown>(
     return data as T;
 }
 
-/**
- * =========================================================
- * Página
- * =========================================================
- */
 export default function SorteiosAdminPage() {
-    /**
-     * -----------------------------------------
-     * Estados de dashboard
-     * -----------------------------------------
-     */
     const [dashboardLoading, setDashboardLoading] = useState(true);
     const [dashboardError, setDashboardError] = useState<string | null>(null);
     const [dashboard, setDashboard] = useState<DashboardResp | null>(null);
 
-    /**
-     * -----------------------------------------
-     * Estados de estatísticas
-     * -----------------------------------------
-     */
     const [statsLoading, setStatsLoading] = useState(false);
     const [statsError, setStatsError] = useState<string | null>(null);
     const [stats, setStats] = useState<PoolStatsResp | null>(null);
 
-    /**
-     * -----------------------------------------
-     * Estados de ações
-     * -----------------------------------------
-     */
     const [actionLoading, setActionLoading] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
 
-    /**
-     * -----------------------------------------
-     * Formulário
-     * -----------------------------------------
-     */
     const [titulo, setTitulo] = useState("Sorteio");
     const [descricao, setDescricao] = useState("");
     const [status, setStatus] = useState<SorteioStatus>("draft");
     const [scheduledAtInput, setScheduledAtInput] = useState("");
     const [premiosText, setPremiosText] = useState("");
 
-    /**
-     * -----------------------------------------
-     * Refs para abort
-     * -----------------------------------------
-     */
     const dashboardAbortRef = useRef<AbortController | null>(null);
     const statsAbortRef = useRef<AbortController | null>(null);
     const autoStatsTriggeredRef = useRef(false);
@@ -248,11 +191,6 @@ export default function SorteiosAdminPage() {
 
     const hasResults = (dashboard?.resultados?.length ?? 0) > 0;
 
-    /**
-     * =========================================================
-     * Carregar dashboard
-     * =========================================================
-     */
     const loadDashboard = useCallback(async () => {
         dashboardAbortRef.current?.abort();
         const ac = new AbortController();
@@ -305,11 +243,6 @@ export default function SorteiosAdminPage() {
         }
     }, []);
 
-    /**
-     * =========================================================
-     * Carregar estatísticas
-     * =========================================================
-     */
     const loadStats = useCallback(async () => {
         statsAbortRef.current?.abort();
         const ac = new AbortController();
@@ -341,11 +274,6 @@ export default function SorteiosAdminPage() {
         }
     }, []);
 
-    /**
-     * =========================================================
-     * Montagem inicial
-     * =========================================================
-     */
     useEffect(() => {
         void loadDashboard();
 
@@ -355,11 +283,6 @@ export default function SorteiosAdminPage() {
         };
     }, [loadDashboard]);
 
-    /**
-     * =========================================================
-     * Auto-load de stats
-     * =========================================================
-     */
     useEffect(() => {
         if (!AUTO_LOAD_STATS) return;
         if (dashboardLoading) return;
@@ -375,11 +298,6 @@ export default function SorteiosAdminPage() {
         return () => window.clearTimeout(timeout);
     }, [dashboardLoading, dashboardError, loadStats]);
 
-    /**
-     * =========================================================
-     * Salvar sorteio
-     * =========================================================
-     */
     async function saveSorteio(): Promise<number | null> {
         setActionLoading(true);
         setActionError(null);
@@ -413,11 +331,6 @@ export default function SorteiosAdminPage() {
         }
     }
 
-    /**
-     * =========================================================
-     * Salvar prêmios
-     * =========================================================
-     */
     async function savePremios() {
         setActionLoading(true);
         setActionError(null);
@@ -459,11 +372,6 @@ export default function SorteiosAdminPage() {
         }
     }
 
-    /**
-     * =========================================================
-     * Executar sorteio
-     * =========================================================
-     */
     async function runNow(force = false) {
         setActionLoading(true);
         setActionError(null);
@@ -478,7 +386,7 @@ export default function SorteiosAdminPage() {
                 throw new Error("Cadastre os prêmios antes de executar.");
             }
 
-            const response = await apiJson<ApiResp<{ eligible_total?: number; took_ms?: number }>>(
+            const response = await apiJson<ApiResp<{ eligible_total?: number; took_ms?: number; rule?: string }>>(
                 `${API_URL}?op=admin_run`,
                 "POST",
                 {
@@ -492,7 +400,7 @@ export default function SorteiosAdminPage() {
             }
 
             await loadDashboard();
-            void loadStats();
+            await loadStats();
         } catch (error: any) {
             setActionError(error?.message || "Falha ao executar sorteio");
         } finally {
@@ -500,11 +408,6 @@ export default function SorteiosAdminPage() {
         }
     }
 
-    /**
-     * =========================================================
-     * Loading inicial
-     * =========================================================
-     */
     if (dashboardLoading) {
         return (
             <main className="min-h-[70vh] grid place-items-center px-4">
@@ -526,7 +429,7 @@ export default function SorteiosAdminPage() {
                     <div>
                         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Sorteios (Admin)</h1>
                         <p className="mt-2 text-gray-700 dark:text-gray-200">
-                            Cadastre prêmios, agende, acompanhe elegíveis e execute o sorteio com segurança.
+                            O sorteio considera somente titulares ativos com <b>0 mensalidades vencidas</b>.
                         </p>
                     </div>
 
@@ -542,7 +445,7 @@ export default function SorteiosAdminPage() {
                         <button
                             onClick={() => void loadStats()}
                             disabled={statsLoading || actionLoading}
-                            title="Recalcula ou usa o cache do total elegível"
+                            title="Calcula o total de titulares ativos com 0 mensalidades vencidas"
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                         >
                             {statsLoading ? "Calculando…" : "Atualizar elegíveis"}
@@ -577,7 +480,6 @@ export default function SorteiosAdminPage() {
                     </div>
                 ) : null}
 
-                {/* Configuração */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -658,7 +560,7 @@ export default function SorteiosAdminPage() {
                                         <span className="font-semibold">Executado:</span> {formatBR(sorteio?.executed_at)}
                                     </div>
                                     <div className="pt-2">
-                                        <span className="font-semibold">Titulares ativos e em dia:</span>{" "}
+                                        <span className="font-semibold">Titulares ativos com 0 mensalidades vencidas:</span>{" "}
                                         {statsLoading ? "Calculando…" : stats?.ok ? stats.eligible_total ?? "—" : "—"}
                                     </div>
 
@@ -713,7 +615,6 @@ export default function SorteiosAdminPage() {
                     </div>
                 </section>
 
-                {/* Prêmios */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -749,7 +650,6 @@ export default function SorteiosAdminPage() {
                     </div>
                 </section>
 
-                {/* Resultados */}
                 <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Resultados</h2>
@@ -802,7 +702,6 @@ export default function SorteiosAdminPage() {
                     </div>
                 </section>
 
-                {/* Diagnóstico */}
                 {stats?.diag ? (
                     <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
