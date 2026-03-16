@@ -10,88 +10,44 @@ const nunito = Nunito({
     weight: ["400", "600", "700", "800"],
 });
 
-/* ================= Tipos compartilhados ================= */
-type Categoria =
-    | "CARDIOLOGISTA"
-    | "FISIOTERAPEUTA"
-    | "GINECOLOGISTA"
-    | "NUTRICIONISTA"
-    | "ODONTOLOGISTA"
-    | "OTORRINO"
-    | "PEDIATRA"
-    | "PSICÓLOGO"
-    | "PSICOPEDAGOGO"
-    | "PSIQUIATRA"
-    | "CLÍNICAS"
-    | "LABORATÓRIOS";
-
-const CATEGORIAS: Categoria[] = [
-    "CARDIOLOGISTA",
-    "FISIOTERAPEUTA",
-    "GINECOLOGISTA",
-    "NUTRICIONISTA",
-    "ODONTOLOGISTA",
-    "OTORRINO",
-    "PEDIATRA",
-    "PSICÓLOGO",
-    "PSICOPEDAGOGO",
-    "PSIQUIATRA",
-    "CLÍNICAS",
-    "LABORATÓRIOS",
-];
+/* ================= Tipos ================= */
+type LookupItem = {
+    id: number;
+    nome: string;
+    ativo: 0 | 1 | boolean;
+    created_at?: string;
+    updated_at?: string;
+};
 
 type ApiConsulta = {
     id: number;
     nome: string;
-    categoria: Categoria;
-    especialidade?: string | null;
+    categorias: LookupItem[];
+    especialidades: LookupItem[];
     descricao?: string | null;
     unidade?: string | null;
     endereco: string;
     cep?: string | null;
     mapa_url?: string | null;
-    whatsapp?: string | null; // só dígitos (ex.: 5511999998888)
-    telefone?: string | null; // só dígitos
-    instagram?: string | null; // url completa ou @handle
+    whatsapp?: string | null;
+    telefone?: string | null;
+    instagram?: string | null;
     site?: string | null;
     ativo: 0 | 1 | boolean;
     created_at?: string;
     updated_at?: string;
 };
 
-type ApiListOk = { ok: true; items: ApiConsulta[] };
+type ApiListOk<T> = { ok: true; items: T[] };
+type ApiItemOk<T> = { ok: true; item: T };
 type ApiOk = { ok: true } & Record<string, unknown>;
 type ApiErr = { ok: false; error: string };
 
-function isApiConsulta(v: unknown): v is ApiConsulta {
-    if (typeof v !== "object" || v === null) return false;
-    const o = v as Record<string, unknown>;
-    return (
-        typeof o.id === "number" &&
-        typeof o.nome === "string" &&
-        typeof o.endereco === "string" &&
-        typeof o.categoria === "string"
-    );
-}
-function isApiListOk(v: unknown): v is ApiListOk {
-    if (typeof v !== "object" || v === null) return false;
-    const o = v as Record<string, unknown>;
-    if (o.ok !== true) return false;
-    if (!Array.isArray(o.items)) return false;
-    return o.items.every(isApiConsulta);
-}
-
-/* ================= Helpers ================= */
-function cleanDigits(s: string): string {
-    return s.replace(/\D+/g, "");
-}
-
-/* ================= Form State ================= */
 type FormState = {
-    id?: number; // presente somente em edição
+    id?: number;
     nome: string;
-    categoria: Categoria;
-    especialidade: string;
+    categoria_ids: number[];
+    especialidade_ids: number[];
     descricao: string;
     unidade: string;
     endereco: string;
@@ -104,12 +60,56 @@ type FormState = {
     ativo: boolean;
 };
 
+/* ================= Guards ================= */
+function isLookupItem(v: unknown): v is LookupItem {
+    if (typeof v !== "object" || v === null) return false;
+    const o = v as Record<string, unknown>;
+    return typeof o.id === "number" && typeof o.nome === "string";
+}
+
+function isApiConsulta(v: unknown): v is ApiConsulta {
+    if (typeof v !== "object" || v === null) return false;
+    const o = v as Record<string, unknown>;
+    return (
+        typeof o.id === "number" &&
+        typeof o.nome === "string" &&
+        typeof o.endereco === "string" &&
+        Array.isArray(o.categorias) &&
+        o.categorias.every(isLookupItem) &&
+        Array.isArray(o.especialidades) &&
+        o.especialidades.every(isLookupItem)
+    );
+}
+
+function isApiListOk<T>(
+    v: unknown,
+    itemGuard: (x: unknown) => x is T,
+): v is ApiListOk<T> {
+    if (typeof v !== "object" || v === null) return false;
+    const o = v as Record<string, unknown>;
+    return o.ok === true && Array.isArray(o.items) && o.items.every(itemGuard);
+}
+
+/* ================= Helpers ================= */
+function cleanDigits(s: string): string {
+    return s.replace(/\D+/g, "");
+}
+
+function isActive(v: 0 | 1 | boolean | undefined): boolean {
+    return typeof v === "boolean" ? v : v === 1;
+}
+
+function joinNames(items?: LookupItem[] | null): string {
+    if (!items?.length) return "—";
+    return items.map((x) => x.nome).join(", ");
+}
+
 function fromApiToForm(x: ApiConsulta): FormState {
     return {
         id: x.id,
         nome: x.nome ?? "",
-        categoria: x.categoria,
-        especialidade: x.especialidade ?? "",
+        categoria_ids: x.categorias?.map((c) => c.id) ?? [],
+        especialidade_ids: x.especialidades?.map((e) => e.id) ?? [],
         descricao: x.descricao ?? "",
         unidade: x.unidade ?? "",
         endereco: x.endereco ?? "",
@@ -119,15 +119,15 @@ function fromApiToForm(x: ApiConsulta): FormState {
         telefone: x.telefone ?? "",
         instagram: x.instagram ?? "",
         site: x.site ?? "",
-        ativo: typeof x.ativo === "boolean" ? x.ativo : x.ativo === 1,
+        ativo: isActive(x.ativo),
     };
 }
 
 function emptyForm(): FormState {
     return {
         nome: "",
-        categoria: "CLÍNICAS",
-        especialidade: "",
+        categoria_ids: [],
+        especialidade_ids: [],
         descricao: "",
         unidade: "",
         endereco: "",
@@ -141,30 +141,297 @@ function emptyForm(): FormState {
     };
 }
 
+/* ================= Submodal de cadastro de lookup ================= */
+function LookupManagerModal({
+    title,
+    endpoint,
+    items,
+    onClose,
+    onChanged,
+}: {
+    title: string;
+    endpoint: "categorias" | "especialidades";
+    items: LookupItem[];
+    onClose: () => void;
+    onChanged: () => Promise<void> | void;
+}) {
+    const [name, setName] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [busyId, setBusyId] = useState<number | null>(null);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
+
+    async function createItem() {
+        const nome = name.trim();
+        if (!nome || saving) return;
+
+        try {
+            setSaving(true);
+            const r = await fetch(`/api/consultas?${endpoint}=1`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ nome, ativo: 1 }),
+            });
+            const raw: unknown = await r.json();
+            if (!r.ok || (raw as ApiOk).ok !== true) {
+                throw new Error((raw as ApiErr | undefined)?.error || `Falha ao criar ${title.toLowerCase()}.`);
+            }
+            setName("");
+            await onChanged();
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function toggleActive(item: LookupItem) {
+        try {
+            setBusyId(item.id);
+            const r = await fetch(`/api/consultas?${endpoint}=1&id=${item.id}`, {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ ativo: isActive(item.ativo) ? 0 : 1 }),
+            });
+            const raw: unknown = await r.json();
+            if (!r.ok || (raw as ApiOk).ok !== true) {
+                throw new Error((raw as ApiErr | undefined)?.error || "Falha ao atualizar.");
+            }
+            await onChanged();
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+        } finally {
+            setBusyId(null);
+        }
+    }
+
+    async function removeItem(item: LookupItem) {
+        const ok = confirm(`Deseja excluir "${item.nome}"?`);
+        if (!ok) return;
+
+        try {
+            setBusyId(item.id);
+            const r = await fetch(`/api/consultas?${endpoint}=1&id=${item.id}`, {
+                method: "DELETE",
+            });
+            const raw: unknown = await r.json();
+            if (!r.ok || (raw as ApiOk).ok !== true) {
+                throw new Error((raw as ApiErr | undefined)?.error || "Falha ao excluir.");
+            }
+            await onChanged();
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+        } finally {
+            setBusyId(null);
+        }
+    }
+
+    return (
+        <div
+            className="fixed inset-0 z-[110] grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+            onClick={(e) => {
+                if (e.target === e.currentTarget) onClose();
+            }}
+            role="dialog"
+            aria-modal="true"
+        >
+            <div className={`w-full max-w-2xl rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 ${nunito.className}`}>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <h3 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">{title}</h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            Cadastre, ative, inative ou exclua itens.
+                        </p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                        Fechar
+                    </button>
+                </div>
+
+                <div className="mb-5 flex flex-col gap-3 md:flex-row">
+                    <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") void createItem();
+                        }}
+                        placeholder={`Nova ${title.toLowerCase().slice(0, -1)}`}
+                        className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                    />
+                    <button
+                        onClick={createItem}
+                        disabled={!name.trim() || saving}
+                        className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                        {saving ? "Adicionando…" : "Adicionar"}
+                    </button>
+                </div>
+
+                <div className="max-h-[50vh] overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
+                            <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                <th className="px-4 py-3">Nome</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                            {items.length === 0 && (
+                                <tr>
+                                    <td colSpan={3} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                                        Nenhum item cadastrado.
+                                    </td>
+                                </tr>
+                            )}
+
+                            {items.map((item) => (
+                                <tr key={item.id} className="bg-white/80 dark:bg-gray-900/60">
+                                    <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">{item.nome}</td>
+                                    <td className="px-4 py-3">
+                                        {isActive(item.ativo) ? "Ativo" : "Inativo"}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                onClick={() => void toggleActive(item)}
+                                                disabled={busyId === item.id}
+                                                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                            >
+                                                {busyId === item.id
+                                                    ? "Salvando…"
+                                                    : isActive(item.ativo)
+                                                        ? "Inativar"
+                                                        : "Ativar"}
+                                            </button>
+                                            <button
+                                                onClick={() => void removeItem(item)}
+                                                disabled={busyId === item.id}
+                                                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
+                                            >
+                                                Excluir
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ================= Campo de múltipla seleção ================= */
+function MultiSelectChecklist({
+    title,
+    items,
+    selectedIds,
+    onToggle,
+    onManage,
+    emptyText,
+}: {
+    title: string;
+    items: LookupItem[];
+    selectedIds: number[];
+    onToggle: (id: number) => void;
+    onManage: () => void;
+    emptyText: string;
+}) {
+    return (
+        <div className="rounded-2xl border border-gray-200/70 bg-white/70 p-4 dark:border-gray-800 dark:bg-gray-900/50">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                    {title}
+                </label>
+                <button
+                    type="button"
+                    onClick={onManage}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                    Gerenciar
+                </button>
+            </div>
+
+            {items.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                    {emptyText}
+                </div>
+            ) : (
+                <div className="grid max-h-52 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+                    {items.map((item) => {
+                        const checked = selectedIds.includes(item.id);
+                        return (
+                            <label
+                                key={item.id}
+                                className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${checked
+                                        ? "border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100"
+                                        : "border-gray-200 bg-white text-gray-800 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-100"
+                                    }`}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => onToggle(item.id)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="min-w-0 flex-1 truncate">{item.nome}</span>
+                            </label>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
 /* ================== Modal de Form (Create/Update) ================== */
 function EditModal({
     initial,
+    categorias,
+    especialidades,
     onCancel,
     onSaved,
+    onReloadLookups,
 }: {
     initial: FormState;
+    categorias: LookupItem[];
+    especialidades: LookupItem[];
     onCancel: () => void;
     onSaved: () => void;
+    onReloadLookups: () => Promise<void>;
 }) {
     const [model, setModel] = useState<FormState>(initial);
     const [saving, setSaving] = useState(false);
+    const [showCategoriasManager, setShowCategoriasManager] = useState(false);
+    const [showEspecialidadesManager, setShowEspecialidadesManager] = useState(false);
     const isEdit = typeof initial.id === "number";
 
     function set<K extends keyof FormState>(key: K, val: FormState[K]) {
         setModel((m) => ({ ...m, [key]: val }));
     }
 
+    function toggleArrayId(key: "categoria_ids" | "especialidade_ids", id: number) {
+        setModel((m) => {
+            const current = m[key];
+            const exists = current.includes(id);
+            return {
+                ...m,
+                [key]: exists ? current.filter((x) => x !== id) : [...current, id],
+            };
+        });
+    }
+
     const canSave = useMemo(() => {
-        return (
-            model.nome.trim() !== "" &&
-            model.endereco.trim() !== "" &&
-            CATEGORIAS.includes(model.categoria)
-        );
+        return model.nome.trim() !== "" && model.endereco.trim() !== "";
     }, [model]);
 
     async function save() {
@@ -173,8 +440,8 @@ function EditModal({
         try {
             const payload = {
                 nome: model.nome.trim(),
-                categoria: model.categoria,
-                especialidade: model.especialidade.trim() || null,
+                categoria_ids: model.categoria_ids,
+                especialidade_ids: model.especialidade_ids,
                 descricao: model.descricao.trim() || null,
                 unidade: model.unidade.trim() || null,
                 endereco: model.endereco.trim(),
@@ -195,17 +462,18 @@ function EditModal({
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify(payload),
             });
+
             const raw: unknown = await r.json();
+
             if (!r.ok) {
                 const msg = (raw as ApiErr | undefined)?.error || "Falha ao salvar.";
                 throw new Error(msg);
             }
-            const ok = (raw as ApiOk).ok === true;
-            if (!ok) {
-                const msg =
-                    (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
+            if ((raw as ApiOk).ok !== true) {
+                const msg = (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
                 throw new Error(msg);
             }
+
             onSaved();
         } catch (e) {
             alert(e instanceof Error ? e.message : String(e));
@@ -218,6 +486,7 @@ function EditModal({
         if (!isEdit || !model.id) return;
         const ok = confirm("Tem certeza que deseja excluir este registro?");
         if (!ok) return;
+
         try {
             setSaving(true);
             const r = await fetch(`/api/consultas?id=${model.id}`, { method: "DELETE" });
@@ -226,7 +495,7 @@ function EditModal({
                 const msg = (raw as ApiErr | undefined)?.error || "Falha ao excluir.";
                 throw new Error(msg);
             }
-            onSaved(); // fecha no pai e recarrega
+            onSaved();
         } catch (e) {
             alert(e instanceof Error ? e.message : String(e));
         } finally {
@@ -234,7 +503,6 @@ function EditModal({
         }
     }
 
-    // Fechar com ESC e click fora
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
         window.addEventListener("keydown", onKey);
@@ -242,266 +510,320 @@ function EditModal({
     }, [onCancel]);
 
     return (
-        <div
-            className="fixed inset-0 z-[100] grid place-items-center bg-black/40 backdrop-blur-sm p-4"
-            onClick={(e) => {
-                if (e.target === e.currentTarget) onCancel();
-            }}
-            role="dialog"
-            aria-modal="true"
-        >
+        <>
             <div
-                className={`w-full max-w-3xl rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 ${nunito.className}`}
+                className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+                onClick={(e) => {
+                    if (e.target === e.currentTarget) onCancel();
+                }}
+                role="dialog"
+                aria-modal="true"
             >
-                <div className="mb-4 flex items-start justify-between gap-3">
-                    <h2 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">
-                        {isEdit ? "Editar consulta" : "Nova consulta"}
-                    </h2>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={onCancel}
-                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                            disabled={saving}
-                        >
-                            Fechar
-                        </button>
-                        <button
-                            onClick={save}
-                            disabled={!canSave || saving}
-                            className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white ${canSave
-                                    ? "bg-emerald-600 hover:brightness-110"
-                                    : "bg-emerald-400 cursor-not-allowed opacity-70"
-                                }`}
-                        >
-                            {saving ? "Salvando…" : "Salvar"}
-                        </button>
-                        {isEdit && (
+                <div
+                    className={`max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 ${nunito.className}`}
+                >
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                        <h2 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">
+                            {isEdit ? "Editar consulta" : "Nova consulta"}
+                        </h2>
+                        <div className="flex gap-2">
                             <button
-                                onClick={removeInsideModal}
+                                onClick={onCancel}
+                                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 disabled={saving}
-                                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
                             >
-                                Excluir
+                                Fechar
                             </button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {/* Nome */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Nome *
-                        </label>
-                        <input
-                            value={model.nome}
-                            onChange={(e) => set("nome", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="Nome do profissional/clinica"
-                        />
-                    </div>
-                    {/* Categoria */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Categoria *
-                        </label>
-                        <select
-                            value={model.categoria}
-                            onChange={(e) => set("categoria", e.target.value as Categoria)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                        >
-                            {CATEGORIAS.map((c) => (
-                                <option key={c} value={c}>
-                                    {c}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    {/* Especialidade */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Especialidade
-                        </label>
-                        <input
-                            value={model.especialidade}
-                            onChange={(e) => set("especialidade", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="Ex.: Cardiologia Clínica"
-                        />
-                    </div>
-                    {/* Unidade */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Unidade
-                        </label>
-                        <input
-                            value={model.unidade}
-                            onChange={(e) => set("unidade", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="Ex.: Unidade Centro"
-                        />
-                    </div>
-                    {/* Endereço */}
-                    <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Endereço *
-                        </label>
-                        <input
-                            value={model.endereco}
-                            onChange={(e) => set("endereco", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="Rua, número, complemento, bairro"
-                        />
-                    </div>
-                    {/* CEP */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            CEP
-                        </label>
-                        <input
-                            value={model.cep}
-                            onChange={(e) => set("cep", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="00000-000"
-                        />
-                    </div>
-                    {/* Mapa URL */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            URL do Mapa
-                        </label>
-                        <input
-                            value={model.mapa_url}
-                            onChange={(e) => set("mapa_url", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="https://www.google.com/maps/…"
-                        />
-                    </div>
-                    {/* WhatsApp */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            WhatsApp (só dígitos)
-                        </label>
-                        <input
-                            value={model.whatsapp}
-                            onChange={(e) => set("whatsapp", cleanDigits(e.target.value))}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="5511999998888"
-                        />
-                    </div>
-                    {/* Telefone */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Telefone (só dígitos)
-                        </label>
-                        <input
-                            value={model.telefone}
-                            onChange={(e) => set("telefone", cleanDigits(e.target.value))}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="1130012002"
-                        />
-                    </div>
-                    {/* Instagram */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Instagram (URL ou @)
-                        </label>
-                        <input
-                            value={model.instagram}
-                            onChange={(e) => set("instagram", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="https://instagram.com/usuario ou @usuario"
-                        />
-                    </div>
-                    {/* Site */}
-                    <div>
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Site
-                        </label>
-                        <input
-                            value={model.site}
-                            onChange={(e) => set("site", e.target.value)}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="https://exemplo.com"
-                        />
+                            <button
+                                onClick={save}
+                                disabled={!canSave || saving}
+                                className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white ${canSave
+                                        ? "bg-emerald-600 hover:brightness-110"
+                                        : "cursor-not-allowed bg-emerald-400 opacity-70"
+                                    }`}
+                            >
+                                {saving ? "Salvando…" : "Salvar"}
+                            </button>
+                            {isEdit && (
+                                <button
+                                    onClick={removeInsideModal}
+                                    disabled={saving}
+                                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
+                                >
+                                    Excluir
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Ativo + Descrição (largas) */}
-                    <div className="flex items-center gap-3">
-                        <input
-                            id="ativo"
-                            type="checkbox"
-                            checked={model.ativo}
-                            onChange={(e) => set("ativo", e.target.checked)}
-                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <label htmlFor="ativo" className="text-sm text-gray-700 dark:text-gray-200">
-                            Ativo
-                        </label>
-                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Nome *
+                            </label>
+                            <input
+                                value={model.nome}
+                                onChange={(e) => set("nome", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="Nome do profissional/clinica"
+                            />
+                        </div>
 
-                    <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            Descrição
-                        </label>
-                        <textarea
-                            value={model.descricao}
-                            onChange={(e) => set("descricao", e.target.value)}
-                            rows={3}
-                            className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
-                            placeholder="Breve descrição para uso interno/apoio"
-                        />
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Unidade
+                            </label>
+                            <input
+                                value={model.unidade}
+                                onChange={(e) => set("unidade", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="Ex.: Unidade Centro"
+                            />
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <MultiSelectChecklist
+                                title="Categorias"
+                                items={categorias}
+                                selectedIds={model.categoria_ids}
+                                onToggle={(id) => toggleArrayId("categoria_ids", id)}
+                                onManage={() => setShowCategoriasManager(true)}
+                                emptyText="Nenhuma categoria cadastrada. Clique em Gerenciar para adicionar."
+                            />
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <MultiSelectChecklist
+                                title="Especialidades"
+                                items={especialidades}
+                                selectedIds={model.especialidade_ids}
+                                onToggle={(id) => toggleArrayId("especialidade_ids", id)}
+                                onManage={() => setShowEspecialidadesManager(true)}
+                                emptyText="Nenhuma especialidade cadastrada. Clique em Gerenciar para adicionar."
+                            />
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Endereço *
+                            </label>
+                            <input
+                                value={model.endereco}
+                                onChange={(e) => set("endereco", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="Rua, número, complemento, bairro"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                CEP
+                            </label>
+                            <input
+                                value={model.cep}
+                                onChange={(e) => set("cep", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="00000-000"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                URL do Mapa
+                            </label>
+                            <input
+                                value={model.mapa_url}
+                                onChange={(e) => set("mapa_url", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="https://www.google.com/maps/…"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                WhatsApp (só dígitos)
+                            </label>
+                            <input
+                                value={model.whatsapp}
+                                onChange={(e) => set("whatsapp", cleanDigits(e.target.value))}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="5511999998888"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Telefone (só dígitos)
+                            </label>
+                            <input
+                                value={model.telefone}
+                                onChange={(e) => set("telefone", cleanDigits(e.target.value))}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="1130012002"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Instagram (URL ou @)
+                            </label>
+                            <input
+                                value={model.instagram}
+                                onChange={(e) => set("instagram", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="https://instagram.com/usuario ou @usuario"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Site
+                            </label>
+                            <input
+                                value={model.site}
+                                onChange={(e) => set("site", e.target.value)}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="https://exemplo.com"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <input
+                                id="ativo"
+                                type="checkbox"
+                                checked={model.ativo}
+                                onChange={(e) => set("ativo", e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <label htmlFor="ativo" className="text-sm text-gray-700 dark:text-gray-200">
+                                Ativo
+                            </label>
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                Descrição
+                            </label>
+                            <textarea
+                                value={model.descricao}
+                                onChange={(e) => set("descricao", e.target.value)}
+                                rows={3}
+                                className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
+                                placeholder="Breve descrição para uso interno/apoio"
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+
+            {showCategoriasManager && (
+                <LookupManagerModal
+                    title="Categorias"
+                    endpoint="categorias"
+                    items={categorias}
+                    onClose={() => setShowCategoriasManager(false)}
+                    onChanged={async () => {
+                        await onReloadLookups();
+                    }}
+                />
+            )}
+
+            {showEspecialidadesManager && (
+                <LookupManagerModal
+                    title="Especialidades"
+                    endpoint="especialidades"
+                    items={especialidades}
+                    onClose={() => setShowEspecialidadesManager(false)}
+                    onChanged={async () => {
+                        await onReloadLookups();
+                    }}
+                />
+            )}
+        </>
     );
 }
 
 /* ================== Página Admin ================== */
 export default function AdminConsultasPage() {
     const [q, setQ] = useState("");
-    const [cat, setCat] = useState<"TODAS" | Categoria>("TODAS");
+    const [catId, setCatId] = useState<"TODAS" | number>("TODAS");
     const [ativos, setAtivos] = useState<"todos" | "apenasAtivos">("apenasAtivos");
 
     const [rows, setRows] = useState<ApiConsulta[]>([]);
+    const [categorias, setCategorias] = useState<LookupItem[]>([]);
+    const [especialidades, setEspecialidades] = useState<LookupItem[]>([]);
+
     const [loading, setLoading] = useState(false);
+    const [loadingLookups, setLoadingLookups] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
-    // Modal
     const [editing, setEditing] = useState<FormState | null>(null);
 
-    // Busca com debounce
     const [debouncedQ, setDebouncedQ] = useState(q);
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQ(q), 300);
         return () => clearTimeout(t);
     }, [q]);
 
+    async function loadLookups() {
+        setLoadingLookups(true);
+        try {
+            const [catRes, espRes] = await Promise.all([
+                fetch("/api/consultas?categorias=1", { cache: "no-store" }),
+                fetch("/api/consultas?especialidades=1", { cache: "no-store" }),
+            ]);
+
+            const catRaw: unknown = await catRes.json();
+            const espRaw: unknown = await espRes.json();
+
+            if (!catRes.ok) {
+                throw new Error((catRaw as ApiErr | undefined)?.error || "Falha ao carregar categorias.");
+            }
+            if (!espRes.ok) {
+                throw new Error((espRaw as ApiErr | undefined)?.error || "Falha ao carregar especialidades.");
+            }
+            if (!isApiListOk(catRaw, isLookupItem)) {
+                throw new Error("Resposta inválida ao carregar categorias.");
+            }
+            if (!isApiListOk(espRaw, isLookupItem)) {
+                throw new Error("Resposta inválida ao carregar especialidades.");
+            }
+
+            setCategorias(catRaw.items);
+            setEspecialidades(espRaw.items);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+        } finally {
+            setLoadingLookups(false);
+        }
+    }
+
     async function load() {
         setLoading(true);
         setErr(null);
+
         try {
             const params = new URLSearchParams();
             params.set("list", "1");
             params.set("limit", "500");
             if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
-            if (cat !== "TODAS") params.set("categoria", cat);
+            if (catId !== "TODAS") params.set("categoria_id", String(catId));
             if (ativos === "apenasAtivos") params.set("ativos", "1");
 
             const r = await fetch(`/api/consultas?${params.toString()}`, {
                 cache: "no-store",
             });
             const raw: unknown = await r.json();
+
             if (!r.ok) {
                 const msg = (raw as ApiErr | undefined)?.error || "Falha ao carregar.";
                 throw new Error(msg);
             }
-            if (!isApiListOk(raw)) {
-                const msg =
-                    (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
+            if (!isApiListOk(raw, isApiConsulta)) {
+                const msg = (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
                 throw new Error(msg);
             }
+
             setRows(raw.items);
         } catch (e) {
             setErr(e instanceof Error ? e.message : String(e));
@@ -512,33 +834,36 @@ export default function AdminConsultasPage() {
     }
 
     useEffect(() => {
-        load();
+        void loadLookups();
+    }, []);
+
+    useEffect(() => {
+        void load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedQ, cat, ativos]);
+    }, [debouncedQ, catId, ativos]);
 
     function openCreate() {
         setEditing(emptyForm());
     }
+
     function openEdit(x: ApiConsulta) {
         setEditing(fromApiToForm(x));
     }
 
     const filtered = useMemo(() => {
-        // o backend já filtra por q/categoria/ativo, mas mantemos ordenação estável aqui
         return [...rows].sort((a, b) => a.nome.localeCompare(b.nome));
     }, [rows]);
 
     return (
         <main className={`${nunito.className} px-4 py-6 md:px-8`}>
-            <div className="mx-auto w-full max-w-6xl">
+            <div className="mx-auto w-full max-w-7xl">
                 <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                         <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-gray-100">
                             Admin • Consultas
                         </h1>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            Gerencie os registros de consultas: criar, editar, excluir e
-                            filtrar.
+                            Gerencie os registros, categorias e especialidades.
                         </p>
                     </div>
 
@@ -550,7 +875,13 @@ export default function AdminConsultasPage() {
                             + Nova consulta
                         </button>
                         <button
-                            onClick={load}
+                            onClick={() => void loadLookups()}
+                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                            {loadingLookups ? "Atualizando listas…" : "Atualizar listas"}
+                        </button>
+                        <button
+                            onClick={() => void load()}
                             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                         >
                             Recarregar
@@ -558,7 +889,6 @@ export default function AdminConsultasPage() {
                     </div>
                 </header>
 
-                {/* Filtros */}
                 <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div className="relative">
                         <input
@@ -582,14 +912,16 @@ export default function AdminConsultasPage() {
 
                     <div>
                         <select
-                            value={cat}
-                            onChange={(e) => setCat(e.target.value as "TODAS" | Categoria)}
+                            value={catId === "TODAS" ? "TODAS" : String(catId)}
+                            onChange={(e) =>
+                                setCatId(e.target.value === "TODAS" ? "TODAS" : Number(e.target.value))
+                            }
                             className="w-full rounded-2xl border border-gray-200/70 bg-white/80 px-3 py-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
                         >
                             <option value="TODAS">Todas as categorias</option>
-                            {CATEGORIAS.map((c) => (
-                                <option key={c} value={c}>
-                                    {c}
+                            {categorias.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    {c.nome}
                                 </option>
                             ))}
                         </select>
@@ -607,49 +939,31 @@ export default function AdminConsultasPage() {
                     </div>
                 </section>
 
-                {/* Estados de carregamento/erro */}
                 {loading && (
                     <div className="rounded-2xl border border-gray-200 bg-white p-6 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">
                         Carregando…
                     </div>
                 )}
+
                 {err && !loading && (
                     <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-900/50 dark:bg-red-900/20">
                         {err}
                     </div>
                 )}
 
-                {/* Tabela */}
                 {!loading && !err && (
-                    <div className="rounded-2xl border border-gray-200 dark:border-gray-800">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm">
+                    <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
                             <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                    {/* ID – escondido no mobile */}
-                                    <th className="px-4 py-3 hidden md:table-cell">ID</th>
-
-                                    {/* Nome – sempre visível */}
+                                    <th className="hidden px-4 py-3 md:table-cell">ID</th>
                                     <th className="px-4 py-3">Nome</th>
-
-                                    {/* Categoria – sempre visível */}
-                                    <th className="px-4 py-3">Categoria</th>
-
-                                    {/* Especialidade – escondido no mobile */}
-                                    <th className="px-4 py-3 hidden md:table-cell">Especialidade</th>
-
-                                    {/* Endereço – escondido no mobile */}
-                                    <th className="px-4 py-3 hidden md:table-cell">Endereço</th>
-
-                                    {/* WhatsApp – escondido no mobile */}
-                                    <th className="px-4 py-3 hidden md:table-cell">WhatsApp</th>
-
-                                    {/* Telefone – escondido no mobile */}
-                                    <th className="px-4 py-3 hidden md:table-cell">Telefone</th>
-
-                                    {/* Ativo – escondido no mobile */}
-                                    <th className="px-4 py-3 hidden md:table-cell">Ativo</th>
-
-                                    {/* Ações – sempre visível (somente Editar) */}
+                                    <th className="px-4 py-3">Categorias</th>
+                                    <th className="hidden px-4 py-3 md:table-cell">Especialidades</th>
+                                    <th className="hidden px-4 py-3 md:table-cell">Endereço</th>
+                                    <th className="hidden px-4 py-3 md:table-cell">WhatsApp</th>
+                                    <th className="hidden px-4 py-3 md:table-cell">Telefone</th>
+                                    <th className="hidden px-4 py-3 md:table-cell">Ativo</th>
                                     <th className="px-4 py-3 text-right">Ações</th>
                                 </tr>
                             </thead>
@@ -668,39 +982,35 @@ export default function AdminConsultasPage() {
 
                                 {filtered.map((r) => (
                                     <tr key={r.id} className="bg-white/80 dark:bg-gray-900/60">
-                                        {/* ID – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">{r.id}</td>
+                                        <td className="hidden px-4 py-3 md:table-cell">{r.id}</td>
 
-                                        {/* Nome – sempre visível */}
                                         <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
-                                            {r.nome}
+                                            <div>{r.nome}</div>
+                                            <div className="mt-1 text-xs font-normal text-gray-500 md:hidden dark:text-gray-400">
+                                                {joinNames(r.categorias)}
+                                            </div>
                                         </td>
 
-                                        {/* Categoria – sempre visível */}
-                                        <td className="px-4 py-3">{r.categoria}</td>
+                                        <td className="px-4 py-3">{joinNames(r.categorias)}</td>
 
-                                        {/* Especialidade – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">
-                                            {r.especialidade || "—"}
+                                        <td className="hidden px-4 py-3 md:table-cell">
+                                            {joinNames(r.especialidades)}
                                         </td>
 
-                                        {/* Endereço – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">{r.endereco}</td>
+                                        <td className="hidden px-4 py-3 md:table-cell">{r.endereco}</td>
 
-                                        {/* WhatsApp – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">
+                                        <td className="hidden px-4 py-3 md:table-cell">
                                             {r.whatsapp || "—"}
                                         </td>
 
-                                        {/* Telefone – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">{r.telefone || "—"}</td>
-
-                                        {/* Ativo – escondido no mobile */}
-                                        <td className="px-4 py-3 hidden md:table-cell">
-                                            {(typeof r.ativo === "boolean" ? r.ativo : r.ativo === 1) ? "Sim" : "Não"}
+                                        <td className="hidden px-4 py-3 md:table-cell">
+                                            {r.telefone || "—"}
                                         </td>
 
-                                        {/* Ações – apenas Editar (Excluir foi para o modal) */}
+                                        <td className="hidden px-4 py-3 md:table-cell">
+                                            {isActive(r.ativo) ? "Sim" : "Não"}
+                                        </td>
+
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end">
                                                 <button
@@ -718,14 +1028,16 @@ export default function AdminConsultasPage() {
                     </div>
                 )}
 
-                {/* Modal de edição/criação */}
                 {editing && (
                     <EditModal
                         initial={editing}
+                        categorias={categorias}
+                        especialidades={especialidades}
                         onCancel={() => setEditing(null)}
+                        onReloadLookups={loadLookups}
                         onSaved={async () => {
                             setEditing(null);
-                            await load();
+                            await Promise.all([loadLookups(), load()]);
                         }}
                     />
                 )}
