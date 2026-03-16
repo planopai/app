@@ -918,6 +918,31 @@ function convenioClass(kind: ConvenioKind) {
     }
 }
 
+function ConvenioBadge({
+    convenio,
+    size = "sm",
+}: {
+    convenio?: string;
+    size?: "xs" | "sm";
+}) {
+    const kind = normalizeConvenio(convenio);
+    const sizeClass =
+        size === "xs"
+            ? "px-2 py-0.5 text-[10px]"
+            : "px-2.5 py-1 text-[11px]";
+
+    return (
+        <span
+            className={`inline-flex items-center rounded-full font-semibold text-white ${convenioClass(
+                kind
+            )} ${sizeClass}`}
+            title="Convênio"
+        >
+            {kind}
+        </span>
+    );
+}
+
 /* ---------------- Etapas (bolinhas) ---------------- */
 const STAGE_DOT_FILLED = [
     "bg-emerald-500 border-emerald-600",
@@ -1660,26 +1685,30 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
             </div>
 
             <style jsx global>{`
-        @keyframes qa-avisos-marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .qa-avisos-track {
-          will-change: transform;
-          animation-name: qa-avisos-marquee;
-          animation-timing-function: linear;
-          animation-iteration-count: infinite;
-        }
-        .qa-avisos-track:hover {
-          animation-play-state: paused;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .qa-avisos-track {
-            animation: none !important;
-            transform: none !important;
-          }
-        }
-      `}</style>
+                @keyframes qa-avisos-marquee {
+                    0% {
+                        transform: translateX(0);
+                    }
+                    100% {
+                        transform: translateX(-50%);
+                    }
+                }
+                .qa-avisos-track {
+                    will-change: transform;
+                    animation-name: qa-avisos-marquee;
+                    animation-timing-function: linear;
+                    animation-iteration-count: infinite;
+                }
+                .qa-avisos-track:hover {
+                    animation-play-state: paused;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .qa-avisos-track {
+                        animation: none !important;
+                        transform: none !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
@@ -1720,9 +1749,13 @@ const DesktopTable = React.memo(function DesktopTable({
                                 const preenchidas = etapasPreenchidas(r);
                                 return (
                                     <tr key={i} className="[&>td]:px-4 [&>td]:py-3 align-top">
-                                        <td>{dateOr(r.data)}</td>
+                                        <td>
+                                            <div className="flex flex-col items-start gap-1 leading-tight">
+                                                <div>{dateOr(r.data)}</div>
+                                                <ConvenioBadge convenio={r.convenio} size="xs" />
+                                            </div>
+                                        </td>
 
-                                        {/* ✅ FIX: força alinhamento à esquerda SEMPRE */}
                                         <td className="text-left">
                                             <button
                                                 className="w-full text-left font-semibold underline-offset-2 hover:underline break-words [overflow-wrap:anywhere]"
@@ -1783,7 +1816,6 @@ const MobileCards = React.memo(function MobileCards({
                     const statusTxt = capStatus(r.status) || "a definir";
                     const statusBg = badgeClass(r.status);
                     const localSep = shown(r.local_sepultamento || r.local);
-                    const convKind = normalizeConvenio(r.convenio);
 
                     return (
                         <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
@@ -1795,19 +1827,16 @@ const MobileCards = React.memo(function MobileCards({
                                 >
                                     {shown(r.falecido)}
                                 </button>
-                                <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
+                                <div className="shrink-0 flex flex-col items-end gap-1 mt-0.5">
+                                    <div className="text-xs text-muted-foreground">{dataBR}</div>
+                                    <ConvenioBadge convenio={r.convenio} size="xs" />
+                                </div>
                             </div>
 
                             <div className="mt-2 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2">
                                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
                                         {statusTxt}
-                                    </span>
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(convKind)}`}
-                                        title="Convênio"
-                                    >
-                                        {convKind}
                                     </span>
                                 </div>
                                 <div className="text-xs">
