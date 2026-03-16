@@ -1,7 +1,7 @@
 // src/app/(admin)/consultas/admin/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Nunito } from "next/font/google";
 
 /* ===== Fonte Nunito ===== */
@@ -39,7 +39,6 @@ type ApiConsulta = {
 };
 
 type ApiListOk<T> = { ok: true; items: T[] };
-type ApiItemOk<T> = { ok: true; item: T };
 type ApiOk = { ok: true } & Record<string, unknown>;
 type ApiErr = { ok: false; error: string };
 
@@ -141,6 +140,15 @@ function emptyForm(): FormState {
     };
 }
 
+async function safeJson(res: Response) {
+    const text = await res.text();
+    try {
+        return JSON.parse(text) as unknown;
+    } catch {
+        throw new Error(text || "Resposta inválida do servidor.");
+    }
+}
+
 /* ================= Submodal de cadastro de lookup ================= */
 function LookupManagerModal({
     title,
@@ -176,9 +184,11 @@ function LookupManagerModal({
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ nome, ativo: 1 }),
             });
-            const raw: unknown = await r.json();
+            const raw = await safeJson(r);
             if (!r.ok || (raw as ApiOk).ok !== true) {
-                throw new Error((raw as ApiErr | undefined)?.error || `Falha ao criar ${title.toLowerCase()}.`);
+                throw new Error(
+                    (raw as ApiErr | undefined)?.error || `Falha ao criar ${title.toLowerCase()}.`,
+                );
             }
             setName("");
             await onChanged();
@@ -197,7 +207,7 @@ function LookupManagerModal({
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ ativo: isActive(item.ativo) ? 0 : 1 }),
             });
-            const raw: unknown = await r.json();
+            const raw = await safeJson(r);
             if (!r.ok || (raw as ApiOk).ok !== true) {
                 throw new Error((raw as ApiErr | undefined)?.error || "Falha ao atualizar.");
             }
@@ -218,7 +228,7 @@ function LookupManagerModal({
             const r = await fetch(`/api/consultas?${endpoint}=1&id=${item.id}`, {
                 method: "DELETE",
             });
-            const raw: unknown = await r.json();
+            const raw = await safeJson(r);
             if (!r.ok || (raw as ApiOk).ok !== true) {
                 throw new Error((raw as ApiErr | undefined)?.error || "Falha ao excluir.");
             }
@@ -232,7 +242,7 @@ function LookupManagerModal({
 
     return (
         <div
-            className="fixed inset-0 z-[110] grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[120] grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
             onClick={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
@@ -295,9 +305,7 @@ function LookupManagerModal({
                             {items.map((item) => (
                                 <tr key={item.id} className="bg-white/80 dark:bg-gray-900/60">
                                     <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">{item.nome}</td>
-                                    <td className="px-4 py-3">
-                                        {isActive(item.ativo) ? "Ativo" : "Inativo"}
-                                    </td>
+                                    <td className="px-4 py-3">{isActive(item.ativo) ? "Ativo" : "Inativo"}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex justify-end gap-2">
                                             <button
@@ -330,63 +338,172 @@ function LookupManagerModal({
     );
 }
 
-/* ================= Campo de múltipla seleção ================= */
-function MultiSelectChecklist({
-    title,
+/* ================= Dropdown multi-select compacto ================= */
+function MultiSelectDropdown({
+    label,
     items,
     selectedIds,
     onToggle,
+    onClear,
     onManage,
+    placeholder,
     emptyText,
 }: {
-    title: string;
+    label: string;
     items: LookupItem[];
     selectedIds: number[];
     onToggle: (id: number) => void;
+    onClear: () => void;
     onManage: () => void;
+    placeholder: string;
     emptyText: string;
 }) {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const boxRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        function handleOutside(e: MouseEvent) {
+            if (!boxRef.current) return;
+            if (!boxRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleOutside);
+        return () => document.removeEventListener("mousedown", handleOutside);
+    }, []);
+
+    const filteredItems = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return items;
+        return items.filter((item) => item.nome.toLowerCase().includes(q));
+    }, [items, search]);
+
+    const selectedItems = useMemo(() => {
+        const ids = new Set(selectedIds);
+        return items.filter((item) => ids.has(item.id));
+    }, [items, selectedIds]);
+
+    const buttonLabel =
+        selectedItems.length === 0
+            ? placeholder
+            : selectedItems.length <= 2
+                ? selectedItems.map((x) => x.nome).join(", ")
+                : `${selectedItems.length} selecionadas`;
+
     return (
-        <div className="rounded-2xl border border-gray-200/70 bg-white/70 p-4 dark:border-gray-800 dark:bg-gray-900/50">
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">
-                    {title}
-                </label>
+        <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                {label}
+            </label>
+
+            <div className="flex items-start gap-2">
+                <div ref={boxRef} className="relative min-w-0 flex-1">
+                    <button
+                        type="button"
+                        onClick={() => setOpen((v) => !v)}
+                        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-gray-200/70 bg-white/90 px-4 py-3 text-left text-sm outline-none transition hover:bg-gray-50 focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100 dark:hover:bg-gray-800"
+                    >
+                        <span className={`min-w-0 truncate ${selectedItems.length === 0 ? "text-gray-400 dark:text-gray-500" : "text-gray-800 dark:text-gray-100"}`}>
+                            {buttonLabel}
+                        </span>
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M7 10l5 5 5-5"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                fill="none"
+                            />
+                        </svg>
+                    </button>
+
+                    {open && (
+                        <div className="absolute left-0 right-0 z-[130] mt-2 rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+                            <div className="border-b border-gray-100 p-3 dark:border-gray-800">
+                                <input
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    placeholder="Buscar..."
+                                    className="w-full rounded-xl border border-gray-200/70 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                />
+
+                                <div className="mt-3 flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={onClear}
+                                        className="rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                    >
+                                        Limpar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="max-h-72 overflow-y-auto p-2">
+                                {filteredItems.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                        {emptyText}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {filteredItems.map((item) => {
+                                            const checked = selectedIds.includes(item.id);
+                                            return (
+                                                <label
+                                                    key={item.id}
+                                                    className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-gray-800"
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => onToggle(item.id)}
+                                                        className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                                    />
+                                                    <span className="min-w-0 flex-1">{item.nome}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <button
                     type="button"
                     onClick={onManage}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="shrink-0 rounded-xl border border-gray-300 px-3 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
                     Gerenciar
                 </button>
             </div>
 
-            {items.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                    {emptyText}
-                </div>
-            ) : (
-                <div className="grid max-h-52 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
-                    {items.map((item) => {
-                        const checked = selectedIds.includes(item.id);
-                        return (
-                            <label
-                                key={item.id}
-                                className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${checked
-                                        ? "border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100"
-                                        : "border-gray-200 bg-white text-gray-800 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-100"
-                                    }`}
+            {selectedItems.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                    {selectedItems.map((item) => (
+                        <span
+                            key={item.id}
+                            className="inline-flex items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
+                        >
+                            {item.nome}
+                            <button
+                                type="button"
+                                onClick={() => onToggle(item.id)}
+                                className="rounded-full text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-white"
+                                aria-label={`Remover ${item.nome}`}
                             >
-                                <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => onToggle(item.id)}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className="min-w-0 flex-1 truncate">{item.nome}</span>
-                            </label>
-                        );
-                    })}
+                                ×
+                            </button>
+                        </span>
+                    ))}
                 </div>
             )}
         </div>
@@ -430,9 +547,19 @@ function EditModal({
         });
     }
 
+    function clearArray(key: "categoria_ids" | "especialidade_ids") {
+        setModel((m) => ({ ...m, [key]: [] }));
+    }
+
     const canSave = useMemo(() => {
         return model.nome.trim() !== "" && model.endereco.trim() !== "";
     }, [model]);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onCancel]);
 
     async function save() {
         if (!canSave || saving) return;
@@ -463,15 +590,13 @@ function EditModal({
                 body: JSON.stringify(payload),
             });
 
-            const raw: unknown = await r.json();
+            const raw = await safeJson(r);
 
             if (!r.ok) {
-                const msg = (raw as ApiErr | undefined)?.error || "Falha ao salvar.";
-                throw new Error(msg);
+                throw new Error((raw as ApiErr | undefined)?.error || "Falha ao salvar.");
             }
             if ((raw as ApiOk).ok !== true) {
-                const msg = (raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.";
-                throw new Error(msg);
+                throw new Error((raw as ApiErr | undefined)?.error || "Resposta inválida do servidor.");
             }
 
             onSaved();
@@ -490,10 +615,9 @@ function EditModal({
         try {
             setSaving(true);
             const r = await fetch(`/api/consultas?id=${model.id}`, { method: "DELETE" });
-            const raw: unknown = await r.json();
+            const raw = await safeJson(r);
             if (!r.ok || (raw as ApiOk).ok !== true) {
-                const msg = (raw as ApiErr | undefined)?.error || "Falha ao excluir.";
-                throw new Error(msg);
+                throw new Error((raw as ApiErr | undefined)?.error || "Falha ao excluir.");
             }
             onSaved();
         } catch (e) {
@@ -502,12 +626,6 @@ function EditModal({
             setSaving(false);
         }
     }
-
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [onCancel]);
 
     return (
         <>
@@ -582,24 +700,28 @@ function EditModal({
                         </div>
 
                         <div className="md:col-span-2">
-                            <MultiSelectChecklist
-                                title="Categorias"
+                            <MultiSelectDropdown
+                                label="Categorias"
                                 items={categorias}
                                 selectedIds={model.categoria_ids}
                                 onToggle={(id) => toggleArrayId("categoria_ids", id)}
+                                onClear={() => clearArray("categoria_ids")}
                                 onManage={() => setShowCategoriasManager(true)}
-                                emptyText="Nenhuma categoria cadastrada. Clique em Gerenciar para adicionar."
+                                placeholder="Selecione uma ou mais categorias"
+                                emptyText="Nenhuma categoria encontrada."
                             />
                         </div>
 
                         <div className="md:col-span-2">
-                            <MultiSelectChecklist
-                                title="Especialidades"
+                            <MultiSelectDropdown
+                                label="Especialidades"
                                 items={especialidades}
                                 selectedIds={model.especialidade_ids}
                                 onToggle={(id) => toggleArrayId("especialidade_ids", id)}
+                                onClear={() => clearArray("especialidade_ids")}
                                 onManage={() => setShowEspecialidadesManager(true)}
-                                emptyText="Nenhuma especialidade cadastrada. Clique em Gerenciar para adicionar."
+                                placeholder="Selecione uma ou mais especialidades"
+                                emptyText="Nenhuma especialidade encontrada."
                             />
                         </div>
 
@@ -773,8 +895,8 @@ export default function AdminConsultasPage() {
                 fetch("/api/consultas?especialidades=1", { cache: "no-store" }),
             ]);
 
-            const catRaw: unknown = await catRes.json();
-            const espRaw: unknown = await espRes.json();
+            const catRaw = await safeJson(catRes);
+            const espRaw = await safeJson(espRes);
 
             if (!catRes.ok) {
                 throw new Error((catRaw as ApiErr | undefined)?.error || "Falha ao carregar categorias.");
@@ -813,7 +935,7 @@ export default function AdminConsultasPage() {
             const r = await fetch(`/api/consultas?${params.toString()}`, {
                 cache: "no-store",
             });
-            const raw: unknown = await r.json();
+            const raw = await safeJson(r);
 
             if (!r.ok) {
                 const msg = (raw as ApiErr | undefined)?.error || "Falha ao carregar.";
