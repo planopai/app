@@ -1547,14 +1547,22 @@ export default function QuadroAtendimentoPage() {
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 space-y-3">
                     {avisos.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
                     ) : (
                         avisos.map((a, i) => (
-                            <div key={i} className="flex gap-2 text-sm">
-                                <strong>{shown(a.usuario, "")}</strong>
-                                <span>{shown(a.mensagem, "")}</span>
+                            <div
+                                key={i}
+                                className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
+                            >
+                                <div className="text-sm font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
+                                    {shown(a.usuario, "Sistema")}
+                                </div>
+
+                                <div className="mt-1 text-sm leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
+                                    {shown(a.mensagem, "")}
+                                </div>
                             </div>
                         ))
                     )}
