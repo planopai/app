@@ -710,39 +710,10 @@ function EditModal({
                 <div
                     className={`max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200/70 bg-white/95 p-4 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 sm:p-6 ${nunito.className}`}
                 >
-                    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="mb-4">
                         <h2 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">
                             {isEdit ? "Editar consulta" : "Nova consulta"}
                         </h2>
-
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
-                            <button
-                                onClick={onCancel}
-                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                disabled={saving}
-                            >
-                                Fechar
-                            </button>
-                            <button
-                                onClick={save}
-                                disabled={!canSave || saving}
-                                className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${canSave
-                                        ? "bg-emerald-600 hover:brightness-110"
-                                        : "cursor-not-allowed bg-emerald-400 opacity-70"
-                                    }`}
-                            >
-                                {saving ? "Salvando…" : "Salvar"}
-                            </button>
-                            {isEdit && (
-                                <button
-                                    onClick={removeInsideModal}
-                                    disabled={saving}
-                                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:brightness-110 sm:col-span-2 lg:col-span-1"
-                                >
-                                    Excluir
-                                </button>
-                            )}
-                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -904,6 +875,39 @@ function EditModal({
                                 className="w-full rounded-xl border border-gray-200/70 bg-white/90 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100"
                                 placeholder="Breve descrição para uso interno/apoio"
                             />
+                        </div>
+
+                        <div className="md:col-span-2 mt-2 border-t border-gray-200 pt-4 dark:border-gray-800">
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:justify-end">
+                                <button
+                                    onClick={onCancel}
+                                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                    disabled={saving}
+                                >
+                                    Fechar
+                                </button>
+
+                                <button
+                                    onClick={save}
+                                    disabled={!canSave || saving}
+                                    className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${canSave
+                                            ? "bg-emerald-600 hover:brightness-110"
+                                            : "cursor-not-allowed bg-emerald-400 opacity-70"
+                                        }`}
+                                >
+                                    {saving ? "Salvando…" : "Salvar"}
+                                </button>
+
+                                {isEdit && (
+                                    <button
+                                        onClick={removeInsideModal}
+                                        disabled={saving}
+                                        className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:brightness-110 sm:col-span-2 lg:col-span-1"
+                                    >
+                                        Excluir
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
