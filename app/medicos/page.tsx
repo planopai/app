@@ -242,30 +242,35 @@ function LookupManagerModal({
 
     return (
         <div
-            className="fixed inset-0 z-[120] grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[120] grid place-items-center bg-black/40 p-3 sm:p-4 backdrop-blur-sm"
             onClick={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
             role="dialog"
             aria-modal="true"
         >
-            <div className={`w-full max-w-2xl rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 ${nunito.className}`}>
-                <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                        <h3 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">{title}</h3>
+            <div
+                className={`w-full max-w-2xl rounded-2xl border border-gray-200/70 bg-white/95 p-4 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 sm:p-6 ${nunito.className}`}
+            >
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                        <h3 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">
+                            {title}
+                        </h3>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             Cadastre, ative, inative ou exclua itens.
                         </p>
                     </div>
+
                     <button
                         onClick={onClose}
-                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
                     >
                         Fechar
                     </button>
                 </div>
 
-                <div className="mb-5 flex flex-col gap-3 md:flex-row">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row">
                     <input
                         value={name}
                         onChange={(e) => setName(e.target.value)}
@@ -278,13 +283,63 @@ function LookupManagerModal({
                     <button
                         onClick={createItem}
                         disabled={!name.trim() || saving}
-                        className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                        className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:min-w-[140px]"
                     >
                         {saving ? "Adicionando…" : "Adicionar"}
                     </button>
                 </div>
 
-                <div className="max-h-[50vh] overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800">
+                {/* Mobile */}
+                <div className="space-y-3 md:hidden">
+                    <div className="max-h-[50vh] overflow-y-auto space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
+                        {items.length === 0 && (
+                            <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                Nenhum item cadastrado.
+                            </div>
+                        )}
+
+                        {items.map((item) => (
+                            <div
+                                key={item.id}
+                                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900/60"
+                            >
+                                <div className="min-w-0">
+                                    <div className="break-words text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                        {item.nome}
+                                    </div>
+                                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        Status: {isActive(item.ativo) ? "Ativo" : "Inativo"}
+                                    </div>
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <button
+                                        onClick={() => void toggleActive(item)}
+                                        disabled={busyId === item.id}
+                                        className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                    >
+                                        {busyId === item.id
+                                            ? "Salvando…"
+                                            : isActive(item.ativo)
+                                                ? "Inativar"
+                                                : "Ativar"}
+                                    </button>
+
+                                    <button
+                                        onClick={() => void removeItem(item)}
+                                        disabled={busyId === item.id}
+                                        className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
+                                    >
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Desktop */}
+                <div className="hidden max-h-[50vh] overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800 md:block">
                     <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
                         <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -293,10 +348,14 @@ function LookupManagerModal({
                                 <th className="px-4 py-3 text-right">Ações</th>
                             </tr>
                         </thead>
+
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {items.length === 0 && (
                                 <tr>
-                                    <td colSpan={3} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                                    <td
+                                        colSpan={3}
+                                        className="px-4 py-6 text-center text-gray-500 dark:text-gray-400"
+                                    >
                                         Nenhum item cadastrado.
                                     </td>
                                 </tr>
@@ -304,14 +363,18 @@ function LookupManagerModal({
 
                             {items.map((item) => (
                                 <tr key={item.id} className="bg-white/80 dark:bg-gray-900/60">
-                                    <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">{item.nome}</td>
-                                    <td className="px-4 py-3">{isActive(item.ativo) ? "Ativo" : "Inativo"}</td>
+                                    <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
+                                        {item.nome}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        {isActive(item.ativo) ? "Ativo" : "Inativo"}
+                                    </td>
                                     <td className="px-4 py-3">
                                         <div className="flex justify-end gap-2">
                                             <button
                                                 onClick={() => void toggleActive(item)}
                                                 disabled={busyId === item.id}
-                                                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                                className="whitespace-nowrap rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                             >
                                                 {busyId === item.id
                                                     ? "Salvando…"
@@ -322,7 +385,7 @@ function LookupManagerModal({
                                             <button
                                                 onClick={() => void removeItem(item)}
                                                 disabled={busyId === item.id}
-                                                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
+                                                className="whitespace-nowrap rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-60"
                                             >
                                                 Excluir
                                             </button>
@@ -397,14 +460,19 @@ function MultiSelectDropdown({
                 {label}
             </label>
 
-            <div className="flex items-start gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
                 <div ref={boxRef} className="relative min-w-0 flex-1">
                     <button
                         type="button"
                         onClick={() => setOpen((v) => !v)}
                         className="flex w-full items-center justify-between gap-3 rounded-2xl border border-gray-200/70 bg-white/90 px-4 py-3 text-left text-sm outline-none transition hover:bg-gray-50 focus:border-blue-500 dark:border-gray-700/70 dark:bg-gray-900/70 dark:text-gray-100 dark:hover:bg-gray-800"
                     >
-                        <span className={`min-w-0 truncate ${selectedItems.length === 0 ? "text-gray-400 dark:text-gray-500" : "text-gray-800 dark:text-gray-100"}`}>
+                        <span
+                            className={`min-w-0 truncate ${selectedItems.length === 0
+                                    ? "text-gray-400 dark:text-gray-500"
+                                    : "text-gray-800 dark:text-gray-100"
+                                }`}
+                        >
                             {buttonLabel}
                         </span>
                         <svg
@@ -466,7 +534,9 @@ function MultiSelectDropdown({
                                                         onChange={() => onToggle(item.id)}
                                                         className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
                                                     />
-                                                    <span className="min-w-0 flex-1">{item.nome}</span>
+                                                    <span className="min-w-0 flex-1 break-words">
+                                                        {item.nome}
+                                                    </span>
                                                 </label>
                                             );
                                         })}
@@ -480,7 +550,7 @@ function MultiSelectDropdown({
                 <button
                     type="button"
                     onClick={onManage}
-                    className="shrink-0 rounded-xl border border-gray-300 px-3 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="w-full shrink-0 rounded-xl border border-gray-300 px-3 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
                 >
                     Gerenciar
                 </button>
@@ -491,9 +561,9 @@ function MultiSelectDropdown({
                     {selectedItems.map((item) => (
                         <span
                             key={item.id}
-                            className="inline-flex items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
+                            className="inline-flex max-w-full items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
                         >
-                            {item.nome}
+                            <span className="truncate">{item.nome}</span>
                             <button
                                 type="button"
                                 onClick={() => onToggle(item.id)}
@@ -630,7 +700,7 @@ function EditModal({
     return (
         <>
             <div
-                className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4 backdrop-blur-sm"
+                className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-3 sm:p-4 backdrop-blur-sm"
                 onClick={(e) => {
                     if (e.target === e.currentTarget) onCancel();
                 }}
@@ -638,16 +708,17 @@ function EditModal({
                 aria-modal="true"
             >
                 <div
-                    className={`max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200/70 bg-white/95 p-6 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 ${nunito.className}`}
+                    className={`max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200/70 bg-white/95 p-4 shadow-2xl dark:border-gray-800/60 dark:bg-gray-900/90 sm:p-6 ${nunito.className}`}
                 >
-                    <div className="mb-4 flex items-start justify-between gap-3">
+                    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <h2 className="text-lg font-extrabold text-gray-900 dark:text-gray-100">
                             {isEdit ? "Editar consulta" : "Nova consulta"}
                         </h2>
-                        <div className="flex gap-2">
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
                             <button
                                 onClick={onCancel}
-                                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 disabled={saving}
                             >
                                 Fechar
@@ -655,7 +726,7 @@ function EditModal({
                             <button
                                 onClick={save}
                                 disabled={!canSave || saving}
-                                className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white ${canSave
+                                className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${canSave
                                         ? "bg-emerald-600 hover:brightness-110"
                                         : "cursor-not-allowed bg-emerald-400 opacity-70"
                                     }`}
@@ -666,7 +737,7 @@ function EditModal({
                                 <button
                                     onClick={removeInsideModal}
                                     disabled={saving}
-                                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
+                                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:brightness-110 sm:col-span-2 lg:col-span-1"
                                 >
                                     Excluir
                                 </button>
@@ -989,22 +1060,22 @@ export default function AdminConsultasPage() {
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                         <button
                             onClick={openCreate}
-                            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+                            className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 sm:w-auto"
                         >
                             + Nova consulta
                         </button>
                         <button
                             onClick={() => void loadLookups()}
-                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                            className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
                         >
                             {loadingLookups ? "Atualizando listas…" : "Atualizar listas"}
                         </button>
                         <button
                             onClick={() => void load()}
-                            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                            className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
                         >
                             Recarregar
                         </button>
@@ -1074,80 +1145,103 @@ export default function AdminConsultasPage() {
                 )}
 
                 {!loading && !err && (
-                    <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
-                        <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
-                            <thead className="bg-gray-50 dark:bg-gray-900">
-                                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                    <th className="hidden px-4 py-3 md:table-cell">ID</th>
-                                    <th className="px-4 py-3">Nome</th>
-                                    <th className="px-4 py-3">Especialidades</th>
-                                    <th className="hidden px-4 py-3 md:table-cell">Exames / Procedimentos</th>
-                                    <th className="hidden px-4 py-3 md:table-cell">Endereço</th>
-                                    <th className="hidden px-4 py-3 md:table-cell">WhatsApp</th>
-                                    <th className="hidden px-4 py-3 md:table-cell">Telefone</th>
-                                    <th className="hidden px-4 py-3 md:table-cell">Ativo</th>
-                                    <th className="px-4 py-3 text-right">Ações</th>
-                                </tr>
-                            </thead>
+                    <>
+                        {/* MOBILE: somente nome + editar */}
+                        <div className="space-y-3 md:hidden">
+                            {filtered.length === 0 && (
+                                <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                                    Nenhum registro encontrado.
+                                </div>
+                            )}
 
-                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                {filtered.length === 0 && (
-                                    <tr>
-                                        <td
-                                            colSpan={9}
-                                            className="px-4 py-6 text-center text-gray-500 dark:text-gray-400"
-                                        >
-                                            Nenhum registro encontrado.
-                                        </td>
+                            {filtered.map((r) => (
+                                <div
+                                    key={r.id}
+                                    className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900/60"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <div className="break-words text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                            {r.nome}
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={() => openEdit(r)}
+                                        className="shrink-0 whitespace-nowrap rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                    >
+                                        Editar
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* DESKTOP: tabela completa */}
+                        <div className="hidden overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800 md:block">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
+                                <thead className="bg-gray-50 dark:bg-gray-900">
+                                    <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        <th className="px-4 py-3">ID</th>
+                                        <th className="px-4 py-3">Nome</th>
+                                        <th className="px-4 py-3">Especialidades</th>
+                                        <th className="px-4 py-3">Exames / Procedimentos</th>
+                                        <th className="px-4 py-3">Endereço</th>
+                                        <th className="px-4 py-3">WhatsApp</th>
+                                        <th className="px-4 py-3">Telefone</th>
+                                        <th className="px-4 py-3">Ativo</th>
+                                        <th className="px-4 py-3 text-right">Ações</th>
                                     </tr>
-                                )}
+                                </thead>
 
-                                {filtered.map((r) => (
-                                    <tr key={r.id} className="bg-white/80 dark:bg-gray-900/60">
-                                        <td className="hidden px-4 py-3 md:table-cell">{r.id}</td>
+                                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                    {filtered.length === 0 && (
+                                        <tr>
+                                            <td
+                                                colSpan={9}
+                                                className="px-4 py-6 text-center text-gray-500 dark:text-gray-400"
+                                            >
+                                                Nenhum registro encontrado.
+                                            </td>
+                                        </tr>
+                                    )}
 
-                                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
-                                            <div>{r.nome}</div>
-                                            <div className="mt-1 text-xs font-normal text-gray-500 md:hidden dark:text-gray-400">
-                                                {joinNames(r.categorias)}
-                                            </div>
-                                        </td>
+                                    {filtered.map((r) => (
+                                        <tr key={r.id} className="bg-white/80 dark:bg-gray-900/60">
+                                            <td className="px-4 py-3">{r.id}</td>
 
-                                        <td className="px-4 py-3">{joinNames(r.categorias)}</td>
+                                            <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
+                                                {r.nome}
+                                            </td>
 
-                                        <td className="hidden px-4 py-3 md:table-cell">
-                                            {joinNames(r.especialidades)}
-                                        </td>
+                                            <td className="px-4 py-3">{joinNames(r.categorias)}</td>
 
-                                        <td className="hidden px-4 py-3 md:table-cell">{r.endereco}</td>
+                                            <td className="px-4 py-3">{joinNames(r.especialidades)}</td>
 
-                                        <td className="hidden px-4 py-3 md:table-cell">
-                                            {r.whatsapp || "—"}
-                                        </td>
+                                            <td className="px-4 py-3">{r.endereco}</td>
 
-                                        <td className="hidden px-4 py-3 md:table-cell">
-                                            {r.telefone || "—"}
-                                        </td>
+                                            <td className="px-4 py-3">{r.whatsapp || "—"}</td>
 
-                                        <td className="hidden px-4 py-3 md:table-cell">
-                                            {isActive(r.ativo) ? "Sim" : "Não"}
-                                        </td>
+                                            <td className="px-4 py-3">{r.telefone || "—"}</td>
 
-                                        <td className="px-4 py-3">
-                                            <div className="flex justify-end">
-                                                <button
-                                                    onClick={() => openEdit(r)}
-                                                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                                >
-                                                    Editar
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                            <td className="px-4 py-3">
+                                                {isActive(r.ativo) ? "Sim" : "Não"}
+                                            </td>
+
+                                            <td className="px-4 py-3">
+                                                <div className="flex justify-end">
+                                                    <button
+                                                        onClick={() => openEdit(r)}
+                                                        className="whitespace-nowrap rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                                    >
+                                                        Editar
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
 
                 {editing && (
