@@ -701,7 +701,7 @@ function EditModal({
 
                         <div className="md:col-span-2">
                             <MultiSelectDropdown
-                                label="Categorias"
+                                label="Especialidades"
                                 items={categorias}
                                 selectedIds={model.categoria_ids}
                                 onToggle={(id) => toggleArrayId("categoria_ids", id)}
@@ -714,7 +714,7 @@ function EditModal({
 
                         <div className="md:col-span-2">
                             <MultiSelectDropdown
-                                label="Especialidades"
+                                label="Exames / Procedimentos"
                                 items={especialidades}
                                 selectedIds={model.especialidade_ids}
                                 onToggle={(id) => toggleArrayId("especialidade_ids", id)}
@@ -840,7 +840,7 @@ function EditModal({
 
             {showCategoriasManager && (
                 <LookupManagerModal
-                    title="Categorias"
+                    title="Especialidades"
                     endpoint="categorias"
                     items={categorias}
                     onClose={() => setShowCategoriasManager(false)}
@@ -852,7 +852,7 @@ function EditModal({
 
             {showEspecialidadesManager && (
                 <LookupManagerModal
-                    title="Especialidades"
+                    title="Exames / Procedimentos"
                     endpoint="especialidades"
                     items={especialidades}
                     onClose={() => setShowEspecialidadesManager(false)}
@@ -1080,8 +1080,8 @@ export default function AdminConsultasPage() {
                                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     <th className="hidden px-4 py-3 md:table-cell">ID</th>
                                     <th className="px-4 py-3">Nome</th>
-                                    <th className="px-4 py-3">Categorias</th>
-                                    <th className="hidden px-4 py-3 md:table-cell">Especialidades</th>
+                                    <th className="px-4 py-3">Especialidades</th>
+                                    <th className="hidden px-4 py-3 md:table-cell">Exames / Procedimentos</th>
                                     <th className="hidden px-4 py-3 md:table-cell">Endereço</th>
                                     <th className="hidden px-4 py-3 md:table-cell">WhatsApp</th>
                                     <th className="hidden px-4 py-3 md:table-cell">Telefone</th>
