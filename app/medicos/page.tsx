@@ -1065,7 +1065,7 @@ export default function AdminConsultasPage() {
                             onClick={openCreate}
                             className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 sm:w-auto"
                         >
-                            + Nova consulta
+                            + Novo Convênio
                         </button>
                         <button
                             onClick={() => void loadLookups()}
@@ -1073,12 +1073,7 @@ export default function AdminConsultasPage() {
                         >
                             {loadingLookups ? "Atualizando listas…" : "Atualizar listas"}
                         </button>
-                        <button
-                            onClick={() => void load()}
-                            className="w-full rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
-                        >
-                            Recarregar
-                        </button>
+                        
                     </div>
                 </header>
 
