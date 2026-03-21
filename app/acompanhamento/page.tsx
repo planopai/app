@@ -1373,6 +1373,19 @@ export default function AcompanhamentoPage() {
         scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
       }
 
+      // ===== blindagem final da roupa antes do envio =====
+      const roupaFinalTxt = String(payload.roupa ?? "").trim();
+
+      if (isRoupaPropria(roupaFinalTxt)) {
+        payload.roupa = "ROUPA PRÓPRIA";
+        payload.roupa_propria = 1;
+        payload.roupa_produto_id = 0;
+        payload.roupa_deposito_nome = "";
+        payload.roupa_codigo_barras = "";
+      } else if (roupaFinalTxt !== "") {
+        payload.roupa_propria = 0;
+      }
+
       const json = await enviarRegistroPHP(payload);
 
       if (json?.sucesso) {
