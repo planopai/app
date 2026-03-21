@@ -1329,6 +1329,7 @@ export default function Wizard({
                                             roupa_deposito_nome: depRoupa,
                                             roupa_produto_id: pid,
                                             roupa_codigo_barras: cb,
+                                            roupa_propria: 0,
                                         }));
                                     }}
                                     extraButtons={

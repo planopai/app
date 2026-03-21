@@ -1094,7 +1094,7 @@ export default function AcompanhamentoPage() {
       next.roupa_codigo_barras = "";
       next.roupa_deposito_nome = "";
       (next as any).roupa_propria = 0;
-    } else if (isRoupaPropria(roupaTxt) || roupaPropriaFlag === 1) {
+    } else if (isRoupaPropria(roupaTxt)) {
       // roupa própria não usa estoque
       next.roupa = "ROUPA PRÓPRIA";
       next.roupa_produto_id = 0;
@@ -1102,6 +1102,8 @@ export default function AcompanhamentoPage() {
       next.roupa_deposito_nome = "";
       (next as any).roupa_propria = 1;
     } else {
+      // roupa do estoque: zera o flag antigo de roupa própria
+      (next as any).roupa_propria = 0;
       // roupa do estoque -> mantém pid/cb/dep do wizardData
       const roupaPid = Number(next?.roupa_produto_id ?? 0) || 0;
 
