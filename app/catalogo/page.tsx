@@ -768,7 +768,8 @@ export default function Page() {
     }, []);
 
     const home = useCallback(() => {
-        setStack(["home"]);
+        userNavRef.current = true;
+        setStack(["home", "menus"]);
         setNoPath([]);
         setQ("");
         setPage(1);
@@ -788,10 +789,8 @@ export default function Page() {
         setOpenInicio(false);
         setOpenConcluir(false);
 
-        setProdutos([]);
         setProdutosError(null);
         setProdutoIndex({});
-        setCatalogoNos([]);
         setCatalogoError(null);
 
         setOrcamentoSelecionadoId(null);
