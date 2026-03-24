@@ -563,13 +563,7 @@ export default function Page() {
     // Produtos
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
-
-    const isTablet = useMemo(() => {
-        if (typeof window === "undefined") return false;
-        return window.matchMedia("(pointer: coarse) and (hover: none) and (min-width: 768px) and (max-width: 1366px)").matches;
-    }, []);
-
-    const pageSize = isTablet ? 4 : 8;
+    const pageSize = 8;
 
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [loadingProdutos, setLoadingProdutos] = useState(false);
@@ -3816,7 +3810,7 @@ const css = `
     font-size: 13px;
   }
 
-    .gridProdutos{
+  .gridProdutos{
     grid-template-columns: repeat(4, minmax(146px, 1fr));
     margin-top: 18px;
   }
@@ -3827,7 +3821,7 @@ const css = `
   }
 
   .prodImgWrap{
-    height: 150px;
+    height: 98px;
     border-radius: 12px;
   }
 
@@ -3836,7 +3830,6 @@ const css = `
     font-size: 12px;
     min-height: 28px;
     line-height: 1.15;
-  }height: 1.15;
   }
 
   .listagemFooter{
