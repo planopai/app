@@ -2162,6 +2162,8 @@ export default function Page() {
         </ScreenContainer>
     );
 
+    const resumoCompact = (orcamentoSelecionado?.itens.length || 0) > 10;
+
     const ScreenResumo = (
         <ScreenContainer>
             <div className="resumoTopBar">
@@ -2195,7 +2197,7 @@ export default function Page() {
                         Orçamento não encontrado.
                     </div>
                 ) : (
-                    <div className="resumoCard">
+                    <div className={cn("resumoCard", resumoCompact && "resumoCardCompact")}>
                         <div className="resumoHeader2">
                             <div className="resumoHeaderLeft">
                                 <img src={LOGO_URL_UI} alt="PAI" className="resumoLogoTopLeft" />
@@ -3667,7 +3669,7 @@ const css = `
     font-weight: 1000;
     padding: 8px 12px;
     border-radius: 10px;
-    box-shadow: 0 14px 32px rgba(2,156,222,.25);
+    box-shadow: 0 14px 32px rgba(2,156,222,0.25);
     min-width: 160px;
     text-align:right;
     letter-spacing: 0.5px;
@@ -3676,6 +3678,48 @@ const css = `
   .resumoTableHead2Cols{ grid-template-columns: 1fr 180px; }
   .resumoRow2Cols{ grid-template-columns: 1fr 180px; }
   .resumoBottomOnlyTotal{ justify-content: flex-end; }
+
+  .resumoCardCompact .resumoHeader2{
+    padding: 10px 14px 8px 14px;
+  }
+
+  .resumoCardCompact .resumoLogoTopLeft{
+    width: 100px;
+  }
+
+  .resumoCardCompact .resumoOrcMain{
+    font-size: 18px;
+  }
+
+  .resumoCardCompact .resumoOrcSub,
+  .resumoCardCompact .resumoLine{
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .resumoCardCompact .resumoTable{
+    padding: 0 12px;
+  }
+
+  .resumoCardCompact .resumoTableHead2{
+    padding: 8px 0;
+    font-size: 12px;
+  }
+
+  .resumoCardCompact .resumoRow2{
+    padding: 6px 0;
+    font-size: 11px;
+  }
+
+  .resumoCardCompact .resumoBottom{
+    padding: 8px 14px;
+  }
+
+  .resumoCardCompact .resumoTotalValue{
+    padding: 6px 10px;
+    font-size: 13px;
+    min-width: 140px;
+  }
 
   .reviewHeader{
     padding: 10px 12px;
