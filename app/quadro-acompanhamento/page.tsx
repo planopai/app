@@ -1429,6 +1429,52 @@ export default function QuadroAtendimentoPage() {
         return withTs.map((x) => x.r);
     }, [registros]);
 
+    const TAG_SERVICO = "Atendimento:";
+
+    function isServicoMsg(msg?: any) {
+        const s = String(msg ?? "");
+        return s.startsWith(TAG_SERVICO);
+    }
+
+    function extractServicoNome(msg?: string) {
+        const s = String(msg ?? "");
+        if (!s.startsWith(TAG_SERVICO)) return "";
+        const rest = s.slice(TAG_SERVICO.length).trim(); // "NOME: obs"
+        const idx = rest.indexOf(":");
+        return (idx >= 0 ? rest.slice(0, idx) : rest).trim();
+    }
+
+    function normNome(v?: string) {
+        return String(v ?? "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
+
+    const nomesAtivos = useMemo(() => {
+        const set = new Set<string>();
+        for (const r of ativosOrdenados as any[]) {
+            const nome = String(r?.falecido ?? "").trim();
+            if (nome) set.add(normNome(nome));
+        }
+        return set;
+    }, [ativosOrdenados]);
+
+    const avisosParaExibir = useMemo(() => {
+        const arr = Array.isArray(avisos) ? avisos : [];
+        return arr.filter((a) => {
+            const msg = String((a as any)?.mensagem ?? "");
+            if (!isServicoMsg(msg)) return true;
+
+            const nome = extractServicoNome(msg);
+            if (!nome) return true;
+
+            return nomesAtivos.has(normNome(nome));
+        });
+    }, [avisos, nomesAtivos]);
+
     const handleCopy = useCallback(async () => {
         if (!detail) return;
         const text = buildClipboardText(detail, matLookup); // 👈 passa o lookup aqui
@@ -1548,10 +1594,10 @@ export default function QuadroAtendimentoPage() {
                 <h2 className="text-lg font-semibold">Avisos</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
                 <div className="mt-4 space-y-3">
-                    {avisos.length === 0 ? (
+                    {avisosParaExibir.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
                     ) : (
-                        avisos.map((a, i) => (
+                        avisosParaExibir.map((a, i) => (
                             <div
                                 key={i}
                                 className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
