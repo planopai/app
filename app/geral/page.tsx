@@ -4395,6 +4395,51 @@ export default function Page() {
         // eslint-disable-next-line 
     }, [tab]);
 
+    type HistoricoGrupo = {
+        key: string;
+        rows: HistoricoRow[];
+    };
+
+    const histGrupos = useMemo<HistoricoGrupo[]>(() => {
+        const grupos: HistoricoGrupo[] = [];
+
+        const normalizeSecond = (iso?: string) => {
+            if (!iso) return "";
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return iso;
+            d.setMilliseconds(0);
+            return d.toISOString();
+        };
+
+        const makeKey = (h: HistoricoRow) => {
+            const criadoSegundo = normalizeSecond(h.criado_em);
+
+            return [
+                h.tipo,
+                criadoSegundo,
+                h.operador_usuario_id || 0,
+                h.solicitante_usuario_id || 0,
+                h.deposito_origem_id || 0,
+                h.deposito_destino_id || 0,
+                h.destino_texto || "",
+                h.observacao || "",
+            ].join("|");
+        };
+
+        for (const row of histRows) {
+            const key = makeKey(row);
+            const last = grupos[grupos.length - 1];
+
+            if (last && last.key === key) {
+                last.rows.push(row);
+            } else {
+                grupos.push({ key, rows: [row] });
+            }
+        }
+
+        return grupos;
+    }, [histRows]);
+
 
     
 
@@ -5287,81 +5332,120 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
-                                {histLoading ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">Carregando...</div>
-                                ) : histRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
-                                ) : (
-                                    <ul className="divide-y divide-slate-200">
-                                        {histRows.map((h) => {
-                                            const tipoBadge =
-                                                h.tipo === "ENTRADA"
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                    : h.tipo === "SAIDA"
-                                                        ? "bg-rose-50 text-rose-700 border-rose-200"
-                                                        : h.tipo === "TRANSFERENCIA"
-                                                            ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                                            : "bg-slate-50 text-slate-700 border-slate-200";
+                            <ul className="divide-y divide-slate-200">
+                                {histGrupos.map((grupo) => {
+                                    const ref = grupo.rows[0];
 
-                                            const origem = h.deposito_origem_nome || (h.deposito_origem_id ? depById.get(h.deposito_origem_id)?.nome : null);
-                                            const destino = h.deposito_destino_nome || (h.deposito_destino_id ? depById.get(h.deposito_destino_id)?.nome : null);
+                                    const tipoBadge =
+                                        ref.tipo === "ENTRADA"
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                            : ref.tipo === "SAIDA"
+                                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                : ref.tipo === "TRANSFERENCIA"
+                                                    ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                                    : "bg-slate-50 text-slate-700 border-slate-200";
 
-                                            return (
-                                                <li key={h.id} className="px-4 py-3">
-                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                                        <div className="min-w-0">
-                                                            <div className="flex flex-wrap items-center gap-2">
-                                                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>{h.tipo}</span>
-                                                                <span className="text-xs text-slate-500">{fmtDateTime(h.criado_em)}</span>
+                                    const origem =
+                                        ref.deposito_origem_nome ||
+                                        (ref.deposito_origem_id ? depById.get(ref.deposito_origem_id)?.nome : null);
+
+                                    const destino =
+                                        ref.deposito_destino_nome ||
+                                        (ref.deposito_destino_id ? depById.get(ref.deposito_destino_id)?.nome : null);
+
+                                    const totalQtd = grupo.rows.reduce((acc, item) => acc + (Number(item.quantidade) || 0), 0);
+                                    const totalItens = grupo.rows.length;
+
+                                    return (
+                                        <li key={grupo.key} className="px-4 py-3">
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                    <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>
+                                                                {ref.tipo}
+                                                            </span>
+
+                                                            <span className="text-xs text-slate-500">
+                                                                {fmtDateTime(ref.criado_em)}
+                                                            </span>
+
+                                                            {totalItens > 1 ? (
+                                                                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">
+                                                                    {totalItens} itens
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <p className="mt-0.5 text-xs text-slate-600">
+                                                            {ref.tipo === "ENTRADA" ? (
+                                                                <>
+                                                                    Depósito: <b>{destino || "—"}</b>
+                                                                </>
+                                                            ) : ref.tipo === "SAIDA" ? (
+                                                                <>
+                                                                    Depósito: <b>{origem || "—"}</b> • Destino: <b>{ref.destino_texto || "—"}</b>
+                                                                </>
+                                                            ) : ref.tipo === "TRANSFERENCIA" ? (
+                                                                <>
+                                                                    Origem: <b>{origem || "—"}</b> → Destino: <b>{destino || "—"}</b>
+                                                                </>
+                                                            ) : (
+                                                                <>—</>
+                                                            )}
+                                                        </p>
+
+                                                        <p className="mt-0.5 text-[11px] text-slate-500">
+                                                            Operador: <b>{ref.operador_nome || userById.get(ref.operador_usuario_id)?.nome || `#${ref.operador_usuario_id}`}</b>
+                                                            {ref.solicitante_usuario_id ? (
+                                                                <>
+                                                                    {" "}
+                                                                    • Solicitante: <b>{ref.solicitante_nome || userById.get(ref.solicitante_usuario_id)?.nome || `#${ref.solicitante_usuario_id}`}</b>
+                                                                </>
+                                                            ) : null}
+                                                            {ref.observacao ? <> • Obs: {ref.observacao}</> : null}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="shrink-0 text-right">
+                                                        <p className="text-sm font-semibold text-slate-900">
+                                                            {totalItens > 1 ? totalQtd : (ref.quantidade === null ? "—" : ref.quantidade)}
+                                                        </p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {totalItens > 1 ? "qtd total" : "qtd"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-2xl border border-slate-200 bg-slate-50">
+                                                    {grupo.rows.map((h) => (
+                                                        <div
+                                                            key={h.id}
+                                                            className="flex flex-col gap-1 border-b border-slate-200 px-3 py-2 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <p className="truncate text-sm font-medium text-slate-900">
+                                                                    {h.produto_nome || `Produto ${h.produto_id}`}{" "}
+                                                                    <span className="text-xs font-normal text-slate-500">
+                                                                        • CB {h.codigo_barras_snapshot}
+                                                                    </span>
+                                                                </p>
                                                             </div>
 
-                                                            <p className="mt-2 truncate text-sm font-semibold text-slate-900">
-                                                                {h.produto_nome || `Produto ${h.produto_id}`}{" "}
-                                                                <span className="text-xs font-normal text-slate-500">• CB {h.codigo_barras_snapshot}</span>
-                                                            </p>
-
-                                                            <p className="mt-0.5 text-xs text-slate-600">
-                                                                {h.tipo === "ENTRADA" ? (
-                                                                    <>
-                                                                        Depósito: <b>{destino || "—"}</b>
-                                                                    </>
-                                                                ) : h.tipo === "SAIDA" ? (
-                                                                    <>
-                                                                        Depósito: <b>{origem || "—"}</b> • Destino: <b>{h.destino_texto || "—"}</b>
-                                                                    </>
-                                                                ) : h.tipo === "TRANSFERENCIA" ? (
-                                                                    <>
-                                                                        Origem: <b>{origem || "—"}</b> → Destino: <b>{destino || "—"}</b>
-                                                                    </>
-                                                                ) : (
-                                                                    <>—</>
-                                                                )}
-                                                            </p>
-
-                                                            <p className="mt-0.5 text-[11px] text-slate-500">
-                                                                Operador: <b>{h.operador_nome || userById.get(h.operador_usuario_id)?.nome || `#${h.operador_usuario_id}`}</b>
-                                                                {h.solicitante_usuario_id ? (
-                                                                    <>
-                                                                        {" "}
-                                                                        • Solicitante: <b>{h.solicitante_nome || userById.get(h.solicitante_usuario_id)?.nome || `#${h.solicitante_usuario_id}`}</b>
-                                                                    </>
-                                                                ) : null}
-                                                                {h.observacao ? <> • Obs: {h.observacao}</> : null}
-                                                            </p>
+                                                            <div className="shrink-0 text-left sm:text-right">
+                                                                <p className="text-sm font-semibold text-slate-900">
+                                                                    {h.quantidade === null ? "—" : h.quantidade}
+                                                                </p>
+                                                                <p className="text-[11px] text-slate-500">qtd</p>
+                                                            </div>
                                                         </div>
-
-                                                        <div className="shrink-0 text-right">
-                                                            <p className="text-sm font-semibold text-slate-900">{h.quantidade === null ? "—" : h.quantidade}</p>
-                                                            <p className="text-xs text-slate-500">qtd</p>
-                                                        </div>
-                                                    </div>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-                            </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         </Card>
                     ) : null}
 
