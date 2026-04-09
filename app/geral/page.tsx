@@ -5357,86 +5357,101 @@ export default function Page() {
                                     const totalItens = grupo.rows.length;
 
                                     return (
-                                        <li key={grupo.key} className="px-4 py-3">
-                                            <div className="flex flex-col gap-3">
-                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                                    <div className="min-w-0">
+                                        <li key={grupo.key} className="px-3 py-3 sm:px-4">
+                                            <div className="space-y-2.5">
+                                                {/* CABEÇALHO COMPACTO */}
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
                                                         <div className="flex flex-wrap items-center gap-2">
-                                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tipoBadge}`}>
+                                                            <span
+                                                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${tipoBadge}`}
+                                                            >
                                                                 {ref.tipo}
                                                             </span>
 
                                                             <span className="text-xs text-slate-500">
                                                                 {fmtDateTime(ref.criado_em)}
                                                             </span>
-
-                                                            {totalItens > 1 ? (
-                                                                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">
-                                                                    {totalItens} itens
-                                                                </span>
-                                                            ) : null}
                                                         </div>
 
-                                                        <p className="mt-0.5 text-xs text-slate-600">
+                                                        <div className="mt-1 text-sm text-slate-700 leading-snug">
                                                             {ref.tipo === "ENTRADA" ? (
                                                                 <>
-                                                                    Depósito: <b>{destino || "—"}</b>
+                                                                    <span className="text-slate-500">Depósito:</span>{" "}
+                                                                    <b className="text-slate-800">{destino || "—"}</b>
                                                                 </>
                                                             ) : ref.tipo === "SAIDA" ? (
                                                                 <>
-                                                                    Depósito: <b>{origem || "—"}</b> • Destino: <b>{ref.destino_texto || "—"}</b>
+                                                                    <span className="text-slate-500">Depósito:</span>{" "}
+                                                                    <b className="text-slate-800">{origem || "—"}</b>
+                                                                    {" • "}
+                                                                    <span className="text-slate-500">Destino:</span>{" "}
+                                                                    <b className="text-slate-800">{ref.destino_texto || "—"}</b>
                                                                 </>
                                                             ) : ref.tipo === "TRANSFERENCIA" ? (
                                                                 <>
-                                                                    Origem: <b>{origem || "—"}</b> → Destino: <b>{destino || "—"}</b>
+                                                                    <span className="text-slate-500">Origem:</span>{" "}
+                                                                    <b className="text-slate-800">{origem || "—"}</b>
+                                                                    {" • "}
+                                                                    <span className="text-slate-500">Destino:</span>{" "}
+                                                                    <b className="text-slate-800">{destino || "—"}</b>
                                                                 </>
                                                             ) : (
                                                                 <>—</>
                                                             )}
-                                                        </p>
+                                                        </div>
 
-                                                        <p className="mt-0.5 text-[11px] text-slate-500">
-                                                            Operador: <b>{ref.operador_nome || userById.get(ref.operador_usuario_id)?.nome || `#${ref.operador_usuario_id}`}</b>
+                                                        <div className="mt-0.5 text-xs text-slate-500 leading-snug">
+                                                            Operador:{" "}
+                                                            <b className="text-slate-700">
+                                                                {ref.operador_nome || userById.get(ref.operador_usuario_id)?.nome || `#${ref.operador_usuario_id}`}
+                                                            </b>
                                                             {ref.solicitante_usuario_id ? (
                                                                 <>
-                                                                    {" "}
-                                                                    • Solicitante: <b>{ref.solicitante_nome || userById.get(ref.solicitante_usuario_id)?.nome || `#${ref.solicitante_usuario_id}`}</b>
+                                                                    {" • "}Solicitante:{" "}
+                                                                    <b className="text-slate-700">
+                                                                        {ref.solicitante_nome || userById.get(ref.solicitante_usuario_id)?.nome || `#${ref.solicitante_usuario_id}`}
+                                                                    </b>
                                                                 </>
                                                             ) : null}
-                                                            {ref.observacao ? <> • Obs: {ref.observacao}</> : null}
-                                                        </p>
+                                                            {ref.observacao ? <> {" • "}Obs: {ref.observacao}</> : null}
+                                                        </div>
                                                     </div>
 
                                                     <div className="shrink-0 text-right">
-                                                        <p className="text-sm font-semibold text-slate-900">
-                                                            {totalItens > 1 ? totalQtd : (ref.quantidade === null ? "—" : ref.quantidade)}
-                                                        </p>
-                                                        <p className="text-xs text-slate-500">
-                                                            {totalItens > 1 ? "qtd total" : "qtd"}
-                                                        </p>
+                                                        <div className="text-sm font-semibold text-slate-900">
+                                                            {totalItens} {totalItens === 1 ? "item" : "itens"}
+                                                        </div>
+                                                        <div className="text-xs text-slate-500">
+                                                            qtd total <b className="text-slate-700">{totalQtd}</b>
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="rounded-2xl border border-slate-200 bg-slate-50">
-                                                    {grupo.rows.map((h) => (
+                                                {/* LISTA INTERNA MAIS LIMPA */}
+                                                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60">
+                                                    {grupo.rows.map((h, idx) => (
                                                         <div
                                                             key={h.id}
-                                                            className="flex flex-col gap-1 border-b border-slate-200 px-3 py-2 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                                                            className={[
+                                                                "grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2.5",
+                                                                idx !== grupo.rows.length - 1 ? "border-b border-slate-200" : "",
+                                                            ].join(" ")}
                                                         >
                                                             <div className="min-w-0">
-                                                                <p className="truncate text-sm font-medium text-slate-900">
-                                                                    {h.produto_nome || `Produto ${h.produto_id}`}{" "}
-                                                                    <span className="text-xs font-normal text-slate-500">
-                                                                        • CB {h.codigo_barras_snapshot}
-                                                                    </span>
-                                                                </p>
+                                                                <div className="truncate text-sm font-medium text-slate-900">
+                                                                    {h.produto_nome || `Produto ${h.produto_id}`}
+                                                                </div>
+                                                                <div className="text-xs text-slate-500">
+                                                                    CB {h.codigo_barras_snapshot}
+                                                                </div>
                                                             </div>
 
-                                                            <div className="shrink-0 text-left sm:text-right">
-                                                                <p className="text-sm font-semibold text-slate-900">
+                                                            <div className="text-right">
+                                                                <div className="text-sm font-semibold text-slate-900">
                                                                     {h.quantidade === null ? "—" : h.quantidade}
-                                                                </p>
-                                                                <p className="text-[11px] text-slate-500">qtd</p>
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-500">qtd</div>
                                                             </div>
                                                         </div>
                                                     ))}
