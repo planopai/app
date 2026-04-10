@@ -131,7 +131,7 @@ type Registro = {
     [key: string]: any;
 };
 
-type Aviso = { usuario?: string; mensagem?: string; datahora?: string };
+type Aviso = { usuario?: string; mensagem?: string; criado_em?: string };
 
 type LogItem = {
     id?: number | string;
@@ -1628,9 +1628,9 @@ export default function QuadroAtendimentoPage() {
                                             {shown(a.usuario, "Sistema")}
                                         </div>
 
-                                        {a.datahora ? (
+                                        {a.criado_em ? (
                                             <div className="text-xs text-slate-500">
-                                                {avisoDateTimeOr(a.datahora)}
+                                                {avisoDateTimeOr(a.criado_em)}
                                             </div>
                                         ) : null}
                                     </div>
