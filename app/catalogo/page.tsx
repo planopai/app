@@ -563,7 +563,7 @@ export default function Page() {
     // Produtos
     const [q, setQ] = useState("");
     const [page, setPage] = useState(1);
-    const pageSize = 8;
+    const pageSize = 3;
 
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [loadingProdutos, setLoadingProdutos] = useState(false);
@@ -3854,7 +3854,7 @@ const css = `
   }
 
   .gridProdutos{
-    grid-template-columns: repeat(4, minmax(146px, 1fr));
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
     margin-top: 18px;
   }
 
@@ -3864,7 +3864,7 @@ const css = `
   }
 
   .prodImgWrap{
-    height: 98px;
+    height: 140px;
     border-radius: 12px;
   }
 
