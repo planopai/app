@@ -3864,7 +3864,7 @@ const css = `
   }
 
   .prodImgWrap{
-    height: 140px;
+    height: 180px;
     border-radius: 12px;
   }
 
