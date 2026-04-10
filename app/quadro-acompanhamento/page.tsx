@@ -131,7 +131,7 @@ type Registro = {
     [key: string]: any;
 };
 
-type Aviso = { usuario?: string; mensagem?: string };
+type Aviso = { usuario?: string; mensagem?: string; datahora?: string };
 
 type LogItem = {
     id?: number | string;
@@ -806,6 +806,27 @@ function timeOr(t?: string) {
     const hhmm = raw.slice(0, 5);
     if (hhmm === "00:00") return "a definir";
     return hhmm;
+}
+
+function avisoDateTimeOr(v?: string) {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+
+    try {
+        return new Intl.DateTimeFormat("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+        }).format(d);
+    } catch {
+        return raw;
+    }
 }
 
 /* ----------- Normalização de status (texto → faseNN) ----------- */
@@ -1597,20 +1618,28 @@ export default function QuadroAtendimentoPage() {
                     {avisosParaExibir.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
                     ) : (
-                        avisosParaExibir.map((a, i) => (
-                            <div
-                                key={i}
-                                className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
-                            >
-                                <div className="text-sm font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
-                                    {shown(a.usuario, "Sistema")}
-                                </div>
+                            avisosParaExibir.map((a, i) => (
+                                <div
+                                    key={i}
+                                    className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
+                                >
+                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="text-sm font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
+                                            {shown(a.usuario, "Sistema")}
+                                        </div>
 
-                                <div className="mt-1 text-sm leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
-                                    {shown(a.mensagem, "")}
+                                        {a.datahora ? (
+                                            <div className="text-xs text-slate-500">
+                                                {avisoDateTimeOr(a.datahora)}
+                                            </div>
+                                        ) : null}
+                                    </div>
+
+                                    <div className="mt-1 text-sm leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
+                                        {shown(a.mensagem, "")}
+                                    </div>
                                 </div>
-                            </div>
-                        ))
+                            ))
                     )}
                 </div>
             </div>
