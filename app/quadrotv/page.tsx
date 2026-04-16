@@ -22,77 +22,20 @@ function setMem(k: string, data: any, ttlMs: number) {
     MEM_CACHE.set(k, { exp: Date.now() + ttlMs, data });
 }
 
-type LsBox<T> = {
-    savedAt: number;
-    data: T;
-};
-
 function readLS<T>(k: string): T | null {
     if (typeof window === "undefined") return null;
     try {
         const raw = localStorage.getItem(k);
         if (!raw) return null;
-
-        const parsed = JSON.parse(raw);
-
-        // Compatibilidade com formato antigo salvo direto no localStorage
-        if (
-            parsed &&
-            typeof parsed === "object" &&
-            "savedAt" in parsed &&
-            "data" in parsed
-        ) {
-            return (parsed as LsBox<T>).data;
-        }
-
-        return parsed as T;
+        return JSON.parse(raw) as T;
     } catch {
         return null;
     }
 }
-
-function readLSFresh<T>(k: string, maxAgeMs: number): T | null {
-    if (typeof window === "undefined") return null;
-    try {
-        const raw = localStorage.getItem(k);
-        if (!raw) return null;
-
-        const parsed = JSON.parse(raw);
-
-        if (
-            !parsed ||
-            typeof parsed !== "object" ||
-            !("savedAt" in parsed) ||
-            !("data" in parsed)
-        ) {
-            // dado antigo sem timestamp -> considera obsoleto
-            return null;
-        }
-
-        const box = parsed as LsBox<T>;
-        if (typeof box.savedAt !== "number") return null;
-
-        if (Date.now() - box.savedAt > maxAgeMs) {
-            localStorage.removeItem(k);
-            return null;
-        }
-
-        return box.data;
-    } catch {
-        return null;
-    }
-}
-
 function writeLS(k: string, v: any) {
     if (typeof window === "undefined") return;
     try {
-        localStorage.setItem(
-            k,
-            JSON.stringify({
-                savedAt: Date.now(),
-                data: v,
-            })
-        );
+        localStorage.setItem(k, JSON.stringify(v));
     } catch {
         // ignore
     }
@@ -1260,12 +1203,8 @@ export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
 
-    const AVISOS_LS_MAX_AGE_MS = 60_000; // 1 minuto
-
     const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
-    const [avisos, setAvisos] = useState<Aviso[]>(
-        () => readLSFresh<Aviso[]>("qa_avisos", AVISOS_LS_MAX_AGE_MS) ?? []
-    );
+    const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
 
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
@@ -1328,33 +1267,18 @@ export default function QuadroAtendimentoPage() {
         async function load() {
             try {
                 const url = `${BASE_AVISOS}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, {
-                    ttlMs: 5_000,
-                    cacheKey: "avisos_listar",
-                });
-
+                const j = await fetchJsonFast<any>(url, { ttlMs: 15_000, cacheKey: "avisos_listar" });
                 if (!alive) return;
-
                 const arr = Array.isArray(j) ? (j as Aviso[]) : [];
                 setAvisos(arr);
                 writeLS("qa_avisos", arr);
             } catch {
-                if (!alive) return;
-
-                // evita manter aviso antigo indefinidamente quando a API falhar
-                setAvisos([]);
-
-                try {
-                    localStorage.removeItem("qa_avisos");
-                } catch {
-                    // ignore
-                }
+                // mantém o que já tem
             }
         }
 
         load();
-        const id = setInterval(load, 10000);
-
+        const id = setInterval(load, 20000);
         return () => {
             alive = false;
             clearInterval(id);
