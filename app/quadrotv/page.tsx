@@ -1267,18 +1267,38 @@ export default function QuadroAtendimentoPage() {
         async function load() {
             try {
                 const url = `${BASE_AVISOS}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, { ttlMs: 15_000, cacheKey: "avisos_listar" });
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 5_000, // reduz cache em memória
+                    cacheKey: "avisos_listar",
+                });
+
                 if (!alive) return;
+
                 const arr = Array.isArray(j) ? (j as Aviso[]) : [];
+
+                // 🔥 sempre sincroniza com backend
                 setAvisos(arr);
                 writeLS("qa_avisos", arr);
             } catch {
-                // mantém o que já tem
+                if (!alive) return;
+
+                // 🔥 CORREÇÃO PRINCIPAL:
+                // evita manter avisos deletados no backend
+                setAvisos([]);
+
+                try {
+                    localStorage.removeItem("qa_avisos");
+                } catch {
+                    // ignore
+                }
             }
         }
 
         load();
-        const id = setInterval(load, 20000);
+
+        // 🔥 opcional: mais responsivo
+        const id = setInterval(load, 10000);
+
         return () => {
             alive = false;
             clearInterval(id);
