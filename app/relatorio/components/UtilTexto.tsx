@@ -40,6 +40,7 @@ export function overrideCampoNome(originalKey: string, nomeAtual: string) {
         ornamentacao_tipo: "Tipo de Ornamentação",
         religiao: "Religião",
         convenio: "Convênio",
+        local: "Local do Sepultamento",
         local_velorio: "Local do Velório",
 
         data_inicio_velorio: "Data de Início do Velório",

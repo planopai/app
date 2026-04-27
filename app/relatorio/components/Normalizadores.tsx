@@ -218,8 +218,7 @@ export function extrairParesDoDetalhe(raw: any, materiaisMap?: MateriaisMap): Re
                 v = formataSeDataIso(v);
                 v = substituirRotuloVisual(v);
 
-                const nomeVis = overrideCampoNome(key, titleCaseFromSnake(key));
-                const kNorm = normalizaChave(nomeVis);
+                const kNorm = normalizaChave(key);
                 out[kNorm] = v;
             }
             return out;
@@ -240,7 +239,12 @@ export function extrairParesDoDetalhe(raw: any, materiaisMap?: MateriaisMap): Re
                 rot.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
             );
 
-            const kNorm = normalizaChave(nomeVis);
+            let kNorm = normalizaChave(rot);
+
+            if (kNorm === "local_do_velório" || kNorm === "local_do_velorio") {
+                kNorm = "local_velorio";
+            }
+
             out[kNorm] = formataSeDataIso(val);
         }
     }
