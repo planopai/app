@@ -83,6 +83,21 @@ const quickActions: QuickAction[] = [
       </svg>
     ),
   },
+  {
+    label: "Produtos",
+    href: "/produtos",
+    slug: "produtos",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
+          stroke="currentColor" strokeWidth="1.8" />
+        <path d="M7 8l5 3 5-3"
+          stroke="currentColor" strokeWidth="1.8" />
+        <path d="M12 11v10"
+          stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+  },
 ];
 
 export default function HomePage() {
