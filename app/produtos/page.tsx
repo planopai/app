@@ -662,6 +662,110 @@ function ImagePreviewModal({
     );
 }
 
+
+
+type DepositoSaldoRow = {
+    deposito: Deposito;
+    quantidade: number;
+    min: number;
+    max: number;
+    rep: number;
+    hasMinMax: boolean;
+};
+
+function ProdutoDepositosModal({
+    open,
+    onClose,
+    produto,
+    rows,
+}: {
+    open: boolean;
+    onClose: () => void;
+    produto?: Produto | null;
+    rows: DepositoSaldoRow[];
+}) {
+    useEffect(() => {
+        if (!open) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            document.body.style.overflow = prev;
+        };
+    }, [open, onClose]);
+
+    if (!open || !produto) return null;
+
+    const total = rows.reduce((acc, r) => acc + r.quantidade, 0);
+
+    return (
+        <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-[55] flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4"
+        >
+            <div className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
+                    <div className="min-w-0">
+                        <h2 className="line-clamp-2 text-lg font-bold text-slate-900">
+                            {produto.nome}
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-600">
+                            Depósitos com saldo deste produto. Total: <b>{total}</b>
+                        </p>
+                    </div>
+                    <button
+                        className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                        onClick={onClose}
+                        type="button"
+                        aria-label="Fechar depósitos"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+                    {rows.length === 0 ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
+                            Nenhum depósito com saldo encontrado para este produto.
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {rows.map((r) => (
+                                <div
+                                    key={r.deposito.id}
+                                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="truncate font-semibold text-slate-900">
+                                            {r.deposito.nome}
+                                        </p>
+                                        {r.hasMinMax ? (
+                                            <p className="mt-0.5 text-xs text-slate-500">
+                                                Min {r.min} • Rep {r.rep}
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-xs text-slate-500">Saldo</p>
+                                        <p className="text-xl font-bold text-slate-900">
+                                            {r.quantidade}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function PhotoThumb({
     url,
     onClick,
@@ -731,6 +835,9 @@ export default function Page() {
     const [imgOpen, setImgOpen] = useState(false);
     const [imgUrl, setImgUrl] = useState<string | null>(null);
     const [imgTitle, setImgTitle] = useState("");
+
+    const [produtoDepositosOpen, setProdutoDepositosOpen] = useState(false);
+    const [selectedProduto, setSelectedProduto] = useState<Produto | null>(null);
 
     const depById = useMemo(
         () => new Map(depositos.map((d) => [d.id, d])),
@@ -889,6 +996,37 @@ export default function Page() {
         fabById,
         classById,
     ]);
+
+    const selectedProdutoDepositos = useMemo<DepositoSaldoRow[]>(() => {
+        if (!selectedProduto) return [];
+
+        const rows: DepositoSaldoRow[] = [];
+
+        for (const s of saldos) {
+            if (Number(s.produto_id) !== Number(selectedProduto.id)) continue;
+
+            const deposito = depById.get(s.deposito_id);
+            if (!deposito) continue;
+
+            const quantidade = clampInt(s.quantidade);
+            if (quantidade <= 0) continue;
+
+            const min = clampInt((s as any).minimo ?? 0);
+            const max = clampInt((s as any).maximo ?? 0);
+            const hasMinMax = min > 0 && max > 0;
+            const rep = hasMinMax ? Math.max(0, max - quantidade) : 0;
+
+            rows.push({ deposito, quantidade, min, max, rep, hasMinMax });
+        }
+
+        rows.sort((a, b) => a.deposito.nome.localeCompare(b.deposito.nome, "pt-BR"));
+        return rows;
+    }, [selectedProduto, saldos, depById]);
+
+    function abrirDepositosDoProduto(produto: Produto) {
+        setSelectedProduto(produto);
+        setProdutoDepositosOpen(true);
+    }
 
     function limparFiltros() {
         setQEstoque("");
@@ -1077,81 +1215,57 @@ export default function Page() {
                                 p.categoria_nome ||
                                 (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
                                 "—";
-                            const fab =
-                                p.fabricante_nome ||
-                                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
-                                "—";
-                            const cls =
-                                p.classificacao_nome ||
-                                (p.classificacao_id
-                                    ? classById.get(p.classificacao_id)?.nome
-                                    : "") ||
-                                "—";
                             const low = hasMinMax && qtd <= min;
 
                             return (
                                 <div
                                     key={`${p.id}-${d.id}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => abrirDepositosDoProduto(p)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            abrirDepositosDoProduto(p);
+                                        }
+                                    }}
                                     className={[
-                                        "rounded-2xl border p-3",
+                                        "cursor-pointer rounded-2xl border p-3 outline-none transition hover:border-slate-300 hover:shadow-sm focus:ring-2 focus:ring-slate-200",
                                         low
                                             ? "border-amber-200 bg-amber-50"
                                             : "border-slate-200 bg-white",
                                     ].join(" ")}
                                 >
                                     <div className="flex gap-4">
-                                        <PhotoThumb
-                                            url={img}
-                                            onClick={
-                                                img
-                                                    ? () => {
-                                                        setImgUrl(img);
-                                                        setImgTitle(p.nome);
-                                                        setImgOpen(true);
-                                                    }
-                                                    : undefined
-                                            }
-                                        />
+                                        <div onClick={(e) => e.stopPropagation()}>
+                                            <PhotoThumb
+                                                url={img}
+                                                onClick={
+                                                    img
+                                                        ? () => {
+                                                            setImgUrl(img);
+                                                            setImgTitle(p.nome);
+                                                            setImgOpen(true);
+                                                        }
+                                                        : undefined
+                                                }
+                                            />
+                                        </div>
                                         <div className="min-w-0 flex-1">
                                             <p className="line-clamp-2 font-semibold text-slate-900">
                                                 {p.nome}
                                             </p>
-                                            <p className="mt-0.5 text-xs text-slate-600">
-                                                CB: {p.codigo_barras || "—"}
+                                            <p className="mt-1 truncate text-xs font-medium text-slate-600">
+                                                {cat}
                                             </p>
-                                            <p className="mt-0.5 text-xs text-slate-600">
-                                                Depósito: {d.nome}
+                                            <p className="mt-0.5 truncate text-xs text-slate-600">
+                                                {d.nome}
                                             </p>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs text-slate-500">Qtd</p>
                                             <p className="text-xl font-bold text-slate-900">{qtd}</p>
                                         </div>
-                                    </div>
-
-                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
-                                        <div>
-                                            Categoria: <b>{cat}</b>
-                                        </div>
-                                        <div>
-                                            Fabricante: <b>{fab}</b>
-                                        </div>
-                                        <div>
-                                            Classificação: <b>{cls}</b>
-                                        </div>
-                                        <div>
-                                            Valor: <b>{moneyBRL(Number(p.valor) || 0)}</b>
-                                        </div>
-                                        {showMinRepColumns ? (
-                                            <div>
-                                                Min: <b>{hasMinMax ? min : "—"}</b>
-                                            </div>
-                                        ) : null}
-                                        {showMinRepColumns ? (
-                                            <div>
-                                                Rep: <b>{hasMinMax ? rep : "—"}</b>
-                                            </div>
-                                        ) : null}
                                     </div>
                                 </div>
                             );
@@ -1183,6 +1297,13 @@ export default function Page() {
                 setOnlyPositive={setOnlyPositive}
                 limparFiltros={limparFiltros}
                 totalResultados={estoqueRows.length}
+            />
+
+            <ProdutoDepositosModal
+                open={produtoDepositosOpen}
+                onClose={() => setProdutoDepositosOpen(false)}
+                produto={selectedProduto}
+                rows={selectedProdutoDepositos}
             />
 
             <ImagePreviewModal
