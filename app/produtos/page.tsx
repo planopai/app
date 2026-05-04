@@ -499,7 +499,7 @@ function FilterModal({
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <Field label="Pesquisar por nome">
                             <TextInput
@@ -706,9 +706,9 @@ function ProdutoDepositosModal({
         <div
             role="dialog"
             aria-modal="true"
-            className="fixed inset-0 z-[55] flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-[55] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-slate-950/55 p-4"
         >
-            <div className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
+            <div className="flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
                     <div className="min-w-0">
                         <h2 className="line-clamp-2 text-lg font-bold text-slate-900">
@@ -728,7 +728,7 @@ function ProdutoDepositosModal({
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
                     {rows.length === 0 ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
                             Nenhum depósito com saldo encontrado para este produto.
@@ -1260,6 +1260,9 @@ export default function Page() {
                                             </p>
                                             <p className="mt-0.5 truncate text-xs text-slate-600">
                                                 {d.nome}
+                                            </p>
+                                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-900">
+                                                {moneyBRL(Number(p.valor) || 0)}
                                             </p>
                                         </div>
                                         <div className="text-right">
