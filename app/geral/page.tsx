@@ -808,6 +808,85 @@ function Modal({
     );
 }
 
+function FilterPanelModal({
+    open,
+    title,
+    subtitle,
+    onClose,
+    children,
+    footer,
+}: {
+    open: boolean;
+    title: string;
+    subtitle?: string;
+    onClose: () => void;
+    children: React.ReactNode;
+    footer?: React.ReactNode;
+}) {
+    useEffect(() => {
+        if (!open) return;
+
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+
+        window.addEventListener("keydown", onKey);
+
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            document.body.style.overflow = prev;
+        };
+    }, [open, onClose]);
+
+    if (!open) return null;
+
+    return (
+        <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4"
+        >
+            <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:max-w-5xl sm:rounded-3xl">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
+                    <div className="min-w-0">
+                        <h2 className="text-lg font-bold text-slate-900">
+                            {title}
+                        </h2>
+
+                        {subtitle ? (
+                            <p className="mt-1 text-sm text-slate-600">
+                                {subtitle}
+                            </p>
+                        ) : null}
+                    </div>
+
+                    <button
+                        className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                        onClick={onClose}
+                        type="button"
+                        aria-label="Fechar filtros"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
+                    {children}
+                </div>
+
+                {footer ? (
+                    <div className="border-t border-slate-100 bg-slate-50 p-4 sm:p-5">
+                        {footer}
+                    </div>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
 /* =========================
    CONFIRM DIALOG
 ========================= */
@@ -1474,9 +1553,17 @@ export default function Page() {
     // ✅ NOVO: ocultar itens zerados
     const [onlyPositive, setOnlyPositive] = useState(false);
 
+    // ✅ NOVO: abre/fecha o filtro da aba Estoque
+    const [estoqueFilterOpen, setEstoqueFilterOpen] = useState(false);
+
     // =========================
     // CONFERÊNCIA (não altera saldo)
     // =========================
+
+    // ✅ NOVO: abre/fecha o filtro da aba Conferência
+    const [confFilterOpen, setConfFilterOpen] = useState(false);
+
+    
     const [confDepositoId, setConfDepositoId] = useState<ID>(0);
     const [confFabId, setConfFabId] = useState<ID | "Todos">("Todos");
     const [confCatId, setConfCatId] = useState<ID | "Todas">("Todas");
@@ -4440,8 +4527,25 @@ export default function Page() {
         return grupos;
     }, [histRows]);
 
+    function limparFiltrosEstoque() {
+        setQEstoque("");
+        setDepFiltroEstoque([]);
+        setCatFiltroEstoque([]);
+        setFabFiltroEstoque([]);
+        setClassFiltroEstoque([]);
+        setOnlyLow(false);
+        setOnlyPositive(false);
+    }
 
-    
+    function limparFiltrosConferencia() {
+        setConfDepositoId(0);
+        setConfFabId("Todos");
+        setConfCatId("Todas");
+        setConfClassId("Todas");
+        setConfQ("");
+        setConfOnlyPositive(false);
+        setConfFisicoByProd({});
+    }
 
     return (
         <main className="min-h-screen bg-slate-50">
@@ -4615,98 +4719,28 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-7">
-                                <Field label="Pesquisar">
-                                    <TextInput
-                                        value={qEstoque}
-                                        onChange={(e) => setQEstoque(e.target.value)}
-                                        placeholder="Nome, código, depósito, categoria, fabricante, classificação..."
-                                    />
-                                </Field>
+                            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                <div className="text-sm text-slate-700">
+                                    Produtos filtrados: <b>{estoqueRows.length}</b>
+                                </div>
 
-                                <MultiSelectDropdown
-                                    label="Depósito"
-                                    options={depositos}
-                                    selectedIds={depFiltroEstoque}
-                                    onChangeIds={setDepFiltroEstoque}
-                                    allLabel="Todos"
-                                />
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        variant="soft"
+                                        type="button"
+                                        onClick={() => setEstoqueFilterOpen(true)}
+                                    >
+                                        🔎 Abrir filtro
+                                    </Button>
 
-                                <MultiSelectDropdown
-                                    label="Categoria"
-                                    options={categorias}
-                                    selectedIds={catFiltroEstoque}
-                                    onChangeIds={setCatFiltroEstoque}
-                                    allLabel="Todas"
-                                />
-
-                                <MultiSelectDropdown
-                                    label="Fabricante"
-                                    options={fabricantes}
-                                    selectedIds={fabFiltroEstoque}
-                                    onChangeIds={setFabFiltroEstoque}
-                                    allLabel="Todos"
-                                />
-
-                                <MultiSelectDropdown
-                                    label="Classificação"
-                                    options={classificacoes}
-                                    selectedIds={classFiltroEstoque}
-                                    onChangeIds={setClassFiltroEstoque}
-                                    allLabel="Todas"
-                                />
-
-                                <Field label="Filtros rápidos">
-                                    <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                                        <label className="flex items-center gap-2">
-                                            <input
-                                                id="onlyLow"
-                                                type="checkbox"
-                                                checked={onlyLow}
-                                                onChange={(e) => setOnlyLow(e.target.checked)}
-                                                className="h-4 w-4"
-                                            />
-                                            <span className="text-sm text-slate-700">Somente alerta (≤ mín)</span>
-                                        </label>
-
-                                        <label className="flex items-center gap-2">
-                                            <input
-                                                id="onlyPositive"
-                                                type="checkbox"
-                                                checked={onlyPositive}
-                                                onChange={(e) => setOnlyPositive(e.target.checked)}
-                                                className="h-4 w-4"
-                                            />
-                                            <span className="text-sm text-slate-700">Somente saldo &gt; 0</span>
-                                        </label>
-                                    </div>
-                                </Field>
-
-
-                                <Field label="Ações">
-                                    <div className="flex gap-2">
-                                        <Button variant="ghost" onClick={() => setOnlyLow(true)} type="button">
-                                            Alertas ({alertCount})
-                                        </Button>
-
-                                        <Button
-                                            variant="ghost"
-                                            onClick={() => {
-                                                // opcional: limpar todos os filtros rápido
-                                                setDepFiltroEstoque([]);
-                                                setCatFiltroEstoque([]);
-                                                setFabFiltroEstoque([]);
-                                                setClassFiltroEstoque([]);
-                                                setOnlyLow(false);
-                                                setOnlyPositive(false); // ✅ NOVO
-                                                setQEstoque("");
-                                            }}
-                                            type="button"
-                                        >
-                                            Limpar filtros
-                                        </Button>
-                                    </div>
-                                </Field>
+                                    <Button
+                                        variant="ghost"
+                                        type="button"
+                                        onClick={limparFiltrosEstoque}
+                                    >
+                                        Limpar filtros
+                                    </Button>
+                                </div>
                             </div>
 
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
@@ -5016,84 +5050,39 @@ export default function Page() {
 
 
 
-                            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
-                                <Field label="Depósito (estoque)">
-                                    <Select
-                                        value={confDepositoId}
-                                        onChange={(e) => {
-                                            const id = Number(e.target.value);
-                                            setConfDepositoId(id);
-                                            setConfFisicoByProd({});
-                                        }}
+                            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                <div className="text-sm text-slate-700">
+                                    Itens para conferência: <b>{conferenciaRows.length}</b>
+
+                                    {confDepositoId ? (
+                                        <>
+                                            {" "}• Depósito:{" "}
+                                            <b>{depositos.find((d) => Number(d.id) === Number(confDepositoId))?.nome || "—"}</b>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {" "}• <span className="text-rose-700">Selecione um depósito no filtro</span>
+                                        </>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        variant="soft"
+                                        type="button"
+                                        onClick={() => setConfFilterOpen(true)}
                                     >
-                                        <option value={0} disabled>Selecionar...</option>
-                                        {depositos.map((d) => (
-                                            <option key={d.id} value={d.id}>{d.nome}</option>
-                                        ))}
-                                    </Select>
-                                </Field>
+                                        🔎 Abrir filtro
+                                    </Button>
 
-                                <Field label="Fabricante">
-                                    <Select
-                                        value={confFabId as any}
-                                        onChange={(e) => setConfFabId(e.target.value === "Todos" ? "Todos" : Number(e.target.value))}
+                                    <Button
+                                        variant="ghost"
+                                        type="button"
+                                        onClick={limparFiltrosConferencia}
                                     >
-                                        <option value="Todos">Todos</option>
-                                        {fabricantes.map((f) => (
-                                            <option key={f.id} value={f.id}>{f.nome}</option>
-                                        ))}
-                                    </Select>
-                                </Field>
-
-                                <Field label="Categoria">
-                                    <Select
-                                        value={confCatId as any}
-                                        onChange={(e) => setConfCatId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
-                                    >
-                                        <option value="Todas">Todas</option>
-                                        {categorias.map((c) => (
-                                            <option key={c.id} value={c.id}>{c.nome}</option>
-                                        ))}
-                                    </Select>
-                                </Field>
-
-                                <Field label="Classificação">
-                                    <Select
-                                        value={confClassId as any}
-                                        onChange={(e) => setConfClassId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
-                                    >
-                                        <option value="Todas">Todas</option>
-                                        {classificacoes.map((c) => (
-                                            <option key={c.id} value={c.id}>{c.nome}</option>
-                                        ))}
-                                    </Select>
-                                </Field>
-
-                                <Field label="Buscar">
-                                    <TextInput
-                                        value={confQ}
-                                        onChange={(e) => setConfQ(e.target.value)}
-                                        placeholder="Produto, CB, fabricante..."
-                                    />
-                                </Field>
-
-                                <Field label="Resumo / Filtros">
-                                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
-                                        <div className="flex items-center">
-                                            Itens: <b className="ml-2">{conferenciaRows.length}</b>
-                                        </div>
-
-                                        <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
-                                            <input
-                                                type="checkbox"
-                                                checked={confOnlyPositive}
-                                                onChange={(e) => setConfOnlyPositive(e.target.checked)}
-                                                className="h-4 w-4"
-                                            />
-                                            <span>Somente saldo &gt; 0</span>
-                                        </label>
-                                    </div>
-                                </Field>
+                                        Limpar filtros
+                                    </Button>
+                                </div>
                             </div>
 
                             
@@ -7889,6 +7878,248 @@ export default function Page() {
             </Modal>
 
 
+            <FilterPanelModal
+                open={estoqueFilterOpen}
+                onClose={() => setEstoqueFilterOpen(false)}
+                title="Filtros do estoque"
+                subtitle="Refine a lista de produtos sem deixar os filtros expostos na tela."
+                footer={
+                    <>
+                        <div className="mb-3 text-xs text-slate-600">
+                            Resultado atual: <b>{estoqueRows.length}</b> linha(s)
+                        </div>
+
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                            <Button
+                                variant="ghost"
+                                type="button"
+                                onClick={limparFiltrosEstoque}
+                                className="w-full sm:w-auto"
+                            >
+                                Limpar filtros
+                            </Button>
+
+                            <Button
+                                variant="solid"
+                                type="button"
+                                onClick={() => setEstoqueFilterOpen(false)}
+                                className="w-full sm:w-auto"
+                            >
+                                Aplicar filtros
+                            </Button>
+                        </div>
+                    </>
+                }
+            >
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <Field label="Pesquisar produto">
+                        <TextInput
+                            value={qEstoque}
+                            onChange={(e) => setQEstoque(e.target.value)}
+                            placeholder="Nome, código de barras, depósito, categoria..."
+                        />
+                    </Field>
+
+                    <Field label="Filtros rápidos">
+                        <div className="grid min-h-[42px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:grid-cols-2">
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                                <input
+                                    type="checkbox"
+                                    checked={onlyLow}
+                                    onChange={(e) => setOnlyLow(e.target.checked)}
+                                    className="h-4 w-4"
+                                />
+                                Somente alerta
+                            </label>
+
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                                <input
+                                    type="checkbox"
+                                    checked={onlyPositive}
+                                    onChange={(e) => setOnlyPositive(e.target.checked)}
+                                    className="h-4 w-4"
+                                />
+                                Somente saldo &gt; 0
+                            </label>
+                        </div>
+                    </Field>
+
+                    <MultiSelectDropdown
+                        label="Depósito"
+                        options={depositos}
+                        selectedIds={depFiltroEstoque}
+                        onChangeIds={setDepFiltroEstoque}
+                        allLabel="Todos"
+                    />
+
+                    <MultiSelectDropdown
+                        label="Categoria"
+                        options={categorias}
+                        selectedIds={catFiltroEstoque}
+                        onChangeIds={setCatFiltroEstoque}
+                        allLabel="Todas"
+                    />
+
+                    <MultiSelectDropdown
+                        label="Fabricante"
+                        options={fabricantes}
+                        selectedIds={fabFiltroEstoque}
+                        onChangeIds={setFabFiltroEstoque}
+                        allLabel="Todos"
+                    />
+
+                    <MultiSelectDropdown
+                        label="Classificação"
+                        options={classificacoes}
+                        selectedIds={classFiltroEstoque}
+                        onChangeIds={setClassFiltroEstoque}
+                        allLabel="Todas"
+                    />
+                </div>
+            </FilterPanelModal>
+
+            <FilterPanelModal
+                open={confFilterOpen}
+                onClose={() => setConfFilterOpen(false)}
+                title="Filtros da conferência"
+                subtitle="Escolha depósito e filtros antes de preencher a quantidade física."
+                footer={
+                    <>
+                        <div className="mb-3 text-xs text-slate-600">
+                            Itens atuais: <b>{conferenciaRows.length}</b>
+                        </div>
+
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                            <Button
+                                variant="ghost"
+                                type="button"
+                                onClick={limparFiltrosConferencia}
+                                className="w-full sm:w-auto"
+                            >
+                                Limpar filtros
+                            </Button>
+
+                            <Button
+                                variant="solid"
+                                type="button"
+                                onClick={() => setConfFilterOpen(false)}
+                                className="w-full sm:w-auto"
+                            >
+                                Aplicar filtros
+                            </Button>
+                        </div>
+                    </>
+                }
+            >
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <Field label="Depósito (estoque)">
+                        <Select
+                            value={confDepositoId}
+                            onChange={(e) => {
+                                const id = Number(e.target.value);
+                                setConfDepositoId(id);
+                                setConfFisicoByProd({});
+                            }}
+                        >
+                            <option value={0} disabled>
+                                Selecionar...
+                            </option>
+
+                            {depositos.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Buscar">
+                        <TextInput
+                            value={confQ}
+                            onChange={(e) => setConfQ(e.target.value)}
+                            placeholder="Produto, CB, fabricante..."
+                        />
+                    </Field>
+
+                    <Field label="Fabricante">
+                        <Select
+                            value={confFabId as any}
+                            onChange={(e) =>
+                                setConfFabId(
+                                    e.target.value === "Todos"
+                                        ? "Todos"
+                                        : Number(e.target.value)
+                                )
+                            }
+                        >
+                            <option value="Todos">Todos</option>
+
+                            {fabricantes.map((f) => (
+                                <option key={f.id} value={f.id}>
+                                    {f.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Categoria">
+                        <Select
+                            value={confCatId as any}
+                            onChange={(e) =>
+                                setConfCatId(
+                                    e.target.value === "Todas"
+                                        ? "Todas"
+                                        : Number(e.target.value)
+                                )
+                            }
+                        >
+                            <option value="Todas">Todas</option>
+
+                            {categorias.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    {c.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Classificação">
+                        <Select
+                            value={confClassId as any}
+                            onChange={(e) =>
+                                setConfClassId(
+                                    e.target.value === "Todas"
+                                        ? "Todas"
+                                        : Number(e.target.value)
+                                )
+                            }
+                        >
+                            <option value="Todas">Todas</option>
+
+                            {classificacoes.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    {c.nome}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Filtros rápidos">
+                        <div className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                            <label className="flex items-center gap-2 text-sm text-slate-700">
+                                <input
+                                    type="checkbox"
+                                    checked={confOnlyPositive}
+                                    onChange={(e) => setConfOnlyPositive(e.target.checked)}
+                                    className="h-4 w-4"
+                                />
+                                Somente saldo &gt; 0
+                            </label>
+                        </div>
+                    </Field>
+                </div>
+            </FilterPanelModal>
+            
             {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
 
