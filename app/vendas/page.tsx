@@ -9,7 +9,6 @@ import {
     IconEye,
     IconRefresh,
     IconSearch,
-    IconSend,
     IconX,
 } from "@tabler/icons-react";
 
@@ -179,10 +178,11 @@ function formatOnlyDate(value?: string | null) {
 function getAge(dateString?: string | null) {
     if (!dateString) return null;
 
-    const today = new Date();
     const birth = new Date(dateString + "T00:00:00");
 
     if (Number.isNaN(birth.getTime())) return null;
+
+    const today = new Date();
 
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
@@ -271,65 +271,108 @@ function buildAddress(c: CadastroPlano) {
     return [linha1, linha2, linha3].filter(Boolean).join("\n");
 }
 
-function buildWhatsAppText(c: CadastroPlano) {
-    const NL = "\r\n";
-    const ZWSP = "\u200B";
+function buildFullCadastroText(c: CadastroPlano) {
     const dependentes = normalizeDependentes(c.dependentes);
+    const metadados = getMetadadosPlano(c.dependentes);
 
     const lines = [
-        `*Cadastro de Plano:* #${c.id}`,
-        `*Origem:* Site Plano PAI`,
-        `*Plano:* ${c.plano}`,
-        `*Status:* ${getStatusLabel(c.status)}`,
-        `*Titular:* ${c.titular_nome}`,
-        `*CPF:* ${c.titular_cpf}`,
-        `*Nascimento:* ${formatOnlyDate(c.titular_nascimento)}`,
-        `*Mensalidade:* ${formatCurrency(c.valor_mensalidade)}`,
-        `*Adesão:* ${formatCurrency(c.valor_adesao)}`,
-        `*Total inicial:* ${formatCurrency(c.valor_total)}`,
-        `*Dependentes:* ${dependentes.length}`,
-        `*Endereço:* ${[c.endereco, c.numero, c.bairro, `${c.cidade}/${c.estado}`, c.cep]
+        `Cadastro de Plano #${c.id}`,
+        `Plano: ${c.plano}`,
+        `Status: ${getStatusLabel(c.status)}`,
+        `Titular: ${c.titular_nome}`,
+        `CPF: ${c.titular_cpf}`,
+        `Nascimento: ${formatOnlyDate(c.titular_nascimento)}`,
+        `Idade: ${getAge(c.titular_nascimento) ?? "—"} anos`,
+        `Mensalidade: ${formatCurrency(c.valor_mensalidade)}`,
+        `Adesão: ${formatCurrency(c.valor_adesao)}`,
+        `Total inicial: ${formatCurrency(c.valor_total)}`,
+        `Endereço: ${[c.endereco, c.numero, c.bairro, `${c.cidade}/${c.estado}`, c.cep]
             .filter(Boolean)
             .join(" - ")}`,
-        `*Criado em:* ${formatDate(c.criado_em)}`,
+        c.complemento ? `Complemento: ${c.complemento}` : "",
+        `Dependentes: ${dependentes.length}`,
+        ...dependentes.map((dep, index) => {
+            const idade = getAge(depNascimento(dep));
+            return `${index + 1}. ${depNome(dep)} | ${formatOnlyDate(depNascimento(dep))}${idade !== null ? ` | ${idade} anos` : ""
+                } | ${depParentesco(dep)}${dep.cpf ? ` | CPF: ${dep.cpf}` : ""}`;
+        }),
+        Object.keys(metadados).length ? `Metadados: ${JSON.stringify(metadados)}` : "",
+        `Criado em: ${formatDate(c.criado_em)}`,
+        `Atualizado em: ${formatDate(c.atualizado_em)}`,
     ];
 
-    const out: string[] = [];
-    lines.forEach((line, index) => {
-        out.push(line.trimStart());
-        if (index < lines.length - 1) out.push(ZWSP);
-    });
-
-    return out.join(NL);
+    return lines.filter(Boolean).join("\n");
 }
 
-async function shareOrOpenWhatsApp(text: string) {
-    if (typeof navigator !== "undefined" && (navigator as any).share) {
+/* =========================
+   Componentes pequenos
+   ========================= */
+
+function CopyButton({
+    value,
+    label = "Copiar",
+    className = "",
+}: {
+    value?: string | number | null;
+    label?: string;
+    className?: string;
+}) {
+    const [copied, setCopied] = React.useState(false);
+
+    async function copy() {
+        const text = String(value ?? "").trim();
+
+        if (!text || text === "—") return;
+
         try {
-            await (navigator as any).share({ text });
-            return;
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
         } catch {
-            /* continua para fallback */
+            alert("Não foi possível copiar.");
         }
     }
 
-    const encoded = encodeURIComponent(text);
-    const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(
-        (typeof navigator !== "undefined" && navigator.userAgent) || ""
+    return (
+        <button
+            type="button"
+            onClick={copy}
+            disabled={!String(value ?? "").trim() || String(value ?? "").trim() === "—"}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+            title={copied ? "Copiado!" : label}
+        >
+            <IconCopy className="size-3.5" />
+            {copied ? "Copiado" : label}
+        </button>
     );
+}
 
-    const deep = isMobile ? `whatsapp://send?text=${encoded}` : `https://web.whatsapp.com/send?text=${encoded}`;
-    const opened = window.open(deep, "_blank", "noopener,noreferrer");
+function DetailField({
+    label,
+    value,
+    copyValue,
+    multiline = false,
+}: {
+    label: string;
+    value?: React.ReactNode;
+    copyValue?: string | number | null;
+    multiline?: boolean;
+}) {
+    const resolvedCopy =
+        copyValue ??
+        (typeof value === "string" || typeof value === "number" ? value : "");
 
-    if (opened) return;
-
-    try {
-        await navigator.clipboard.writeText(text);
-    } catch {
-        /* sem ação */
-    }
-
-    window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer");
+    return (
+        <div className="rounded-lg border bg-background p-3">
+            <div className="mb-1 text-xs font-medium text-muted-foreground">{label}</div>
+            <div className="flex items-start justify-between gap-3">
+                <div className={`min-w-0 text-sm font-medium ${multiline ? "whitespace-pre-line" : "break-words"}`}>
+                    {value || "—"}
+                </div>
+                <CopyButton value={resolvedCopy} />
+            </div>
+        </div>
+    );
 }
 
 /* =========================
@@ -361,7 +404,6 @@ export default function Page() {
     const [detail, setDetail] = React.useState<CadastroPlano | null>(null);
     const [detailLoading, setDetailLoading] = React.useState(false);
 
-    const [copied, setCopied] = React.useState(false);
     const [updating, setUpdating] = React.useState(false);
 
     async function fetchCadastros() {
@@ -411,6 +453,22 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, perPage]);
 
+    React.useEffect(() => {
+        function onKeyDown(e: KeyboardEvent) {
+            if (e.key === "Escape") setOpen(false);
+        }
+
+        if (open) {
+            document.addEventListener("keydown", onKeyDown);
+            document.body.style.overflow = "hidden";
+        }
+
+        return () => {
+            document.removeEventListener("keydown", onKeyDown);
+            document.body.style.overflow = "";
+        };
+    }, [open]);
+
     function onSubmitFilters(e: React.FormEvent) {
         e.preventDefault();
         setPage(1);
@@ -422,7 +480,6 @@ export default function Page() {
 
     async function openDetail(id: number) {
         setDetail(null);
-        setCopied(false);
         setOpen(true);
         setDetailLoading(true);
 
@@ -492,24 +549,6 @@ export default function Page() {
         }
     }
 
-    async function copyCadastroToClipboard(c: CadastroPlano) {
-        try {
-            await navigator.clipboard.writeText(buildWhatsAppText(c));
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-        } catch {
-            alert("Não foi possível copiar o texto.");
-        }
-    }
-
-    async function notifyWhatsApp(cadastro: CadastroPlano) {
-        try {
-            await shareOrOpenWhatsApp(buildWhatsAppText(cadastro));
-        } catch (e: any) {
-            alert(e?.message || "Não foi possível abrir o WhatsApp.");
-        }
-    }
-
     function clearFilters() {
         setQ("");
         setStatus("all");
@@ -520,6 +559,9 @@ export default function Page() {
             fetchCadastros();
         }, 0);
     }
+
+    const modalDependentes = detail ? normalizeDependentes(detail.dependentes) : [];
+    const modalMetadados = detail ? getMetadadosPlano(detail.dependentes) : {};
 
     return (
         <div className="flex h-full flex-col">
@@ -680,14 +722,6 @@ export default function Page() {
                                         <IconEye className="size-4" />
                                         Ver
                                     </button>
-
-                                    <button
-                                        className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs hover:bg-muted"
-                                        onClick={() => notifyWhatsApp(c)}
-                                    >
-                                        <IconSend className="size-4" />
-                                        WhatsApp
-                                    </button>
                                 </div>
                             </div>
                         );
@@ -802,15 +836,6 @@ export default function Page() {
                                                     <IconEye className="size-4" />
                                                     Ver
                                                 </button>
-
-                                                <button
-                                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                                                    onClick={() => notifyWhatsApp(c)}
-                                                    title="Compartilhar via WhatsApp"
-                                                >
-                                                    <IconSend className="size-4" />
-                                                    WhatsApp
-                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -872,37 +897,25 @@ export default function Page() {
                 </div>
             </div>
 
-            {/* Detalhe */}
+            {/* Modal central */}
             {open && (
-                <div className="fixed inset-0 z-50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
                     <div
-                        className="absolute inset-0 bg-black/40"
+                        className="absolute inset-0 bg-black/50"
                         onClick={() => setOpen(false)}
                         aria-hidden
                     />
 
-                    <div className="absolute right-0 top-0 h-full w-full overflow-auto bg-white shadow-xl md:max-w-xl">
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-sm text-muted-foreground">Cadastro de plano</div>
-                                <div className="text-lg font-semibold">#{detail?.id || "—"}</div>
-                            </div>
+                    <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-3 border-b px-4 py-3 sm:px-5">
+                            <div className="min-w-0">
+                                <div className="text-xs text-muted-foreground">Cadastro de plano</div>
+                                <div className="truncate text-lg font-semibold">
+                                    {detail ? `#${detail.id} — ${detail.titular_nome}` : "Carregando..."}
+                                </div>
 
-                            <button
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setOpen(false)}
-                                aria-label="Fechar"
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-
-                        {!detail || detailLoading ? (
-                            <div className="p-4 text-sm text-muted-foreground">Carregando…</div>
-                        ) : (
-                            <div className="space-y-4 p-4">
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                                {detail && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
                                         <span
                                             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsPlanoBadge(
                                                 detail.plano
@@ -919,157 +932,308 @@ export default function Page() {
                                             {getStatusLabel(detail.status)}
                                         </span>
                                     </div>
-
-                                    <div className="text-sm text-muted-foreground">
-                                        Criado em {formatDate(detail.criado_em)}
-                                    </div>
-                                </div>
-
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <h2 className="mb-2 font-semibold">Titular</h2>
-
-                                    <div>
-                                        <b>Nome:</b> {detail.titular_nome}
-                                    </div>
-                                    <div>
-                                        <b>CPF:</b> {detail.titular_cpf}
-                                    </div>
-                                    <div>
-                                        <b>Nascimento:</b> {formatOnlyDate(detail.titular_nascimento)}
-                                    </div>
-                                    <div>
-                                        <b>Idade:</b> {getAge(detail.titular_nascimento) ?? "—"} anos
-                                    </div>
-                                </div>
-
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <h2 className="mb-2 font-semibold">Valores</h2>
-
-                                    <div>
-                                        <b>Mensalidade:</b> {formatCurrency(detail.valor_mensalidade)}
-                                    </div>
-                                    <div>
-                                        <b>Adesão:</b> {formatCurrency(detail.valor_adesao)}
-                                    </div>
-                                    <div>
-                                        <b>Total inicial:</b> {formatCurrency(detail.valor_total)}
-                                    </div>
-                                </div>
-
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <h2 className="mb-2 font-semibold">Endereço</h2>
-                                    <div className="whitespace-pre-line">{buildAddress(detail)}</div>
-                                </div>
-
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <h2 className="mb-2 font-semibold">Dependentes</h2>
-
-                                    {normalizeDependentes(detail.dependentes).length === 0 ? (
-                                        <div className="text-muted-foreground">Nenhum dependente informado.</div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {normalizeDependentes(detail.dependentes).map((dep, index) => (
-                                                <div key={index} className="rounded-md border p-2">
-                                                    <div>
-                                                        <b>{index + 1}. {depNome(dep)}</b>
-                                                    </div>
-                                                    <div>
-                                                        Nascimento: {formatOnlyDate(depNascimento(dep))}
-                                                        {getAge(depNascimento(dep)) !== null
-                                                            ? ` — ${getAge(depNascimento(dep))} anos`
-                                                            : ""}
-                                                    </div>
-                                                    <div>Parentesco: {depParentesco(dep)}</div>
-                                                    {dep.cpf && <div>CPF: {dep.cpf}</div>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {Object.keys(getMetadadosPlano(detail.dependentes)).length > 0 && (
-                                    <div className="rounded-lg border p-3 text-sm leading-6">
-                                        <h2 className="mb-2 font-semibold">Detalhes do cálculo</h2>
-
-                                        <div className="space-y-1">
-                                            {Object.entries(getMetadadosPlano(detail.dependentes)).map(([key, value]) => (
-                                                <div key={key}>
-                                                    <b>{key}:</b> {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-3 text-sm font-semibold">Atualizar status</div>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        {(
-                                            [
-                                                "AGUARDANDO_PAGAMENTO",
-                                                "PAGO",
-                                                "RECUSADO",
-                                                "CANCELADO",
-                                                "EXPIRADO",
-                                                "ESTORNADO",
-                                            ] as StatusPagamento[]
-                                        ).map((s) => (
-                                            <button
-                                                key={s}
-                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-                                                onClick={() => updateStatus(detail.id, s)}
-                                                disabled={updating || detail.status === s}
-                                            >
-                                                <IconCheck className="size-4" />
-                                                {getStatusLabel(s)}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                        onClick={() => copyCadastroToClipboard(detail)}
-                                    >
-                                        <IconCopy className="size-4" />
-                                        {copied ? "Copiado!" : "Copiar cadastro"}
-                                    </button>
-
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                                        onClick={() => notifyWhatsApp(detail)}
-                                    >
-                                        <IconSend className="size-4" />
-                                        WhatsApp
-                                    </button>
-                                </div>
-
-                                {(detail.gateway || detail.gateway_payment_id || detail.gateway_reference) && (
-                                    <div className="rounded-lg border p-3 text-sm leading-6">
-                                        <h2 className="mb-2 font-semibold">Gateway</h2>
-
-                                        {detail.gateway && (
-                                            <div>
-                                                <b>Gateway:</b> {detail.gateway}
-                                            </div>
-                                        )}
-
-                                        {detail.gateway_payment_id && (
-                                            <div>
-                                                <b>Payment ID:</b> {detail.gateway_payment_id}
-                                            </div>
-                                        )}
-
-                                        {detail.gateway_reference && (
-                                            <div>
-                                                <b>Referência:</b> {detail.gateway_reference}
-                                            </div>
-                                        )}
-                                    </div>
                                 )}
                             </div>
+
+                            <button
+                                className="rounded-md p-2 hover:bg-muted"
+                                onClick={() => setOpen(false)}
+                                aria-label="Fechar"
+                            >
+                                <IconX className="size-5" />
+                            </button>
+                        </div>
+
+                        {!detail || detailLoading ? (
+                            <div className="p-6 text-center text-sm text-muted-foreground">
+                                Carregando…
+                            </div>
+                        ) : (
+                            <>
+                                <div className="overflow-auto p-4 sm:p-5">
+                                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                        {/* Dados principais */}
+                                        <section className="rounded-xl border bg-card p-3 sm:p-4">
+                                            <div className="mb-3 flex items-center justify-between gap-2">
+                                                <h2 className="font-semibold">Dados do titular</h2>
+                                                <CopyButton
+                                                    value={`${detail.titular_nome} | ${detail.titular_cpf}`}
+                                                    label="Copiar titular"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <DetailField label="Nome" value={detail.titular_nome} />
+                                                <DetailField label="CPF" value={detail.titular_cpf} />
+                                                <DetailField
+                                                    label="Nascimento"
+                                                    value={formatOnlyDate(detail.titular_nascimento)}
+                                                    copyValue={detail.titular_nascimento}
+                                                />
+                                                <DetailField
+                                                    label="Idade"
+                                                    value={`${getAge(detail.titular_nascimento) ?? "—"} anos`}
+                                                />
+                                            </div>
+                                        </section>
+
+                                        {/* Plano e valores */}
+                                        <section className="rounded-xl border bg-card p-3 sm:p-4">
+                                            <div className="mb-3 flex items-center justify-between gap-2">
+                                                <h2 className="font-semibold">Plano e valores</h2>
+                                                <CopyButton
+                                                    value={`Plano: ${detail.plano} | Mensalidade: ${formatCurrency(
+                                                        detail.valor_mensalidade
+                                                    )} | Adesão: ${formatCurrency(detail.valor_adesao)} | Total inicial: ${formatCurrency(
+                                                        detail.valor_total
+                                                    )}`}
+                                                    label="Copiar valores"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <DetailField label="Plano" value={detail.plano} />
+                                                <DetailField
+                                                    label="Status"
+                                                    value={getStatusLabel(detail.status)}
+                                                    copyValue={detail.status}
+                                                />
+                                                <DetailField
+                                                    label="Mensalidade"
+                                                    value={formatCurrency(detail.valor_mensalidade)}
+                                                />
+                                                <DetailField
+                                                    label="Adesão"
+                                                    value={formatCurrency(detail.valor_adesao)}
+                                                />
+                                                <DetailField
+                                                    label="Total inicial"
+                                                    value={formatCurrency(detail.valor_total)}
+                                                />
+                                                <DetailField
+                                                    label="Dependentes"
+                                                    value={`${modalDependentes.length} dependente(s)`}
+                                                    copyValue={modalDependentes.length}
+                                                />
+                                            </div>
+                                        </section>
+
+                                        {/* Endereço */}
+                                        <section className="rounded-xl border bg-card p-3 sm:p-4 lg:col-span-2">
+                                            <div className="mb-3 flex items-center justify-between gap-2">
+                                                <h2 className="font-semibold">Endereço</h2>
+                                                <CopyButton value={buildAddress(detail)} label="Copiar endereço" />
+                                            </div>
+
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                                <DetailField label="CEP" value={detail.cep} />
+                                                <DetailField label="Endereço" value={detail.endereco} />
+                                                <DetailField label="Número" value={detail.numero} />
+                                                <DetailField label="Bairro" value={detail.bairro} />
+                                                <DetailField label="Cidade" value={detail.cidade} />
+                                                <DetailField label="Estado" value={detail.estado} />
+                                                <div className="sm:col-span-2 lg:col-span-3">
+                                                    <DetailField
+                                                        label="Complemento"
+                                                        value={detail.complemento || "—"}
+                                                        copyValue={detail.complemento || ""}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        {/* Dependentes */}
+                                        <section className="rounded-xl border bg-card p-3 sm:p-4 lg:col-span-2">
+                                            <div className="mb-3 flex items-center justify-between gap-2">
+                                                <h2 className="font-semibold">Dependentes</h2>
+                                                <CopyButton
+                                                    value={
+                                                        modalDependentes.length
+                                                            ? modalDependentes
+                                                                .map((dep, index) => {
+                                                                    const nascimento = depNascimento(dep);
+                                                                    const idade = getAge(nascimento);
+                                                                    return `${index + 1}. ${depNome(dep)} | ${formatOnlyDate(
+                                                                        nascimento
+                                                                    )}${idade !== null ? ` | ${idade} anos` : ""} | ${depParentesco(dep)}${dep.cpf ? ` | CPF: ${dep.cpf}` : ""
+                                                                        }`;
+                                                                })
+                                                                .join("\n")
+                                                            : "Nenhum dependente informado"
+                                                    }
+                                                    label="Copiar todos"
+                                                />
+                                            </div>
+
+                                            {modalDependentes.length === 0 ? (
+                                                <div className="rounded-lg border bg-background p-3 text-sm text-muted-foreground">
+                                                    Nenhum dependente informado.
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                                    {modalDependentes.map((dep, index) => {
+                                                        const nascimento = depNascimento(dep);
+                                                        const idade = getAge(nascimento);
+                                                        const resumoDep = `${depNome(dep)} | ${formatOnlyDate(nascimento)}${idade !== null ? ` | ${idade} anos` : ""
+                                                            } | ${depParentesco(dep)}${dep.cpf ? ` | CPF: ${dep.cpf}` : ""}`;
+
+                                                        return (
+                                                            <div key={index} className="rounded-lg border bg-background p-3">
+                                                                <div className="mb-2 flex items-start justify-between gap-2">
+                                                                    <div className="font-medium">
+                                                                        Dependente {index + 1}
+                                                                    </div>
+                                                                    <CopyButton value={resumoDep} label="Copiar" />
+                                                                </div>
+
+                                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                                    <DetailField label="Nome" value={depNome(dep)} />
+                                                                    <DetailField
+                                                                        label="Parentesco"
+                                                                        value={depParentesco(dep)}
+                                                                    />
+                                                                    <DetailField
+                                                                        label="Nascimento"
+                                                                        value={formatOnlyDate(nascimento)}
+                                                                        copyValue={nascimento}
+                                                                    />
+                                                                    <DetailField
+                                                                        label="Idade"
+                                                                        value={idade !== null ? `${idade} anos` : "—"}
+                                                                    />
+                                                                    {dep.cpf && <DetailField label="CPF" value={dep.cpf} />}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </section>
+
+                                        {/* Cálculo / metadados */}
+                                        {Object.keys(modalMetadados).length > 0 && (
+                                            <section className="rounded-xl border bg-card p-3 sm:p-4 lg:col-span-2">
+                                                <div className="mb-3 flex items-center justify-between gap-2">
+                                                    <h2 className="font-semibold">Detalhes do cálculo</h2>
+                                                    <CopyButton
+                                                        value={JSON.stringify(modalMetadados, null, 2)}
+                                                        label="Copiar cálculo"
+                                                    />
+                                                </div>
+
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                    {Object.entries(modalMetadados).map(([key, value]) => (
+                                                        <DetailField
+                                                            key={key}
+                                                            label={key}
+                                                            value={
+                                                                typeof value === "object"
+                                                                    ? JSON.stringify(value)
+                                                                    : String(value)
+                                                            }
+                                                            copyValue={
+                                                                typeof value === "object"
+                                                                    ? JSON.stringify(value)
+                                                                    : String(value)
+                                                            }
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </section>
+                                        )}
+
+                                        {/* Gateway */}
+                                        {(detail.gateway || detail.gateway_payment_id || detail.gateway_reference) && (
+                                            <section className="rounded-xl border bg-card p-3 sm:p-4 lg:col-span-2">
+                                                <h2 className="mb-3 font-semibold">Gateway</h2>
+
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                                    <DetailField
+                                                        label="Gateway"
+                                                        value={detail.gateway || "—"}
+                                                        copyValue={detail.gateway || ""}
+                                                    />
+                                                    <DetailField
+                                                        label="Payment ID"
+                                                        value={detail.gateway_payment_id || "—"}
+                                                        copyValue={detail.gateway_payment_id || ""}
+                                                    />
+                                                    <DetailField
+                                                        label="Referência"
+                                                        value={detail.gateway_reference || "—"}
+                                                        copyValue={detail.gateway_reference || ""}
+                                                    />
+                                                </div>
+                                            </section>
+                                        )}
+
+                                        {/* Datas */}
+                                        <section className="rounded-xl border bg-card p-3 sm:p-4 lg:col-span-2">
+                                            <h2 className="mb-3 font-semibold">Controle</h2>
+
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <DetailField
+                                                    label="Criado em"
+                                                    value={formatDate(detail.criado_em)}
+                                                    copyValue={detail.criado_em}
+                                                />
+                                                <DetailField
+                                                    label="Atualizado em"
+                                                    value={formatDate(detail.atualizado_em)}
+                                                    copyValue={detail.atualizado_em}
+                                                />
+                                            </div>
+                                        </section>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-3 border-t bg-white px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+                                    <div>
+                                        <div className="mb-2 text-xs font-medium text-muted-foreground">
+                                            Atualizar status
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2">
+                                            {(
+                                                [
+                                                    "AGUARDANDO_PAGAMENTO",
+                                                    "PAGO",
+                                                    "RECUSADO",
+                                                    "CANCELADO",
+                                                    "EXPIRADO",
+                                                    "ESTORNADO",
+                                                ] as StatusPagamento[]
+                                            ).map((s) => (
+                                                <button
+                                                    key={s}
+                                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                                                    onClick={() => updateStatus(detail.id, s)}
+                                                    disabled={updating || detail.status === s}
+                                                >
+                                                    <IconCheck className="size-4" />
+                                                    {getStatusLabel(s)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <CopyButton
+                                            value={buildFullCadastroText(detail)}
+                                            label="Copiar cadastro completo"
+                                            className="px-3 py-2 text-sm"
+                                        />
+
+                                        <button
+                                            type="button"
+                                            className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                                            onClick={() => setOpen(false)}
+                                        >
+                                            Fechar
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>
