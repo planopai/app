@@ -57,6 +57,7 @@ type CadastroPlano = {
     titular_nome: string;
     titular_nascimento: string;
     titular_cpf: string;
+    titular_celular?: string | null;
 
     cep: string;
     endereco: string;
@@ -281,6 +282,7 @@ function buildFullCadastroText(c: CadastroPlano) {
         `Status: ${getStatusLabel(c.status)}`,
         `Titular: ${c.titular_nome}`,
         `CPF: ${c.titular_cpf}`,
+        `Celular: ${c.titular_celular || "—"}`,
         `Nascimento: ${formatOnlyDate(c.titular_nascimento)}`,
         `Idade: ${getAge(c.titular_nascimento) ?? "—"} anos`,
         `Mensalidade: ${formatCurrency(c.valor_mensalidade)}`,
@@ -596,7 +598,7 @@ export default function Page() {
                         <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
                         <input
                             className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                            placeholder="Nome, CPF ou cidade..."
+                            placeholder="Nome, CPF, celular ou cidade..."
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                         />
@@ -698,6 +700,9 @@ export default function Page() {
                                     <div className="font-medium leading-tight">{c.titular_nome}</div>
                                     <div className="mt-1 text-sm text-muted-foreground">
                                         CPF: {c.titular_cpf}
+                                    </div>
+                                    <div className="mt-1 text-sm text-muted-foreground">
+                                        Celular: {c.titular_celular || "—"}
                                     </div>
                                     <div className="mt-1 text-sm text-muted-foreground">
                                         {formatCurrency(c.valor_total)} • {dependentes.length} dependente(s)
@@ -805,6 +810,7 @@ export default function Page() {
                                         <td className="px-3 py-2">
                                             <div className="font-medium">{c.titular_nome}</div>
                                             <div className="text-xs text-muted-foreground">{c.titular_cpf}</div>
+                                            <div className="text-xs text-muted-foreground">{c.titular_celular || "—"}</div>
                                         </td>
                                         <td className="px-3 py-2">
                                             <span
@@ -957,7 +963,7 @@ export default function Page() {
                                             <div className="mb-3 flex items-center justify-between gap-2">
                                                 <h2 className="font-semibold">Dados do titular</h2>
                                                 <CopyButton
-                                                    value={`${detail.titular_nome} | ${detail.titular_cpf}`}
+                                                    value={`${detail.titular_nome} | ${detail.titular_cpf} | ${detail.titular_celular || "—"}`}
                                                     label="Copiar titular"
                                                 />
                                             </div>
@@ -965,6 +971,11 @@ export default function Page() {
                                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                                 <DetailField label="Nome" value={detail.titular_nome} />
                                                 <DetailField label="CPF" value={detail.titular_cpf} />
+                                                <DetailField
+                                                    label="Celular"
+                                                    value={detail.titular_celular || "—"}
+                                                    copyValue={detail.titular_celular || ""}
+                                                />
                                                 <DetailField
                                                     label="Nascimento"
                                                     value={formatOnlyDate(detail.titular_nascimento)}
