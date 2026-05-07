@@ -287,7 +287,6 @@ function buildFullCadastroText(c: CadastroPlano) {
         `Idade: ${getAge(c.titular_nascimento) ?? "—"} anos`,
         `Mensalidade: ${formatCurrency(c.valor_mensalidade)}`,
         `Adesão: ${formatCurrency(c.valor_adesao)}`,
-        `Total inicial: ${formatCurrency(c.valor_total)}`,
         `Endereço: ${[c.endereco, c.numero, c.bairro, `${c.cidade}/${c.estado}`, c.cep]
             .filter(Boolean)
             .join(" - ")}`,
@@ -705,7 +704,10 @@ export default function Page() {
                                         Celular: {c.titular_celular || "—"}
                                     </div>
                                     <div className="mt-1 text-sm text-muted-foreground">
-                                        {formatCurrency(c.valor_total)} • {dependentes.length} dependente(s)
+                                        Mensalidade: {formatCurrency(c.valor_mensalidade)} • Adesão: {formatCurrency(c.valor_adesao)}
+                                    </div>
+                                    <div className="mt-1 text-sm text-muted-foreground">
+                                        {dependentes.length} dependente(s)
                                     </div>
                                 </div>
 
@@ -788,7 +790,7 @@ export default function Page() {
                                     <th className="px-3 py-2 font-medium">Titular</th>
                                     <th className="px-3 py-2 font-medium">Plano</th>
                                     <th className="px-3 py-2 font-medium">Mensalidade</th>
-                                    <th className="px-3 py-2 font-medium">Total inicial</th>
+                                    <th className="px-3 py-2 font-medium">Adesão</th>
                                     <th className="px-3 py-2 font-medium">Status</th>
                                     <th className="px-3 py-2 font-medium text-right">Ações</th>
                                 </tr>
@@ -822,7 +824,7 @@ export default function Page() {
                                             </span>
                                         </td>
                                         <td className="px-3 py-2">{formatCurrency(c.valor_mensalidade)}</td>
-                                        <td className="px-3 py-2">{formatCurrency(c.valor_total)}</td>
+                                        <td className="px-3 py-2">{formatCurrency(c.valor_adesao)}</td>
                                         <td className="px-3 py-2">
                                             <span
                                                 className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${clsStatusBadge(
@@ -995,9 +997,7 @@ export default function Page() {
                                                 <CopyButton
                                                     value={`Plano: ${detail.plano} | Mensalidade: ${formatCurrency(
                                                         detail.valor_mensalidade
-                                                    )} | Adesão: ${formatCurrency(detail.valor_adesao)} | Total inicial: ${formatCurrency(
-                                                        detail.valor_total
-                                                    )}`}
+                                                    )} | Adesão: ${formatCurrency(detail.valor_adesao)}`}
                                                     label="Copiar valores"
                                                 />
                                             </div>
@@ -1016,10 +1016,6 @@ export default function Page() {
                                                 <DetailField
                                                     label="Adesão"
                                                     value={formatCurrency(detail.valor_adesao)}
-                                                />
-                                                <DetailField
-                                                    label="Total inicial"
-                                                    value={formatCurrency(detail.valor_total)}
                                                 />
                                                 <DetailField
                                                     label="Dependentes"
