@@ -4,32 +4,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { API } from "../acompanhamento/components/constants";
 import MapRoute from "./MapRoute";
 
-
 declare global {
     interface Window {
         L?: any;
     }
 }
-
-/**
- * TelemetriaOperacionalPage
- *
- * Painel avançado para:
- * - Ver localização atual dos veículos iTrack.
- * - Cruzar veículos com atendimentos funerários.
- * - Selecionar atendimento e consultar rota/histórico da placa.
- * - Ver distância por hodômetro.
- * - Usar cache local ou consultar iTrack em tempo real.
- *
- * Requer o backend:
- * /api/php/telemetria.php
- *   GET ?listar=1
- *   GET ?itrack=listaveiculos&salvar=1
- *   GET ?itrack=historico&placa=...&inicio=...&fim=...&salvar=1
- *   GET ?itrack=distancia&placa=...&inicio=...&fim=...&salvar=1
- *   GET ?itrack=veiculos_cache
- *   GET ?itrack=distancia_cache[&placa=...]
- */
 
 type Ponto = {
     lat: number;
@@ -94,15 +73,15 @@ type ItrackVeiculo = {
     nome_cliente?: string;
     idRastreador?: string;
     id_rastreador?: string;
-    latitude?: number;
-    longitude?: number;
+    latitude?: number | string;
+    longitude?: number | string;
     localizacao?: string;
-    velocidade?: number;
+    velocidade?: number | string;
     dataHoraPosicao?: string;
     data_hora_posicao?: string;
-    hodometro?: number;
-    ignicao?: number;
-    gps?: number;
+    hodometro?: number | string;
+    ignicao?: number | string;
+    gps?: number | string;
     nomeMotorista?: string;
     nome_motorista?: string;
     eventos?: ItrackEvento[];
@@ -111,8 +90,8 @@ type ItrackVeiculo = {
 };
 
 type ItrackHistoricoItem = {
-    cliente?: any;
-    rastreador?: any;
+    cliente?: unknown;
+    rastreador?: unknown;
     veiculo?: {
         cod?: number;
         placa?: string;
@@ -127,17 +106,17 @@ type ItrackHistoricoItem = {
 };
 
 type ItrackPosicao = {
-    ignicao?: number;
-    gps?: number;
-    latitude?: number;
-    longitude?: number;
+    ignicao?: number | string;
+    gps?: number | string;
+    latitude?: number | string;
+    longitude?: number | string;
     localizacao?: string;
-    velocidade?: number;
+    velocidade?: number | string;
     dataHoraPosicao?: string;
     dataHoraServidor?: string;
     data_hora_posicao?: string;
     data_hora_servidor?: string;
-    hodometro?: number;
+    hodometro?: number | string;
     nomeMotorista?: string;
     nome_motorista?: string;
     cercas?: string;
@@ -154,48 +133,56 @@ type ItrackDistancia = {
     cliente?: string;
     idRastreador?: string;
     id_rastreador?: string;
-    distanciaPercorrida?: number;
-    distancia_percorrida_m?: number;
-    distancia_percorrida_km?: number;
-    hodometroInicial?: number;
-    hodometro_inicial?: number;
-    hodometroFinal?: number;
-    hodometro_final?: number;
+    distanciaPercorrida?: number | string;
+    distancia_percorrida_m?: number | string;
+    distancia_percorrida_km?: number | string;
+    hodometroInicial?: number | string;
+    hodometro_inicial?: number | string;
+    hodometroFinal?: number | string;
+    hodometro_final?: number | string;
     data_inicio?: string;
     data_fim?: string;
 };
 
+type ApiError = Error & { status?: number; raw?: string };
 type Tab = "ao_vivo" | "lista_veiculos" | "atendimentos" | "historico" | "distancias";
 
-/* ======================= Helpers ======================= */
 const TELEMETRIA_URL = `${API}/api/php/telemetria.php`;
-const LIVE_REFRESH_MS = 1000;
+const LIVE_REFRESH_MS = 10_000;
 
-const isFiniteNum = (v: any): v is number => Number.isFinite(Number(v));
+const isPresentNumber = (v: unknown): v is number | string => {
+    if (v === null || v === undefined || v === "") return false;
+    return Number.isFinite(Number(v));
+};
 
-const n = (v: any, d: number | null = 0): number | null => {
+const n = (v: unknown, d: number | null = 0): number | null => {
     if (v === null || v === undefined || v === "") return d;
     const num = Number(v);
     return Number.isFinite(num) ? num : d;
 };
 
-function fmtKm(v?: number | null) {
-    if (!isFiniteNum(v)) return "-";
+const numOrUndefined = (v: unknown): number | undefined => {
+    if (!isPresentNumber(v)) return undefined;
+    return Number(v);
+};
+
+function fmtKm(v?: number | string | null) {
+    if (!isPresentNumber(v)) return "-";
     return `${Number(v).toFixed(2).replace(".", ",")} km`;
 }
 
-function fmtM(v?: number | null) {
-    if (!isFiniteNum(v)) return "-";
+function fmtM(v?: number | string | null) {
+    if (!isPresentNumber(v)) return "-";
     return `${Number(v).toLocaleString("pt-BR")} m`;
 }
 
-function fmtKmH(v?: number | null) {
-    if (!isFiniteNum(v)) return "-";
+function fmtKmH(v?: number | string | null) {
+    if (!isPresentNumber(v)) return "-";
     return `${Number(v).toFixed(1).replace(".", ",")} km/h`;
 }
 
-function fmtDur(seg?: number | null) {
-    if (!isFiniteNum(seg)) return "-";
+function fmtDur(seg?: number | string | null) {
+    if (!isPresentNumber(seg)) return "-";
     const s = Math.max(0, Number(seg));
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -209,14 +196,13 @@ function fmtDataHora(v?: string | number | null) {
     if (!v) return "-";
 
     if (typeof v === "number") {
-        const ms = v > 1000000000000 ? v : v * 1000;
+        const ms = v > 1_000_000_000_000 ? v : v * 1000;
         const d = new Date(ms);
         return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("pt-BR");
     }
 
     const s = String(v).trim();
     if (!s) return "-";
-
     if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/.test(s)) return s;
 
     const normalized = s.includes("T") ? s : s.replace(" ", "T");
@@ -226,7 +212,27 @@ function fmtDataHora(v?: string | number | null) {
     return s;
 }
 
-function parseJsonSafe<T = any>(value: any, fallback: T): T {
+async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
+    const r = await fetch(url, init);
+    const text = await r.text();
+
+    if (!r.ok) {
+        const error = new Error(`Erro HTTP ${r.status} ao consultar o servidor.`) as ApiError;
+        error.status = r.status;
+        error.raw = text;
+        throw error;
+    }
+
+    try {
+        return JSON.parse(text) as T;
+    } catch {
+        const error = new Error("Resposta inválida do servidor. O backend não retornou JSON válido.") as ApiError;
+        error.raw = text;
+        throw error;
+    }
+}
+
+function parseJsonSafe<T = unknown>(value: unknown, fallback: T): T {
     if (value == null || value === "") return fallback;
     if (typeof value !== "string") return value as T;
     try {
@@ -236,23 +242,23 @@ function parseJsonSafe<T = any>(value: any, fallback: T): T {
     }
 }
 
-function parsePontosJson(raw: any): Ponto[] {
-    const arr = parseJsonSafe<any[]>(raw, []);
+function parsePontosJson(raw: unknown): Ponto[] {
+    const arr = parseJsonSafe<unknown[]>(raw, []);
     if (!Array.isArray(arr)) return [];
 
     return arr
-        .map((p) => ({
+        .map((p: any) => ({
             lat: Number(p.lat ?? p.latitude),
             lng: Number(p.lng ?? p.longitude),
             t: p.t ?? p.ts ?? p.timestamp,
-            v: p.v ?? p.velocidade ?? p.spd_kmh,
+            v: numOrUndefined(p.v ?? p.velocidade ?? p.spd_kmh),
             label: p.label,
             localizacao: p.localizacao,
         }))
         .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
 }
 
-function normalizePlaca(v: string) {
+function normalizePlaca(v?: string | null) {
     return String(v || "")
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, "")
@@ -338,12 +344,20 @@ function parseDataBrItrack(v?: string | null) {
     return Math.floor(d.getTime() / 1000);
 }
 
+function posicoesOrdenadas(pos: ItrackPosicao[]) {
+    return [...(pos || [])].sort((a, b) => {
+        const da = parseDateMaybe(a.dataHoraPosicao ?? a.data_hora_posicao)?.getTime() ?? 0;
+        const db = parseDateMaybe(b.dataHoraPosicao ?? b.data_hora_posicao)?.getTime() ?? 0;
+        return da - db;
+    });
+}
+
 function posicoesToPontos(pos: ItrackPosicao[]): Ponto[] {
-    return (pos || [])
+    return posicoesOrdenadas(pos)
         .map((p) => ({
             lat: Number(p.latitude),
             lng: Number(p.longitude),
-            v: n(p.velocidade, undefined as any) as any,
+            v: numOrUndefined(p.velocidade),
             t: parseDataBrItrack(p.dataHoraPosicao ?? p.data_hora_posicao),
             localizacao: p.localizacao,
             label: fmtDataHora(p.dataHoraPosicao ?? p.data_hora_posicao),
@@ -412,7 +426,8 @@ function veiculoDataPosicao(v: ItrackVeiculo) {
 
 function veiculoEventos(v: ItrackVeiculo): ItrackEvento[] {
     if (Array.isArray(v.eventos)) return v.eventos;
-    return parseJsonSafe<ItrackEvento[]>(v.eventos_json, []);
+    const eventos = parseJsonSafe<ItrackEvento[]>(v.eventos_json, []);
+    return Array.isArray(eventos) ? eventos : [];
 }
 
 function veiculoPonto(v: ItrackVeiculo): Ponto | null {
@@ -431,12 +446,19 @@ function veiculoPonto(v: ItrackVeiculo): Ponto | null {
 }
 
 function distanciaMetros(d: ItrackDistancia) {
-    return n(d.distanciaPercorrida ?? d.distancia_percorrida_m, 0) || 0;
+    if (d.distancia_percorrida_m != null) return n(d.distancia_percorrida_m, 0) || 0;
+    return null;
 }
 
 function distanciaKm(d: ItrackDistancia) {
     if (d.distancia_percorrida_km != null) return n(d.distancia_percorrida_km, 0) || 0;
-    return distanciaMetros(d) / 1000;
+
+    const metros = distanciaMetros(d);
+    if (metros != null) return metros / 1000;
+
+    // Assumido como km para evitar dividir indevidamente um campo ambíguo.
+    // O ideal é o backend retornar sempre distancia_percorrida_km ou distancia_percorrida_m.
+    return n(d.distanciaPercorrida, 0) || 0;
 }
 
 function statusVeiculo(v: ItrackVeiculo) {
@@ -456,21 +478,7 @@ function tipoLabel(tipo?: string | null) {
     return tipo || "Não informado";
 }
 
-function distanciaEntreKm(a?: Ponto | null, b?: Ponto | null) {
-    if (!a || !b) return null;
-    const R = 6371;
-    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-    const lat1 = (a.lat * Math.PI) / 180;
-    const lat2 = (b.lat * Math.PI) / 180;
-    const x =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
-}
-
-
-function escapeHtml(value: any) {
+function escapeHtml(value: unknown) {
     return String(value ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
@@ -499,8 +507,8 @@ function loadLeafletFromCDN(): Promise<any> {
             existing.addEventListener("load", () => {
                 if (window.L) resolve(window.L);
                 else reject(new Error("Leaflet não ficou disponível."));
-            });
-            existing.addEventListener("error", () => reject(new Error("Falha ao carregar Leaflet.")));
+            }, { once: true });
+            existing.addEventListener("error", () => reject(new Error("Falha ao carregar Leaflet.")), { once: true });
             return;
         }
 
@@ -552,7 +560,8 @@ function LiveVehiclesMap({
 }) {
     const mapDivRef = useRef<HTMLDivElement | null>(null);
     const mapRef = useRef<any>(null);
-    const layersRef = useRef<any[]>([]);
+    const markersRef = useRef<Map<string, any>>(new Map());
+    const didInitialFitRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
 
     const valid = useMemo(() => {
@@ -569,12 +578,11 @@ function LiveVehiclesMap({
 
             if (valid.length === 0) {
                 setError("Nenhum veículo com latitude/longitude para exibir.");
-                if (mapRef.current) {
-                    layersRef.current.forEach((layer) => {
-                        try { mapRef.current.removeLayer(layer); } catch { }
-                    });
-                    layersRef.current = [];
-                }
+                markersRef.current.forEach((marker) => {
+                    try { mapRef.current?.removeLayer(marker); } catch { }
+                });
+                markersRef.current.clear();
+                didInitialFitRef.current = false;
                 return;
             }
 
@@ -598,24 +606,26 @@ function LiveVehiclesMap({
                 }
 
                 const map = mapRef.current;
-                layersRef.current.forEach((layer) => {
-                    try { map.removeLayer(layer); } catch { }
-                });
-                layersRef.current = [];
-
+                const currentKeys = new Set<string>();
                 const bounds: any[] = [];
 
                 valid.forEach(({ v, p }) => {
+                    const placa = normalizePlaca(v.placa);
+                    if (!placa) return;
+
+                    currentKeys.add(placa);
+                    bounds.push([p.lat, p.lng]);
+
                     const st = statusVeiculo(v);
                     const moving = st.label === "Em movimento";
-                    const selected = normalizePlaca(selectedPlaca || "") === normalizePlaca(v.placa || "");
+                    const selected = normalizePlaca(selectedPlaca || "") === placa;
                     const html = `
-            <div class="live-car-marker ${moving ? "is-moving" : ""} ${selected ? "is-selected" : ""}">
-              <span class="live-car-emoji">🚗</span>
-              <span class="live-car-plate">${escapeHtml(`${veiculoDescricao(v)} • ${placaComTraco(v.placa)}`)}</span>
-              ${moving ? `<span class="live-car-pulse"></span>` : ""}
-            </div>
-          `;
+                        <div class="live-car-marker ${moving ? "is-moving" : ""} ${selected ? "is-selected" : ""}">
+                            <span class="live-car-emoji">🚗</span>
+                            <span class="live-car-plate">${escapeHtml(`${veiculoDescricao(v)} • ${placaComTraco(v.placa)}`)}</span>
+                            ${moving ? `<span class="live-car-pulse"></span>` : ""}
+                        </div>
+                    `;
 
                     const icon = L.divIcon({
                         className: "live-car-div-icon",
@@ -625,16 +635,34 @@ function LiveVehiclesMap({
                         popupAnchor: [0, -20],
                     });
 
-                    const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-                    marker.on("click", () => onSelect?.(v));
-                    layersRef.current.push(marker);
-                    bounds.push([p.lat, p.lng]);
+                    const existing = markersRef.current.get(placa);
+
+                    if (existing) {
+                        existing.setLatLng([p.lat, p.lng]);
+                        existing.setIcon(icon);
+                        existing.setPopupContent(liveVehiclePopup(v));
+                    } else {
+                        const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
+                        marker.bindPopup(liveVehiclePopup(v));
+                        marker.on("click", () => onSelect?.(v));
+                        markersRef.current.set(placa, marker);
+                    }
                 });
 
-                if (bounds.length === 1) {
-                    map.setView(bounds[0], 15);
-                } else if (bounds.length > 1) {
-                    map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15 });
+                markersRef.current.forEach((marker, placa) => {
+                    if (!currentKeys.has(placa)) {
+                        try { map.removeLayer(marker); } catch { }
+                        markersRef.current.delete(placa);
+                    }
+                });
+
+                if (!didInitialFitRef.current && bounds.length > 0) {
+                    if (bounds.length === 1) {
+                        map.setView(bounds[0], 15);
+                    } else {
+                        map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15 });
+                    }
+                    didInitialFitRef.current = true;
                 }
 
                 setTimeout(() => {
@@ -654,6 +682,11 @@ function LiveVehiclesMap({
 
     useEffect(() => {
         return () => {
+            markersRef.current.forEach((marker) => {
+                try { mapRef.current?.removeLayer(marker); } catch { }
+            });
+            markersRef.current.clear();
+
             if (mapRef.current) {
                 try { mapRef.current.remove(); } catch { }
                 mapRef.current = null;
@@ -664,71 +697,71 @@ function LiveVehiclesMap({
     return (
         <div className="relative overflow-hidden rounded-2xl border bg-slate-100">
             <style jsx global>{`
-        .live-car-div-icon { background: transparent; border: 0; }
-        .live-car-marker {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          transform: translateY(-4px);
-          filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.25));
-        }
-        .live-car-emoji {
-          position: relative;
-          z-index: 2;
-          display: grid;
-          place-items: center;
-          width: 36px;
-          height: 36px;
-          border: 2px solid white;
-          border-radius: 999px;
-          background: #0f172a;
-          font-size: 21px;
-          line-height: 1;
-        }
-        .live-car-marker.is-moving .live-car-emoji {
-          animation: liveCarBounce 0.9s ease-in-out infinite;
-          background: #059669;
-        }
-        .live-car-marker.is-selected .live-car-emoji {
-          outline: 4px solid rgba(59, 130, 246, 0.35);
-        }
-        .live-car-plate {
-          position: relative;
-          z-index: 3;
-          margin-top: -3px;
-          border-radius: 999px;
-          background: white;
-          padding: 1px 6px;
-          color: #0f172a;
-          max-width: 160px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: 0.02em;
-          white-space: nowrap;
-          box-shadow: 0 4px 10px rgba(15, 23, 42, 0.16);
-        }
-        .live-car-pulse {
-          position: absolute;
-          z-index: 1;
-          width: 46px;
-          height: 46px;
-          border-radius: 999px;
-          background: rgba(16, 185, 129, 0.25);
-          animation: liveCarPulse 1.25s ease-out infinite;
-        }
-        @keyframes liveCarPulse {
-          0% { transform: scale(0.55); opacity: 0.95; }
-          100% { transform: scale(1.85); opacity: 0; }
-        }
-        @keyframes liveCarBounce {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-3px); }
-        }
-      `}</style>
+                .live-car-div-icon { background: transparent; border: 0; }
+                .live-car-marker {
+                    position: relative;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    transform: translateY(-4px);
+                    filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.25));
+                }
+                .live-car-emoji {
+                    position: relative;
+                    z-index: 2;
+                    display: grid;
+                    place-items: center;
+                    width: 36px;
+                    height: 36px;
+                    border: 2px solid white;
+                    border-radius: 999px;
+                    background: #0f172a;
+                    font-size: 21px;
+                    line-height: 1;
+                }
+                .live-car-marker.is-moving .live-car-emoji {
+                    animation: liveCarBounce 0.9s ease-in-out infinite;
+                    background: #059669;
+                }
+                .live-car-marker.is-selected .live-car-emoji {
+                    outline: 4px solid rgba(59, 130, 246, 0.35);
+                }
+                .live-car-plate {
+                    position: relative;
+                    z-index: 3;
+                    margin-top: -3px;
+                    border-radius: 999px;
+                    background: white;
+                    padding: 1px 6px;
+                    color: #0f172a;
+                    max-width: 160px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.02em;
+                    white-space: nowrap;
+                    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.16);
+                }
+                .live-car-pulse {
+                    position: absolute;
+                    z-index: 1;
+                    width: 46px;
+                    height: 46px;
+                    border-radius: 999px;
+                    background: rgba(16, 185, 129, 0.25);
+                    animation: liveCarPulse 1.25s ease-out infinite;
+                }
+                @keyframes liveCarPulse {
+                    0% { transform: scale(0.55); opacity: 0.95; }
+                    100% { transform: scale(1.85); opacity: 0; }
+                }
+                @keyframes liveCarBounce {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-3px); }
+                }
+            `}</style>
 
             <div ref={mapDivRef} style={{ height }} className="w-full" />
 
@@ -759,7 +792,6 @@ function LiveVehiclesMap({
     );
 }
 
-/* ======================= Página ======================= */
 export default function TelemetriaOperacionalPage() {
     const [tab, setTab] = useState<Tab>("ao_vivo");
 
@@ -768,8 +800,10 @@ export default function TelemetriaOperacionalPage() {
     const [historico, setHistorico] = useState<ItrackHistoricoItem | null>(null);
     const [distancias, setDistancias] = useState<ItrackDistancia[]>([]);
 
-    const [loading, setLoading] = useState(false);
-    const [itrackLoading, setItrackLoading] = useState(false);
+    const [loadingRows, setLoadingRows] = useState(false);
+    const [loadingVeiculos, setLoadingVeiculos] = useState(false);
+    const [loadingHistorico, setLoadingHistorico] = useState(false);
+    const [loadingDistancia, setLoadingDistancia] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
 
     const [selectedAtendimentoId, setSelectedAtendimentoId] = useState<number | null>(null);
@@ -782,7 +816,11 @@ export default function TelemetriaOperacionalPage() {
     const [fim, setFim] = useState(todayEnd14());
     const [ultimaAtualizacaoAoVivo, setUltimaAtualizacaoAoVivo] = useState<Date | null>(null);
     const [modalPlaca, setModalPlaca] = useState("");
+
     const liveFetchingRef = useRef(false);
+    const liveAbortRef = useRef<AbortController | null>(null);
+
+    const loadingGeral = loadingRows || loadingVeiculos || loadingHistorico || loadingDistancia;
 
     const selectedAtendimento = useMemo(
         () => rows.find((r) => r.id === selectedAtendimentoId) || null,
@@ -790,16 +828,15 @@ export default function TelemetriaOperacionalPage() {
     );
 
     const fetchRows = useCallback(async () => {
-        setLoading(true);
+        setLoadingRows(true);
         setMsg(null);
 
         try {
-            const r = await fetch(`${TELEMETRIA_URL}?listar=1&_t=${Date.now()}`, {
+            const payload = await fetchJson<any>(`${TELEMETRIA_URL}?listar=1&_t=${Date.now()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
-            const payload = await r.json();
             if (payload?.erro) throw new Error(payload.msg || "Falha ao carregar atendimentos.");
 
             const list = Array.isArray(payload)
@@ -812,14 +849,20 @@ export default function TelemetriaOperacionalPage() {
         } catch (e: any) {
             setMsg(e?.message || "Falha ao carregar atendimentos.");
         } finally {
-            setLoading(false);
+            setLoadingRows(false);
         }
     }, []);
 
-    const fetchVeiculos = useCallback(async (silent = false) => {
-        if (liveFetchingRef.current) return;
+    const fetchVeiculos = useCallback(async (silent = false, force = false) => {
+        if (liveFetchingRef.current) {
+            if (!force) return;
+            liveAbortRef.current?.abort();
+        }
+
+        const controller = new AbortController();
+        liveAbortRef.current = controller;
         liveFetchingRef.current = true;
-        setItrackLoading(true);
+        setLoadingVeiculos(true);
         if (!silent) setMsg(null);
 
         try {
@@ -828,23 +871,28 @@ export default function TelemetriaOperacionalPage() {
                 _t: String(Date.now()),
             });
 
-            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
+            const payload = await fetchJson<any>(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
                 headers: { "Cache-Control": "no-cache" },
+                signal: controller.signal,
             });
 
-            const payload = await r.json();
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar veículos.");
 
             const list = payload?.dados?.data ?? payload?.dados ?? [];
             setVeiculos(Array.isArray(list) ? list : []);
             setUltimaAtualizacaoAoVivo(new Date());
         } catch (e: any) {
-            if (!silent) setMsg(e?.message || "Falha ao consultar veículos.");
+            if (e?.name !== "AbortError" && !silent) {
+                setMsg(e?.message || "Falha ao consultar veículos.");
+            }
         } finally {
-            liveFetchingRef.current = false;
-            setItrackLoading(false);
+            if (liveAbortRef.current === controller) {
+                liveAbortRef.current = null;
+                liveFetchingRef.current = false;
+                setLoadingVeiculos(false);
+            }
         }
     }, []);
 
@@ -858,7 +906,7 @@ export default function TelemetriaOperacionalPage() {
             return;
         }
 
-        setItrackLoading(true);
+        setLoadingHistorico(true);
         setMsg(null);
         setHistorico(null);
         setSelectedPlaca(placa);
@@ -872,16 +920,22 @@ export default function TelemetriaOperacionalPage() {
                 _t: String(Date.now()),
             });
 
-
-            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
+            const payload = await fetchJson<any>(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
-            const payload = await r.json();
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar histórico.");
 
-            const item = payload?.dados?.data?.[0] ?? null;
+            const data = payload?.dados?.data;
+            const item = Array.isArray(data)
+                ? data.find((x) => normalizePlaca(x?.veiculo?.placa || "") === placa) ?? data[0] ?? null
+                : data ?? null;
+
+            if (item?.posicoes && Array.isArray(item.posicoes)) {
+                item.posicoes = posicoesOrdenadas(item.posicoes);
+            }
+
             setHistorico(item);
             setTab("historico");
 
@@ -890,7 +944,7 @@ export default function TelemetriaOperacionalPage() {
         } catch (e: any) {
             setMsg(e?.message || "Falha ao consultar histórico.");
         } finally {
-            setItrackLoading(false);
+            setLoadingHistorico(false);
         }
     }, [selectedPlaca, inicio, fim]);
 
@@ -904,7 +958,7 @@ export default function TelemetriaOperacionalPage() {
             return;
         }
 
-        setItrackLoading(true);
+        setLoadingDistancia(true);
         setMsg(null);
         setSelectedPlaca(placa);
 
@@ -917,13 +971,11 @@ export default function TelemetriaOperacionalPage() {
                 _t: String(Date.now()),
             });
 
-
-            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
+            const payload = await fetchJson<any>(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
-            const payload = await r.json();
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar distância.");
 
             const list = payload?.dados?.data;
@@ -933,12 +985,12 @@ export default function TelemetriaOperacionalPage() {
         } catch (e: any) {
             setMsg(e?.message || "Falha ao consultar distância.");
         } finally {
-            setItrackLoading(false);
+            setLoadingDistancia(false);
         }
     }, [selectedPlaca, inicio, fim]);
 
     const carregarTudo = useCallback(async () => {
-        await Promise.all([fetchRows(), fetchVeiculos()]);
+        await Promise.all([fetchRows(), fetchVeiculos(false, true)]);
     }, [fetchRows, fetchVeiculos]);
 
     const selecionarAtendimento = useCallback((row: TelemetriaRegistro) => {
@@ -974,17 +1026,22 @@ export default function TelemetriaOperacionalPage() {
     useEffect(() => {
         if (tab !== "ao_vivo" && tab !== "lista_veiculos") return;
 
-        fetchVeiculos(veiculos.length > 0);
+        fetchVeiculos(true);
 
         const id = window.setInterval(() => {
             fetchVeiculos(true);
         }, LIVE_REFRESH_MS);
 
         return () => window.clearInterval(id);
-    }, [tab, fetchVeiculos, veiculos.length]);
+    }, [tab, fetchVeiculos]);
+
+    useEffect(() => {
+        return () => {
+            liveAbortRef.current?.abort();
+        };
+    }, []);
 
     const veiculosPontos = useMemo(() => veiculos.map(veiculoPonto).filter(Boolean) as Ponto[], [veiculos]);
-
     const pontosHistorico = useMemo(() => posicoesToPontos(historico?.posicoes ?? []), [historico]);
 
     const atendimentoSelecionadoPontos = useMemo(() => {
@@ -997,12 +1054,6 @@ export default function TelemetriaOperacionalPage() {
         if (selectedAtendimento && atendimentoSelecionadoPontos.length > 0) return atendimentoSelecionadoPontos;
         return veiculosPontos;
     }, [tab, pontosHistorico, selectedAtendimento, atendimentoSelecionadoPontos, veiculosPontos]);
-
-    const veiculoSelecionado = useMemo(() => {
-        const placa = normalizePlaca(selectedPlaca || selectedAtendimento?.placa || "");
-        if (!placa) return null;
-        return veiculos.find((v) => normalizePlaca(v.placa) === placa) || null;
-    }, [veiculos, selectedPlaca, selectedAtendimento]);
 
     const veiculoModal = useMemo(() => {
         const placa = normalizePlaca(modalPlaca);
@@ -1037,7 +1088,6 @@ export default function TelemetriaOperacionalPage() {
         const emMovimento = veiculos.filter((v) => statusVeiculo(v).label === "Em movimento").length;
         const ligados = veiculos.filter((v) => Number(v.ignicao) === 1).length;
         const atendComPlaca = rows.filter((r) => normalizePlaca(r.placa || "")).length;
-        const hoje = new Date().toLocaleDateString("pt-BR");
 
         return {
             veiculos: veiculos.length,
@@ -1045,12 +1095,11 @@ export default function TelemetriaOperacionalPage() {
             ligados,
             atendimentos: rows.length,
             atendComPlaca,
-            hoje,
         };
     }, [veiculos, rows]);
 
     const resumoHistorico = useMemo(() => {
-        const pos = historico?.posicoes ?? [];
+        const pos = posicoesOrdenadas(historico?.posicoes ?? []);
         if (!pos.length) return null;
 
         const velocidades = pos.map((p) => Number(p.velocidade)).filter(Number.isFinite);
@@ -1072,11 +1121,12 @@ export default function TelemetriaOperacionalPage() {
         };
     }, [historico]);
 
-    const distanciaVeiculoAtendimento = useMemo(() => {
-        const vp = veiculoSelecionado ? veiculoPonto(veiculoSelecionado) : null;
-        const ap = atendimentoSelecionadoPontos[atendimentoSelecionadoPontos.length - 1] || atendimentoSelecionadoPontos[0];
-        return distanciaEntreKm(vp, ap);
-    }, [veiculoSelecionado, atendimentoSelecionadoPontos]);
+    const mensagemMapaVazio = useMemo(() => {
+        if (tab === "historico") return "Consulte o histórico da placa para exibir a rota no mapa.";
+        if (tab === "atendimentos") return "Selecione um atendimento com pontos salvos ou consulte a iTrack.";
+        if (tab === "distancias") return "A consulta de distância não exibe rota; use a aba Histórico para ver o trajeto.";
+        return "Clique em Atualizar agora para carregar as posições atuais.";
+    }, [tab]);
 
     return (
         <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6">
@@ -1085,7 +1135,7 @@ export default function TelemetriaOperacionalPage() {
                     <LiveVehiclesMap
                         veiculos={veiculos}
                         selectedPlaca={selectedPlaca}
-                        loading={itrackLoading}
+                        loading={loadingVeiculos}
                         lastUpdate={ultimaAtualizacaoAoVivo}
                         onSelect={(v) => {
                             const placa = normalizePlaca(v.placa);
@@ -1100,7 +1150,7 @@ export default function TelemetriaOperacionalPage() {
 
                 {mapaPrincipalPontos.length === 0 && tab !== "ao_vivo" && tab !== "lista_veiculos" && (
                     <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
-                        Clique em <strong>Atualizar agora</strong> para carregar as posições atuais.
+                        {mensagemMapaVazio}
                     </div>
                 )}
 
@@ -1115,22 +1165,21 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={() => {
                                 setTab("ao_vivo");
-                                fetchVeiculos();
+                                fetchVeiculos(false, true);
                             }}
-                            disabled={itrackLoading}
+                            disabled={loadingVeiculos}
                             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                         >
-                            {itrackLoading ? "Consultando..." : "Atualizar agora"}
+                            {loadingVeiculos ? "Consultando..." : "Atualizar agora"}
                         </button>
 
                         <button
                             onClick={carregarTudo}
-                            disabled={loading || itrackLoading}
+                            disabled={loadingGeral}
                             className="rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60"
                         >
                             Atualizar tudo
                         </button>
-
                     </div>
                 </div>
             </section>
@@ -1150,13 +1199,13 @@ export default function TelemetriaOperacionalPage() {
             <nav className="mb-5 flex flex-wrap gap-2">
                 <TabButton active={tab === "ao_vivo"} onClick={() => {
                     setTab("ao_vivo");
-                    if (veiculos.length === 0) fetchVeiculos();
+                    if (veiculos.length === 0) fetchVeiculos(true);
                 }}>
                     🚗 Veículos ao vivo
                 </TabButton>
                 <TabButton active={tab === "lista_veiculos"} onClick={() => {
                     setTab("lista_veiculos");
-                    if (veiculos.length === 0) fetchVeiculos();
+                    if (veiculos.length === 0) fetchVeiculos(true);
                 }}>
                     Listar Veículos
                 </TabButton>
@@ -1176,12 +1225,11 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Frota iTrack</h2>
-
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
                             <span>{veiculos.length} veículo(s)</span>
                             <span>•</span>
-                            <span>tempo real 1s</span>
+                            <span>tempo real {LIVE_REFRESH_MS / 1000}s</span>
                             <span>•</span>
                             <span>última atualização: {ultimaAtualizacaoAoVivo ? ultimaAtualizacaoAoVivo.toLocaleTimeString("pt-BR") : "-"}</span>
                         </div>
@@ -1248,7 +1296,7 @@ export default function TelemetriaOperacionalPage() {
 
                                             <button
                                                 onClick={() => fetchHistorico(v.placa)}
-                                                disabled={itrackLoading}
+                                                disabled={loadingHistorico}
                                                 className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
                                             >
                                                 histórico hoje
@@ -1267,7 +1315,9 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Atendimentos funerários</h2>
-
+                            <p className="text-sm text-slate-500">
+                                {kpis.atendimentos} atendimento(s), {kpis.atendComPlaca} com placa vinculada.
+                            </p>
                         </div>
 
                         <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
@@ -1352,7 +1402,7 @@ export default function TelemetriaOperacionalPage() {
 
                                             <button
                                                 onClick={() => consultarAtendimentoCompleto(row)}
-                                                disabled={itrackLoading || !row.placa}
+                                                disabled={loadingHistorico || loadingDistancia || !row.placa}
                                                 className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
                                             >
                                                 consultar iTrack
@@ -1362,7 +1412,7 @@ export default function TelemetriaOperacionalPage() {
                                                 <button
                                                     onClick={() => {
                                                         selecionarAtendimento(row);
-                                                        setTab("atendimentos");
+                                                        setTab("historico");
                                                     }}
                                                     className="rounded-xl border px-3 py-2 text-xs font-medium"
                                                 >
@@ -1398,7 +1448,6 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Histórico detalhado da placa</h2>
-
                         </div>
                         <div className="text-sm text-slate-500">
                             Placa: <strong>{placaComTraco(selectedPlaca || historico?.veiculo?.placa)}</strong>
@@ -1458,7 +1507,7 @@ export default function TelemetriaOperacionalPage() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {historico.posicoes.slice(0, 250).map((p, idx) => (
+                                            {posicoesOrdenadas(historico.posicoes).slice(0, 250).map((p, idx) => (
                                                 <tr key={idx} className="border-b last:border-0">
                                                     <td className="px-3 py-2 text-xs">{fmtDataHora(p.dataHoraPosicao ?? p.data_hora_posicao)}</td>
                                                     <td className="px-3 py-2">{p.localizacao || "-"}</td>
@@ -1485,15 +1534,14 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Distância por hodômetro</h2>
-
                         </div>
 
                         <button
                             onClick={() => fetchDistancia()}
-                            disabled={itrackLoading || !selectedPlaca}
+                            disabled={loadingDistancia || !selectedPlaca}
                             className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60"
                         >
-                            Atualizar distância
+                            {loadingDistancia ? "Consultando..." : "Atualizar distância"}
                         </button>
                     </div>
 
@@ -1536,7 +1584,6 @@ export default function TelemetriaOperacionalPage() {
         </div>
     );
 }
-
 
 function VehicleSpeedModal({
     veiculo,
@@ -1635,7 +1682,6 @@ function VehicleSpeedModal({
     );
 }
 
-/* ======================= Componentes menores ======================= */
 function KPI({
     label,
     value,
@@ -1691,8 +1737,7 @@ function TabButton({
     return (
         <button
             onClick={onClick}
-            className={`rounded-xl border px-4 py-2 text-sm font-medium ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700"
-                }`}
+            className={`rounded-xl border px-4 py-2 text-sm font-medium ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700"}`}
         >
             {children}
         </button>
