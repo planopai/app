@@ -8,7 +8,8 @@ import {
     IconSettings,
     IconReportAnalytics,
     IconUsersGroup,
-    IconBook
+    IconBook,
+    IconCar,
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular (padrão global do app) ========= */
@@ -56,6 +57,11 @@ const items = [
         href: "/leads",
         icon: IconUsersGroup,
     },
+    {
+        title: "Telemetria",
+        href: "/telemetria",
+        icon: IconCar,
+    },
 ];
 
 export default function AdministrativoPage() {
@@ -73,8 +79,6 @@ export default function AdministrativoPage() {
                         <h1 className="text-2xl font-bold tracking-tight">
                             Administrativo
                         </h1>
-
-                        
                     </div>
                 </header>
 
