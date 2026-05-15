@@ -144,8 +144,45 @@ type ItrackDistancia = {
     data_fim?: string;
 };
 
+type PeriodoRapido = "1d" | "7d" | "30d" | "custom";
+
+type MotoristaResumo = {
+    motorista?: string | null;
+    nome_motorista?: string | null;
+    total_posicoes?: number | string | null;
+    total_veiculos?: number | string | null;
+    placas?: string | null;
+    velocidade_media?: number | string | null;
+    velocidade_maxima?: number | string | null;
+    primeira_posicao?: string | null;
+    ultima_posicao?: string | null;
+};
+
+type HistoricoVeicularResumo = {
+    placa?: string | null;
+    descricao_veiculo?: string | null;
+    descricaoVeiculo?: string | null;
+    cliente?: string | null;
+    id_rastreador?: string | null;
+    idRastreador?: string | null;
+    distancia_percorrida_m?: number | string | null;
+    distancia_percorrida_km?: number | string | null;
+    distanciaPercorrida?: number | string | null;
+    hodometro_inicial?: number | string | null;
+    hodometroInicial?: number | string | null;
+    hodometro_final?: number | string | null;
+    hodometroFinal?: number | string | null;
+    data_inicio?: string | null;
+    data_fim?: string | null;
+    total_registros?: number | string | null;
+    total_posicoes?: number | string | null;
+    velocidade_media?: number | string | null;
+    velocidade_maxima?: number | string | null;
+    fonte_distancia?: string | null;
+};
+
 type ApiError = Error & { status?: number; raw?: string };
-type Tab = "ao_vivo" | "lista_veiculos" | "atendimentos" | "historico" | "distancias";
+type Tab = "ao_vivo" | "lista_veiculos" | "atendimentos" | "motoristas" | "historico_veicular";
 
 const TELEMETRIA_URL = `${API}/api/php/telemetria.php`;
 const LIVE_REFRESH_MS = 10_000;
@@ -296,6 +333,46 @@ function todayEnd14() {
     const d = new Date();
     d.setHours(23, 59, 59, 0);
     return dateTo14(d);
+}
+
+function daysAgoStart14(days: number) {
+    const d = new Date();
+    d.setDate(d.getDate() - Math.max(0, days - 1));
+    d.setHours(0, 0, 0, 0);
+    return dateTo14(d);
+}
+
+function ymdTo14Start(v: string) {
+    if (!v) return todayStart14();
+    return `${v.replaceAll("-", "")}000000`;
+}
+
+function ymdTo14End(v: string) {
+    if (!v) return todayEnd14();
+    return `${v.replaceAll("-", "")}235959`;
+}
+
+function date14ToInput(v?: string | null) {
+    const s = String(v || "");
+    if (!/^\d{14}$/.test(s)) return "";
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+}
+
+function periodoLabel(periodo: PeriodoRapido) {
+    if (periodo === "1d") return "Hoje";
+    if (periodo === "7d") return "Últimos 7 dias";
+    if (periodo === "30d") return "Últimos 30 dias";
+    return "Período específico";
+}
+
+function periodoToRange(periodo: PeriodoRapido, inicioCustom: string, fimCustom: string) {
+    if (periodo === "1d") return { inicio: todayStart14(), fim: todayEnd14() };
+    if (periodo === "7d") return { inicio: daysAgoStart14(7), fim: todayEnd14() };
+    if (periodo === "30d") return { inicio: daysAgoStart14(30), fim: todayEnd14() };
+    return {
+        inicio: ymdTo14Start(inicioCustom || date14ToInput(todayStart14())),
+        fim: ymdTo14End(fimCustom || date14ToInput(todayEnd14())),
+    };
 }
 
 function parseDateMaybe(v?: string | null) {
@@ -798,12 +875,15 @@ export default function TelemetriaOperacionalPage() {
     const [rows, setRows] = useState<TelemetriaRegistro[]>([]);
     const [veiculos, setVeiculos] = useState<ItrackVeiculo[]>([]);
     const [historico, setHistorico] = useState<ItrackHistoricoItem | null>(null);
-    const [distancias, setDistancias] = useState<ItrackDistancia[]>([]);
+    const [motoristas, setMotoristas] = useState<MotoristaResumo[]>([]);
+    const [historicoVeicular, setHistoricoVeicular] = useState<HistoricoVeicularResumo[]>([]);
+    const [historicoVeicularTotalKm, setHistoricoVeicularTotalKm] = useState(0);
 
     const [loadingRows, setLoadingRows] = useState(false);
     const [loadingVeiculos, setLoadingVeiculos] = useState(false);
     const [loadingHistorico, setLoadingHistorico] = useState(false);
-    const [loadingDistancia, setLoadingDistancia] = useState(false);
+    const [loadingMotoristas, setLoadingMotoristas] = useState(false);
+    const [loadingHistoricoVeicular, setLoadingHistoricoVeicular] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
 
     const [selectedAtendimentoId, setSelectedAtendimentoId] = useState<number | null>(null);
@@ -814,13 +894,17 @@ export default function TelemetriaOperacionalPage() {
 
     const [inicio, setInicio] = useState(todayStart14());
     const [fim, setFim] = useState(todayEnd14());
+    const [periodoMotorista, setPeriodoMotorista] = useState<PeriodoRapido>("7d");
+    const [periodoVeicular, setPeriodoVeicular] = useState<PeriodoRapido>("7d");
+    const [inicioCustom, setInicioCustom] = useState(date14ToInput(todayStart14()));
+    const [fimCustom, setFimCustom] = useState(date14ToInput(todayEnd14()));
     const [ultimaAtualizacaoAoVivo, setUltimaAtualizacaoAoVivo] = useState<Date | null>(null);
     const [modalPlaca, setModalPlaca] = useState("");
 
     const liveFetchingRef = useRef(false);
     const liveAbortRef = useRef<AbortController | null>(null);
 
-    const loadingGeral = loadingRows || loadingVeiculos || loadingHistorico || loadingDistancia;
+    const loadingGeral = loadingRows || loadingVeiculos || loadingHistorico || loadingMotoristas || loadingHistoricoVeicular;
 
     const selectedAtendimento = useMemo(
         () => rows.find((r) => r.id === selectedAtendimentoId) || null,
@@ -896,27 +980,19 @@ export default function TelemetriaOperacionalPage() {
         }
     }, []);
 
-    const fetchHistorico = useCallback(async (placaManual?: string, periodo?: { inicio: string; fim: string }) => {
-        const placa = normalizePlaca(placaManual || selectedPlaca);
-        const ini = periodo?.inicio || inicio;
-        const end = periodo?.fim || fim;
+    const fetchMotoristas = useCallback(async (periodoManual?: PeriodoRapido) => {
+        const periodo = periodoManual || periodoMotorista;
+        const range = periodoToRange(periodo, inicioCustom, fimCustom);
 
-        if (!placa || !ini || !end) {
-            setMsg("Informe placa, início e fim para consultar o histórico.");
-            return;
-        }
-
-        setLoadingHistorico(true);
+        setLoadingMotoristas(true);
         setMsg(null);
-        setHistorico(null);
-        setSelectedPlaca(placa);
 
         try {
             const qs = new URLSearchParams({
-                itrack: "historico",
-                placa,
-                inicio: ini,
-                fim: end,
+                itrack: "motoristas",
+                periodo,
+                inicio: range.inicio,
+                fim: range.fim,
                 _t: String(Date.now()),
             });
 
@@ -925,69 +1001,66 @@ export default function TelemetriaOperacionalPage() {
                 cache: "no-store",
             });
 
-            if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar histórico.");
+            if (payload?.erro) throw new Error(payload.msg || "Falha ao carregar motoristas.");
 
-            const data = payload?.dados?.data;
-            const item = Array.isArray(data)
-                ? data.find((x) => normalizePlaca(x?.veiculo?.placa || "") === placa) ?? data[0] ?? null
-                : data ?? null;
-
-            if (item?.posicoes && Array.isArray(item.posicoes)) {
-                item.posicoes = posicoesOrdenadas(item.posicoes);
-            }
-
-            setHistorico(item);
-            setTab("historico");
-
-            const total = Array.isArray(item?.posicoes) ? item.posicoes.length : 0;
-            setMsg(`Histórico de ${placaComTraco(placa)} carregado com ${total} posição(ões).`);
+            const list = Array.isArray(payload?.dados) ? payload.dados : [];
+            setMotoristas(list);
+            setInicio(payload?.inicio || range.inicio);
+            setFim(payload?.fim || range.fim);
+            setTab("motoristas");
+            setMsg(`Motoristas carregados: ${list.length} registro(s) em ${periodoLabel(periodo)}.`);
         } catch (e: any) {
-            setMsg(e?.message || "Falha ao consultar histórico.");
+            setMsg(e?.message || "Falha ao carregar motoristas.");
         } finally {
-            setLoadingHistorico(false);
+            setLoadingMotoristas(false);
         }
-    }, [selectedPlaca, inicio, fim]);
+    }, [periodoMotorista, inicioCustom, fimCustom]);
 
-    const fetchDistancia = useCallback(async (placaManual?: string, periodo?: { inicio: string; fim: string }) => {
-        const placa = normalizePlaca(placaManual || selectedPlaca);
-        const ini = periodo?.inicio || inicio;
-        const end = periodo?.fim || fim;
+    const fetchHistoricoVeicular = useCallback(async (
+        periodoManual?: PeriodoRapido,
+        placaManual?: string,
+        atualizar = false
+    ) => {
+        const periodo = periodoManual || periodoVeicular;
+        const placa = normalizePlaca(placaManual ?? selectedPlaca);
+        const range = periodoToRange(periodo, inicioCustom, fimCustom);
 
-        if (!placa || !ini || !end) {
-            setMsg("Informe placa, início e fim para consultar distância.");
-            return;
-        }
-
-        setLoadingDistancia(true);
+        setLoadingHistoricoVeicular(true);
         setMsg(null);
-        setSelectedPlaca(placa);
+        if (placa) setSelectedPlaca(placa);
 
         try {
             const qs = new URLSearchParams({
-                itrack: "distancia",
-                placa,
-                inicio: ini,
-                fim: end,
+                itrack: "historico_veicular",
+                periodo,
+                inicio: range.inicio,
+                fim: range.fim,
                 _t: String(Date.now()),
             });
+
+            if (placa) qs.set("placa", placa);
+            if (atualizar) qs.set("atualizar", "1");
 
             const payload = await fetchJson<any>(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
-            if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar distância.");
+            if (payload?.erro) throw new Error(payload.msg || "Falha ao carregar histórico veicular.");
 
-            const list = payload?.dados?.data;
-            setDistancias(Array.isArray(list) ? list : []);
-            setTab("distancias");
-            setMsg(`Distância de ${placaComTraco(placa)} carregada.`);
+            const list = Array.isArray(payload?.dados) ? payload.dados : [];
+            setHistoricoVeicular(list);
+            setHistoricoVeicularTotalKm(Number(payload?.total_km ?? 0));
+            setInicio(payload?.inicio || range.inicio);
+            setFim(payload?.fim || range.fim);
+            setTab("historico_veicular");
+            setMsg(`Histórico veicular carregado: ${list.length} veículo(s) em ${periodoLabel(periodo)}.`);
         } catch (e: any) {
-            setMsg(e?.message || "Falha ao consultar distância.");
+            setMsg(e?.message || "Falha ao carregar histórico veicular.");
         } finally {
-            setLoadingDistancia(false);
+            setLoadingHistoricoVeicular(false);
         }
-    }, [selectedPlaca, inicio, fim]);
+    }, [periodoVeicular, inicioCustom, fimCustom, selectedPlaca]);
 
     const carregarTudo = useCallback(async () => {
         await Promise.all([fetchRows(), fetchVeiculos(false, true)]);
@@ -1014,10 +1087,12 @@ export default function TelemetriaOperacionalPage() {
         const periodo = rowInicioFim14(row);
         setInicio(periodo.inicio);
         setFim(periodo.fim);
+        setInicioCustom(date14ToInput(periodo.inicio));
+        setFimCustom(date14ToInput(periodo.fim));
+        setPeriodoVeicular("custom");
 
-        await fetchHistorico(placa, periodo);
-        await fetchDistancia(placa, periodo);
-    }, [fetchHistorico, fetchDistancia, selecionarAtendimento]);
+        await fetchHistoricoVeicular("custom", placa, false);
+    }, [fetchHistoricoVeicular, selecionarAtendimento]);
 
     useEffect(() => {
         fetchRows();
@@ -1050,10 +1125,9 @@ export default function TelemetriaOperacionalPage() {
     }, [selectedAtendimento]);
 
     const mapaPrincipalPontos = useMemo(() => {
-        if (tab === "historico" && pontosHistorico.length > 0) return pontosHistorico;
         if (selectedAtendimento && atendimentoSelecionadoPontos.length > 0) return atendimentoSelecionadoPontos;
         return veiculosPontos;
-    }, [tab, pontosHistorico, selectedAtendimento, atendimentoSelecionadoPontos, veiculosPontos]);
+    }, [selectedAtendimento, atendimentoSelecionadoPontos, veiculosPontos]);
 
     const veiculoModal = useMemo(() => {
         const placa = normalizePlaca(modalPlaca);
@@ -1122,9 +1196,9 @@ export default function TelemetriaOperacionalPage() {
     }, [historico]);
 
     const mensagemMapaVazio = useMemo(() => {
-        if (tab === "historico") return "Consulte o histórico da placa para exibir a rota no mapa.";
-        if (tab === "atendimentos") return "Selecione um atendimento com pontos salvos ou consulte a iTrack.";
-        if (tab === "distancias") return "A consulta de distância não exibe rota; use a aba Histórico para ver o trajeto.";
+        if (tab === "atendimentos") return "Selecione um atendimento com pontos salvos para exibir a rota no mapa.";
+        if (tab === "motoristas") return "A aba Motorista mostra velocidade média e máxima por condutor.";
+        if (tab === "historico_veicular") return "A aba Histórico Veicular mostra a distância percorrida por veículo no período.";
         return "Clique em Atualizar agora para carregar as posições atuais.";
     }, [tab]);
 
@@ -1212,11 +1286,17 @@ export default function TelemetriaOperacionalPage() {
                 <TabButton active={tab === "atendimentos"} onClick={() => setTab("atendimentos")}>
                     Atendimentos funerários
                 </TabButton>
-                <TabButton active={tab === "historico"} onClick={() => setTab("historico")}>
-                    Histórico da placa
+                <TabButton active={tab === "motoristas"} onClick={() => {
+                    setTab("motoristas");
+                    if (motoristas.length === 0) fetchMotoristas();
+                }}>
+                    Motorista
                 </TabButton>
-                <TabButton active={tab === "distancias"} onClick={() => setTab("distancias")}>
-                    Distâncias/hodômetro
+                <TabButton active={tab === "historico_veicular"} onClick={() => {
+                    setTab("historico_veicular");
+                    if (historicoVeicular.length === 0) fetchHistoricoVeicular();
+                }}>
+                    Histórico Veicular
                 </TabButton>
             </nav>
 
@@ -1287,7 +1367,7 @@ export default function TelemetriaOperacionalPage() {
                                             <button
                                                 onClick={() => {
                                                     setSelectedPlaca(normalizePlaca(v.placa));
-                                                    setTab("historico");
+                                                    setTab("historico_veicular");
                                                 }}
                                                 className="rounded-xl border px-3 py-2 text-xs font-medium"
                                             >
@@ -1295,8 +1375,8 @@ export default function TelemetriaOperacionalPage() {
                                             </button>
 
                                             <button
-                                                onClick={() => fetchHistorico(v.placa)}
-                                                disabled={loadingHistorico}
+                                                onClick={() => fetchHistoricoVeicular("1d", v.placa)}
+                                                disabled={loadingHistoricoVeicular}
                                                 className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
                                             >
                                                 histórico hoje
@@ -1402,7 +1482,7 @@ export default function TelemetriaOperacionalPage() {
 
                                             <button
                                                 onClick={() => consultarAtendimentoCompleto(row)}
-                                                disabled={loadingHistorico || loadingDistancia || !row.placa}
+                                                disabled={loadingHistoricoVeicular || !row.placa}
                                                 className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
                                             >
                                                 consultar iTrack
@@ -1412,7 +1492,7 @@ export default function TelemetriaOperacionalPage() {
                                                 <button
                                                     onClick={() => {
                                                         selecionarAtendimento(row);
-                                                        setTab("historico");
+                                                        setTab("atendimentos");
                                                     }}
                                                     className="rounded-xl border px-3 py-2 text-xs font-medium"
                                                 >
@@ -1443,144 +1523,273 @@ export default function TelemetriaOperacionalPage() {
                 </section>
             )}
 
-            {tab === "historico" && (
+            {tab === "motoristas" && (
                 <section className="rounded-2xl border bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
-                            <h2 className="text-lg font-semibold">Histórico detalhado da placa</h2>
+                            <h2 className="text-lg font-semibold">Motorista</h2>
+                            <p className="text-sm text-slate-500">
+                                Velocidade média e máxima agrupadas por motorista.
+                            </p>
                         </div>
-                        <div className="text-sm text-slate-500">
-                            Placa: <strong>{placaComTraco(selectedPlaca || historico?.veiculo?.placa)}</strong>
-                        </div>
+
+                        <PeriodoControls
+                            periodo={periodoMotorista}
+                            setPeriodo={setPeriodoMotorista}
+                            inicioCustom={inicioCustom}
+                            setInicioCustom={setInicioCustom}
+                            fimCustom={fimCustom}
+                            setFimCustom={setFimCustom}
+                            onConsultar={() => fetchMotoristas()}
+                            loading={loadingMotoristas}
+                            buttonText="Consultar motoristas"
+                        />
                     </div>
 
-                    {!historico ? (
-                        <EmptyState title="Nenhum histórico carregado" text="Informe uma placa ou selecione um atendimento e clique em histórico." />
+                    {motoristas.length === 0 ? (
+                        <EmptyState title="Nenhum motorista encontrado" text="Consulte um período para ver velocidade média e máxima por motorista." />
                     ) : (
                         <div className="space-y-4">
-                            <div className="rounded-2xl border p-4">
-                                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                                    <div>
-                                        <h3 className="font-semibold">{historico.veiculo?.descricao ?? "Veículo"}</h3>
-                                        <p className="text-sm text-slate-500">
-                                            {historico.veiculo?.marca || ""} {historico.veiculo?.modelo || ""} {historico.veiculo?.ano ? `• ${historico.veiculo.ano}` : ""}
-                                        </p>
-                                    </div>
-
-                                    <div className="text-xs text-slate-500 md:text-right">
-                                        <div>Início: {fmtDataHora(resumoHistorico?.inicio)}</div>
-                                        <div>Fim: {fmtDataHora(resumoHistorico?.fim)}</div>
-                                    </div>
-                                </div>
-
-                                {resumoHistorico && (
-                                    <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
-                                        <KPI label="Posições" value={String(resumoHistorico.total)} />
-                                        <KPI label="Vel. média" value={fmtKmH(resumoHistorico.vmed)} />
-                                        <KPI label="Vel. máx." value={fmtKmH(resumoHistorico.vmax)} />
-                                        <KPI label="Hod. inicial" value={resumoHistorico.hIni != null ? fmtM(resumoHistorico.hIni) : "-"} />
-                                        <KPI label="Hod. final" value={resumoHistorico.hFim != null ? fmtM(resumoHistorico.hFim) : "-"} />
-                                    </div>
-                                )}
+                            <div className="grid gap-2 md:grid-cols-4">
+                                <KPI label="Motoristas" value={String(motoristas.length)} />
+                                <KPI
+                                    label="Maior velocidade"
+                                    value={fmtKmH(Math.max(...motoristas.map((m) => Number(m.velocidade_maxima ?? 0)).filter(Number.isFinite), 0))}
+                                />
+                                <KPI
+                                    label="Média geral"
+                                    value={fmtKmH(
+                                        motoristas.length
+                                            ? motoristas
+                                                .map((m) => Number(m.velocidade_media ?? 0))
+                                                .filter(Number.isFinite)
+                                                .reduce((a, b) => a + b, 0) / Math.max(1, motoristas.map((m) => Number(m.velocidade_media ?? 0)).filter(Number.isFinite).length)
+                                            : 0
+                                    )}
+                                />
+                                <KPI label="Período" value={periodoLabel(periodoMotorista)} />
                             </div>
 
-                            <MapRoute pontos={pontosHistorico} height={430} />
-
-                            {pontosHistorico.length === 0 && (
-                                <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
-                                    A iTrack retornou histórico sem latitude/longitude no período.
-                                </div>
-                            )}
-
-                            {Array.isArray(historico.posicoes) && historico.posicoes.length > 0 && (
-                                <div className="overflow-x-auto rounded-2xl border">
-                                    <table className="min-w-full text-left text-sm">
-                                        <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
-                                            <tr>
-                                                <th className="px-3 py-2">Data/hora</th>
-                                                <th className="px-3 py-2">Localização</th>
-                                                <th className="px-3 py-2">Vel.</th>
-                                                <th className="px-3 py-2">Ignição</th>
-                                                <th className="px-3 py-2">GPS</th>
-                                                <th className="px-3 py-2">Hodômetro</th>
-                                                <th className="px-3 py-2">Eventos</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {posicoesOrdenadas(historico.posicoes).slice(0, 250).map((p, idx) => (
-                                                <tr key={idx} className="border-b last:border-0">
-                                                    <td className="px-3 py-2 text-xs">{fmtDataHora(p.dataHoraPosicao ?? p.data_hora_posicao)}</td>
-                                                    <td className="px-3 py-2">{p.localizacao || "-"}</td>
-                                                    <td className="px-3 py-2">{fmtKmH(p.velocidade)}</td>
-                                                    <td className="px-3 py-2">{Number(p.ignicao) === 1 ? "Ligada" : "Desligada"}</td>
-                                                    <td className="px-3 py-2">{p.gps ?? "-"}</td>
-                                                    <td className="px-3 py-2">{p.hodometro != null ? fmtM(p.hodometro) : "-"}</td>
+                            <div className="overflow-x-auto rounded-2xl border">
+                                <table className="min-w-full text-left text-sm">
+                                    <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                                        <tr>
+                                            <th className="px-3 py-2">Motorista</th>
+                                            <th className="px-3 py-2">Vel. média</th>
+                                            <th className="px-3 py-2">Vel. máxima</th>
+                                            <th className="px-3 py-2">Veículos</th>
+                                            <th className="px-3 py-2">Placas</th>
+                                            <th className="px-3 py-2">Posições</th>
+                                            <th className="px-3 py-2">Primeira posição</th>
+                                            <th className="px-3 py-2">Última posição</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {motoristas.map((m, idx) => {
+                                            const motorista = m.motorista ?? m.nome_motorista ?? "Não informado";
+                                            return (
+                                                <tr key={`${motorista}-${idx}`} className="border-b last:border-0">
+                                                    <td className="px-3 py-2 font-medium">{motorista}</td>
+                                                    <td className="px-3 py-2">{fmtKmH(m.velocidade_media)}</td>
+                                                    <td className="px-3 py-2 font-semibold">{fmtKmH(m.velocidade_maxima)}</td>
+                                                    <td className="px-3 py-2">{m.total_veiculos ?? "-"}</td>
                                                     <td className="px-3 py-2 text-xs">
-                                                        {(p.eventos || []).map((e) => e.descricaoEvento).filter(Boolean).join(", ") || "-"}
+                                                        {String(m.placas || "-")
+                                                            .split(",")
+                                                            .filter(Boolean)
+                                                            .map((p) => placaComTraco(p))
+                                                            .join(", ")}
                                                     </td>
+                                                    <td className="px-3 py-2">{m.total_posicoes ?? "-"}</td>
+                                                    <td className="px-3 py-2 text-xs text-slate-500">{fmtDataHora(m.primeira_posicao)}</td>
+                                                    <td className="px-3 py-2 text-xs text-slate-500">{fmtDataHora(m.ultima_posicao)}</td>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </section>
             )}
 
-            {tab === "distancias" && (
+            {tab === "historico_veicular" && (
                 <section className="rounded-2xl border bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
-                            <h2 className="text-lg font-semibold">Distância por hodômetro</h2>
+                            <h2 className="text-lg font-semibold">Histórico Veicular</h2>
+                            <p className="text-sm text-slate-500">
+                                Distância percorrida por veículo em 1 dia, 7 dias, 30 dias ou período específico.
+                            </p>
                         </div>
 
+                        <PeriodoControls
+                            periodo={periodoVeicular}
+                            setPeriodo={setPeriodoVeicular}
+                            inicioCustom={inicioCustom}
+                            setInicioCustom={setInicioCustom}
+                            fimCustom={fimCustom}
+                            setFimCustom={setFimCustom}
+                            onConsultar={() => fetchHistoricoVeicular()}
+                            loading={loadingHistoricoVeicular}
+                            buttonText="Consultar veículos"
+                        />
+                    </div>
+
+                    <div className="mb-4 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                        <input
+                            value={selectedPlaca}
+                            onChange={(e) => setSelectedPlaca(normalizePlaca(e.target.value))}
+                            placeholder="Filtrar por placa, ex.: ABC1234"
+                            className="rounded-xl border px-3 py-2 text-sm uppercase"
+                            maxLength={7}
+                        />
+
                         <button
-                            onClick={() => fetchDistancia()}
-                            disabled={loadingDistancia || !selectedPlaca}
+                            onClick={() => fetchHistoricoVeicular(periodoVeicular, selectedPlaca || undefined)}
+                            disabled={loadingHistoricoVeicular}
                             className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60"
                         >
-                            {loadingDistancia ? "Consultando..." : "Atualizar distância"}
+                            Filtrar placa
+                        </button>
+
+                        <button
+                            onClick={() => fetchHistoricoVeicular(periodoVeicular, selectedPlaca || undefined, true)}
+                            disabled={loadingHistoricoVeicular}
+                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                        >
+                            {loadingHistoricoVeicular ? "Atualizando..." : "Atualizar iTrack"}
                         </button>
                     </div>
 
-                    {distancias.length === 0 ? (
-                        <EmptyState title="Nenhuma distância carregada" text="Consulte a distância de uma placa ou de um atendimento." />
+                    {historicoVeicular.length === 0 ? (
+                        <EmptyState title="Nenhum histórico veicular encontrado" text="Consulte um período ou clique em Atualizar iTrack para salvar dados recentes no cache." />
                     ) : (
-                        <div className="overflow-x-auto rounded-2xl border">
-                            <table className="min-w-full text-left text-sm">
-                                <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
-                                    <tr>
-                                        <th className="px-3 py-2">Placa</th>
-                                        <th className="px-3 py-2">Veículo</th>
-                                        <th className="px-3 py-2">Cliente</th>
-                                        <th className="px-3 py-2">Distância</th>
-                                        <th className="px-3 py-2">Hod. inicial</th>
-                                        <th className="px-3 py-2">Hod. final</th>
-                                        <th className="px-3 py-2">Período</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {distancias.map((d, idx) => (
-                                        <tr key={`${d.placa}-${d.id ?? idx}`} className="border-b last:border-0">
-                                            <td className="px-3 py-2 font-medium">{placaComTraco(d.placa ?? selectedPlaca)}</td>
-                                            <td className="px-3 py-2">{d.descricaoVeiculo ?? d.descricao_veiculo ?? "-"}</td>
-                                            <td className="px-3 py-2">{d.cliente ?? "-"}</td>
-                                            <td className="px-3 py-2 font-semibold">{fmtKm(distanciaKm(d))}</td>
-                                            <td className="px-3 py-2">{fmtM(d.hodometroInicial ?? d.hodometro_inicial)}</td>
-                                            <td className="px-3 py-2">{fmtM(d.hodometroFinal ?? d.hodometro_final)}</td>
-                                            <td className="px-3 py-2 text-xs text-slate-500">
-                                                {fmtDataHora(d.data_inicio)} até {fmtDataHora(d.data_fim)}
-                                            </td>
+                        <div className="space-y-4">
+                            <div className="grid gap-2 md:grid-cols-4">
+                                <KPI label="Veículos" value={String(historicoVeicular.length)} />
+                                <KPI label="Distância total" value={fmtKm(historicoVeicularTotalKm)} />
+                                <KPI
+                                    label="Maior distância"
+                                    value={fmtKm(Math.max(...historicoVeicular.map((v) => Number(v.distancia_percorrida_km ?? distanciaKm(v as any))).filter(Number.isFinite), 0))}
+                                />
+                                <KPI label="Período" value={periodoLabel(periodoVeicular)} />
+                            </div>
+
+                            <div className="overflow-x-auto rounded-2xl border">
+                                <table className="min-w-full text-left text-sm">
+                                    <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                                        <tr>
+                                            <th className="px-3 py-2">Placa</th>
+                                            <th className="px-3 py-2">Veículo</th>
+                                            <th className="px-3 py-2">Cliente</th>
+                                            <th className="px-3 py-2">Distância</th>
+                                            <th className="px-3 py-2">Vel. média</th>
+                                            <th className="px-3 py-2">Vel. máxima</th>
+                                            <th className="px-3 py-2">Hod. inicial</th>
+                                            <th className="px-3 py-2">Hod. final</th>
+                                            <th className="px-3 py-2">Fonte</th>
+                                            <th className="px-3 py-2">Período</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {historicoVeicular.map((d, idx) => (
+                                            <tr key={`${d.placa}-${idx}`} className="border-b last:border-0">
+                                                <td className="px-3 py-2 font-medium">{placaComTraco(d.placa)}</td>
+                                                <td className="px-3 py-2">{d.descricao_veiculo ?? d.descricaoVeiculo ?? "-"}</td>
+                                                <td className="px-3 py-2">{d.cliente ?? "-"}</td>
+                                                <td className="px-3 py-2 font-semibold">{fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any))}</td>
+                                                <td className="px-3 py-2">{fmtKmH(d.velocidade_media)}</td>
+                                                <td className="px-3 py-2">{fmtKmH(d.velocidade_maxima)}</td>
+                                                <td className="px-3 py-2">{fmtM(d.hodometro_inicial ?? d.hodometroInicial)}</td>
+                                                <td className="px-3 py-2">{fmtM(d.hodometro_final ?? d.hodometroFinal)}</td>
+                                                <td className="px-3 py-2 text-xs">{d.fonte_distancia || "-"}</td>
+                                                <td className="px-3 py-2 text-xs text-slate-500">
+                                                    {fmtDataHora(d.data_inicio)} até {fmtDataHora(d.data_fim)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </section>
             )}
+        </div>
+    );
+}
+
+
+function PeriodoControls({
+    periodo,
+    setPeriodo,
+    inicioCustom,
+    setInicioCustom,
+    fimCustom,
+    setFimCustom,
+    onConsultar,
+    loading,
+    buttonText,
+}: {
+    periodo: PeriodoRapido;
+    setPeriodo: (p: PeriodoRapido) => void;
+    inicioCustom: string;
+    setInicioCustom: (v: string) => void;
+    fimCustom: string;
+    setFimCustom: (v: string) => void;
+    onConsultar: () => void;
+    loading: boolean;
+    buttonText: string;
+}) {
+    return (
+        <div className="flex flex-col gap-2 md:flex-row md:items-end">
+            <div className="grid gap-1">
+                <label className="text-xs font-medium text-slate-500">Período</label>
+                <select
+                    value={periodo}
+                    onChange={(e) => setPeriodo(e.target.value as PeriodoRapido)}
+                    className="rounded-xl border px-3 py-2 text-sm"
+                >
+                    <option value="1d">Hoje</option>
+                    <option value="7d">Últimos 7 dias</option>
+                    <option value="30d">Últimos 30 dias</option>
+                    <option value="custom">Período específico</option>
+                </select>
+            </div>
+
+            {periodo === "custom" && (
+                <>
+                    <div className="grid gap-1">
+                        <label className="text-xs font-medium text-slate-500">Início</label>
+                        <input
+                            type="date"
+                            value={inicioCustom}
+                            onChange={(e) => setInicioCustom(e.target.value)}
+                            className="rounded-xl border px-3 py-2 text-sm"
+                        />
+                    </div>
+
+                    <div className="grid gap-1">
+                        <label className="text-xs font-medium text-slate-500">Fim</label>
+                        <input
+                            type="date"
+                            value={fimCustom}
+                            onChange={(e) => setFimCustom(e.target.value)}
+                            className="rounded-xl border px-3 py-2 text-sm"
+                        />
+                    </div>
+                </>
+            )}
+
+            <button
+                onClick={onConsultar}
+                disabled={loading}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+                {loading ? "Consultando..." : buttonText}
+            </button>
         </div>
     );
 }
