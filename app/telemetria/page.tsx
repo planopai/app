@@ -538,6 +538,12 @@ function distanciaKm(d: ItrackDistancia) {
     return n(d.distanciaPercorrida, 0) || 0;
 }
 
+function fonteDistanciaLabel(fonte?: string | null) {
+    if (fonte === "distancia_hodometro") return "iTrack / Hodômetro";
+    if (fonte === "posicoes_estimado") return "Estimado por GPS";
+    return fonte || "-";
+}
+
 function statusVeiculo(v: ItrackVeiculo) {
     const ignicao = Number(v.ignicao);
     const vel = Number(v.velocidade || 0);
@@ -980,7 +986,7 @@ export default function TelemetriaOperacionalPage() {
         }
     }, []);
 
-    const fetchMotoristas = useCallback(async (periodoManual?: PeriodoRapido) => {
+    const fetchMotoristas = useCallback(async (periodoManual?: PeriodoRapido, atualizar = false) => {
         const periodo = periodoManual || periodoMotorista;
         const range = periodoToRange(periodo, inicioCustom, fimCustom);
 
@@ -996,6 +1002,8 @@ export default function TelemetriaOperacionalPage() {
                 _t: String(Date.now()),
             });
 
+            if (atualizar) qs.set("atualizar", "1");
+
             const payload = await fetchJson<any>(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
@@ -1008,7 +1016,11 @@ export default function TelemetriaOperacionalPage() {
             setInicio(payload?.inicio || range.inicio);
             setFim(payload?.fim || range.fim);
             setTab("motoristas");
-            setMsg(`Motoristas carregados: ${list.length} registro(s) em ${periodoLabel(periodo)}.`);
+            setMsg(
+                atualizar
+                    ? `Motoristas atualizados pela iTrack: ${list.length} registro(s) em ${periodoLabel(periodo)}.`
+                    : `Motoristas carregados: ${list.length} registro(s) em ${periodoLabel(periodo)}.`
+            );
         } catch (e: any) {
             setMsg(e?.message || "Falha ao carregar motoristas.");
         } finally {
@@ -1054,7 +1066,11 @@ export default function TelemetriaOperacionalPage() {
             setInicio(payload?.inicio || range.inicio);
             setFim(payload?.fim || range.fim);
             setTab("historico_veicular");
-            setMsg(`Histórico veicular carregado: ${list.length} veículo(s) em ${periodoLabel(periodo)}.`);
+            setMsg(
+                atualizar
+                    ? `Histórico veicular atualizado pela iTrack: ${list.length} veículo(s) em ${periodoLabel(periodo)}.`
+                    : `Histórico veicular carregado: ${list.length} veículo(s) em ${periodoLabel(periodo)}.`
+            );
         } catch (e: any) {
             setMsg(e?.message || "Falha ao carregar histórico veicular.");
         } finally {
@@ -1529,21 +1545,31 @@ export default function TelemetriaOperacionalPage() {
                         <div>
                             <h2 className="text-lg font-semibold">Motorista</h2>
                             <p className="text-sm text-slate-500">
-                                Velocidade média e máxima agrupadas por motorista.
+                                Velocidade média e máxima por condutor. Use Atualizar iTrack para buscar posições novas antes de calcular.
                             </p>
                         </div>
 
-                        <PeriodoControls
-                            periodo={periodoMotorista}
-                            setPeriodo={setPeriodoMotorista}
-                            inicioCustom={inicioCustom}
-                            setInicioCustom={setInicioCustom}
-                            fimCustom={fimCustom}
-                            setFimCustom={setFimCustom}
-                            onConsultar={() => fetchMotoristas()}
-                            loading={loadingMotoristas}
-                            buttonText="Consultar motoristas"
-                        />
+                        <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                            <PeriodoControls
+                                periodo={periodoMotorista}
+                                setPeriodo={setPeriodoMotorista}
+                                inicioCustom={inicioCustom}
+                                setInicioCustom={setInicioCustom}
+                                fimCustom={fimCustom}
+                                setFimCustom={setFimCustom}
+                                onConsultar={() => fetchMotoristas()}
+                                loading={loadingMotoristas}
+                                buttonText="Consultar cache"
+                            />
+
+                            <button
+                                onClick={() => fetchMotoristas(periodoMotorista, true)}
+                                disabled={loadingMotoristas}
+                                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                            >
+                                {loadingMotoristas ? "Atualizando..." : "Atualizar iTrack"}
+                            </button>
+                        </div>
                     </div>
 
                     {motoristas.length === 0 ? (
@@ -1620,7 +1646,7 @@ export default function TelemetriaOperacionalPage() {
                         <div>
                             <h2 className="text-lg font-semibold">Histórico Veicular</h2>
                             <p className="text-sm text-slate-500">
-                                Distância percorrida por veículo em 1 dia, 7 dias, 30 dias ou período específico.
+                                Km oficial da iTrack por hodômetro, com velocidade complementada pelas posições históricas.
                             </p>
                         </div>
 
@@ -1664,14 +1690,14 @@ export default function TelemetriaOperacionalPage() {
                     </div>
 
                     {historicoVeicular.length === 0 ? (
-                        <EmptyState title="Nenhum histórico veicular encontrado" text="Consulte um período ou clique em Atualizar iTrack para salvar dados recentes no cache." />
+                        <EmptyState title="Nenhum histórico veicular encontrado" text="Consulte um período ou clique em Atualizar iTrack para buscar distância, posições, velocidade e motorista." />
                     ) : (
                         <div className="space-y-4">
                             <div className="grid gap-2 md:grid-cols-4">
                                 <KPI label="Veículos" value={String(historicoVeicular.length)} />
-                                <KPI label="Distância total" value={fmtKm(historicoVeicularTotalKm)} />
+                                <KPI label="Km oficial iTrack" value={fmtKm(historicoVeicularTotalKm)} />
                                 <KPI
-                                    label="Maior distância"
+                                    label="Maior km no período"
                                     value={fmtKm(Math.max(...historicoVeicular.map((v) => Number(v.distancia_percorrida_km ?? distanciaKm(v as any))).filter(Number.isFinite), 0))}
                                 />
                                 <KPI label="Período" value={periodoLabel(periodoVeicular)} />
@@ -1684,12 +1710,12 @@ export default function TelemetriaOperacionalPage() {
                                             <th className="px-3 py-2">Placa</th>
                                             <th className="px-3 py-2">Veículo</th>
                                             <th className="px-3 py-2">Cliente</th>
-                                            <th className="px-3 py-2">Distância</th>
+                                            <th className="px-3 py-2">Km no período</th>
                                             <th className="px-3 py-2">Vel. média</th>
                                             <th className="px-3 py-2">Vel. máxima</th>
                                             <th className="px-3 py-2">Hod. inicial</th>
                                             <th className="px-3 py-2">Hod. final</th>
-                                            <th className="px-3 py-2">Fonte</th>
+                                            <th className="px-3 py-2">Origem do cálculo</th>
                                             <th className="px-3 py-2">Período</th>
                                         </tr>
                                     </thead>
@@ -1704,7 +1730,7 @@ export default function TelemetriaOperacionalPage() {
                                                 <td className="px-3 py-2">{fmtKmH(d.velocidade_maxima)}</td>
                                                 <td className="px-3 py-2">{fmtM(d.hodometro_inicial ?? d.hodometroInicial)}</td>
                                                 <td className="px-3 py-2">{fmtM(d.hodometro_final ?? d.hodometroFinal)}</td>
-                                                <td className="px-3 py-2 text-xs">{d.fonte_distancia || "-"}</td>
+                                                <td className="px-3 py-2 text-xs">{fonteDistanciaLabel(d.fonte_distancia)}</td>
                                                 <td className="px-3 py-2 text-xs text-slate-500">
                                                     {fmtDataHora(d.data_inicio)} até {fmtDataHora(d.data_fim)}
                                                 </td>
