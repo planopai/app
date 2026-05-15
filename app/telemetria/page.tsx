@@ -165,10 +165,11 @@ type ItrackDistancia = {
     data_fim?: string;
 };
 
-type Tab = "ao_vivo" | "atendimentos" | "historico" | "distancias";
+type Tab = "ao_vivo" | "lista_veiculos" | "atendimentos" | "historico" | "distancias";
 
 /* ======================= Helpers ======================= */
 const TELEMETRIA_URL = `${API}/api/php/telemetria.php`;
+const LIVE_REFRESH_MS = 1000;
 
 const isFiniteNum = (v: any): v is number => Number.isFinite(Number(v));
 
@@ -380,8 +381,29 @@ function veiculoRastreador(v: ItrackVeiculo) {
     return v.idRastreador ?? v.id_rastreador ?? "-";
 }
 
-function veiculoMotorista(v: ItrackVeiculo) {
-    return v.nomeMotorista ?? v.nome_motorista ?? "-";
+function veiculoMotorista(v: ItrackVeiculo | any) {
+    const candidatos = [
+        v?.nomeMotorista,
+        v?.nome_motorista,
+        v?.motorista,
+        v?.motoristaNome,
+        v?.motorista_nome,
+        v?.condutor,
+        v?.nomeCondutor,
+        v?.nome_condutor,
+        v?.driverName,
+        v?.driver_name,
+        v?.rastreador?.nomeMotorista,
+        v?.rastreador?.nome_motorista,
+        v?.veiculo?.nomeMotorista,
+        v?.veiculo?.nome_motorista,
+    ];
+
+    const nome = candidatos
+        .map((x) => String(x ?? "").trim())
+        .find((x) => x && x !== "-" && x.toLowerCase() !== "null" && x.toLowerCase() !== "undefined");
+
+    return nome || "-";
 }
 
 function veiculoDataPosicao(v: ItrackVeiculo) {
@@ -758,10 +780,6 @@ export default function TelemetriaOperacionalPage() {
 
     const [inicio, setInicio] = useState(todayStart14());
     const [fim, setFim] = useState(todayEnd14());
-    const [salvarConsultas, setSalvarConsultas] = useState(true);
-    const [usarCacheVeiculos, setUsarCacheVeiculos] = useState(false);
-    const [tempoRealAtivo, setTempoRealAtivo] = useState(true);
-    const [intervaloTempoRealMs, setIntervaloTempoRealMs] = useState(15000);
     const [ultimaAtualizacaoAoVivo, setUltimaAtualizacaoAoVivo] = useState<Date | null>(null);
     const [modalPlaca, setModalPlaca] = useState("");
     const liveFetchingRef = useRef(false);
@@ -798,7 +816,7 @@ export default function TelemetriaOperacionalPage() {
         }
     }, []);
 
-    const fetchVeiculos = useCallback(async (cache = usarCacheVeiculos, silent = false) => {
+    const fetchVeiculos = useCallback(async (silent = false) => {
         if (liveFetchingRef.current) return;
         liveFetchingRef.current = true;
         setItrackLoading(true);
@@ -806,31 +824,29 @@ export default function TelemetriaOperacionalPage() {
 
         try {
             const qs = new URLSearchParams({
-                itrack: cache ? "veiculos_cache" : "listaveiculos",
+                itrack: "listaveiculos",
                 _t: String(Date.now()),
             });
-
-            if (!cache && salvarConsultas) qs.set("salvar", "1");
 
             const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
+                headers: { "Cache-Control": "no-cache" },
             });
 
             const payload = await r.json();
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar veículos.");
 
-            const list = cache ? payload?.dados : payload?.dados?.data;
+            const list = payload?.dados?.data ?? payload?.dados ?? [];
             setVeiculos(Array.isArray(list) ? list : []);
             setUltimaAtualizacaoAoVivo(new Date());
-            // Sem mensagem informativa para manter a tela limpa.
         } catch (e: any) {
             if (!silent) setMsg(e?.message || "Falha ao consultar veículos.");
         } finally {
             liveFetchingRef.current = false;
             setItrackLoading(false);
         }
-    }, [salvarConsultas, usarCacheVeiculos]);
+    }, []);
 
     const fetchHistorico = useCallback(async (placaManual?: string, periodo?: { inicio: string; fim: string }) => {
         const placa = normalizePlaca(placaManual || selectedPlaca);
@@ -856,7 +872,6 @@ export default function TelemetriaOperacionalPage() {
                 _t: String(Date.now()),
             });
 
-            if (salvarConsultas) qs.set("salvar", "1");
 
             const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
@@ -877,7 +892,7 @@ export default function TelemetriaOperacionalPage() {
         } finally {
             setItrackLoading(false);
         }
-    }, [selectedPlaca, inicio, fim, salvarConsultas]);
+    }, [selectedPlaca, inicio, fim]);
 
     const fetchDistancia = useCallback(async (placaManual?: string, periodo?: { inicio: string; fim: string }) => {
         const placa = normalizePlaca(placaManual || selectedPlaca);
@@ -902,7 +917,6 @@ export default function TelemetriaOperacionalPage() {
                 _t: String(Date.now()),
             });
 
-            if (salvarConsultas) qs.set("salvar", "1");
 
             const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
@@ -921,10 +935,10 @@ export default function TelemetriaOperacionalPage() {
         } finally {
             setItrackLoading(false);
         }
-    }, [selectedPlaca, inicio, fim, salvarConsultas]);
+    }, [selectedPlaca, inicio, fim]);
 
     const carregarTudo = useCallback(async () => {
-        await Promise.all([fetchRows(), fetchVeiculos(false)]);
+        await Promise.all([fetchRows(), fetchVeiculos()]);
     }, [fetchRows, fetchVeiculos]);
 
     const selecionarAtendimento = useCallback((row: TelemetriaRegistro) => {
@@ -958,16 +972,16 @@ export default function TelemetriaOperacionalPage() {
     }, [fetchRows]);
 
     useEffect(() => {
-        if (tab !== "ao_vivo" || !tempoRealAtivo) return;
+        if (tab !== "ao_vivo" && tab !== "lista_veiculos") return;
 
-        fetchVeiculos(false, veiculos.length > 0);
+        fetchVeiculos(veiculos.length > 0);
 
         const id = window.setInterval(() => {
-            fetchVeiculos(false, true);
-        }, intervaloTempoRealMs);
+            fetchVeiculos(true);
+        }, LIVE_REFRESH_MS);
 
         return () => window.clearInterval(id);
-    }, [tab, tempoRealAtivo, intervaloTempoRealMs, fetchVeiculos, veiculos.length]);
+    }, [tab, fetchVeiculos, veiculos.length]);
 
     const veiculosPontos = useMemo(() => veiculos.map(veiculoPonto).filter(Boolean) as Ponto[], [veiculos]);
 
@@ -1067,7 +1081,7 @@ export default function TelemetriaOperacionalPage() {
     return (
         <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6">
             <section className="mb-5 rounded-2xl border bg-white p-3 shadow-sm md:p-4">
-                {tab === "ao_vivo" ? (
+                {tab === "ao_vivo" || tab === "lista_veiculos" ? (
                     <LiveVehiclesMap
                         veiculos={veiculos}
                         selectedPlaca={selectedPlaca}
@@ -1084,9 +1098,9 @@ export default function TelemetriaOperacionalPage() {
                     <MapRoute pontos={mapaPrincipalPontos} height={520} showSummary={mapaPrincipalPontos.length > 1} />
                 )}
 
-                {mapaPrincipalPontos.length === 0 && tab !== "ao_vivo" && (
+                {mapaPrincipalPontos.length === 0 && tab !== "ao_vivo" && tab !== "lista_veiculos" && (
                     <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
-                        Clique em <strong>Onde estão os veículos</strong> para carregar as posições atuais.
+                        Clique em <strong>Atualizar agora</strong> para carregar as posições atuais.
                     </div>
                 )}
 
@@ -1101,12 +1115,12 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={() => {
                                 setTab("ao_vivo");
-                                fetchVeiculos(false);
+                                fetchVeiculos();
                             }}
                             disabled={itrackLoading}
                             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                         >
-                            {itrackLoading ? "Consultando..." : "Onde estão os veículos"}
+                            {itrackLoading ? "Consultando..." : "Atualizar agora"}
                         </button>
 
                         <button
@@ -1117,45 +1131,6 @@ export default function TelemetriaOperacionalPage() {
                             Atualizar tudo
                         </button>
 
-                        <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
-                            <input
-                                type="checkbox"
-                                checked={usarCacheVeiculos}
-                                onChange={(e) => setUsarCacheVeiculos(e.target.checked)}
-                            />
-                            cache
-                        </label>
-
-                        <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
-                            <input
-                                type="checkbox"
-                                checked={tempoRealAtivo}
-                                onChange={(e) => setTempoRealAtivo(e.target.checked)}
-                            />
-                            tempo real
-                        </label>
-
-                        <select
-                            value={intervaloTempoRealMs}
-                            onChange={(e) => setIntervaloTempoRealMs(Number(e.target.value))}
-                            className="rounded-lg border px-3 py-2"
-                            title="Intervalo de atualização"
-                        >
-                            <option value={5000}>5s</option>
-                            <option value={10000}>10s</option>
-                            <option value={15000}>15s</option>
-                            <option value={30000}>30s</option>
-                            <option value={60000}>60s</option>
-                        </select>
-
-                        <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
-                            <input
-                                type="checkbox"
-                                checked={salvarConsultas}
-                                onChange={(e) => setSalvarConsultas(e.target.checked)}
-                            />
-                            salvar
-                        </label>
                     </div>
                 </div>
             </section>
@@ -1175,9 +1150,15 @@ export default function TelemetriaOperacionalPage() {
             <nav className="mb-5 flex flex-wrap gap-2">
                 <TabButton active={tab === "ao_vivo"} onClick={() => {
                     setTab("ao_vivo");
-                    if (veiculos.length === 0) fetchVeiculos(false);
+                    if (veiculos.length === 0) fetchVeiculos();
                 }}>
                     🚗 Veículos ao vivo
+                </TabButton>
+                <TabButton active={tab === "lista_veiculos"} onClick={() => {
+                    setTab("lista_veiculos");
+                    if (veiculos.length === 0) fetchVeiculos();
+                }}>
+                    Listar Veículos
                 </TabButton>
                 <TabButton active={tab === "atendimentos"} onClick={() => setTab("atendimentos")}>
                     Atendimentos funerários
@@ -1190,7 +1171,7 @@ export default function TelemetriaOperacionalPage() {
                 </TabButton>
             </nav>
 
-            {tab === "ao_vivo" && (
+            {tab === "lista_veiculos" && (
                 <section className="rounded-2xl border bg-white p-4 shadow-sm">
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
@@ -1200,7 +1181,7 @@ export default function TelemetriaOperacionalPage() {
                         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
                             <span>{veiculos.length} veículo(s)</span>
                             <span>•</span>
-                            <span>{tempoRealAtivo ? `tempo real ${Math.round(intervaloTempoRealMs / 1000)}s` : "tempo real pausado"}</span>
+                            <span>tempo real 1s</span>
                             <span>•</span>
                             <span>última atualização: {ultimaAtualizacaoAoVivo ? ultimaAtualizacaoAoVivo.toLocaleTimeString("pt-BR") : "-"}</span>
                         </div>
@@ -1209,7 +1190,7 @@ export default function TelemetriaOperacionalPage() {
                     {veiculos.length === 0 ? (
                         <EmptyState
                             title="Nenhum veículo carregado"
-                            text="Clique em 'Onde estão os veículos' para consultar a iTrack."
+                            text="Clique em Atualizar agora para consultar a iTrack em tempo real."
                         />
                     ) : (
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1575,8 +1556,8 @@ function VehicleSpeedModal({
     const st = statusVeiculo(veiculo);
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:items-center">
-            <div className="w-full max-w-md overflow-hidden rounded-[1.75rem] border border-cyan-200/20 bg-slate-950 text-white shadow-2xl">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm">
+            <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] border border-cyan-200/20 bg-slate-950 text-white shadow-2xl">
                 <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
                     <div>
                         <div className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Painel do veículo</div>
