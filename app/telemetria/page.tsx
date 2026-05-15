@@ -4,7 +4,26 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { API } from "../acompanhamento/components/constants";
 import MapRoute from "./MapRoute";
 
-/* ======================= Tipos ======================= */
+/**
+ * TelemetriaOperacionalPage
+ *
+ * Painel avançado para:
+ * - Ver localização atual dos veículos iTrack.
+ * - Cruzar veículos com atendimentos funerários.
+ * - Selecionar atendimento e consultar rota/histórico da placa.
+ * - Ver distância por hodômetro.
+ * - Usar cache local ou consultar iTrack em tempo real.
+ *
+ * Requer o backend:
+ * /api/php/telemetria.php
+ *   GET ?listar=1
+ *   GET ?itrack=listaveiculos&salvar=1
+ *   GET ?itrack=historico&placa=...&inicio=...&fim=...&salvar=1
+ *   GET ?itrack=distancia&placa=...&inicio=...&fim=...&salvar=1
+ *   GET ?itrack=veiculos_cache
+ *   GET ?itrack=distancia_cache[&placa=...]
+ */
+
 type Ponto = {
     lat: number;
     lng: number;
@@ -17,8 +36,8 @@ type Ponto = {
 type TelemetriaRegistro = {
     id: number;
     sepultamento_id: number | null;
-    agente: string | null;
-    falecido: string | null;
+    agente?: string | null;
+    falecido?: string | null;
     tipo?: "remocao" | "para_velorio" | "para_sepultamento" | string;
     veiculo_nome?: string | null;
     placa?: string | null;
@@ -40,15 +59,11 @@ type TelemetriaRegistro = {
     hodometro_inicial?: number | null;
     hodometro_final?: number | null;
     distancia_hodometro_m?: number | null;
-    paradas?: number | null;
-    acel_fortes?: number | null;
-    frenagens_fortes?: number | null;
     origem?: string | null;
     origem_dados?: string | null;
     observacao?: string | null;
-    pontos_json?: string | null | any[];
+    pontos_json?: string | Ponto[] | null;
     eventos_json?: string | null;
-    extra_json?: string | null;
     criado_em?: string | null;
     atualizado_em?: string | null;
 };
@@ -143,55 +158,69 @@ type ItrackDistancia = {
     data_fim?: string;
 };
 
+type Tab = "ao_vivo" | "atendimentos" | "historico" | "distancias";
+
 /* ======================= Helpers ======================= */
+const TELEMETRIA_URL = `${API}/api/php/telemetria.php`;
+
 const isFiniteNum = (v: any): v is number => Number.isFinite(Number(v));
 
-const n = (v: any, d: number | null | undefined = 0): number =>
-    isFiniteNum(v) ? Number(v) : (d ?? 0);
+const n = (v: any, d: number | null = 0): number | null => {
+    if (v === null || v === undefined || v === "") return d;
+    const num = Number(v);
+    return Number.isFinite(num) ? num : d;
+};
 
-function fmtKm(x: any) {
-    const val = n(x, 0);
-    return `${val.toFixed(2).replace(".", ",")} km`;
+function fmtKm(v?: number | null) {
+    if (!isFiniteNum(v)) return "-";
+    return `${Number(v).toFixed(2).replace(".", ",")} km`;
 }
 
-function fmtM(x: any) {
-    const val = n(x, 0);
-    return `${Math.round(val).toLocaleString("pt-BR")} m`;
+function fmtM(v?: number | null) {
+    if (!isFiniteNum(v)) return "-";
+    return `${Number(v).toLocaleString("pt-BR")} m`;
 }
 
-function fmtKmH(x: any) {
-    const val = n(x, 0);
-    return `${val.toFixed(1).replace(".", ",")} km/h`;
+function fmtKmH(v?: number | null) {
+    if (!isFiniteNum(v)) return "-";
+    return `${Number(v).toFixed(1).replace(".", ",")} km/h`;
 }
 
-function fmtDur(seg: any) {
-    const s = Math.max(0, Math.floor(n(seg, 0)));
+function fmtDur(seg?: number | null) {
+    if (!isFiniteNum(seg)) return "-";
+    const s = Math.max(0, Number(seg));
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
-    const ss = s % 60;
-    const pad = (v: number) => String(v).padStart(2, "0");
-    return `${pad(h)}:${pad(m)}:${pad(ss)}`;
+    const r = Math.floor(s % 60);
+    if (h > 0) return `${h}h ${String(m).padStart(2, "0")}min`;
+    if (m > 0) return `${m}min ${String(r).padStart(2, "0")}s`;
+    return `${r}s`;
 }
 
-function fmtDataHora(value?: string | null) {
-    if (!value) return "-";
+function fmtDataHora(v?: string | number | null) {
+    if (!v) return "-";
 
-    const asString = String(value);
-
-    if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/.test(asString)) {
-        return asString;
+    if (typeof v === "number") {
+        const ms = v > 1000000000000 ? v : v * 1000;
+        const d = new Date(ms);
+        return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("pt-BR");
     }
 
-    const d = new Date(asString.replace(" ", "T"));
-    if (Number.isNaN(d.getTime())) return asString;
+    const s = String(v).trim();
+    if (!s) return "-";
 
-    return d.toLocaleString("pt-BR");
+    if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/.test(s)) return s;
+
+    const normalized = s.includes("T") ? s : s.replace(" ", "T");
+    const d = new Date(normalized);
+    if (!Number.isNaN(d.getTime())) return d.toLocaleString("pt-BR");
+
+    return s;
 }
 
 function parseJsonSafe<T = any>(value: any, fallback: T): T {
     if (value == null || value === "") return fallback;
     if (typeof value !== "string") return value as T;
-
     try {
         return JSON.parse(value) as T;
     } catch {
@@ -199,108 +228,137 @@ function parseJsonSafe<T = any>(value: any, fallback: T): T {
     }
 }
 
-function parsePontosJson(pontos_json?: string | null | any[]): Ponto[] {
-    if (!pontos_json) return [];
-
-    let arr: any[] | null = null;
-
-    if (Array.isArray(pontos_json)) {
-        arr = pontos_json;
-    } else if (typeof pontos_json === "string") {
-        try {
-            const parsed = JSON.parse(pontos_json);
-            arr = Array.isArray(parsed) ? parsed : null;
-        } catch {
-            arr = null;
-        }
-    }
-
-    if (!arr) return [];
+function parsePontosJson(raw: any): Ponto[] {
+    const arr = parseJsonSafe<any[]>(raw, []);
+    if (!Array.isArray(arr)) return [];
 
     return arr
-        .map((p: any) => {
-            const lat = Number(p?.lat ?? p?.latitude);
-            const lng = Number(p?.lng ?? p?.longitude);
-            const tRaw = p?.t ?? p?.ts ?? p?.timestamp;
-            const t = tRaw != null ? Number(tRaw) : undefined;
-
-            let v: number | undefined;
-            if (p?.spd_ms != null) v = Number(p.spd_ms) * 3.6;
-            else if (p?.spd_kmh != null) v = Number(p.spd_kmh);
-            else if (p?.spd != null) v = Number(p.spd) * 3.6;
-            else if (p?.v != null) v = Number(p.v);
-            else if (p?.velocidade != null) v = Number(p.velocidade);
-
-            return {
-                lat,
-                lng,
-                t,
-                v,
-                label: p?.label,
-                localizacao: p?.localizacao,
-            };
-        })
-        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
-        .sort((a, b) => (a.t ?? 0) - (b.t ?? 0));
-}
-
-function normalizeRow(raw: any): TelemetriaRegistro {
-    return {
-        ...raw,
-        velocidade_max: n(raw.velocidade_max ?? raw.vel_max_kmh),
-        velocidade_media: n(raw.velocidade_media ?? raw.vel_media_kmh),
-        distancia_km: n(raw.distancia_km),
-        duracao_s: n(raw.duracao_s ?? raw.duracao_seg),
-        paradas: n(raw.paradas),
-        acel_fortes: n(raw.acel_fortes),
-        frenagens_fortes: n(raw.frenagens_fortes),
-        inicio_iso: raw.inicio_iso ?? raw.inicio_ts,
-        fim_iso: raw.fim_iso ?? raw.fim_ts,
-        criado_em: raw.criado_em ?? raw.inicio_ts,
-        pontos_json: parsePontosJson(raw.pontos_json),
-    };
+        .map((p) => ({
+            lat: Number(p.lat ?? p.latitude),
+            lng: Number(p.lng ?? p.longitude),
+            t: p.t ?? p.ts ?? p.timestamp,
+            v: p.v ?? p.velocidade ?? p.spd_kmh,
+            label: p.label,
+            localizacao: p.localizacao,
+        }))
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
 }
 
 function normalizePlaca(v: string) {
-    return v.toUpperCase().replace(/\s+/g, "");
+    return String(v || "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .slice(0, 7);
+}
+
+function placaComTraco(v?: string | null) {
+    const p = normalizePlaca(v || "");
+    if (p.length !== 7) return p || "-";
+    return `${p.slice(0, 3)}-${p.slice(3)}`;
+}
+
+function pad2(v: number) {
+    return String(v).padStart(2, "0");
+}
+
+function dateTo14(d: Date) {
+    return [
+        d.getFullYear(),
+        pad2(d.getMonth() + 1),
+        pad2(d.getDate()),
+        pad2(d.getHours()),
+        pad2(d.getMinutes()),
+        pad2(d.getSeconds()),
+    ].join("");
 }
 
 function todayStart14() {
     const d = new Date();
-    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}000000`;
+    d.setHours(0, 0, 0, 0);
+    return dateTo14(d);
 }
 
 function todayEnd14() {
     const d = new Date();
-    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}235959`;
+    d.setHours(23, 59, 59, 0);
+    return dateTo14(d);
 }
 
-function parseDataBrItrack(s?: string | null) {
-    if (!s) return undefined;
-    const value = String(s);
+function parseDateMaybe(v?: string | null) {
+    if (!v) return null;
+    const s = String(v).trim();
 
-    const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
-    if (m) {
-        const [, dd, mm, yyyy, hh, mi, ss] = m;
-        return Math.floor(new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`).getTime() / 1000);
+    if (/^\d{14}$/.test(s)) {
+        return new Date(
+            Number(s.slice(0, 4)),
+            Number(s.slice(4, 6)) - 1,
+            Number(s.slice(6, 8)),
+            Number(s.slice(8, 10)),
+            Number(s.slice(10, 12)),
+            Number(s.slice(12, 14))
+        );
     }
 
-    const d = new Date(value.replace(" ", "T"));
-    if (Number.isNaN(d.getTime())) return undefined;
+    if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/.test(s)) {
+        const [date, time] = s.split(/\s+/);
+        const [dd, mm, yyyy] = date.split("/").map(Number);
+        const [hh, mi, ss] = time.split(":").map(Number);
+        return new Date(yyyy, mm - 1, dd, hh, mi, ss);
+    }
+
+    const d = new Date(s.includes("T") ? s : s.replace(" ", "T"));
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function rowInicioFim14(row: TelemetriaRegistro) {
+    const ini = parseDateMaybe(row.inicio_iso || row.inicio_ts || row.criado_em);
+    const fim = parseDateMaybe(row.fim_iso || row.fim_ts || row.atualizado_em || row.criado_em);
+
+    if (!ini) return { inicio: todayStart14(), fim: todayEnd14() };
+
+    const safeFim = fim && fim.getTime() > ini.getTime() ? fim : new Date(ini.getTime() + 6 * 60 * 60 * 1000);
+
+    return {
+        inicio: dateTo14(ini),
+        fim: dateTo14(safeFim),
+    };
+}
+
+function parseDataBrItrack(v?: string | null) {
+    const d = parseDateMaybe(v);
+    if (!d) return undefined;
     return Math.floor(d.getTime() / 1000);
 }
 
-function posicoesToPontos(posicoes: ItrackPosicao[]): Ponto[] {
-    return posicoes
+function posicoesToPontos(pos: ItrackPosicao[]): Ponto[] {
+    return (pos || [])
         .map((p) => ({
             lat: Number(p.latitude),
             lng: Number(p.longitude),
-            v: Number(p.velocidade ?? 0),
+            v: n(p.velocidade, undefined as any) as any,
             t: parseDataBrItrack(p.dataHoraPosicao ?? p.data_hora_posicao),
-            label: p.dataHoraPosicao ?? p.data_hora_posicao,
             localizacao: p.localizacao,
+            label: fmtDataHora(p.dataHoraPosicao ?? p.data_hora_posicao),
         }))
         .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+}
+
+function normalizeRow(r: any): TelemetriaRegistro {
+    return {
+        ...r,
+        id: Number(r.id),
+        sepultamento_id: r.sepultamento_id != null ? Number(r.sepultamento_id) : null,
+        distancia_km: n(r.distancia_km, null),
+        duracao_s: n(r.duracao_s ?? r.duracao_seg, null),
+        duracao_seg: n(r.duracao_seg ?? r.duracao_s, null),
+        velocidade_media: n(r.velocidade_media ?? r.vel_media_kmh, null),
+        velocidade_max: n(r.velocidade_max ?? r.vel_max_kmh, null),
+        vel_media_kmh: n(r.vel_media_kmh ?? r.velocidade_media, null),
+        vel_max_kmh: n(r.vel_max_kmh ?? r.velocidade_max, null),
+        hodometro_inicial: n(r.hodometro_inicial, null),
+        hodometro_final: n(r.hodometro_final, null),
+        distancia_hodometro_m: n(r.distancia_hodometro_m, null),
+    };
 }
 
 function veiculoDescricao(v: ItrackVeiculo) {
@@ -320,7 +378,7 @@ function veiculoMotorista(v: ItrackVeiculo) {
 }
 
 function veiculoDataPosicao(v: ItrackVeiculo) {
-    return v.dataHoraPosicao ?? v.data_hora_posicao ?? null;
+    return v.dataHoraPosicao ?? v.data_hora_posicao ?? v.atualizado_em ?? null;
 }
 
 function veiculoEventos(v: ItrackVeiculo): ItrackEvento[] {
@@ -328,46 +386,101 @@ function veiculoEventos(v: ItrackVeiculo): ItrackEvento[] {
     return parseJsonSafe<ItrackEvento[]>(v.eventos_json, []);
 }
 
+function veiculoPonto(v: ItrackVeiculo): Ponto | null {
+    const lat = Number(v.latitude);
+    const lng = Number(v.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    return {
+        lat,
+        lng,
+        v: Number(v.velocidade ?? 0),
+        label: `${placaComTraco(v.placa)} • ${veiculoDescricao(v)}`,
+        localizacao: v.localizacao || "",
+        t: parseDataBrItrack(veiculoDataPosicao(v)),
+    };
+}
+
 function distanciaMetros(d: ItrackDistancia) {
-    return n(d.distanciaPercorrida ?? d.distancia_percorrida_m, 0);
+    return n(d.distanciaPercorrida ?? d.distancia_percorrida_m, 0) || 0;
 }
 
 function distanciaKm(d: ItrackDistancia) {
-    if (d.distancia_percorrida_km != null) return n(d.distancia_percorrida_km, 0);
+    if (d.distancia_percorrida_km != null) return n(d.distancia_percorrida_km, 0) || 0;
     return distanciaMetros(d) / 1000;
 }
 
-/* ======================= Página ======================= */
-export default function TelemetriaPage() {
-    const [rows, setRows] = useState<TelemetriaRegistro[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [msg, setMsg] = useState<string | null>(null);
-    const [openId, setOpenId] = useState<number | null>(null);
+function statusVeiculo(v: ItrackVeiculo) {
+    const ignicao = Number(v.ignicao);
+    const vel = Number(v.velocidade || 0);
 
-    const [itrackLoading, setItrackLoading] = useState(false);
-    const [itrackMsg, setItrackMsg] = useState<string | null>(null);
+    if (ignicao === 1 && vel > 3) return { label: "Em movimento", tone: "emerald" };
+    if (ignicao === 1) return { label: "Ligado/parado", tone: "amber" };
+    return { label: "Desligado", tone: "slate" };
+}
+
+function tipoLabel(tipo?: string | null) {
+    const t = String(tipo || "").toLowerCase();
+    if (t === "remocao") return "Remoção";
+    if (t === "para_velorio") return "Para velório";
+    if (t === "para_sepultamento") return "Para sepultamento";
+    return tipo || "Não informado";
+}
+
+function distanciaEntreKm(a?: Ponto | null, b?: Ponto | null) {
+    if (!a || !b) return null;
+    const R = 6371;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const x =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
+}
+
+/* ======================= Página ======================= */
+export default function TelemetriaOperacionalPage() {
+    const [tab, setTab] = useState<Tab>("ao_vivo");
+
+    const [rows, setRows] = useState<TelemetriaRegistro[]>([]);
     const [veiculos, setVeiculos] = useState<ItrackVeiculo[]>([]);
     const [historico, setHistorico] = useState<ItrackHistoricoItem | null>(null);
     const [distancias, setDistancias] = useState<ItrackDistancia[]>([]);
-    const [placa, setPlaca] = useState("");
+
+    const [loading, setLoading] = useState(false);
+    const [itrackLoading, setItrackLoading] = useState(false);
+    const [msg, setMsg] = useState<string | null>(null);
+
+    const [selectedAtendimentoId, setSelectedAtendimentoId] = useState<number | null>(null);
+    const [selectedPlaca, setSelectedPlaca] = useState("");
+    const [busca, setBusca] = useState("");
+    const [filtroTipo, setFiltroTipo] = useState("todos");
+    const [somenteComPlaca, setSomenteComPlaca] = useState(false);
+
     const [inicio, setInicio] = useState(todayStart14());
     const [fim, setFim] = useState(todayEnd14());
-    const [usarCache, setUsarCache] = useState(false);
     const [salvarConsultas, setSalvarConsultas] = useState(true);
+    const [usarCacheVeiculos, setUsarCacheVeiculos] = useState(false);
+
+    const selectedAtendimento = useMemo(
+        () => rows.find((r) => r.id === selectedAtendimentoId) || null,
+        [rows, selectedAtendimentoId]
+    );
 
     const fetchRows = useCallback(async () => {
         setLoading(true);
         setMsg(null);
 
         try {
-            const r = await fetch(`${API}/api/php/telemetria.php?listar=1&_t=${Date.now()}`, {
+            const r = await fetch(`${TELEMETRIA_URL}?listar=1&_t=${Date.now()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
             const payload = await r.json();
-
-            if (payload?.erro) throw new Error(payload.msg || "Falha ao carregar dados.");
+            if (payload?.erro) throw new Error(payload.msg || "Falha ao carregar atendimentos.");
 
             const list = Array.isArray(payload)
                 ? payload
@@ -377,15 +490,15 @@ export default function TelemetriaPage() {
 
             setRows(list.map(normalizeRow));
         } catch (e: any) {
-            setMsg(e?.message || "Falha ao carregar dados.");
+            setMsg(e?.message || "Falha ao carregar atendimentos.");
         } finally {
             setLoading(false);
         }
     }, []);
 
-    const fetchItrackVeiculos = useCallback(async (cache = usarCache) => {
+    const fetchVeiculos = useCallback(async (cache = usarCacheVeiculos) => {
         setItrackLoading(true);
-        setItrackMsg(null);
+        setMsg(null);
 
         try {
             const qs = new URLSearchParams({
@@ -395,152 +508,208 @@ export default function TelemetriaPage() {
 
             if (!cache && salvarConsultas) qs.set("salvar", "1");
 
-            const r = await fetch(`${API}/api/php/telemetria.php?${qs.toString()}`, {
+            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
             const payload = await r.json();
-
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar veículos.");
 
-            const list = cache
-                ? payload?.dados
-                : payload?.dados?.data;
-
+            const list = cache ? payload?.dados : payload?.dados?.data;
             setVeiculos(Array.isArray(list) ? list : []);
-            setItrackMsg(cache ? "Veículos carregados do cache local." : "Veículos consultados na iTrack.");
+            setMsg(cache ? "Veículos carregados do cache local." : "Localização atual dos veículos carregada da iTrack.");
         } catch (e: any) {
-            setItrackMsg(e?.message || "Falha ao consultar veículos.");
+            setMsg(e?.message || "Falha ao consultar veículos.");
         } finally {
             setItrackLoading(false);
         }
-    }, [salvarConsultas, usarCache]);
+    }, [salvarConsultas, usarCacheVeiculos]);
 
-    const fetchItrackHistorico = useCallback(async () => {
-        const placaNorm = normalizePlaca(placa);
-        if (!placaNorm || !inicio || !fim) {
-            setItrackMsg("Informe placa, início e fim.");
+    const fetchHistorico = useCallback(async (placaManual?: string, periodo?: { inicio: string; fim: string }) => {
+        const placa = normalizePlaca(placaManual || selectedPlaca);
+        const ini = periodo?.inicio || inicio;
+        const end = periodo?.fim || fim;
+
+        if (!placa || !ini || !end) {
+            setMsg("Informe placa, início e fim para consultar o histórico.");
             return;
         }
 
         setItrackLoading(true);
-        setItrackMsg(null);
+        setMsg(null);
         setHistorico(null);
+        setSelectedPlaca(placa);
 
         try {
             const qs = new URLSearchParams({
                 itrack: "historico",
-                placa: placaNorm,
-                inicio,
-                fim,
+                placa,
+                inicio: ini,
+                fim: end,
                 _t: String(Date.now()),
             });
 
             if (salvarConsultas) qs.set("salvar", "1");
 
-            const r = await fetch(`${API}/api/php/telemetria.php?${qs.toString()}`, {
+            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
             const payload = await r.json();
-
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar histórico.");
 
             const item = payload?.dados?.data?.[0] ?? null;
             setHistorico(item);
-            setItrackMsg(
-                payload?.salvo?.consulta_id
-                    ? `Histórico carregado e salvo. Consulta #${payload.salvo.consulta_id}.`
-                    : "Histórico carregado."
-            );
+            setTab("historico");
+
+            const total = Array.isArray(item?.posicoes) ? item.posicoes.length : 0;
+            setMsg(`Histórico de ${placaComTraco(placa)} carregado com ${total} posição(ões).`);
         } catch (e: any) {
-            setItrackMsg(e?.message || "Falha ao consultar histórico.");
+            setMsg(e?.message || "Falha ao consultar histórico.");
         } finally {
             setItrackLoading(false);
         }
-    }, [placa, inicio, fim, salvarConsultas]);
+    }, [selectedPlaca, inicio, fim, salvarConsultas]);
 
-    const fetchItrackDistancia = useCallback(async () => {
-        const placaNorm = normalizePlaca(placa);
-        if (!placaNorm || !inicio || !fim) {
-            setItrackMsg("Informe placa, início e fim.");
+    const fetchDistancia = useCallback(async (placaManual?: string, periodo?: { inicio: string; fim: string }) => {
+        const placa = normalizePlaca(placaManual || selectedPlaca);
+        const ini = periodo?.inicio || inicio;
+        const end = periodo?.fim || fim;
+
+        if (!placa || !ini || !end) {
+            setMsg("Informe placa, início e fim para consultar distância.");
             return;
         }
 
         setItrackLoading(true);
-        setItrackMsg(null);
-        setDistancias([]);
+        setMsg(null);
+        setSelectedPlaca(placa);
 
         try {
             const qs = new URLSearchParams({
                 itrack: "distancia",
-                placa: placaNorm,
-                inicio,
-                fim,
+                placa,
+                inicio: ini,
+                fim: end,
                 _t: String(Date.now()),
             });
 
             if (salvarConsultas) qs.set("salvar", "1");
 
-            const r = await fetch(`${API}/api/php/telemetria.php?${qs.toString()}`, {
+            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
 
             const payload = await r.json();
-
             if (payload?.erro) throw new Error(payload.msg || "Falha ao consultar distância.");
 
             const list = payload?.dados?.data;
             setDistancias(Array.isArray(list) ? list : []);
-            setItrackMsg("Distância por hodômetro carregada.");
+            setTab("distancias");
+            setMsg(`Distância de ${placaComTraco(placa)} carregada.`);
         } catch (e: any) {
-            setItrackMsg(e?.message || "Falha ao consultar distância.");
+            setMsg(e?.message || "Falha ao consultar distância.");
         } finally {
             setItrackLoading(false);
         }
-    }, [placa, inicio, fim, salvarConsultas]);
+    }, [selectedPlaca, inicio, fim, salvarConsultas]);
 
-    const carregarCacheDistancia = useCallback(async () => {
-        const placaNorm = normalizePlaca(placa);
-        setItrackLoading(true);
-        setItrackMsg(null);
+    const carregarTudo = useCallback(async () => {
+        await Promise.all([fetchRows(), fetchVeiculos(false)]);
+    }, [fetchRows, fetchVeiculos]);
 
-        try {
-            const qs = new URLSearchParams({
-                itrack: "distancia_cache",
-                _t: String(Date.now()),
-            });
+    const selecionarAtendimento = useCallback((row: TelemetriaRegistro) => {
+        setSelectedAtendimentoId(row.id);
+        const placa = normalizePlaca(row.placa || "");
+        if (placa) setSelectedPlaca(placa);
 
-            if (placaNorm) qs.set("placa", placaNorm);
+        const p = rowInicioFim14(row);
+        setInicio(p.inicio);
+        setFim(p.fim);
+    }, []);
 
-            const r = await fetch(`${API}/api/php/telemetria.php?${qs.toString()}`, {
-                credentials: "include",
-                cache: "no-store",
-            });
-
-            const payload = await r.json();
-
-            if (payload?.erro) throw new Error(payload.msg || "Falha ao carregar cache de distância.");
-
-            setDistancias(Array.isArray(payload?.dados) ? payload.dados : []);
-            setItrackMsg("Distâncias carregadas do cache local.");
-        } catch (e: any) {
-            setItrackMsg(e?.message || "Falha ao carregar cache de distância.");
-        } finally {
-            setItrackLoading(false);
+    const consultarAtendimentoCompleto = useCallback(async (row: TelemetriaRegistro) => {
+        selecionarAtendimento(row);
+        const placa = normalizePlaca(row.placa || "");
+        if (!placa) {
+            setMsg("Este atendimento não tem placa vinculada.");
+            return;
         }
-    }, [placa]);
+
+        const periodo = rowInicioFim14(row);
+        setInicio(periodo.inicio);
+        setFim(periodo.fim);
+
+        await fetchHistorico(placa, periodo);
+        await fetchDistancia(placa, periodo);
+    }, [fetchHistorico, fetchDistancia, selecionarAtendimento]);
 
     useEffect(() => {
         fetchRows();
     }, [fetchRows]);
 
-    const pontosHistorico = useMemo(() => {
-        return posicoesToPontos(historico?.posicoes ?? []);
-    }, [historico]);
+    const veiculosPontos = useMemo(() => veiculos.map(veiculoPonto).filter(Boolean) as Ponto[], [veiculos]);
+
+    const pontosHistorico = useMemo(() => posicoesToPontos(historico?.posicoes ?? []), [historico]);
+
+    const atendimentoSelecionadoPontos = useMemo(() => {
+        if (!selectedAtendimento) return [];
+        return parsePontosJson(selectedAtendimento.pontos_json);
+    }, [selectedAtendimento]);
+
+    const mapaPrincipalPontos = useMemo(() => {
+        if (tab === "historico" && pontosHistorico.length > 0) return pontosHistorico;
+        if (selectedAtendimento && atendimentoSelecionadoPontos.length > 0) return atendimentoSelecionadoPontos;
+        return veiculosPontos;
+    }, [tab, pontosHistorico, selectedAtendimento, atendimentoSelecionadoPontos, veiculosPontos]);
+
+    const veiculoSelecionado = useMemo(() => {
+        const placa = normalizePlaca(selectedPlaca || selectedAtendimento?.placa || "");
+        if (!placa) return null;
+        return veiculos.find((v) => normalizePlaca(v.placa) === placa) || null;
+    }, [veiculos, selectedPlaca, selectedAtendimento]);
+
+    const rowsFiltradas = useMemo(() => {
+        const q = busca.trim().toLowerCase();
+        return rows.filter((r) => {
+            if (somenteComPlaca && !normalizePlaca(r.placa || "")) return false;
+            if (filtroTipo !== "todos" && String(r.tipo || "") !== filtroTipo) return false;
+            if (!q) return true;
+
+            const alvo = [
+                r.id,
+                r.sepultamento_id,
+                r.falecido,
+                r.agente,
+                r.tipo,
+                r.veiculo_nome,
+                r.placa,
+                r.nome_motorista,
+                r.observacao,
+            ].join(" ").toLowerCase();
+
+            return alvo.includes(q);
+        });
+    }, [rows, busca, filtroTipo, somenteComPlaca]);
+
+    const kpis = useMemo(() => {
+        const emMovimento = veiculos.filter((v) => statusVeiculo(v).label === "Em movimento").length;
+        const ligados = veiculos.filter((v) => Number(v.ignicao) === 1).length;
+        const atendComPlaca = rows.filter((r) => normalizePlaca(r.placa || "")).length;
+        const hoje = new Date().toLocaleDateString("pt-BR");
+
+        return {
+            veiculos: veiculos.length,
+            emMovimento,
+            ligados,
+            atendimentos: rows.length,
+            atendComPlaca,
+            hoje,
+        };
+    }, [veiculos, rows]);
 
     const resumoHistorico = useMemo(() => {
         const pos = historico?.posicoes ?? [];
@@ -548,6 +717,7 @@ export default function TelemetriaPage() {
 
         const velocidades = pos.map((p) => Number(p.velocidade)).filter(Number.isFinite);
         const vmax = velocidades.length ? Math.max(...velocidades) : 0;
+        const vmed = velocidades.length ? velocidades.reduce((a, b) => a + b, 0) / velocidades.length : 0;
         const hodometros = pos.map((p) => Number(p.hodometro)).filter(Number.isFinite);
         const hIni = hodometros.length ? hodometros[0] : null;
         const hFim = hodometros.length ? hodometros[hodometros.length - 1] : null;
@@ -555,6 +725,7 @@ export default function TelemetriaPage() {
         return {
             total: pos.length,
             vmax,
+            vmed,
             hIni,
             hFim,
             distanciaHodometroM: hIni != null && hFim != null ? Math.max(0, hFim - hIni) : null,
@@ -563,193 +734,275 @@ export default function TelemetriaPage() {
         };
     }, [historico]);
 
+    const distanciaVeiculoAtendimento = useMemo(() => {
+        const vp = veiculoSelecionado ? veiculoPonto(veiculoSelecionado) : null;
+        const ap = atendimentoSelecionadoPontos[atendimentoSelecionadoPontos.length - 1] || atendimentoSelecionadoPontos[0];
+        return distanciaEntreKm(vp, ap);
+    }, [veiculoSelecionado, atendimentoSelecionadoPontos]);
+
     return (
-        <div className="p-6">
-            <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h1 className="text-2xl font-semibold">Relatório de Telemetria</h1>
-                    <p className="text-sm text-slate-500">
-                        Serviços funerários, rotas registradas e integração iTrack/Intertrack.
-                    </p>
-                </div>
-
-                <button
-                    onClick={fetchRows}
-                    disabled={loading}
-                    className="rounded-lg border px-4 py-2 text-sm disabled:opacity-60"
-                >
-                    {loading ? "Atualizando..." : "Atualizar serviços"}
-                </button>
-            </header>
-
-            {msg && (
-                <div className="mb-4 rounded-md bg-yellow-50 p-3 text-sm text-yellow-800">
-                    {msg}
-                </div>
-            )}
-
-            <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
-                <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6">
+            <header className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                     <div>
-                        <h2 className="text-lg font-semibold text-slate-800">iTrack / Intertrack</h2>
-                        <p className="text-sm text-slate-500">
-                            Consulte frota, histórico por placa e distância por hodômetro sem perder os dados dos serviços funerários.
+                        <div className="mb-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                            Central operacional • Telemetria funerária + iTrack
+                        </div>
+                        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+                            Controle de veículos e atendimentos funerários
+                        </h1>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Veja onde estão os veículos, consulte histórico por placa e acompanhe os atendimentos com rota, hodômetro e status.
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                        <label className="inline-flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                checked={salvarConsultas}
-                                onChange={(e) => setSalvarConsultas(e.target.checked)}
-                            />
-                            salvar consultas no banco
-                        </label>
-
-                        <label className="inline-flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                checked={usarCache}
-                                onChange={(e) => setUsarCache(e.target.checked)}
-                            />
-                            carregar veículos do cache
-                        </label>
-                    </div>
-                </div>
-
-                {itrackMsg && (
-                    <div className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
-                        {itrackMsg}
-                    </div>
-                )}
-
-                <div className="mb-4 grid gap-3 md:grid-cols-4">
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-500">
-                            Placa
-                        </label>
-                        <input
-                            value={placa}
-                            onChange={(e) => setPlaca(normalizePlaca(e.target.value))}
-                            placeholder="ABC1234 ou ABC-1234"
-                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-500">
-                            Início yyyyMMddHHmmss
-                        </label>
-                        <input
-                            value={inicio}
-                            onChange={(e) => setInicio(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-500">
-                            Fim yyyyMMddHHmmss
-                        </label>
-                        <input
-                            value={fim}
-                            onChange={(e) => setFim(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
-                    </div>
-
-                    <div className="flex items-end">
+                    <div className="flex flex-wrap gap-2">
                         <button
-                            onClick={() => fetchItrackVeiculos()}
+                            onClick={() => fetchVeiculos(false)}
                             disabled={itrackLoading}
-                            className="w-full rounded-lg border px-4 py-2 text-sm disabled:opacity-60"
+                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
                         >
-                            {itrackLoading ? "Consultando..." : "Listar veículos"}
+                            {itrackLoading ? "Consultando..." : "Onde estão os veículos"}
+                        </button>
+
+                        <button
+                            onClick={carregarTudo}
+                            disabled={loading || itrackLoading}
+                            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+                        >
+                            Atualizar tudo
                         </button>
                     </div>
                 </div>
 
-                <div className="mb-6 flex flex-wrap gap-2">
-                    <button
-                        onClick={fetchItrackHistorico}
-                        disabled={itrackLoading}
-                        className="rounded-lg border px-4 py-2 text-sm disabled:opacity-60"
-                    >
-                        Buscar histórico da placa
-                    </button>
-
-                    <button
-                        onClick={fetchItrackDistancia}
-                        disabled={itrackLoading}
-                        className="rounded-lg border px-4 py-2 text-sm disabled:opacity-60"
-                    >
-                        Buscar distância/hodômetro
-                    </button>
-
-                    <button
-                        onClick={carregarCacheDistancia}
-                        disabled={itrackLoading}
-                        className="rounded-lg border px-4 py-2 text-sm disabled:opacity-60"
-                    >
-                        Carregar distâncias salvas
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            setInicio(todayStart14());
-                            setFim(todayEnd14());
-                        }}
-                        className="rounded-lg border px-4 py-2 text-sm"
-                    >
-                        Usar período de hoje
-                    </button>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <KPI label="Veículos localizados" value={String(kpis.veiculos)} sub="iTrack / cache" />
+                    <KPI label="Em movimento" value={String(kpis.emMovimento)} sub="velocidade > 3 km/h" />
+                    <KPI label="Ignição ligada" value={String(kpis.ligados)} sub="status atual" />
+                    <KPI label="Atendimentos" value={String(kpis.atendimentos)} sub="registros locais" />
+                    <KPI label="Com placa" value={String(kpis.atendComPlaca)} sub={`Hoje: ${kpis.hoje}`} />
                 </div>
+            </header>
 
-                {veiculos.length > 0 && (
-                    <div className="mb-6">
-                        <div className="mb-2 flex items-center justify-between">
-                            <h3 className="font-semibold text-slate-800">
-                                Veículos iTrack ({veiculos.length})
-                            </h3>
+            {msg && (
+                <div className="mb-5 rounded-xl border bg-white p-3 text-sm text-slate-700 shadow-sm">
+                    {msg}
+                </div>
+            )}
+
+            <section className="mb-5 grid gap-5 xl:grid-cols-[1.45fr_0.85fr]">
+                <div className="rounded-2xl border bg-white p-4 shadow-sm">
+                    <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">Mapa operacional</h2>
+                            <p className="text-sm text-slate-500">
+                                Mostra veículos atuais, rota do atendimento selecionado ou histórico consultado.
+                            </p>
                         </div>
 
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
+                                <input
+                                    type="checkbox"
+                                    checked={usarCacheVeiculos}
+                                    onChange={(e) => setUsarCacheVeiculos(e.target.checked)}
+                                />
+                                usar cache dos veículos
+                            </label>
+
+                            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
+                                <input
+                                    type="checkbox"
+                                    checked={salvarConsultas}
+                                    onChange={(e) => setSalvarConsultas(e.target.checked)}
+                                />
+                                salvar consultas
+                            </label>
+                        </div>
+                    </div>
+
+                    <MapRoute pontos={mapaPrincipalPontos} height={430} showSummary={mapaPrincipalPontos.length > 1} />
+
+                    {mapaPrincipalPontos.length === 0 && (
+                        <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                            Clique em <strong>Onde estão os veículos</strong> para carregar as posições atuais.
+                        </div>
+                    )}
+                </div>
+
+                <aside className="space-y-5">
+                    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+                        <h2 className="text-lg font-semibold">Consulta rápida</h2>
+                        <p className="mb-3 text-sm text-slate-500">
+                            Use uma placa ou selecione um atendimento abaixo.
+                        </p>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="mb-1 block text-xs font-medium text-slate-500">Placa</label>
+                                <input
+                                    value={selectedPlaca}
+                                    onChange={(e) => setSelectedPlaca(normalizePlaca(e.target.value))}
+                                    placeholder="ABC1234"
+                                    className="w-full rounded-xl border px-3 py-2 text-sm"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3">
+                                <div>
+                                    <label className="mb-1 block text-xs font-medium text-slate-500">Início yyyyMMddHHmmss</label>
+                                    <input
+                                        value={inicio}
+                                        onChange={(e) => setInicio(e.target.value.replace(/\D/g, "").slice(0, 14))}
+                                        className="w-full rounded-xl border px-3 py-2 text-sm"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-medium text-slate-500">Fim yyyyMMddHHmmss</label>
+                                    <input
+                                        value={fim}
+                                        onChange={(e) => setFim(e.target.value.replace(/\D/g, "").slice(0, 14))}
+                                        className="w-full rounded-xl border px-3 py-2 text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => fetchHistorico()}
+                                    disabled={itrackLoading}
+                                    className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
+                                >
+                                    Histórico
+                                </button>
+
+                                <button
+                                    onClick={() => fetchDistancia()}
+                                    disabled={itrackLoading}
+                                    className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
+                                >
+                                    Hodômetro
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        setInicio(todayStart14());
+                                        setFim(todayEnd14());
+                                    }}
+                                    className="rounded-xl border px-3 py-2 text-sm font-medium"
+                                >
+                                    Hoje
+                                </button>
+
+                                <button
+                                    onClick={() => fetchVeiculos(usarCacheVeiculos)}
+                                    disabled={itrackLoading}
+                                    className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
+                                >
+                                    Veículos
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+                        <h2 className="text-lg font-semibold">Atendimento selecionado</h2>
+
+                        {!selectedAtendimento ? (
+                            <p className="mt-2 text-sm text-slate-500">
+                                Selecione um atendimento para cruzar com a placa e consultar rota.
+                            </p>
+                        ) : (
+                            <div className="mt-3 space-y-3">
+                                <div>
+                                    <div className="font-semibold">{selectedAtendimento.falecido || "Sem falecido"}</div>
+                                    <div className="text-sm text-slate-500">
+                                        #{selectedAtendimento.id} • {tipoLabel(selectedAtendimento.tipo)} • {placaComTraco(selectedAtendimento.placa)}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                                    <div>Veículo: {selectedAtendimento.veiculo_nome || "-"}</div>
+                                    <div>Agente: {selectedAtendimento.agente || "-"}</div>
+                                    <div>Motorista: {selectedAtendimento.nome_motorista || "-"}</div>
+                                    <div>Início: {fmtDataHora(selectedAtendimento.inicio_iso || selectedAtendimento.inicio_ts)}</div>
+                                    <div>Fim: {fmtDataHora(selectedAtendimento.fim_iso || selectedAtendimento.fim_ts)}</div>
+                                    {distanciaVeiculoAtendimento != null && (
+                                        <div>Distância estimada veículo ↔ rota: {fmtKm(distanciaVeiculoAtendimento)}</div>
+                                    )}
+                                </div>
+
+                                <button
+                                    onClick={() => consultarAtendimentoCompleto(selectedAtendimento)}
+                                    disabled={itrackLoading || !selectedAtendimento.placa}
+                                    className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                                >
+                                    Consultar rota e hodômetro deste atendimento
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </aside>
+            </section>
+
+            <nav className="mb-5 flex flex-wrap gap-2">
+                <TabButton active={tab === "ao_vivo"} onClick={() => setTab("ao_vivo")}>
+                    Veículos ao vivo
+                </TabButton>
+                <TabButton active={tab === "atendimentos"} onClick={() => setTab("atendimentos")}>
+                    Atendimentos funerários
+                </TabButton>
+                <TabButton active={tab === "historico"} onClick={() => setTab("historico")}>
+                    Histórico da placa
+                </TabButton>
+                <TabButton active={tab === "distancias"} onClick={() => setTab("distancias")}>
+                    Distâncias/hodômetro
+                </TabButton>
+            </nav>
+
+            {tab === "ao_vivo" && (
+                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">Frota iTrack</h2>
+                            <p className="text-sm text-slate-500">
+                                Última posição, ignição, velocidade, GPS, motorista e eventos.
+                            </p>
+                        </div>
+                        <span className="text-sm text-slate-500">{veiculos.length} veículo(s)</span>
+                    </div>
+
+                    {veiculos.length === 0 ? (
+                        <EmptyState
+                            title="Nenhum veículo carregado"
+                            text="Clique em 'Onde estão os veículos' para consultar a iTrack."
+                        />
+                    ) : (
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                             {veiculos.map((v, idx) => {
+                                const st = statusVeiculo(v);
                                 const eventos = veiculoEventos(v);
-                                const lat = Number(v.latitude);
-                                const lng = Number(v.longitude);
-                                const hasPoint = Number.isFinite(lat) && Number.isFinite(lng);
 
                                 return (
-                                    <div
-                                        key={`${v.placa}-${idx}`}
-                                        className="rounded-xl border bg-white p-4"
-                                    >
-                                        <div className="flex items-start justify-between gap-3">
+                                    <div key={`${v.placa}-${idx}`} className="rounded-2xl border p-4">
+                                        <div className="mb-3 flex items-start justify-between gap-3">
                                             <div>
-                                                <div className="font-semibold text-slate-800">{v.placa}</div>
+                                                <div className="text-lg font-bold">{placaComTraco(v.placa)}</div>
                                                 <div className="text-sm text-slate-600">{veiculoDescricao(v)}</div>
-                                                <div className="mt-1 text-xs text-slate-500">
-                                                    Cliente: {veiculoCliente(v)}
-                                                </div>
+                                                <div className="mt-1 text-xs text-slate-500">Cliente: {veiculoCliente(v)}</div>
                                             </div>
 
-                                            <button
-                                                onClick={() => setPlaca(v.placa)}
-                                                className="rounded-md border px-2 py-1 text-xs"
-                                            >
-                                                usar placa
-                                            </button>
+                                            <Badge tone={st.tone}>{st.label}</Badge>
                                         </div>
 
-                                        <div className="mt-3 grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-3 gap-2">
                                             <KPI label="Vel." value={fmtKmH(v.velocidade)} compact />
                                             <KPI label="Ignição" value={Number(v.ignicao) === 1 ? "Ligada" : "Deslig."} compact />
                                             <KPI label="GPS" value={String(v.gps ?? "-")} compact />
                                         </div>
 
-                                        <div className="mt-3 text-xs text-slate-500">
+                                        <div className="mt-3 space-y-1 text-xs text-slate-500">
                                             <div>Rastreador: {veiculoRastreador(v)}</div>
                                             <div>Motorista: {veiculoMotorista(v)}</div>
                                             <div>Última posição: {fmtDataHora(veiculoDataPosicao(v))}</div>
@@ -758,7 +1011,7 @@ export default function TelemetriaPage() {
                                         </div>
 
                                         {eventos.length > 0 && (
-                                            <div className="mt-3 rounded-md bg-slate-50 p-2 text-xs text-slate-600">
+                                            <div className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
                                                 {eventos.map((ev, i) => (
                                                     <div key={i}>
                                                         {ev.idEvento ? `${ev.idEvento} - ` : ""}
@@ -768,95 +1021,300 @@ export default function TelemetriaPage() {
                                             </div>
                                         )}
 
-                                        {hasPoint && (
-                                            <div className="mt-3">
-                                                <MapRoute
-                                                    pontos={[{
-                                                        lat,
-                                                        lng,
-                                                        v: Number(v.velocidade ?? 0),
-                                                        label: v.placa,
-                                                        localizacao: v.localizacao,
-                                                    }]}
-                                                    height={180}
-                                                    showSummary={false}
-                                                />
+                                        <div className="mt-3 grid grid-cols-2 gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedPlaca(normalizePlaca(v.placa));
+                                                    setTab("historico");
+                                                }}
+                                                className="rounded-xl border px-3 py-2 text-xs font-medium"
+                                            >
+                                                usar placa
+                                            </button>
+
+                                            <button
+                                                onClick={() => fetchHistorico(v.placa)}
+                                                disabled={itrackLoading}
+                                                className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
+                                            >
+                                                histórico hoje
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {tab === "atendimentos" && (
+                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">Atendimentos funerários</h2>
+                            <p className="text-sm text-slate-500">
+                                Lista local com vínculo por placa, falecido, agente, rota e hodômetro.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                            <input
+                                value={busca}
+                                onChange={(e) => setBusca(e.target.value)}
+                                placeholder="Buscar por falecido, placa, agente..."
+                                className="rounded-xl border px-3 py-2 text-sm"
+                            />
+
+                            <select
+                                value={filtroTipo}
+                                onChange={(e) => setFiltroTipo(e.target.value)}
+                                className="rounded-xl border px-3 py-2 text-sm"
+                            >
+                                <option value="todos">Todos os tipos</option>
+                                <option value="remocao">Remoção</option>
+                                <option value="para_velorio">Para velório</option>
+                                <option value="para_sepultamento">Para sepultamento</option>
+                            </select>
+
+                            <label className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={somenteComPlaca}
+                                    onChange={(e) => setSomenteComPlaca(e.target.checked)}
+                                />
+                                com placa
+                            </label>
+                        </div>
+                    </div>
+
+                    {rowsFiltradas.length === 0 ? (
+                        <EmptyState title="Nenhum atendimento encontrado" text="Ajuste os filtros ou atualize os serviços." />
+                    ) : (
+                        <div className="space-y-3">
+                            {rowsFiltradas.map((row) => {
+                                const selected = selectedAtendimentoId === row.id;
+                                const pontos = parsePontosJson(row.pontos_json);
+
+                                return (
+                                    <div
+                                        key={row.id}
+                                        className={`rounded-2xl border p-4 ${selected ? "border-slate-900 bg-slate-50" : "bg-white"}`}
+                                    >
+                                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                                            <div>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <h3 className="text-lg font-semibold">{row.falecido || "Sem falecido"}</h3>
+                                                    <Badge tone="slate">#{row.id}</Badge>
+                                                    <Badge tone="blue">{tipoLabel(row.tipo)}</Badge>
+                                                    {row.placa && <Badge tone="emerald">{placaComTraco(row.placa)}</Badge>}
+                                                </div>
+
+                                                <div className="mt-1 text-sm text-slate-600">
+                                                    {row.veiculo_nome || "Sem veículo"} {row.agente ? `• Agente: ${row.agente}` : ""}
+                                                </div>
+
+                                                <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-2 xl:grid-cols-4">
+                                                    <div>Sepultamento: {row.sepultamento_id ?? "-"}</div>
+                                                    <div>Motorista: {row.nome_motorista ?? "-"}</div>
+                                                    <div>Início: {fmtDataHora(row.inicio_iso || row.inicio_ts)}</div>
+                                                    <div>Fim: {fmtDataHora(row.fim_iso || row.fim_ts)}</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:min-w-[420px]">
+                                                <KPI label="Distância" value={fmtKm(row.distancia_km)} compact />
+                                                <KPI label="Vel. média" value={fmtKmH(row.velocidade_media)} compact />
+                                                <KPI label="Vel. máx." value={fmtKmH(row.velocidade_max)} compact />
+                                                <KPI label="Duração" value={fmtDur(row.duracao_s)} compact />
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            <button
+                                                onClick={() => selecionarAtendimento(row)}
+                                                className="rounded-xl border px-3 py-2 text-xs font-medium"
+                                            >
+                                                selecionar
+                                            </button>
+
+                                            <button
+                                                onClick={() => consultarAtendimentoCompleto(row)}
+                                                disabled={itrackLoading || !row.placa}
+                                                className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
+                                            >
+                                                consultar iTrack
+                                            </button>
+
+                                            {pontos.length > 0 && (
+                                                <button
+                                                    onClick={() => {
+                                                        selecionarAtendimento(row);
+                                                        setTab("atendimentos");
+                                                    }}
+                                                    className="rounded-xl border px-3 py-2 text-xs font-medium"
+                                                >
+                                                    ver rota no mapa
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {selected && (
+                                            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_280px]">
+                                                <MapRoute pontos={pontos} height={260} />
+                                                <div className="rounded-xl bg-white p-3 text-xs text-slate-600">
+                                                    <div className="font-semibold text-slate-800">Detalhes operacionais</div>
+                                                    <div className="mt-2">Rastreador iTrack: {row.id_rastreador_itrack ?? "-"}</div>
+                                                    <div>Hod. inicial: {row.hodometro_inicial != null ? fmtM(row.hodometro_inicial) : "-"}</div>
+                                                    <div>Hod. final: {row.hodometro_final != null ? fmtM(row.hodometro_final) : "-"}</div>
+                                                    <div>Dist. hodômetro: {row.distancia_hodometro_m != null ? fmtM(row.distancia_hodometro_m) : "-"}</div>
+                                                    <div>Origem: {row.origem_dados ?? row.origem ?? "-"}</div>
+                                                    {row.observacao && <div className="mt-2">Obs.: {row.observacao}</div>}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
                                 );
                             })}
                         </div>
+                    )}
+                </section>
+            )}
+
+            {tab === "historico" && (
+                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">Histórico detalhado da placa</h2>
+                            <p className="text-sm text-slate-500">
+                                Posições, velocidade, hodômetro, eventos e rota detalhada no período consultado.
+                            </p>
+                        </div>
+                        <div className="text-sm text-slate-500">
+                            Placa: <strong>{placaComTraco(selectedPlaca || historico?.veiculo?.placa)}</strong>
+                        </div>
                     </div>
-                )}
 
-                {historico && (
-                    <div className="mb-6 rounded-xl border p-4">
-                        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                            <div>
-                                <h3 className="font-semibold text-slate-800">
-                                    Histórico: {historico.veiculo?.placa ?? placa}
-                                </h3>
-                                <p className="text-sm text-slate-500">
-                                    {historico.veiculo?.descricao ?? "Veículo"}{" "}
-                                    {historico.veiculo?.modelo ? `• ${historico.veiculo.modelo}` : ""}
-                                </p>
+                    {!historico ? (
+                        <EmptyState title="Nenhum histórico carregado" text="Informe uma placa ou selecione um atendimento e clique em histórico." />
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="rounded-2xl border p-4">
+                                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                    <div>
+                                        <h3 className="font-semibold">{historico.veiculo?.descricao ?? "Veículo"}</h3>
+                                        <p className="text-sm text-slate-500">
+                                            {historico.veiculo?.marca || ""} {historico.veiculo?.modelo || ""} {historico.veiculo?.ano ? `• ${historico.veiculo.ano}` : ""}
+                                        </p>
+                                    </div>
+
+                                    <div className="text-xs text-slate-500 md:text-right">
+                                        <div>Início: {fmtDataHora(resumoHistorico?.inicio)}</div>
+                                        <div>Fim: {fmtDataHora(resumoHistorico?.fim)}</div>
+                                    </div>
+                                </div>
+
+                                {resumoHistorico && (
+                                    <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+                                        <KPI label="Posições" value={String(resumoHistorico.total)} />
+                                        <KPI label="Vel. média" value={fmtKmH(resumoHistorico.vmed)} />
+                                        <KPI label="Vel. máx." value={fmtKmH(resumoHistorico.vmax)} />
+                                        <KPI label="Hod. inicial" value={resumoHistorico.hIni != null ? fmtM(resumoHistorico.hIni) : "-"} />
+                                        <KPI label="Hod. final" value={resumoHistorico.hFim != null ? fmtM(resumoHistorico.hFim) : "-"} />
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="text-xs text-slate-500 md:text-right">
-                                <div>Início: {fmtDataHora(resumoHistorico?.inicio)}</div>
-                                <div>Fim: {fmtDataHora(resumoHistorico?.fim)}</div>
-                            </div>
+                            <MapRoute pontos={pontosHistorico} height={430} />
+
+                            {pontosHistorico.length === 0 && (
+                                <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                                    A iTrack retornou histórico sem latitude/longitude no período.
+                                </div>
+                            )}
+
+                            {Array.isArray(historico.posicoes) && historico.posicoes.length > 0 && (
+                                <div className="overflow-x-auto rounded-2xl border">
+                                    <table className="min-w-full text-left text-sm">
+                                        <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                                            <tr>
+                                                <th className="px-3 py-2">Data/hora</th>
+                                                <th className="px-3 py-2">Localização</th>
+                                                <th className="px-3 py-2">Vel.</th>
+                                                <th className="px-3 py-2">Ignição</th>
+                                                <th className="px-3 py-2">GPS</th>
+                                                <th className="px-3 py-2">Hodômetro</th>
+                                                <th className="px-3 py-2">Eventos</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {historico.posicoes.slice(0, 250).map((p, idx) => (
+                                                <tr key={idx} className="border-b last:border-0">
+                                                    <td className="px-3 py-2 text-xs">{fmtDataHora(p.dataHoraPosicao ?? p.data_hora_posicao)}</td>
+                                                    <td className="px-3 py-2">{p.localizacao || "-"}</td>
+                                                    <td className="px-3 py-2">{fmtKmH(p.velocidade)}</td>
+                                                    <td className="px-3 py-2">{Number(p.ignicao) === 1 ? "Ligada" : "Desligada"}</td>
+                                                    <td className="px-3 py-2">{p.gps ?? "-"}</td>
+                                                    <td className="px-3 py-2">{p.hodometro != null ? fmtM(p.hodometro) : "-"}</td>
+                                                    <td className="px-3 py-2 text-xs">
+                                                        {(p.eventos || []).map((e) => e.descricaoEvento).filter(Boolean).join(", ") || "-"}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {tab === "distancias" && (
+                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">Distância por hodômetro</h2>
+                            <p className="text-sm text-slate-500">
+                                Distância percorrida no período, hodômetro inicial e final.
+                            </p>
                         </div>
 
-                        {resumoHistorico && (
-                            <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-                                <KPI label="Posições" value={String(resumoHistorico.total)} />
-                                <KPI label="Vel. máx." value={fmtKmH(resumoHistorico.vmax)} />
-                                <KPI label="Hod. inicial" value={resumoHistorico.hIni != null ? fmtM(resumoHistorico.hIni) : "-"} />
-                                <KPI label="Hod. final" value={resumoHistorico.hFim != null ? fmtM(resumoHistorico.hFim) : "-"} />
-                            </div>
-                        )}
-
-                        <MapRoute pontos={pontosHistorico} height={380} />
-
-                        {pontosHistorico.length === 0 && (
-                            <div className="mt-2 text-sm text-slate-500">
-                                Nenhuma posição com latitude/longitude foi retornada para este período.
-                            </div>
-                        )}
+                        <button
+                            onClick={() => fetchDistancia()}
+                            disabled={itrackLoading || !selectedPlaca}
+                            className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60"
+                        >
+                            Atualizar distância
+                        </button>
                     </div>
-                )}
 
-                {distancias.length > 0 && (
-                    <div className="rounded-xl border p-4">
-                        <h3 className="mb-3 font-semibold text-slate-800">
-                            Distância por hodômetro ({distancias.length})
-                        </h3>
-
-                        <div className="overflow-x-auto">
+                    {distancias.length === 0 ? (
+                        <EmptyState title="Nenhuma distância carregada" text="Consulte a distância de uma placa ou de um atendimento." />
+                    ) : (
+                        <div className="overflow-x-auto rounded-2xl border">
                             <table className="min-w-full text-left text-sm">
-                                <thead className="border-b text-xs uppercase text-slate-500">
+                                <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                                     <tr>
-                                        <th className="px-2 py-2">Placa</th>
-                                        <th className="px-2 py-2">Veículo</th>
-                                        <th className="px-2 py-2">Cliente</th>
-                                        <th className="px-2 py-2">Distância</th>
-                                        <th className="px-2 py-2">Hod. inicial</th>
-                                        <th className="px-2 py-2">Hod. final</th>
-                                        <th className="px-2 py-2">Período</th>
+                                        <th className="px-3 py-2">Placa</th>
+                                        <th className="px-3 py-2">Veículo</th>
+                                        <th className="px-3 py-2">Cliente</th>
+                                        <th className="px-3 py-2">Distância</th>
+                                        <th className="px-3 py-2">Hod. inicial</th>
+                                        <th className="px-3 py-2">Hod. final</th>
+                                        <th className="px-3 py-2">Período</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {distancias.map((d, idx) => (
                                         <tr key={`${d.placa}-${d.id ?? idx}`} className="border-b last:border-0">
-                                            <td className="px-2 py-2 font-medium">{d.placa ?? placa}</td>
-                                            <td className="px-2 py-2">{d.descricaoVeiculo ?? d.descricao_veiculo ?? "-"}</td>
-                                            <td className="px-2 py-2">{d.cliente ?? "-"}</td>
-                                            <td className="px-2 py-2">{fmtKm(distanciaKm(d))}</td>
-                                            <td className="px-2 py-2">{fmtM(d.hodometroInicial ?? d.hodometro_inicial)}</td>
-                                            <td className="px-2 py-2">{fmtM(d.hodometroFinal ?? d.hodometro_final)}</td>
-                                            <td className="px-2 py-2 text-xs text-slate-500">
+                                            <td className="px-3 py-2 font-medium">{placaComTraco(d.placa ?? selectedPlaca)}</td>
+                                            <td className="px-3 py-2">{d.descricaoVeiculo ?? d.descricao_veiculo ?? "-"}</td>
+                                            <td className="px-3 py-2">{d.cliente ?? "-"}</td>
+                                            <td className="px-3 py-2 font-semibold">{fmtKm(distanciaKm(d))}</td>
+                                            <td className="px-3 py-2">{fmtM(d.hodometroInicial ?? d.hodometro_inicial)}</td>
+                                            <td className="px-3 py-2">{fmtM(d.hodometroFinal ?? d.hodometro_final)}</td>
+                                            <td className="px-3 py-2 text-xs text-slate-500">
                                                 {fmtDataHora(d.data_inicio)} até {fmtDataHora(d.data_fim)}
                                             </td>
                                         </tr>
@@ -864,109 +1322,14 @@ export default function TelemetriaPage() {
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                )}
-            </section>
-
-            <section>
-                <div className="mb-3 flex items-center justify-between">
-                    <div>
-                        <h2 className="text-lg font-semibold text-slate-800">Serviços funerários</h2>
-                        <p className="text-sm text-slate-500">
-                            Registros locais com falecido, agente, veículo e rota vinculada ao serviço.
-                        </p>
-                    </div>
-                    <div className="text-xs text-slate-500">{rows.length} registro(s)</div>
-                </div>
-
-                {rows.length === 0 && !loading && (
-                    <div className="text-sm text-slate-500">Nenhum registro encontrado.</div>
-                )}
-
-                <div className="space-y-4">
-                    {rows.map((row) => {
-                        const open = openId === row.id;
-                        const pontos = Array.isArray(row.pontos_json)
-                            ? (row.pontos_json as Ponto[])
-                            : parsePontosJson(row.pontos_json);
-
-                        return (
-                            <div
-                                key={row.id}
-                                className="rounded-xl border bg-white p-4 shadow-sm"
-                            >
-                                <div
-                                    className="flex cursor-pointer flex-col gap-2 md:flex-row md:items-center md:justify-between"
-                                    onClick={() => setOpenId(open ? null : row.id)}
-                                >
-                                    <div>
-                                        <div className="font-medium text-slate-800">
-                                            {row.veiculo_nome || "Sem veículo"}
-                                            {row.placa ? ` • ${row.placa}` : ""}
-                                        </div>
-
-                                        <div className="text-xs text-slate-500">
-                                            {row.falecido ? `Falecido: ${row.falecido}` : "Sem falecido"} •{" "}
-                                            {row.tipo || "tipo indefinido"}
-                                            {row.agente ? ` • Agente: ${row.agente}` : ""}
-                                        </div>
-                                    </div>
-
-                                    <div className="text-xs text-slate-400">
-                                        {fmtDataHora(row.criado_em)}
-                                    </div>
-                                </div>
-
-                                {open && (
-                                    <div className="mt-4 space-y-4">
-                                        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                                            <KPI label="Distância" value={fmtKm(row.distancia_km)} />
-                                            <KPI label="Velocidade Média" value={fmtKmH(row.velocidade_media)} />
-                                            <KPI label="Velocidade Máx." value={fmtKmH(row.velocidade_max)} />
-                                            <KPI label="Duração" value={fmtDur(row.duracao_s)} />
-                                        </div>
-
-                                        {(row.hodometro_inicial || row.hodometro_final || row.distancia_hodometro_m) && (
-                                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                                                <KPI label="Hod. inicial" value={row.hodometro_inicial != null ? fmtM(row.hodometro_inicial) : "-"} />
-                                                <KPI label="Hod. final" value={row.hodometro_final != null ? fmtM(row.hodometro_final) : "-"} />
-                                                <KPI label="Dist. hodômetro" value={row.distancia_hodometro_m != null ? fmtM(row.distancia_hodometro_m) : "-"} />
-                                            </div>
-                                        )}
-
-                                        <MapRoute pontos={pontos} height={280} />
-
-                                        <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
-                                            <div className="rounded-md bg-slate-50 p-2">
-                                                <div>Sepultamento ID: {row.sepultamento_id ?? "-"}</div>
-                                                <div>Rastreador iTrack: {row.id_rastreador_itrack ?? "-"}</div>
-                                                <div>Motorista: {row.nome_motorista ?? "-"}</div>
-                                            </div>
-
-                                            <div className="rounded-md bg-slate-50 p-2">
-                                                <div>Início: {fmtDataHora(row.inicio_iso)}</div>
-                                                <div>Fim: {fmtDataHora(row.fim_iso)}</div>
-                                                <div>Origem: {row.origem_dados ?? row.origem ?? "-"}</div>
-                                            </div>
-                                        </div>
-
-                                        {row.observacao && (
-                                            <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600">
-                                                Observação: {row.observacao}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </section>
+                    )}
+                </section>
+            )}
         </div>
     );
 }
 
-/* ======================= UI Componentes menores ======================= */
+/* ======================= Componentes menores ======================= */
 function KPI({
     label,
     value,
@@ -979,12 +1342,62 @@ function KPI({
     compact?: boolean;
 }) {
     return (
-        <div className={`rounded-lg border text-center ${compact ? "p-2" : "p-3"}`}>
+        <div className={`rounded-xl border bg-white text-center ${compact ? "p-2" : "p-3"}`}>
             <div className="text-xs text-slate-500">{label}</div>
-            <div className={`${compact ? "text-sm" : "text-lg"} font-semibold`}>
-                {value}
-            </div>
+            <div className={`${compact ? "text-sm" : "text-xl"} font-semibold`}>{value}</div>
             {sub && <div className="text-xs text-slate-400">{sub}</div>}
+        </div>
+    );
+}
+
+function Badge({
+    children,
+    tone = "slate",
+}: {
+    children: React.ReactNode;
+    tone?: string;
+}) {
+    const cls =
+        tone === "emerald"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : tone === "amber"
+                ? "bg-amber-50 text-amber-700 border-amber-200"
+                : tone === "blue"
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-slate-50 text-slate-700 border-slate-200";
+
+    return (
+        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
+            {children}
+        </span>
+    );
+}
+
+function TabButton({
+    active,
+    onClick,
+    children,
+}: {
+    active: boolean;
+    onClick: () => void;
+    children: React.ReactNode;
+}) {
+    return (
+        <button
+            onClick={onClick}
+            className={`rounded-xl border px-4 py-2 text-sm font-medium ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700"
+                }`}
+        >
+            {children}
+        </button>
+    );
+}
+
+function EmptyState({ title, text }: { title: string; text: string }) {
+    return (
+        <div className="rounded-2xl border border-dashed bg-slate-50 p-8 text-center">
+            <div className="font-semibold text-slate-700">{title}</div>
+            <div className="mt-1 text-sm text-slate-500">{text}</div>
         </div>
     );
 }
