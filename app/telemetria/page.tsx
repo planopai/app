@@ -590,7 +590,7 @@ function LiveVehiclesMap({
                     const html = `
             <div class="live-car-marker ${moving ? "is-moving" : ""} ${selected ? "is-selected" : ""}">
               <span class="live-car-emoji">🚗</span>
-              <span class="live-car-plate">${escapeHtml(placaComTraco(v.placa))}</span>
+              <span class="live-car-plate">${escapeHtml(`${veiculoDescricao(v)} • ${placaComTraco(v.placa)}`)}</span>
               ${moving ? `<span class="live-car-pulse"></span>` : ""}
             </div>
           `;
@@ -598,13 +598,12 @@ function LiveVehiclesMap({
                     const icon = L.divIcon({
                         className: "live-car-div-icon",
                         html,
-                        iconSize: [58, 52],
-                        iconAnchor: [29, 26],
+                        iconSize: [170, 54],
+                        iconAnchor: [85, 27],
                         popupAnchor: [0, -20],
                     });
 
                     const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-                    marker.bindPopup(liveVehiclePopup(v));
                     marker.on("click", () => onSelect?.(v));
                     layersRef.current.push(marker);
                     bounds.push([p.lat, p.lng]);
@@ -681,6 +680,9 @@ function LiveVehiclesMap({
           background: white;
           padding: 1px 6px;
           color: #0f172a;
+          max-width: 160px;
+          overflow: hidden;
+          text-overflow: ellipsis;
           font-size: 10px;
           font-weight: 800;
           letter-spacing: 0.02em;
@@ -761,6 +763,7 @@ export default function TelemetriaOperacionalPage() {
     const [tempoRealAtivo, setTempoRealAtivo] = useState(true);
     const [intervaloTempoRealMs, setIntervaloTempoRealMs] = useState(15000);
     const [ultimaAtualizacaoAoVivo, setUltimaAtualizacaoAoVivo] = useState<Date | null>(null);
+    const [modalPlaca, setModalPlaca] = useState("");
     const liveFetchingRef = useRef(false);
 
     const selectedAtendimento = useMemo(
@@ -820,9 +823,7 @@ export default function TelemetriaOperacionalPage() {
             const list = cache ? payload?.dados : payload?.dados?.data;
             setVeiculos(Array.isArray(list) ? list : []);
             setUltimaAtualizacaoAoVivo(new Date());
-            if (!silent) {
-                setMsg(cache ? "Veículos carregados do cache local." : "Localização atual dos veículos carregada da iTrack.");
-            }
+            // Sem mensagem informativa para manter a tela limpa.
         } catch (e: any) {
             if (!silent) setMsg(e?.message || "Falha ao consultar veículos.");
         } finally {
@@ -989,6 +990,12 @@ export default function TelemetriaOperacionalPage() {
         return veiculos.find((v) => normalizePlaca(v.placa) === placa) || null;
     }, [veiculos, selectedPlaca, selectedAtendimento]);
 
+    const veiculoModal = useMemo(() => {
+        const placa = normalizePlaca(modalPlaca);
+        if (!placa) return null;
+        return veiculos.find((v) => normalizePlaca(v.placa) === placa) || null;
+    }, [veiculos, modalPlaca]);
+
     const rowsFiltradas = useMemo(() => {
         const q = busca.trim().toLowerCase();
         return rows.filter((r) => {
@@ -1059,21 +1066,38 @@ export default function TelemetriaOperacionalPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6">
-            <header className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                    <div>
-                        <div className="mb-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                            Central operacional • Telemetria funerária + iTrack
-                        </div>
-                        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-                            Controle de veículos e atendimentos funerários
-                        </h1>
-                        <p className="mt-1 text-sm text-slate-500">
-                            Veja onde estão os veículos, consulte histórico por placa e acompanhe os atendimentos com rota, hodômetro e status.
-                        </p>
+            <section className="mb-5 rounded-2xl border bg-white p-3 shadow-sm md:p-4">
+                {tab === "ao_vivo" ? (
+                    <LiveVehiclesMap
+                        veiculos={veiculos}
+                        selectedPlaca={selectedPlaca}
+                        loading={itrackLoading}
+                        lastUpdate={ultimaAtualizacaoAoVivo}
+                        onSelect={(v) => {
+                            const placa = normalizePlaca(v.placa);
+                            setSelectedPlaca(placa);
+                            setModalPlaca(placa);
+                        }}
+                        height={520}
+                    />
+                ) : (
+                    <MapRoute pontos={mapaPrincipalPontos} height={520} showSummary={mapaPrincipalPontos.length > 1} />
+                )}
+
+                {mapaPrincipalPontos.length === 0 && tab !== "ao_vivo" && (
+                    <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                        Clique em <strong>Onde estão os veículos</strong> para carregar as posições atuais.
+                    </div>
+                )}
+
+                <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="grid flex-1 gap-2 sm:grid-cols-3">
+                        <KPI label="Veículos localizados" value={String(kpis.veiculos)} />
+                        <KPI label="Em movimento" value={String(kpis.emMovimento)} />
+                        <KPI label="Ignição ligada" value={String(kpis.ligados)} />
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 text-xs">
                         <button
                             onClick={() => {
                                 setTab("ao_vivo");
@@ -1092,17 +1116,49 @@ export default function TelemetriaOperacionalPage() {
                         >
                             Atualizar tudo
                         </button>
+
+                        <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
+                            <input
+                                type="checkbox"
+                                checked={usarCacheVeiculos}
+                                onChange={(e) => setUsarCacheVeiculos(e.target.checked)}
+                            />
+                            cache
+                        </label>
+
+                        <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
+                            <input
+                                type="checkbox"
+                                checked={tempoRealAtivo}
+                                onChange={(e) => setTempoRealAtivo(e.target.checked)}
+                            />
+                            tempo real
+                        </label>
+
+                        <select
+                            value={intervaloTempoRealMs}
+                            onChange={(e) => setIntervaloTempoRealMs(Number(e.target.value))}
+                            className="rounded-lg border px-3 py-2"
+                            title="Intervalo de atualização"
+                        >
+                            <option value={5000}>5s</option>
+                            <option value={10000}>10s</option>
+                            <option value={15000}>15s</option>
+                            <option value={30000}>30s</option>
+                            <option value={60000}>60s</option>
+                        </select>
+
+                        <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
+                            <input
+                                type="checkbox"
+                                checked={salvarConsultas}
+                                onChange={(e) => setSalvarConsultas(e.target.checked)}
+                            />
+                            salvar
+                        </label>
                     </div>
                 </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    <KPI label="Veículos localizados" value={String(kpis.veiculos)} sub="iTrack / cache" />
-                    <KPI label="Em movimento" value={String(kpis.emMovimento)} sub="velocidade > 3 km/h" />
-                    <KPI label="Ignição ligada" value={String(kpis.ligados)} sub="status atual" />
-                    <KPI label="Atendimentos" value={String(kpis.atendimentos)} sub="registros locais" />
-                    <KPI label="Com placa" value={String(kpis.atendComPlaca)} sub={`Hoje: ${kpis.hoje}`} />
-                </div>
-            </header>
+            </section>
 
             {msg && (
                 <div className="mb-5 rounded-xl border bg-white p-3 text-sm text-slate-700 shadow-sm">
@@ -1110,196 +1166,11 @@ export default function TelemetriaOperacionalPage() {
                 </div>
             )}
 
-            <section className="mb-5 grid gap-5 xl:grid-cols-[1.45fr_0.85fr]">
-                <div className="rounded-2xl border bg-white p-4 shadow-sm">
-                    <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <h2 className="text-lg font-semibold">Mapa operacional</h2>
-                            <p className="text-sm text-slate-500">
-                                Mostra os carros ao vivo no mapa com atualização automática, além da rota do atendimento ou histórico consultado.
-                            </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 text-xs">
-                            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
-                                <input
-                                    type="checkbox"
-                                    checked={usarCacheVeiculos}
-                                    onChange={(e) => setUsarCacheVeiculos(e.target.checked)}
-                                />
-                                usar cache dos veículos
-                            </label>
-
-                            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
-                                <input
-                                    type="checkbox"
-                                    checked={tempoRealAtivo}
-                                    onChange={(e) => setTempoRealAtivo(e.target.checked)}
-                                />
-                                tempo real
-                            </label>
-
-                            <select
-                                value={intervaloTempoRealMs}
-                                onChange={(e) => setIntervaloTempoRealMs(Number(e.target.value))}
-                                className="rounded-lg border px-3 py-2"
-                                title="Intervalo de atualização"
-                            >
-                                <option value={5000}>5s</option>
-                                <option value={10000}>10s</option>
-                                <option value={15000}>15s</option>
-                                <option value={30000}>30s</option>
-                                <option value={60000}>60s</option>
-                            </select>
-
-                            <label className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
-                                <input
-                                    type="checkbox"
-                                    checked={salvarConsultas}
-                                    onChange={(e) => setSalvarConsultas(e.target.checked)}
-                                />
-                                salvar consultas
-                            </label>
-                        </div>
-                    </div>
-
-                    {tab === "ao_vivo" ? (
-                        <LiveVehiclesMap
-                            veiculos={veiculos}
-                            selectedPlaca={selectedPlaca}
-                            loading={itrackLoading}
-                            lastUpdate={ultimaAtualizacaoAoVivo}
-                            onSelect={(v) => {
-                                setSelectedPlaca(normalizePlaca(v.placa));
-                            }}
-                            height={430}
-                        />
-                    ) : (
-                        <MapRoute pontos={mapaPrincipalPontos} height={430} showSummary={mapaPrincipalPontos.length > 1} />
-                    )}
-
-                    {mapaPrincipalPontos.length === 0 && tab !== "ao_vivo" && (
-                        <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
-                            Clique em <strong>Onde estão os veículos</strong> para carregar as posições atuais.
-                        </div>
-                    )}
-                </div>
-
-                <aside className="space-y-5">
-                    <div className="rounded-2xl border bg-white p-4 shadow-sm">
-                        <h2 className="text-lg font-semibold">Consulta rápida</h2>
-                        <p className="mb-3 text-sm text-slate-500">
-                            Use uma placa ou selecione um atendimento abaixo.
-                        </p>
-
-                        <div className="space-y-3">
-                            <div>
-                                <label className="mb-1 block text-xs font-medium text-slate-500">Placa</label>
-                                <input
-                                    value={selectedPlaca}
-                                    onChange={(e) => setSelectedPlaca(normalizePlaca(e.target.value))}
-                                    placeholder="ABC1234"
-                                    className="w-full rounded-xl border px-3 py-2 text-sm"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-3">
-                                <div>
-                                    <label className="mb-1 block text-xs font-medium text-slate-500">Início yyyyMMddHHmmss</label>
-                                    <input
-                                        value={inicio}
-                                        onChange={(e) => setInicio(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                                        className="w-full rounded-xl border px-3 py-2 text-sm"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="mb-1 block text-xs font-medium text-slate-500">Fim yyyyMMddHHmmss</label>
-                                    <input
-                                        value={fim}
-                                        onChange={(e) => setFim(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                                        className="w-full rounded-xl border px-3 py-2 text-sm"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                <button
-                                    onClick={() => fetchHistorico()}
-                                    disabled={itrackLoading}
-                                    className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
-                                >
-                                    Histórico
-                                </button>
-
-                                <button
-                                    onClick={() => fetchDistancia()}
-                                    disabled={itrackLoading}
-                                    className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
-                                >
-                                    Hodômetro
-                                </button>
-
-                                <button
-                                    onClick={() => {
-                                        setInicio(todayStart14());
-                                        setFim(todayEnd14());
-                                    }}
-                                    className="rounded-xl border px-3 py-2 text-sm font-medium"
-                                >
-                                    Hoje
-                                </button>
-
-                                <button
-                                    onClick={() => fetchVeiculos(usarCacheVeiculos)}
-                                    disabled={itrackLoading}
-                                    className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
-                                >
-                                    Veículos
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="rounded-2xl border bg-white p-4 shadow-sm">
-                        <h2 className="text-lg font-semibold">Atendimento selecionado</h2>
-
-                        {!selectedAtendimento ? (
-                            <p className="mt-2 text-sm text-slate-500">
-                                Selecione um atendimento para cruzar com a placa e consultar rota.
-                            </p>
-                        ) : (
-                            <div className="mt-3 space-y-3">
-                                <div>
-                                    <div className="font-semibold">{selectedAtendimento.falecido || "Sem falecido"}</div>
-                                    <div className="text-sm text-slate-500">
-                                        #{selectedAtendimento.id} • {tipoLabel(selectedAtendimento.tipo)} • {placaComTraco(selectedAtendimento.placa)}
-                                    </div>
-                                </div>
-
-                                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
-                                    <div>Veículo: {selectedAtendimento.veiculo_nome || "-"}</div>
-                                    <div>Agente: {selectedAtendimento.agente || "-"}</div>
-                                    <div>Motorista: {selectedAtendimento.nome_motorista || "-"}</div>
-                                    <div>Início: {fmtDataHora(selectedAtendimento.inicio_iso || selectedAtendimento.inicio_ts)}</div>
-                                    <div>Fim: {fmtDataHora(selectedAtendimento.fim_iso || selectedAtendimento.fim_ts)}</div>
-                                    {distanciaVeiculoAtendimento != null && (
-                                        <div>Distância estimada veículo ↔ rota: {fmtKm(distanciaVeiculoAtendimento)}</div>
-                                    )}
-                                </div>
-
-                                <button
-                                    onClick={() => consultarAtendimentoCompleto(selectedAtendimento)}
-                                    disabled={itrackLoading || !selectedAtendimento.placa}
-                                    className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
-                                >
-                                    Consultar rota e hodômetro deste atendimento
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </aside>
-            </section>
+            <VehicleSpeedModal
+                veiculo={veiculoModal}
+                lastUpdate={ultimaAtualizacaoAoVivo}
+                onClose={() => setModalPlaca("")}
+            />
 
             <nav className="mb-5 flex flex-wrap gap-2">
                 <TabButton active={tab === "ao_vivo"} onClick={() => {
@@ -1324,9 +1195,7 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Frota iTrack</h2>
-                            <p className="text-sm text-slate-500">
-                                Última posição, ignição, velocidade, GPS, motorista e eventos.
-                            </p>
+
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
                             <span>{veiculos.length} veículo(s)</span>
@@ -1417,9 +1286,7 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Atendimentos funerários</h2>
-                            <p className="text-sm text-slate-500">
-                                Lista local com vínculo por placa, falecido, agente, rota e hodômetro.
-                            </p>
+
                         </div>
 
                         <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
@@ -1550,9 +1417,7 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Histórico detalhado da placa</h2>
-                            <p className="text-sm text-slate-500">
-                                Posições, velocidade, hodômetro, eventos e rota detalhada no período consultado.
-                            </p>
+
                         </div>
                         <div className="text-sm text-slate-500">
                             Placa: <strong>{placaComTraco(selectedPlaca || historico?.veiculo?.placa)}</strong>
@@ -1639,9 +1504,7 @@ export default function TelemetriaOperacionalPage() {
                     <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Distância por hodômetro</h2>
-                            <p className="text-sm text-slate-500">
-                                Distância percorrida no período, hodômetro inicial e final.
-                            </p>
+
                         </div>
 
                         <button
@@ -1689,6 +1552,104 @@ export default function TelemetriaOperacionalPage() {
                     )}
                 </section>
             )}
+        </div>
+    );
+}
+
+
+function VehicleSpeedModal({
+    veiculo,
+    lastUpdate,
+    onClose,
+}: {
+    veiculo: ItrackVeiculo | null;
+    lastUpdate?: Date | null;
+    onClose: () => void;
+}) {
+    if (!veiculo) return null;
+
+    const velocidade = Math.max(0, Number(veiculo.velocidade || 0));
+    const maxSpeed = 180;
+    const pct = Math.min(1, velocidade / maxSpeed);
+    const angle = -130 + pct * 260;
+    const st = statusVeiculo(veiculo);
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:items-center">
+            <div className="w-full max-w-md overflow-hidden rounded-[1.75rem] border border-cyan-200/20 bg-slate-950 text-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                    <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Painel do veículo</div>
+                        <div className="mt-1 text-lg font-black leading-tight">{veiculoDescricao(veiculo)}</div>
+                        <div className="text-sm text-slate-300">{placaComTraco(veiculo.placa)}</div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/10 text-xl font-bold hover:bg-white/20"
+                        aria-label="Fechar"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div className="p-5">
+                    <div className="mx-auto flex aspect-square max-w-[310px] items-center justify-center rounded-full border border-cyan-200/15 bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#020617_62%,_#000_100%)] p-5 shadow-[0_0_45px_rgba(34,211,238,0.20)]">
+                        <div className="relative h-full w-full rounded-full border border-white/10 bg-slate-900/60">
+                            <div className="absolute inset-5 rounded-full border border-cyan-300/10" />
+
+                            {Array.from({ length: 10 }).map((_, i) => {
+                                const a = -130 + i * (260 / 9);
+                                const major = i % 3 === 0;
+                                return (
+                                    <div
+                                        key={i}
+                                        className="absolute left-1/2 top-1/2 origin-left"
+                                        style={{ transform: `rotate(${a}deg) translateX(92px)` }}
+                                    >
+                                        <div className={`${major ? "h-1.5 w-7" : "h-1 w-4"} rounded-full bg-cyan-200/70`} />
+                                    </div>
+                                );
+                            })}
+
+                            <div className="absolute inset-x-0 top-[18%] text-center text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
+                                km/h
+                            </div>
+
+                            <div
+                                className="absolute left-1/2 top-1/2 h-1.5 w-[38%] origin-left rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)] transition-transform duration-500"
+                                style={{ transform: `rotate(${angle}deg) translateY(-50%)` }}
+                            />
+                            <div className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-200 bg-slate-950 shadow-[0_0_18px_rgba(103,232,249,0.75)]" />
+
+                            <div className="absolute inset-x-0 bottom-[22%] text-center">
+                                <div className="font-mono text-6xl font-black tabular-nums text-white drop-shadow-[0_0_18px_rgba(34,211,238,0.45)]">
+                                    {velocidade.toFixed(0)}
+                                </div>
+                                <div className="mt-1 text-sm font-semibold text-cyan-200">{fmtKmH(velocidade)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-400">Motorista</span>
+                            <span className="text-right font-semibold">{veiculoMotorista(veiculo)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-400">Status</span>
+                            <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold">{st.label}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-400">Ignição</span>
+                            <span className="font-semibold">{Number(veiculo.ignicao) === 1 ? "Ligada" : "Desligada"}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-400">Atualizado</span>
+                            <span className="text-right font-semibold">{lastUpdate ? lastUpdate.toLocaleTimeString("pt-BR") : fmtDataHora(veiculoDataPosicao(veiculo))}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
