@@ -145,10 +145,10 @@ type ItrackDistancia = {
 };
 
 type PeriodoRapido = "1d" | "7d" | "30d" | "custom";
-type VeiculoFiltroStatus = "todos" | "em_movimento" | "ligado_parado" | "desligado" | "sem_localizacao" | "posicao_antiga" | "excesso_velocidade";
+type VeiculoFiltroStatus = "todos" | "em_movimento" | "ligado_parado" | "desligado" | "sem_localizacao" | "excesso_velocidade";
 type SortDirection = "asc" | "desc";
-type MotoristaSortKey = "motorista" | "velocidade_media" | "velocidade_maxima" | "total_veiculos" | "total_posicoes" | "ultima_posicao";
-type HistoricoSortKey = "placa" | "distancia" | "velocidade_media" | "velocidade_maxima" | "hodometro_final";
+type MotoristaSortKey = "motorista" | "velocidade_minima" | "velocidade_maxima" | "km_total";
+type HistoricoSortKey = "placa" | "distancia" | "hodometro_final";
 
 type MotoristaResumo = {
     motorista?: string | null;
@@ -157,7 +157,15 @@ type MotoristaResumo = {
     total_veiculos?: number | string | null;
     placas?: string | null;
     velocidade_media?: number | string | null;
+    velocidade_minima?: number | string | null;
+    velocidadeMinima?: number | string | null;
     velocidade_maxima?: number | string | null;
+    velocidadeMaxima?: number | string | null;
+    total_km?: number | string | null;
+    km_total?: number | string | null;
+    distancia_km?: number | string | null;
+    distancia_percorrida_km?: number | string | null;
+    distancia_percorrida_m?: number | string | null;
     primeira_posicao?: string | null;
     ultima_posicao?: string | null;
 };
@@ -191,8 +199,6 @@ type Tab = "ao_vivo" | "lista_veiculos" | "atendimentos" | "motoristas" | "histo
 const TELEMETRIA_URL = `${API}/api/php/telemetria.php`;
 const LIVE_REFRESH_MS = 10_000;
 const LIMITE_VELOCIDADE_ALERTA = 80;
-const POSICAO_ATRASADA_MIN = 15;
-const POSICAO_SEM_SINAL_MIN = 60;
 
 const isPresentNumber = (v: unknown): v is number | string => {
     if (v === null || v === undefined || v === "") return false;
@@ -545,12 +551,6 @@ function distanciaKm(d: ItrackDistancia) {
     return n(d.distanciaPercorrida, 0) || 0;
 }
 
-function fonteDistanciaLabel(fonte?: string | null) {
-    if (fonte === "distancia_hodometro") return "iTrack / Hodômetro";
-    if (fonte === "posicoes_estimado") return "Estimado por GPS";
-    return fonte || "-";
-}
-
 function statusVeiculo(v: ItrackVeiculo) {
     const ignicao = Number(v.ignicao);
     const vel = Number(v.velocidade || 0);
@@ -560,15 +560,44 @@ function statusVeiculo(v: ItrackVeiculo) {
     return { label: "Desligado", tone: "slate" };
 }
 
-function statusAtualizacaoVeiculo(v: ItrackVeiculo) {
-    const d = parseDateMaybe(veiculoDataPosicao(v));
-    if (!d) return { label: "Sem data", tone: "red", minutos: null as number | null };
+function motoristaVelocidadeMinima(m: MotoristaResumo) {
+    const candidatos = [
+        m.velocidade_minima,
+        m.velocidadeMinima,
+        (m as any).vel_min_kmh,
+        (m as any).velocidade_min,
+        (m as any).vel_minima_kmh,
+    ];
 
-    const minutos = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
-    if (minutos >= POSICAO_SEM_SINAL_MIN) return { label: `Sem sinal ${Math.floor(minutos / 60)}h`, tone: "red", minutos };
-    if (minutos >= POSICAO_ATRASADA_MIN) return { label: `Atrasado ${minutos}min`, tone: "amber", minutos };
-    if (minutos <= 1) return { label: "Agora", tone: "emerald", minutos };
-    return { label: `${minutos}min`, tone: "emerald", minutos };
+    const valor = candidatos.find((x) => isPresentNumber(x));
+    return valor ?? null;
+}
+
+function motoristaVelocidadeMaxima(m: MotoristaResumo) {
+    const candidatos = [m.velocidade_maxima, m.velocidadeMaxima, (m as any).vel_max_kmh, (m as any).velocidade_max];
+    const valor = candidatos.find((x) => isPresentNumber(x));
+    return valor ?? null;
+}
+
+function motoristaKmTotal(m: MotoristaResumo) {
+    const candidatos = [
+        m.total_km,
+        m.km_total,
+        m.distancia_km,
+        m.distancia_percorrida_km,
+        (m as any).distanciaPercorridaKm,
+        (m as any).distancia_total_km,
+        (m as any).km_rodado,
+        (m as any).km_rodados,
+    ];
+
+    const km = candidatos.find((x) => isPresentNumber(x));
+    if (km != null) return Number(km);
+
+    if (isPresentNumber(m.distancia_percorrida_m)) return Number(m.distancia_percorrida_m) / 1000;
+    if (isPresentNumber((m as any).distancia_total_m)) return Number((m as any).distancia_total_m) / 1000;
+
+    return null;
 }
 
 function velocidadeAlerta(v?: number | string | null) {
@@ -651,14 +680,12 @@ function loadLeafletFromCDN(): Promise<any> {
 
 function liveVehiclePopup(v: ItrackVeiculo) {
     const st = statusVeiculo(v);
-    const atualizacao = statusAtualizacaoVeiculo(v);
     const eventos = veiculoEventos(v).map((ev) => ev.descricaoEvento).filter(Boolean).join(", ");
     const parts = [
         `<strong>🚗 ${escapeHtml(placaComTraco(v.placa))}</strong>`,
         escapeHtml(veiculoDescricao(v)),
         `Status: <strong>${escapeHtml(st.label)}</strong>`,
         `Velocidade: ${escapeHtml(fmtKmH(v.velocidade))}${velocidadeAlerta(v.velocidade) ? " ⚠️" : ""}`,
-        `Sinal: ${escapeHtml(atualizacao.label)}`,
         `Ignição: ${Number(v.ignicao) === 1 ? "Ligada" : "Desligada"}`,
         `GPS: ${escapeHtml(v.gps ?? "-")}`,
         `Motorista: ${escapeHtml(veiculoMotorista(v))}`,
@@ -1268,13 +1295,11 @@ export default function TelemetriaOperacionalPage() {
         return veiculos.filter((v) => {
             const ponto = veiculoPonto(v);
             const st = statusVeiculo(v).label;
-            const atualizacao = statusAtualizacaoVeiculo(v);
 
             if (filtroStatusVeiculo === "em_movimento" && st !== "Em movimento") return false;
             if (filtroStatusVeiculo === "ligado_parado" && st !== "Ligado/parado") return false;
             if (filtroStatusVeiculo === "desligado" && st !== "Desligado") return false;
             if (filtroStatusVeiculo === "sem_localizacao" && ponto) return false;
-            if (filtroStatusVeiculo === "posicao_antiga" && !(atualizacao.minutos != null && atualizacao.minutos >= POSICAO_ATRASADA_MIN)) return false;
             if (filtroStatusVeiculo === "excesso_velocidade" && !velocidadeAlerta(v.velocidade)) return false;
             if (!q) return true;
 
@@ -1296,8 +1321,10 @@ export default function TelemetriaOperacionalPage() {
     const motoristasOrdenados = useMemo(() => {
         const valor = (m: MotoristaResumo) => {
             if (sortMotoristasBy === "motorista") return String(m.motorista ?? m.nome_motorista ?? "").toLowerCase();
-            if (sortMotoristasBy === "ultima_posicao") return parseDateMaybe(m.ultima_posicao)?.getTime() ?? 0;
-            return Number((m as any)[sortMotoristasBy] ?? 0);
+            if (sortMotoristasBy === "velocidade_minima") return Number(motoristaVelocidadeMinima(m) ?? -1);
+            if (sortMotoristasBy === "velocidade_maxima") return Number(motoristaVelocidadeMaxima(m) ?? -1);
+            if (sortMotoristasBy === "km_total") return Number(motoristaKmTotal(m) ?? -1);
+            return 0;
         };
 
         return [...motoristas].sort((a, b) => {
@@ -1324,13 +1351,12 @@ export default function TelemetriaOperacionalPage() {
     }, [historicoVeicular, sortHistoricoBy, sortHistoricoDirection]);
 
     const exportarVeiculosCsv = useCallback(() => {
-        baixarCsv("veiculos-itrack.csv", ["Placa", "Veículo", "Cliente", "Motorista", "Status", "Sinal", "Velocidade", "Ignição", "GPS", "Última posição", "Localização", "Hodômetro"], veiculosFiltrados.map((v) => [
+        baixarCsv("veiculos-itrack.csv", ["Placa", "Veículo", "Cliente", "Motorista", "Status", "Velocidade", "Ignição", "GPS", "Última posição", "Localização", "Hodômetro"], veiculosFiltrados.map((v) => [
             placaComTraco(v.placa),
             veiculoDescricao(v),
             veiculoCliente(v),
             veiculoMotorista(v),
             statusVeiculo(v).label,
-            statusAtualizacaoVeiculo(v).label,
             fmtKmH(v.velocidade),
             Number(v.ignicao) === 1 ? "Ligada" : "Desligada",
             v.gps ?? "-",
@@ -1360,30 +1386,21 @@ export default function TelemetriaOperacionalPage() {
     }, [rowsFiltradas]);
 
     const exportarMotoristasCsv = useCallback(() => {
-        baixarCsv("motoristas-telemetria.csv", ["Motorista", "Vel. média", "Vel. máxima", "Veículos", "Placas", "Posições", "Primeira posição", "Última posição"], motoristasOrdenados.map((m) => [
+        baixarCsv("motoristas-telemetria.csv", ["Motorista", "Vel. mínima", "Vel. máxima", "Km rodado"], motoristasOrdenados.map((m) => [
             m.motorista ?? m.nome_motorista ?? "Não informado",
-            fmtKmH(m.velocidade_media),
-            fmtKmH(m.velocidade_maxima),
-            m.total_veiculos ?? "-",
-            String(m.placas || "-").split(",").filter(Boolean).map((placa) => placaComTraco(placa)).join(", "),
-            m.total_posicoes ?? "-",
-            fmtDataHora(m.primeira_posicao),
-            fmtDataHora(m.ultima_posicao),
+            fmtKmH(motoristaVelocidadeMinima(m)),
+            fmtKmH(motoristaVelocidadeMaxima(m)),
+            fmtKm(motoristaKmTotal(m)),
         ]));
     }, [motoristasOrdenados]);
 
     const exportarHistoricoVeicularCsv = useCallback(() => {
-        baixarCsv("historico-veicular.csv", ["Placa", "Veículo", "Cliente", "Km no período", "Vel. média", "Vel. máxima", "Hod. inicial", "Hod. final", "Origem", "Período"], historicoVeicularOrdenado.map((d) => [
-            placaComTraco(d.placa),
+        baixarCsv("historico-veicular.csv", ["Veículo", "Placa", "Hod. inicial", "Hod. final", "Km total rodado"], historicoVeicularOrdenado.map((d) => [
             d.descricao_veiculo ?? d.descricaoVeiculo ?? "-",
-            d.cliente ?? "-",
-            fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any)),
-            fmtKmH(d.velocidade_media),
-            fmtKmH(d.velocidade_maxima),
+            placaComTraco(d.placa),
             fmtM(d.hodometro_inicial ?? d.hodometroInicial),
             fmtM(d.hodometro_final ?? d.hodometroFinal),
-            fonteDistanciaLabel(d.fonte_distancia),
-            `${fmtDataHora(d.data_inicio)} até ${fmtDataHora(d.data_fim)}`,
+            fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any)),
         ]));
     }, [historicoVeicularOrdenado]);
 
@@ -1392,10 +1409,6 @@ export default function TelemetriaOperacionalPage() {
         const ligados = veiculos.filter((v) => Number(v.ignicao) === 1).length;
         const atendComPlaca = rows.filter((r) => normalizePlaca(r.placa || "")).length;
         const semLocalizacao = veiculos.filter((v) => !veiculoPonto(v)).length;
-        const posicaoAntiga = veiculos.filter((v) => {
-            const s = statusAtualizacaoVeiculo(v);
-            return s.minutos != null && s.minutos >= POSICAO_ATRASADA_MIN;
-        }).length;
         const excessoVelocidade = veiculos.filter((v) => velocidadeAlerta(v.velocidade)).length;
 
         return {
@@ -1405,7 +1418,6 @@ export default function TelemetriaOperacionalPage() {
             atendimentos: rows.length,
             atendComPlaca,
             semLocalizacao,
-            posicaoAntiga,
             excessoVelocidade,
         };
     }, [veiculos, rows]);
@@ -1435,8 +1447,8 @@ export default function TelemetriaOperacionalPage() {
 
     const mensagemMapaVazio = useMemo(() => {
         if (tab === "atendimentos") return "Selecione um atendimento com pontos salvos para exibir a rota no mapa.";
-        if (tab === "motoristas") return "A aba Motorista mostra velocidade média e máxima por condutor.";
-        if (tab === "historico_veicular") return "A aba Histórico Veicular mostra a distância percorrida por veículo no período.";
+        if (tab === "motoristas") return "A aba Motorista mostra velocidade mínima, máxima e km rodado por condutor.";
+        if (tab === "historico_veicular") return "A aba Histórico Veicular mostra veículo, placa, hodômetro e km total rodado no período.";
         return "Clique em Atualizar agora para carregar as posições atuais.";
     }, [tab]);
 
@@ -1467,12 +1479,11 @@ export default function TelemetriaOperacionalPage() {
                 )}
 
                 <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="grid flex-1 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+                    <div className="grid flex-1 gap-2 sm:grid-cols-3 xl:grid-cols-5">
                         <KPI label="Veículos" value={String(kpis.veiculos)} />
                         <KPI label="Em movimento" value={String(kpis.emMovimento)} />
                         <KPI label="Ignição ligada" value={String(kpis.ligados)} />
                         <KPI label="Sem localização" value={String(kpis.semLocalizacao)} />
-                        <KPI label="Sinal atrasado" value={String(kpis.posicaoAntiga)} />
                         <KPI label="Vel. alta" value={String(kpis.excessoVelocidade)} />
                     </div>
 
@@ -1569,7 +1580,6 @@ export default function TelemetriaOperacionalPage() {
                                 <option value="ligado_parado">Ligado/parado</option>
                                 <option value="desligado">Desligado</option>
                                 <option value="sem_localizacao">Sem localização</option>
-                                <option value="posicao_antiga">Sinal atrasado</option>
                                 <option value="excesso_velocidade">Velocidade alta</option>
                             </select>
 
@@ -1602,7 +1612,6 @@ export default function TelemetriaOperacionalPage() {
                             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                                 {veiculosFiltrados.map((v, idx) => {
                                     const st = statusVeiculo(v);
-                                    const sinal = statusAtualizacaoVeiculo(v);
                                     const eventos = veiculoEventos(v);
 
                                     return (
@@ -1616,7 +1625,6 @@ export default function TelemetriaOperacionalPage() {
 
                                                 <div className="flex flex-col items-end gap-1">
                                                     <Badge tone={st.tone}>{st.label}</Badge>
-                                                    <Badge tone={sinal.tone}>{sinal.label}</Badge>
                                                     {velocidadeAlerta(v.velocidade) && <Badge tone="red">Velocidade alta</Badge>}
                                                 </div>
                                             </div>
@@ -1630,7 +1638,7 @@ export default function TelemetriaOperacionalPage() {
                                             <div className="mt-3 space-y-1 text-xs text-slate-500">
                                                 <div>Rastreador: {veiculoRastreador(v)}</div>
                                                 <div>Motorista: {veiculoMotorista(v)}</div>
-                                                <div>Última posição: {fmtDataHora(veiculoDataPosicao(v))} • {sinal.label}</div>
+                                                <div>Última posição: {fmtDataHora(veiculoDataPosicao(v))}</div>
                                                 <div>Localização: {v.localizacao || "-"}</div>
                                                 <div>Hodômetro: {v.hodometro != null ? fmtM(v.hodometro) : "-"}</div>
                                             </div>
@@ -1827,7 +1835,7 @@ export default function TelemetriaOperacionalPage() {
                         <div>
                             <h2 className="text-lg font-semibold">Motorista</h2>
                             <p className="text-sm text-slate-500">
-                                Velocidade média e máxima por condutor. Use Atualizar iTrack para buscar posições novas antes de calcular.
+                                Nome do motorista, velocidade mínima, velocidade máxima e total de km rodado no período selecionado.
                             </p>
                         </div>
 
@@ -1863,25 +1871,18 @@ export default function TelemetriaOperacionalPage() {
                     </div>
 
                     {motoristasOrdenados.length === 0 ? (
-                        <EmptyState title="Nenhum motorista encontrado" text="Consulte um período para ver velocidade média e máxima por motorista." />
+                        <EmptyState title="Nenhum motorista encontrado" text="Consulte um período para ver velocidade mínima, velocidade máxima e km rodado por motorista." />
                     ) : (
                         <div className="space-y-4">
                             <div className="grid gap-2 md:grid-cols-4">
                                 <KPI label="Motoristas" value={String(motoristasOrdenados.length)} />
                                 <KPI
                                     label="Maior velocidade"
-                                    value={fmtKmH(Math.max(...motoristas.map((m) => Number(m.velocidade_maxima ?? 0)).filter(Number.isFinite), 0))}
+                                    value={fmtKmH(Math.max(...motoristasOrdenados.map((m) => Number(motoristaVelocidadeMaxima(m) ?? 0)).filter(Number.isFinite), 0))}
                                 />
                                 <KPI
-                                    label="Média geral"
-                                    value={fmtKmH(
-                                        motoristasOrdenados.length
-                                            ? motoristasOrdenados
-                                                .map((m) => Number(m.velocidade_media ?? 0))
-                                                .filter(Number.isFinite)
-                                                .reduce((a, b) => a + b, 0) / Math.max(1, motoristas.map((m) => Number(m.velocidade_media ?? 0)).filter(Number.isFinite).length)
-                                            : 0
-                                    )}
+                                    label="Km total"
+                                    value={fmtKm(motoristasOrdenados.reduce((total, m) => total + Number(motoristaKmTotal(m) ?? 0), 0))}
                                 />
                                 <KPI label="Período" value={periodoLabel(periodoMotorista)} />
                             </div>
@@ -1891,39 +1892,26 @@ export default function TelemetriaOperacionalPage() {
                                     <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                                         <tr>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "motorista"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("motorista")}>Motorista</SortButton></th>
-                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_media"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_media")}>Vel. média</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_minima"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_minima")}>Vel. mínima</SortButton></th>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_maxima"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_maxima")}>Vel. máxima</SortButton></th>
-                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "total_veiculos"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("total_veiculos")}>Veículos</SortButton></th>
-                                            <th className="px-3 py-2">Placas</th>
-                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "total_posicoes"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("total_posicoes")}>Posições</SortButton></th>
-                                            <th className="px-3 py-2">Primeira posição</th>
-                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "ultima_posicao"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("ultima_posicao")}>Última posição</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "km_total"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("km_total")}>Km rodado</SortButton></th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {motoristasOrdenados.map((m, idx) => {
                                             const motorista = m.motorista ?? m.nome_motorista ?? "Não informado";
+                                            const velocidadeMaxima = motoristaVelocidadeMaxima(m);
                                             return (
                                                 <tr key={`${motorista}-${idx}`} className="border-b last:border-0">
                                                     <td className="px-3 py-2 font-medium">{motorista}</td>
-                                                    <td className="px-3 py-2">{fmtKmH(m.velocidade_media)}</td>
+                                                    <td className="px-3 py-2">{fmtKmH(motoristaVelocidadeMinima(m))}</td>
                                                     <td className="px-3 py-2 font-semibold">
                                                         <span className="inline-flex items-center gap-2">
-                                                            {fmtKmH(m.velocidade_maxima)}
-                                                            {velocidadeAlerta(m.velocidade_maxima) && <Badge tone="red">Alta</Badge>}
+                                                            {fmtKmH(velocidadeMaxima)}
+                                                            {velocidadeAlerta(velocidadeMaxima) && <Badge tone="red">Alta</Badge>}
                                                         </span>
                                                     </td>
-                                                    <td className="px-3 py-2">{m.total_veiculos ?? "-"}</td>
-                                                    <td className="px-3 py-2 text-xs">
-                                                        {String(m.placas || "-")
-                                                            .split(",")
-                                                            .filter(Boolean)
-                                                            .map((p) => placaComTraco(p))
-                                                            .join(", ")}
-                                                    </td>
-                                                    <td className="px-3 py-2">{m.total_posicoes ?? "-"}</td>
-                                                    <td className="px-3 py-2 text-xs text-slate-500">{fmtDataHora(m.primeira_posicao)}</td>
-                                                    <td className="px-3 py-2 text-xs text-slate-500">{fmtDataHora(m.ultima_posicao)}</td>
+                                                    <td className="px-3 py-2 font-semibold">{fmtKm(motoristaKmTotal(m))}</td>
                                                 </tr>
                                             );
                                         })}
@@ -1941,7 +1929,7 @@ export default function TelemetriaOperacionalPage() {
                         <div>
                             <h2 className="text-lg font-semibold">Histórico Veicular</h2>
                             <p className="text-sm text-slate-500">
-                                Km oficial da iTrack por hodômetro, com velocidade complementada pelas posições históricas.
+                                Veículo, placa, hodômetro inicial/final e km total rodado no período selecionado.
                             </p>
                         </div>
 
@@ -1970,7 +1958,7 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={() => fetchHistoricoVeicular(periodoVeicular, selectedPlaca || undefined)}
                             disabled={loadingHistoricoVeicular}
-                            className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60"
+                            className="inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto"
                         >
                             Filtrar placa
                         </button>
@@ -2000,16 +1988,12 @@ export default function TelemetriaOperacionalPage() {
                     </div>
 
                     {historicoVeicularOrdenado.length === 0 ? (
-                        <EmptyState title="Nenhum histórico veicular encontrado" text="Consulte um período ou clique em Atualizar iTrack para buscar distância, posições, velocidade e motorista." />
+                        <EmptyState title="Nenhum histórico veicular encontrado" text="Consulte um período ou clique em Atualizar iTrack para buscar hodômetro e km total rodado." />
                     ) : (
                         <div className="space-y-4">
-                            <div className="grid gap-2 md:grid-cols-4">
+                            <div className="grid gap-2 md:grid-cols-3">
                                 <KPI label="Veículos" value={String(historicoVeicularOrdenado.length)} />
-                                <KPI label="Km oficial iTrack" value={fmtKm(historicoVeicularTotalKm)} />
-                                <KPI
-                                    label="Maior km no período"
-                                    value={fmtKm(Math.max(...historicoVeicularOrdenado.map((v) => Number(v.distancia_percorrida_km ?? distanciaKm(v as any))).filter(Number.isFinite), 0))}
-                                />
+                                <KPI label="Km total rodado" value={fmtKm(historicoVeicularTotalKm)} />
                                 <KPI label="Período" value={periodoLabel(periodoVeicular)} />
                             </div>
 
@@ -2017,38 +2001,21 @@ export default function TelemetriaOperacionalPage() {
                                 <table className="min-w-full text-left text-sm">
                                     <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                                         <tr>
-                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "placa"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("placa")}>Placa</SortButton></th>
                                             <th className="px-3 py-2">Veículo</th>
-                                            <th className="px-3 py-2">Cliente</th>
-                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "distancia"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("distancia")}>Km no período</SortButton></th>
-                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "velocidade_media"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("velocidade_media")}>Vel. média</SortButton></th>
-                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "velocidade_maxima"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("velocidade_maxima")}>Vel. máxima</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "placa"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("placa")}>Placa</SortButton></th>
                                             <th className="px-3 py-2">Hod. inicial</th>
                                             <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "hodometro_final"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("hodometro_final")}>Hod. final</SortButton></th>
-                                            <th className="px-3 py-2">Origem do cálculo</th>
-                                            <th className="px-3 py-2">Período</th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "distancia"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("distancia")}>Km total rodado</SortButton></th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {historicoVeicularOrdenado.map((d, idx) => (
                                             <tr key={`${d.placa}-${idx}`} className="border-b last:border-0">
-                                                <td className="px-3 py-2 font-medium">{placaComTraco(d.placa)}</td>
                                                 <td className="px-3 py-2">{d.descricao_veiculo ?? d.descricaoVeiculo ?? "-"}</td>
-                                                <td className="px-3 py-2">{d.cliente ?? "-"}</td>
-                                                <td className="px-3 py-2 font-semibold">{fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any))}</td>
-                                                <td className="px-3 py-2">{fmtKmH(d.velocidade_media)}</td>
-                                                <td className="px-3 py-2">
-                                                    <span className="inline-flex items-center gap-2">
-                                                        {fmtKmH(d.velocidade_maxima)}
-                                                        {velocidadeAlerta(d.velocidade_maxima) && <Badge tone="red">Alta</Badge>}
-                                                    </span>
-                                                </td>
+                                                <td className="px-3 py-2 font-medium">{placaComTraco(d.placa)}</td>
                                                 <td className="px-3 py-2">{fmtM(d.hodometro_inicial ?? d.hodometroInicial)}</td>
                                                 <td className="px-3 py-2">{fmtM(d.hodometro_final ?? d.hodometroFinal)}</td>
-                                                <td className="px-3 py-2 text-xs">{fonteDistanciaLabel(d.fonte_distancia)}</td>
-                                                <td className="px-3 py-2 text-xs text-slate-500">
-                                                    {fmtDataHora(d.data_inicio)} até {fmtDataHora(d.data_fim)}
-                                                </td>
+                                                <td className="px-3 py-2 font-semibold">{fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any))}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -2149,81 +2116,110 @@ function VehicleSpeedModal({
     const velocidade = Math.max(0, Number(veiculo.velocidade || 0));
     const maxSpeed = 180;
     const pct = Math.min(1, velocidade / maxSpeed);
-    const angle = -130 + pct * 260;
+    const angle = -118 + pct * 236;
     const st = statusVeiculo(veiculo);
+    const isHighSpeed = velocidadeAlerta(velocidade);
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm">
-            <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] border border-cyan-200/20 bg-slate-950 text-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-                    <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Painel do veículo</div>
-                        <div className="mt-1 text-lg font-black leading-tight">{veiculoDescricao(veiculo)}</div>
-                        <div className="text-sm text-slate-300">{placaComTraco(veiculo.placa)}</div>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm">
+            <div className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/70 bg-white shadow-2xl">
+                <div className="relative overflow-hidden rounded-t-[2rem] bg-slate-950 px-5 pb-6 pt-5 text-white">
+                    <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-cyan-400/20 blur-2xl" />
+                    <div className="absolute -bottom-20 left-8 h-44 w-44 rounded-full bg-blue-500/20 blur-3xl" />
+
+                    <div className="relative flex items-start justify-between gap-4">
+                        <div>
+                            <div className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-200">Painel do veículo</div>
+                            <div className="mt-2 text-xl font-black leading-tight">{veiculoDescricao(veiculo)}</div>
+                            <div className="mt-1 inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-white ring-1 ring-white/15">
+                                {placaComTraco(veiculo.placa)}
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={onClose}
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-xl font-bold text-white ring-1 ring-white/20 transition hover:bg-white/20"
+                            aria-label="Fechar"
+                        >
+                            ×
+                        </button>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/10 text-xl font-bold hover:bg-white/20"
-                        aria-label="Fechar"
-                    >
-                        ×
-                    </button>
+
+                    <div className="relative mt-5 rounded-[1.5rem] bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
+                        <div className="mx-auto max-w-[280px]">
+                            <div className="relative mx-auto h-40 w-full overflow-hidden">
+                                <div
+                                    className="absolute left-1/2 top-4 h-56 w-56 -translate-x-1/2 rounded-full border border-white/10 shadow-inner"
+                                    style={{
+                                        background: `conic-gradient(from 242deg, #22c55e 0deg, #22c55e ${Math.min(128, pct * 236)}deg, #f59e0b ${Math.min(128, pct * 236)}deg, #f59e0b ${Math.min(190, pct * 236)}deg, #ef4444 ${Math.min(190, pct * 236)}deg, #ef4444 ${pct * 236}deg, rgba(255,255,255,0.12) ${pct * 236}deg, rgba(255,255,255,0.12) 236deg, transparent 236deg)`,
+                                    }}
+                                />
+                                <div className="absolute left-1/2 top-10 h-44 w-44 -translate-x-1/2 rounded-full bg-slate-950 shadow-[inset_0_0_35px_rgba(15,23,42,0.9)]" />
+
+                                {Array.from({ length: 7 }).map((_, i) => {
+                                    const a = -118 + i * (236 / 6);
+                                    return (
+                                        <div
+                                            key={i}
+                                            className="absolute left-1/2 top-[124px] h-[2px] w-5 origin-left rounded-full bg-white/50"
+                                            style={{ transform: `rotate(${a}deg) translateX(88px)` }}
+                                        />
+                                    );
+                                })}
+
+                                <div
+                                    className="absolute left-1/2 top-[124px] h-1.5 w-[86px] origin-left rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.65)] transition-transform duration-500"
+                                    style={{ transform: `rotate(${angle}deg) translateY(-50%)` }}
+                                />
+                                <div className="absolute left-1/2 top-[124px] h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-slate-950 shadow-lg" />
+
+                                <div className="absolute inset-x-0 bottom-0 text-center">
+                                    <div className="text-6xl font-black leading-none tracking-tight text-white tabular-nums">
+                                        {velocidade.toFixed(0)}
+                                    </div>
+                                    <div className="mt-1 text-xs font-bold uppercase tracking-[0.25em] text-cyan-100">km/h</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="p-5">
-                    <div className="mx-auto flex aspect-square max-w-[310px] items-center justify-center rounded-full border border-cyan-200/15 bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#020617_62%,_#000_100%)] p-5 shadow-[0_0_45px_rgba(34,211,238,0.20)]">
-                        <div className="relative h-full w-full rounded-full border border-white/10 bg-slate-900/60">
-                            <div className="absolute inset-5 rounded-full border border-cyan-300/10" />
-
-                            {Array.from({ length: 10 }).map((_, i) => {
-                                const a = -130 + i * (260 / 9);
-                                const major = i % 3 === 0;
-                                return (
-                                    <div
-                                        key={i}
-                                        className="absolute left-1/2 top-1/2 origin-left"
-                                        style={{ transform: `rotate(${a}deg) translateX(92px)` }}
-                                    >
-                                        <div className={`${major ? "h-1.5 w-7" : "h-1 w-4"} rounded-full bg-cyan-200/70`} />
-                                    </div>
-                                );
-                            })}
-
-                            <div className="absolute inset-x-0 top-[18%] text-center text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
-                                km/h
-                            </div>
-
-                            <div
-                                className="absolute left-1/2 top-1/2 h-1.5 w-[38%] origin-left rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)] transition-transform duration-500"
-                                style={{ transform: `rotate(${angle}deg) translateY(-50%)` }}
-                            />
-                            <div className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-200 bg-slate-950 shadow-[0_0_18px_rgba(103,232,249,0.75)]" />
-
-                            <div className="absolute inset-x-0 bottom-[22%] text-center">
-                                <div className="font-mono text-6xl font-black tabular-nums text-white drop-shadow-[0_0_18px_rgba(34,211,238,0.45)]">
-                                    {velocidade.toFixed(0)}
-                                </div>
-                                <div className="mt-1 text-sm font-semibold text-cyan-200">{fmtKmH(velocidade)}</div>
-                            </div>
+                <div className="space-y-4 p-5">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl border bg-slate-50 p-3">
+                            <div className="text-xs font-medium text-slate-500">Status</div>
+                            <div className="mt-1 text-sm font-bold text-slate-900">{st.label}</div>
+                        </div>
+                        <div className="rounded-2xl border bg-slate-50 p-3">
+                            <div className="text-xs font-medium text-slate-500">Ignição</div>
+                            <div className="mt-1 text-sm font-bold text-slate-900">{Number(veiculo.ignicao) === 1 ? "Ligada" : "Desligada"}</div>
                         </div>
                     </div>
 
-                    <div className="mt-5 grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-400">Motorista</span>
-                            <span className="text-right font-semibold">{veiculoMotorista(veiculo)}</span>
+                    {isHighSpeed && (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                            Atenção: velocidade acima do limite de referência de {LIMITE_VELOCIDADE_ALERTA} km/h.
                         </div>
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-400">Status</span>
-                            <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold">{st.label}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-400">Ignição</span>
-                            <span className="font-semibold">{Number(veiculo.ignicao) === 1 ? "Ligada" : "Desligada"}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-400">Atualizado</span>
-                            <span className="text-right font-semibold">{lastUpdate ? lastUpdate.toLocaleTimeString("pt-BR") : fmtDataHora(veiculoDataPosicao(veiculo))}</span>
+                    )}
+
+                    <div className="rounded-2xl border p-4 text-sm">
+                        <div className="grid gap-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Motorista</span>
+                                <span className="text-right font-semibold text-slate-900">{veiculoMotorista(veiculo)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Última posição</span>
+                                <span className="text-right font-semibold text-slate-900">{fmtDataHora(veiculoDataPosicao(veiculo))}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Atualizado na tela</span>
+                                <span className="text-right font-semibold text-slate-900">{lastUpdate ? lastUpdate.toLocaleTimeString("pt-BR") : "-"}</span>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                                <span className="text-slate-500">Localização</span>
+                                <span className="max-w-[220px] text-right font-semibold text-slate-900">{veiculo.localizacao || "-"}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
