@@ -147,7 +147,7 @@ type ItrackDistancia = {
 type PeriodoRapido = "1d" | "7d" | "30d" | "custom";
 type VeiculoFiltroStatus = "todos" | "em_movimento" | "ligado_parado" | "desligado" | "sem_localizacao" | "excesso_velocidade";
 type SortDirection = "asc" | "desc";
-type MotoristaSortKey = "motorista" | "velocidade_minima" | "velocidade_maxima" | "km_total";
+type MotoristaSortKey = "motorista" | "velocidade_media" | "velocidade_maxima" | "km_total";
 type HistoricoSortKey = "placa" | "distancia" | "hodometro_final";
 
 type MotoristaResumo = {
@@ -560,13 +560,13 @@ function statusVeiculo(v: ItrackVeiculo) {
     return { label: "Desligado", tone: "slate" };
 }
 
-function motoristaVelocidadeMinima(m: MotoristaResumo) {
+function motoristaVelocidadeMedia(m: MotoristaResumo) {
     const candidatos = [
-        m.velocidade_minima,
-        m.velocidadeMinima,
-        (m as any).vel_min_kmh,
-        (m as any).velocidade_min,
-        (m as any).vel_minima_kmh,
+        m.velocidade_media,
+        (m as any).vel_media_kmh,
+        (m as any).velocidadeMedia,
+        (m as any).velocidade_media_kmh,
+        (m as any).media_velocidade,
     ];
 
     const valor = candidatos.find((x) => isPresentNumber(x));
@@ -602,6 +602,22 @@ function motoristaKmTotal(m: MotoristaResumo) {
 
 function velocidadeAlerta(v?: number | string | null) {
     return isPresentNumber(v) && Number(v) >= LIMITE_VELOCIDADE_ALERTA;
+}
+
+function parseNumeroBr(v: string | number | null | undefined) {
+    if (v === null || v === undefined || v === "") return 0;
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    const s = String(v).trim();
+    if (!s) return 0;
+    const normalized = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : 0;
+}
+
+function fmtMoeda(v?: number | string | null) {
+    const num = Number(v ?? 0);
+    if (!Number.isFinite(num)) return "R$ 0,00";
+    return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function csvValue(v: unknown) {
@@ -982,6 +998,10 @@ export default function TelemetriaOperacionalPage() {
     const [fimCustom, setFimCustom] = useState(date14ToInput(todayEnd14()));
     const [ultimaAtualizacaoAoVivo, setUltimaAtualizacaoAoVivo] = useState<Date | null>(null);
     const [modalPlaca, setModalPlaca] = useState("");
+    const [consumoAberto, setConsumoAberto] = useState(false);
+    const [consumoPlaca, setConsumoPlaca] = useState("");
+    const [consumoKmPorLitro, setConsumoKmPorLitro] = useState("10");
+    const [consumoPrecoLitro, setConsumoPrecoLitro] = useState("6,00");
 
     const liveFetchingRef = useRef(false);
     const liveAbortRef = useRef<AbortController | null>(null);
@@ -1321,7 +1341,7 @@ export default function TelemetriaOperacionalPage() {
     const motoristasOrdenados = useMemo(() => {
         const valor = (m: MotoristaResumo) => {
             if (sortMotoristasBy === "motorista") return String(m.motorista ?? m.nome_motorista ?? "").toLowerCase();
-            if (sortMotoristasBy === "velocidade_minima") return Number(motoristaVelocidadeMinima(m) ?? -1);
+            if (sortMotoristasBy === "velocidade_media") return Number(motoristaVelocidadeMedia(m) ?? -1);
             if (sortMotoristasBy === "velocidade_maxima") return Number(motoristaVelocidadeMaxima(m) ?? -1);
             if (sortMotoristasBy === "km_total") return Number(motoristaKmTotal(m) ?? -1);
             return 0;
@@ -1386,9 +1406,9 @@ export default function TelemetriaOperacionalPage() {
     }, [rowsFiltradas]);
 
     const exportarMotoristasCsv = useCallback(() => {
-        baixarCsv("motoristas-telemetria.csv", ["Motorista", "Vel. mínima", "Vel. máxima", "Km rodado"], motoristasOrdenados.map((m) => [
+        baixarCsv("motoristas-telemetria.csv", ["Motorista", "Vel. média", "Vel. máxima", "Km rodado"], motoristasOrdenados.map((m) => [
             m.motorista ?? m.nome_motorista ?? "Não informado",
-            fmtKmH(motoristaVelocidadeMinima(m)),
+            fmtKmH(motoristaVelocidadeMedia(m)),
             fmtKmH(motoristaVelocidadeMaxima(m)),
             fmtKm(motoristaKmTotal(m)),
         ]));
@@ -1447,7 +1467,7 @@ export default function TelemetriaOperacionalPage() {
 
     const mensagemMapaVazio = useMemo(() => {
         if (tab === "atendimentos") return "Selecione um atendimento com pontos salvos para exibir a rota no mapa.";
-        if (tab === "motoristas") return "A aba Motorista mostra velocidade mínima, máxima e km rodado por condutor.";
+        if (tab === "motoristas") return "A aba Motorista mostra velocidade média, máxima e km rodado por condutor.";
         if (tab === "historico_veicular") return "A aba Histórico Veicular mostra veículo, placa, hodômetro e km total rodado no período.";
         return "Clique em Atualizar agora para carregar as posições atuais.";
     }, [tab]);
@@ -1522,6 +1542,27 @@ export default function TelemetriaOperacionalPage() {
                 onClose={() => setModalPlaca("")}
             />
 
+            <ConsumoModal
+                open={consumoAberto}
+                veiculos={veiculos}
+                historicoVeicular={historicoVeicularOrdenado}
+                placa={consumoPlaca}
+                setPlaca={setConsumoPlaca}
+                kmPorLitro={consumoKmPorLitro}
+                setKmPorLitro={setConsumoKmPorLitro}
+                precoLitro={consumoPrecoLitro}
+                setPrecoLitro={setConsumoPrecoLitro}
+                periodo={periodoVeicular}
+                setPeriodo={setPeriodoVeicular}
+                inicioCustom={inicioCustom}
+                setInicioCustom={setInicioCustom}
+                fimCustom={fimCustom}
+                setFimCustom={setFimCustom}
+                loading={loadingHistoricoVeicular}
+                onConsultar={() => fetchHistoricoVeicular(periodoVeicular, consumoPlaca || selectedPlaca || undefined)}
+                onClose={() => setConsumoAberto(false)}
+            />
+
             <nav className="mb-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 <TabButton active={tab === "ao_vivo"} onClick={() => {
                     setTab("ao_vivo");
@@ -1550,6 +1591,17 @@ export default function TelemetriaOperacionalPage() {
                 }}>
                     Histórico Veicular
                 </TabButton>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const placaBase = selectedPlaca || veiculosFiltrados[0]?.placa || historicoVeicularOrdenado[0]?.placa || "";
+                        setConsumoPlaca(normalizePlaca(consumoPlaca || placaBase));
+                        setConsumoAberto(true);
+                    }}
+                    className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto"
+                >
+                    ⛽ Consumo
+                </button>
             </nav>
 
             {tab === "lista_veiculos" && (
@@ -1835,7 +1887,7 @@ export default function TelemetriaOperacionalPage() {
                         <div>
                             <h2 className="text-lg font-semibold">Motorista</h2>
                             <p className="text-sm text-slate-500">
-                                Nome do motorista, velocidade mínima, velocidade máxima e total de km rodado no período selecionado.
+                                Nome do motorista, velocidade média, velocidade máxima e total de km rodado no período selecionado.
                             </p>
                         </div>
 
@@ -1871,7 +1923,7 @@ export default function TelemetriaOperacionalPage() {
                     </div>
 
                     {motoristasOrdenados.length === 0 ? (
-                        <EmptyState title="Nenhum motorista encontrado" text="Consulte um período para ver velocidade mínima, velocidade máxima e km rodado por motorista." />
+                        <EmptyState title="Nenhum motorista encontrado" text="Consulte um período para ver velocidade média, velocidade máxima e km rodado por motorista." />
                     ) : (
                         <div className="space-y-4">
                             <div className="grid gap-2 md:grid-cols-4">
@@ -1892,7 +1944,7 @@ export default function TelemetriaOperacionalPage() {
                                     <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                                         <tr>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "motorista"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("motorista")}>Motorista</SortButton></th>
-                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_minima"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_minima")}>Vel. mínima</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_media"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_media")}>Vel. média</SortButton></th>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_maxima"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_maxima")}>Vel. máxima</SortButton></th>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "km_total"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("km_total")}>Km rodado</SortButton></th>
                                         </tr>
@@ -1904,7 +1956,7 @@ export default function TelemetriaOperacionalPage() {
                                             return (
                                                 <tr key={`${motorista}-${idx}`} className="border-b last:border-0">
                                                     <td className="px-3 py-2 font-medium">{motorista}</td>
-                                                    <td className="px-3 py-2">{fmtKmH(motoristaVelocidadeMinima(m))}</td>
+                                                    <td className="px-3 py-2">{fmtKmH(motoristaVelocidadeMedia(m))}</td>
                                                     <td className="px-3 py-2 font-semibold">
                                                         <span className="inline-flex items-center gap-2">
                                                             {fmtKmH(velocidadeMaxima)}
@@ -2098,6 +2150,208 @@ function PeriodoControls({
             >
                 {loading ? "Consultando..." : buttonText}
             </button>
+        </div>
+    );
+}
+
+
+function ConsumoModal({
+    open,
+    veiculos,
+    historicoVeicular,
+    placa,
+    setPlaca,
+    kmPorLitro,
+    setKmPorLitro,
+    precoLitro,
+    setPrecoLitro,
+    periodo,
+    setPeriodo,
+    inicioCustom,
+    setInicioCustom,
+    fimCustom,
+    setFimCustom,
+    loading,
+    onConsultar,
+    onClose,
+}: {
+    open: boolean;
+    veiculos: ItrackVeiculo[];
+    historicoVeicular: HistoricoVeicularResumo[];
+    placa: string;
+    setPlaca: (v: string) => void;
+    kmPorLitro: string;
+    setKmPorLitro: (v: string) => void;
+    precoLitro: string;
+    setPrecoLitro: (v: string) => void;
+    periodo: PeriodoRapido;
+    setPeriodo: (p: PeriodoRapido) => void;
+    inicioCustom: string;
+    setInicioCustom: (v: string) => void;
+    fimCustom: string;
+    setFimCustom: (v: string) => void;
+    loading: boolean;
+    onConsultar: () => void;
+    onClose: () => void;
+}) {
+    const opcoesVeiculo = useMemo(() => {
+        const map = new Map<string, { placa: string; label: string }>();
+
+        historicoVeicular.forEach((h) => {
+            const p = normalizePlaca(h.placa || "");
+            if (!p) return;
+            const nome = h.descricao_veiculo ?? h.descricaoVeiculo ?? "Veículo";
+            map.set(p, { placa: p, label: `${placaComTraco(p)} • ${nome}` });
+        });
+
+        veiculos.forEach((v) => {
+            const p = normalizePlaca(v.placa || "");
+            if (!p || map.has(p)) return;
+            map.set(p, { placa: p, label: `${placaComTraco(p)} • ${veiculoDescricao(v)}` });
+        });
+
+        return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+    }, [veiculos, historicoVeicular]);
+
+    const placaNormalizada = normalizePlaca(placa);
+    const historicoSelecionado = historicoVeicular.find((h) => normalizePlaca(h.placa || "") === placaNormalizada) || null;
+    const veiculoSelecionado = veiculos.find((v) => normalizePlaca(v.placa || "") === placaNormalizada) || null;
+
+    const kmRodado = historicoSelecionado ? distanciaKm(historicoSelecionado as any) : 0;
+    const consumoKmLitro = parseNumeroBr(kmPorLitro);
+    const preco = parseNumeroBr(precoLitro);
+    const litrosEstimados = consumoKmLitro > 0 ? kmRodado / consumoKmLitro : 0;
+    const gastoEstimado = litrosEstimados * preco;
+    const podeCalcular = !!placaNormalizada && consumoKmLitro > 0 && preco > 0;
+
+    if (!open) return null;
+
+    return (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm">
+            <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] border bg-white shadow-2xl">
+                <div className="relative overflow-hidden rounded-t-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-white">
+                    <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-emerald-400/20 blur-3xl" />
+                    <div className="absolute -bottom-20 left-8 h-44 w-44 rounded-full bg-cyan-400/10 blur-3xl" />
+
+                    <div className="relative flex items-start justify-between gap-4">
+                        <div>
+                            <div className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-200">Consumo</div>
+                            <h2 className="mt-2 text-2xl font-black">Estimativa de combustível</h2>
+                            <p className="mt-1 max-w-xl text-sm text-slate-200">
+                                Escolha o veículo, informe o consumo médio e o preço do combustível para estimar o gasto no período selecionado.
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={onClose}
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-xl font-bold text-white ring-1 ring-white/20 transition hover:bg-white/20"
+                            aria-label="Fechar"
+                        >
+                            ×
+                        </button>
+                    </div>
+                </div>
+
+                <div className="space-y-5 p-5">
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <div className="grid gap-1 md:col-span-2">
+                            <label className="text-xs font-medium text-slate-500">Veículo</label>
+                            <select
+                                value={placaNormalizada}
+                                onChange={(e) => setPlaca(normalizePlaca(e.target.value))}
+                                className="rounded-xl border px-3 py-2 text-sm"
+                            >
+                                <option value="">Selecione um veículo</option>
+                                {opcoesVeiculo.map((op) => (
+                                    <option key={op.placa} value={op.placa}>{op.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="grid gap-1">
+                            <label className="text-xs font-medium text-slate-500">Km por litro</label>
+                            <input
+                                value={kmPorLitro}
+                                onChange={(e) => setKmPorLitro(e.target.value)}
+                                inputMode="decimal"
+                                placeholder="Ex.: 10"
+                                className="rounded-xl border px-3 py-2 text-sm"
+                            />
+                        </div>
+
+                        <div className="grid gap-1">
+                            <label className="text-xs font-medium text-slate-500">Preço do combustível</label>
+                            <input
+                                value={precoLitro}
+                                onChange={(e) => setPrecoLitro(e.target.value)}
+                                inputMode="decimal"
+                                placeholder="Ex.: 6,00"
+                                className="rounded-xl border px-3 py-2 text-sm"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="rounded-2xl border bg-slate-50 p-3">
+                        <PeriodoControls
+                            periodo={periodo}
+                            setPeriodo={setPeriodo}
+                            inicioCustom={inicioCustom}
+                            setInicioCustom={setInicioCustom}
+                            fimCustom={fimCustom}
+                            setFimCustom={setFimCustom}
+                            onConsultar={onConsultar}
+                            loading={loading}
+                            buttonText="Calcular consumo"
+                        />
+                    </div>
+
+                    {!placaNormalizada && (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                            Selecione um veículo para calcular o consumo.
+                        </div>
+                    )}
+
+                    {placaNormalizada && !historicoSelecionado && (
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                            Não há histórico carregado para {placaComTraco(placaNormalizada)} neste período. Clique em <strong>Calcular consumo</strong> para consultar o histórico veicular existente.
+                        </div>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-4">
+                        <KPI label="Período" value={periodoLabel(periodo)} compact />
+                        <KPI label="Km rodado" value={fmtKm(kmRodado)} compact />
+                        <KPI label="Litros estimados" value={podeCalcular ? `${litrosEstimados.toFixed(2).replace(".", ",")} L` : "-"} compact />
+                        <KPI label="Gasto estimado" value={podeCalcular ? fmtMoeda(gastoEstimado) : "-"} compact />
+                    </div>
+
+                    <div className="rounded-2xl border p-4 text-sm">
+                        <div className="grid gap-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Veículo</span>
+                                <span className="text-right font-semibold text-slate-900">
+                                    {historicoSelecionado?.descricao_veiculo ?? historicoSelecionado?.descricaoVeiculo ?? (veiculoSelecionado ? veiculoDescricao(veiculoSelecionado) : "-")}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Placa</span>
+                                <span className="text-right font-semibold text-slate-900">{placaNormalizada ? placaComTraco(placaNormalizada) : "-"}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Consumo informado</span>
+                                <span className="text-right font-semibold text-slate-900">{consumoKmLitro > 0 ? `${consumoKmLitro.toFixed(2).replace(".", ",")} km/L` : "-"}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">Preço por litro</span>
+                                <span className="text-right font-semibold text-slate-900">{preco > 0 ? fmtMoeda(preco) : "-"}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p className="text-xs leading-relaxed text-slate-500">
+                        O cálculo é estimado: km rodado ÷ km por litro × preço do combustível. Ele usa o histórico veicular já consultado para o período selecionado.
+                    </p>
+                </div>
+            </div>
         </div>
     );
 }
