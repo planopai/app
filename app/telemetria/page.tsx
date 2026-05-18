@@ -145,6 +145,10 @@ type ItrackDistancia = {
 };
 
 type PeriodoRapido = "1d" | "7d" | "30d" | "custom";
+type VeiculoFiltroStatus = "todos" | "em_movimento" | "ligado_parado" | "desligado" | "sem_localizacao" | "posicao_antiga" | "excesso_velocidade";
+type SortDirection = "asc" | "desc";
+type MotoristaSortKey = "motorista" | "velocidade_media" | "velocidade_maxima" | "total_veiculos" | "total_posicoes" | "ultima_posicao";
+type HistoricoSortKey = "placa" | "distancia" | "velocidade_media" | "velocidade_maxima" | "hodometro_final";
 
 type MotoristaResumo = {
     motorista?: string | null;
@@ -186,6 +190,9 @@ type Tab = "ao_vivo" | "lista_veiculos" | "atendimentos" | "motoristas" | "histo
 
 const TELEMETRIA_URL = `${API}/api/php/telemetria.php`;
 const LIVE_REFRESH_MS = 10_000;
+const LIMITE_VELOCIDADE_ALERTA = 80;
+const POSICAO_ATRASADA_MIN = 15;
+const POSICAO_SEM_SINAL_MIN = 60;
 
 const isPresentNumber = (v: unknown): v is number | string => {
     if (v === null || v === undefined || v === "") return false;
@@ -553,6 +560,40 @@ function statusVeiculo(v: ItrackVeiculo) {
     return { label: "Desligado", tone: "slate" };
 }
 
+function statusAtualizacaoVeiculo(v: ItrackVeiculo) {
+    const d = parseDateMaybe(veiculoDataPosicao(v));
+    if (!d) return { label: "Sem data", tone: "red", minutos: null as number | null };
+
+    const minutos = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+    if (minutos >= POSICAO_SEM_SINAL_MIN) return { label: `Sem sinal ${Math.floor(minutos / 60)}h`, tone: "red", minutos };
+    if (minutos >= POSICAO_ATRASADA_MIN) return { label: `Atrasado ${minutos}min`, tone: "amber", minutos };
+    if (minutos <= 1) return { label: "Agora", tone: "emerald", minutos };
+    return { label: `${minutos}min`, tone: "emerald", minutos };
+}
+
+function velocidadeAlerta(v?: number | string | null) {
+    return isPresentNumber(v) && Number(v) >= LIMITE_VELOCIDADE_ALERTA;
+}
+
+function csvValue(v: unknown) {
+    const value = String(v ?? "");
+    return `"${value.replaceAll('"', '""')}"`;
+}
+
+function baixarCsv(nomeArquivo: string, cabecalhos: string[], linhas: unknown[][]) {
+    if (typeof window === "undefined") return;
+    const csv = [cabecalhos, ...linhas].map((linha) => linha.map(csvValue).join(";")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nomeArquivo;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
 function tipoLabel(tipo?: string | null) {
     const t = String(tipo || "").toLowerCase();
     if (t === "remocao") return "Remoção";
@@ -610,12 +651,14 @@ function loadLeafletFromCDN(): Promise<any> {
 
 function liveVehiclePopup(v: ItrackVeiculo) {
     const st = statusVeiculo(v);
+    const atualizacao = statusAtualizacaoVeiculo(v);
     const eventos = veiculoEventos(v).map((ev) => ev.descricaoEvento).filter(Boolean).join(", ");
     const parts = [
         `<strong>🚗 ${escapeHtml(placaComTraco(v.placa))}</strong>`,
         escapeHtml(veiculoDescricao(v)),
         `Status: <strong>${escapeHtml(st.label)}</strong>`,
-        `Velocidade: ${escapeHtml(fmtKmH(v.velocidade))}`,
+        `Velocidade: ${escapeHtml(fmtKmH(v.velocidade))}${velocidadeAlerta(v.velocidade) ? " ⚠️" : ""}`,
+        `Sinal: ${escapeHtml(atualizacao.label)}`,
         `Ignição: ${Number(v.ignicao) === 1 ? "Ligada" : "Desligada"}`,
         `GPS: ${escapeHtml(v.gps ?? "-")}`,
         `Motorista: ${escapeHtml(veiculoMotorista(v))}`,
@@ -897,6 +940,12 @@ export default function TelemetriaOperacionalPage() {
     const [busca, setBusca] = useState("");
     const [filtroTipo, setFiltroTipo] = useState("todos");
     const [somenteComPlaca, setSomenteComPlaca] = useState(false);
+    const [buscaVeiculo, setBuscaVeiculo] = useState("");
+    const [filtroStatusVeiculo, setFiltroStatusVeiculo] = useState<VeiculoFiltroStatus>("todos");
+    const [sortMotoristasBy, setSortMotoristasBy] = useState<MotoristaSortKey>("velocidade_maxima");
+    const [sortMotoristasDirection, setSortMotoristasDirection] = useState<SortDirection>("desc");
+    const [sortHistoricoBy, setSortHistoricoBy] = useState<HistoricoSortKey>("distancia");
+    const [sortHistoricoDirection, setSortHistoricoDirection] = useState<SortDirection>("desc");
 
     const [inicio, setInicio] = useState(todayStart14());
     const [fim, setFim] = useState(todayEnd14());
@@ -1110,6 +1159,45 @@ export default function TelemetriaOperacionalPage() {
         await fetchHistoricoVeicular("custom", placa, false);
     }, [fetchHistoricoVeicular, selecionarAtendimento]);
 
+    const limparFiltrosAtendimentos = useCallback(() => {
+        setBusca("");
+        setFiltroTipo("todos");
+        setSomenteComPlaca(false);
+        setSelectedAtendimentoId(null);
+    }, []);
+
+    const limparFiltrosVeiculos = useCallback(() => {
+        setBuscaVeiculo("");
+        setFiltroStatusVeiculo("todos");
+        setSelectedPlaca("");
+        setModalPlaca("");
+    }, []);
+
+    const limparFiltroHistoricoVeicular = useCallback(() => {
+        setSelectedPlaca("");
+        setPeriodoVeicular("7d");
+        setInicioCustom(date14ToInput(todayStart14()));
+        setFimCustom(date14ToInput(todayEnd14()));
+    }, []);
+
+    const alternarOrdenacaoMotoristas = useCallback((key: MotoristaSortKey) => {
+        if (sortMotoristasBy === key) {
+            setSortMotoristasDirection((d) => d === "asc" ? "desc" : "asc");
+            return;
+        }
+        setSortMotoristasBy(key);
+        setSortMotoristasDirection(key === "motorista" ? "asc" : "desc");
+    }, [sortMotoristasBy]);
+
+    const alternarOrdenacaoHistorico = useCallback((key: HistoricoSortKey) => {
+        if (sortHistoricoBy === key) {
+            setSortHistoricoDirection((d) => d === "asc" ? "desc" : "asc");
+            return;
+        }
+        setSortHistoricoBy(key);
+        setSortHistoricoDirection(key === "placa" ? "asc" : "desc");
+    }, [sortHistoricoBy]);
+
     useEffect(() => {
         fetchRows();
     }, [fetchRows]);
@@ -1174,10 +1262,141 @@ export default function TelemetriaOperacionalPage() {
         });
     }, [rows, busca, filtroTipo, somenteComPlaca]);
 
+    const veiculosFiltrados = useMemo(() => {
+        const q = buscaVeiculo.trim().toLowerCase();
+
+        return veiculos.filter((v) => {
+            const ponto = veiculoPonto(v);
+            const st = statusVeiculo(v).label;
+            const atualizacao = statusAtualizacaoVeiculo(v);
+
+            if (filtroStatusVeiculo === "em_movimento" && st !== "Em movimento") return false;
+            if (filtroStatusVeiculo === "ligado_parado" && st !== "Ligado/parado") return false;
+            if (filtroStatusVeiculo === "desligado" && st !== "Desligado") return false;
+            if (filtroStatusVeiculo === "sem_localizacao" && ponto) return false;
+            if (filtroStatusVeiculo === "posicao_antiga" && !(atualizacao.minutos != null && atualizacao.minutos >= POSICAO_ATRASADA_MIN)) return false;
+            if (filtroStatusVeiculo === "excesso_velocidade" && !velocidadeAlerta(v.velocidade)) return false;
+            if (!q) return true;
+
+            const alvo = [
+                v.placa,
+                placaComTraco(v.placa),
+                veiculoDescricao(v),
+                veiculoCliente(v),
+                veiculoRastreador(v),
+                veiculoMotorista(v),
+                v.localizacao,
+                st,
+            ].join(" ").toLowerCase();
+
+            return alvo.includes(q);
+        });
+    }, [veiculos, buscaVeiculo, filtroStatusVeiculo]);
+
+    const motoristasOrdenados = useMemo(() => {
+        const valor = (m: MotoristaResumo) => {
+            if (sortMotoristasBy === "motorista") return String(m.motorista ?? m.nome_motorista ?? "").toLowerCase();
+            if (sortMotoristasBy === "ultima_posicao") return parseDateMaybe(m.ultima_posicao)?.getTime() ?? 0;
+            return Number((m as any)[sortMotoristasBy] ?? 0);
+        };
+
+        return [...motoristas].sort((a, b) => {
+            const va = valor(a);
+            const vb = valor(b);
+            const res = typeof va === "string" || typeof vb === "string" ? String(va).localeCompare(String(vb), "pt-BR") : Number(va) - Number(vb);
+            return sortMotoristasDirection === "asc" ? res : -res;
+        });
+    }, [motoristas, sortMotoristasBy, sortMotoristasDirection]);
+
+    const historicoVeicularOrdenado = useMemo(() => {
+        const valor = (h: HistoricoVeicularResumo) => {
+            if (sortHistoricoBy === "placa") return normalizePlaca(h.placa);
+            if (sortHistoricoBy === "distancia") return Number(h.distancia_percorrida_km ?? distanciaKm(h as any));
+            return Number((h as any)[sortHistoricoBy] ?? 0);
+        };
+
+        return [...historicoVeicular].sort((a, b) => {
+            const va = valor(a);
+            const vb = valor(b);
+            const res = typeof va === "string" || typeof vb === "string" ? String(va).localeCompare(String(vb), "pt-BR") : Number(va) - Number(vb);
+            return sortHistoricoDirection === "asc" ? res : -res;
+        });
+    }, [historicoVeicular, sortHistoricoBy, sortHistoricoDirection]);
+
+    const exportarVeiculosCsv = useCallback(() => {
+        baixarCsv("veiculos-itrack.csv", ["Placa", "Veículo", "Cliente", "Motorista", "Status", "Sinal", "Velocidade", "Ignição", "GPS", "Última posição", "Localização", "Hodômetro"], veiculosFiltrados.map((v) => [
+            placaComTraco(v.placa),
+            veiculoDescricao(v),
+            veiculoCliente(v),
+            veiculoMotorista(v),
+            statusVeiculo(v).label,
+            statusAtualizacaoVeiculo(v).label,
+            fmtKmH(v.velocidade),
+            Number(v.ignicao) === 1 ? "Ligada" : "Desligada",
+            v.gps ?? "-",
+            fmtDataHora(veiculoDataPosicao(v)),
+            v.localizacao || "-",
+            v.hodometro != null ? fmtM(v.hodometro) : "-",
+        ]));
+    }, [veiculosFiltrados]);
+
+    const exportarAtendimentosCsv = useCallback(() => {
+        baixarCsv("atendimentos-telemetria.csv", ["ID", "Sepultamento", "Falecido", "Tipo", "Placa", "Veículo", "Agente", "Motorista", "Início", "Fim", "Distância", "Vel. média", "Vel. máxima", "Duração"], rowsFiltradas.map((r) => [
+            r.id,
+            r.sepultamento_id ?? "-",
+            r.falecido || "-",
+            tipoLabel(r.tipo),
+            placaComTraco(r.placa),
+            r.veiculo_nome || "-",
+            r.agente || "-",
+            r.nome_motorista || "-",
+            fmtDataHora(r.inicio_iso || r.inicio_ts),
+            fmtDataHora(r.fim_iso || r.fim_ts),
+            fmtKm(r.distancia_km),
+            fmtKmH(r.velocidade_media),
+            fmtKmH(r.velocidade_max),
+            fmtDur(r.duracao_s),
+        ]));
+    }, [rowsFiltradas]);
+
+    const exportarMotoristasCsv = useCallback(() => {
+        baixarCsv("motoristas-telemetria.csv", ["Motorista", "Vel. média", "Vel. máxima", "Veículos", "Placas", "Posições", "Primeira posição", "Última posição"], motoristasOrdenados.map((m) => [
+            m.motorista ?? m.nome_motorista ?? "Não informado",
+            fmtKmH(m.velocidade_media),
+            fmtKmH(m.velocidade_maxima),
+            m.total_veiculos ?? "-",
+            String(m.placas || "-").split(",").filter(Boolean).map((placa) => placaComTraco(placa)).join(", "),
+            m.total_posicoes ?? "-",
+            fmtDataHora(m.primeira_posicao),
+            fmtDataHora(m.ultima_posicao),
+        ]));
+    }, [motoristasOrdenados]);
+
+    const exportarHistoricoVeicularCsv = useCallback(() => {
+        baixarCsv("historico-veicular.csv", ["Placa", "Veículo", "Cliente", "Km no período", "Vel. média", "Vel. máxima", "Hod. inicial", "Hod. final", "Origem", "Período"], historicoVeicularOrdenado.map((d) => [
+            placaComTraco(d.placa),
+            d.descricao_veiculo ?? d.descricaoVeiculo ?? "-",
+            d.cliente ?? "-",
+            fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any)),
+            fmtKmH(d.velocidade_media),
+            fmtKmH(d.velocidade_maxima),
+            fmtM(d.hodometro_inicial ?? d.hodometroInicial),
+            fmtM(d.hodometro_final ?? d.hodometroFinal),
+            fonteDistanciaLabel(d.fonte_distancia),
+            `${fmtDataHora(d.data_inicio)} até ${fmtDataHora(d.data_fim)}`,
+        ]));
+    }, [historicoVeicularOrdenado]);
+
     const kpis = useMemo(() => {
         const emMovimento = veiculos.filter((v) => statusVeiculo(v).label === "Em movimento").length;
         const ligados = veiculos.filter((v) => Number(v.ignicao) === 1).length;
         const atendComPlaca = rows.filter((r) => normalizePlaca(r.placa || "")).length;
+        const semLocalizacao = veiculos.filter((v) => !veiculoPonto(v)).length;
+        const posicaoAntiga = veiculos.filter((v) => {
+            const s = statusAtualizacaoVeiculo(v);
+            return s.minutos != null && s.minutos >= POSICAO_ATRASADA_MIN;
+        }).length;
+        const excessoVelocidade = veiculos.filter((v) => velocidadeAlerta(v.velocidade)).length;
 
         return {
             veiculos: veiculos.length,
@@ -1185,6 +1404,9 @@ export default function TelemetriaOperacionalPage() {
             ligados,
             atendimentos: rows.length,
             atendComPlaca,
+            semLocalizacao,
+            posicaoAntiga,
+            excessoVelocidade,
         };
     }, [veiculos, rows]);
 
@@ -1245,20 +1467,23 @@ export default function TelemetriaOperacionalPage() {
                 )}
 
                 <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="grid flex-1 gap-2 sm:grid-cols-3">
-                        <KPI label="Veículos localizados" value={String(kpis.veiculos)} />
+                    <div className="grid flex-1 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+                        <KPI label="Veículos" value={String(kpis.veiculos)} />
                         <KPI label="Em movimento" value={String(kpis.emMovimento)} />
                         <KPI label="Ignição ligada" value={String(kpis.ligados)} />
+                        <KPI label="Sem localização" value={String(kpis.semLocalizacao)} />
+                        <KPI label="Sinal atrasado" value={String(kpis.posicaoAntiga)} />
+                        <KPI label="Vel. alta" value={String(kpis.excessoVelocidade)} />
                     </div>
 
-                    <div className="flex flex-wrap gap-2 text-xs">
+                    <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto lg:flex lg:flex-wrap">
                         <button
                             onClick={() => {
                                 setTab("ao_vivo");
                                 fetchVeiculos(false, true);
                             }}
                             disabled={loadingVeiculos}
-                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                            className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 sm:w-auto"
                         >
                             {loadingVeiculos ? "Consultando..." : "Atualizar agora"}
                         </button>
@@ -1266,7 +1491,7 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={carregarTudo}
                             disabled={loadingGeral}
-                            className="rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+                            className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 sm:w-auto"
                         >
                             Atualizar tudo
                         </button>
@@ -1286,7 +1511,7 @@ export default function TelemetriaOperacionalPage() {
                 onClose={() => setModalPlaca("")}
             />
 
-            <nav className="mb-5 flex flex-wrap gap-2">
+            <nav className="mb-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 <TabButton active={tab === "ao_vivo"} onClick={() => {
                     setTab("ao_vivo");
                     if (veiculos.length === 0) fetchVeiculos(true);
@@ -1318,16 +1543,50 @@ export default function TelemetriaOperacionalPage() {
 
             {tab === "lista_veiculos" && (
                 <section className="rounded-2xl border bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Frota iTrack</h2>
+                            <p className="text-sm text-slate-500">
+                                {veiculosFiltrados.length} de {veiculos.length} veículo(s) • tempo real {LIVE_REFRESH_MS / 1000}s • última atualização: {ultimaAtualizacaoAoVivo ? ultimaAtualizacaoAoVivo.toLocaleTimeString("pt-BR") : "-"}
+                            </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                            <span>{veiculos.length} veículo(s)</span>
-                            <span>•</span>
-                            <span>tempo real {LIVE_REFRESH_MS / 1000}s</span>
-                            <span>•</span>
-                            <span>última atualização: {ultimaAtualizacaoAoVivo ? ultimaAtualizacaoAoVivo.toLocaleTimeString("pt-BR") : "-"}</span>
+
+                        <div className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[260px_190px_auto_auto]">
+                            <input
+                                value={buscaVeiculo}
+                                onChange={(e) => setBuscaVeiculo(e.target.value)}
+                                placeholder="Buscar placa, motorista, local..."
+                                className="w-full rounded-xl border px-3 py-2 text-sm"
+                            />
+
+                            <select
+                                value={filtroStatusVeiculo}
+                                onChange={(e) => setFiltroStatusVeiculo(e.target.value as VeiculoFiltroStatus)}
+                                className="rounded-xl border px-3 py-2 text-sm"
+                            >
+                                <option value="todos">Todos os status</option>
+                                <option value="em_movimento">Em movimento</option>
+                                <option value="ligado_parado">Ligado/parado</option>
+                                <option value="desligado">Desligado</option>
+                                <option value="sem_localizacao">Sem localização</option>
+                                <option value="posicao_antiga">Sinal atrasado</option>
+                                <option value="excesso_velocidade">Velocidade alta</option>
+                            </select>
+
+                            <button
+                                onClick={limparFiltrosVeiculos}
+                                className="inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium xl:w-auto"
+                            >
+                                Limpar
+                            </button>
+
+                            <button
+                                onClick={exportarVeiculosCsv}
+                                disabled={veiculosFiltrados.length === 0}
+                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto"
+                            >
+                                Exportar CSV
+                            </button>
                         </div>
                     </div>
 
@@ -1337,72 +1596,80 @@ export default function TelemetriaOperacionalPage() {
                             text="Clique em Atualizar agora para consultar a iTrack em tempo real."
                         />
                     ) : (
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            {veiculos.map((v, idx) => {
-                                const st = statusVeiculo(v);
-                                const eventos = veiculoEventos(v);
+                        veiculosFiltrados.length === 0 ? (
+                            <EmptyState title="Nenhum veículo encontrado" text="Ajuste a busca ou os filtros para visualizar a frota." />
+                        ) : (
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                {veiculosFiltrados.map((v, idx) => {
+                                    const st = statusVeiculo(v);
+                                    const sinal = statusAtualizacaoVeiculo(v);
+                                    const eventos = veiculoEventos(v);
 
-                                return (
-                                    <div key={`${v.placa}-${idx}`} className="rounded-2xl border p-4">
-                                        <div className="mb-3 flex items-start justify-between gap-3">
-                                            <div>
-                                                <div className="text-lg font-bold">{placaComTraco(v.placa)}</div>
-                                                <div className="text-sm text-slate-600">{veiculoDescricao(v)}</div>
-                                                <div className="mt-1 text-xs text-slate-500">Cliente: {veiculoCliente(v)}</div>
+                                    return (
+                                        <div key={`${v.placa}-${idx}`} className="rounded-2xl border p-4">
+                                            <div className="mb-3 flex items-start justify-between gap-3">
+                                                <div>
+                                                    <div className="text-lg font-bold">{placaComTraco(v.placa)}</div>
+                                                    <div className="text-sm text-slate-600">{veiculoDescricao(v)}</div>
+                                                    <div className="mt-1 text-xs text-slate-500">Cliente: {veiculoCliente(v)}</div>
+                                                </div>
+
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <Badge tone={st.tone}>{st.label}</Badge>
+                                                    <Badge tone={sinal.tone}>{sinal.label}</Badge>
+                                                    {velocidadeAlerta(v.velocidade) && <Badge tone="red">Velocidade alta</Badge>}
+                                                </div>
                                             </div>
 
-                                            <Badge tone={st.tone}>{st.label}</Badge>
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <KPI label="Vel." value={fmtKmH(v.velocidade)} compact />
-                                            <KPI label="Ignição" value={Number(v.ignicao) === 1 ? "Ligada" : "Deslig."} compact />
-                                            <KPI label="GPS" value={String(v.gps ?? "-")} compact />
-                                        </div>
-
-                                        <div className="mt-3 space-y-1 text-xs text-slate-500">
-                                            <div>Rastreador: {veiculoRastreador(v)}</div>
-                                            <div>Motorista: {veiculoMotorista(v)}</div>
-                                            <div>Última posição: {fmtDataHora(veiculoDataPosicao(v))}</div>
-                                            <div>Localização: {v.localizacao || "-"}</div>
-                                            <div>Hodômetro: {v.hodometro != null ? fmtM(v.hodometro) : "-"}</div>
-                                        </div>
-
-                                        {eventos.length > 0 && (
-                                            <div className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
-                                                {eventos.map((ev, i) => (
-                                                    <div key={i}>
-                                                        {ev.idEvento ? `${ev.idEvento} - ` : ""}
-                                                        {ev.descricaoEvento || "Evento"}
-                                                    </div>
-                                                ))}
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <KPI label="Vel." value={fmtKmH(v.velocidade)} compact />
+                                                <KPI label="Ignição" value={Number(v.ignicao) === 1 ? "Ligada" : "Deslig."} compact />
+                                                <KPI label="GPS" value={String(v.gps ?? "-")} compact />
                                             </div>
-                                        )}
 
-                                        <div className="mt-3 grid grid-cols-2 gap-2">
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedPlaca(normalizePlaca(v.placa));
-                                                    setTab("historico_veicular");
-                                                }}
-                                                className="rounded-xl border px-3 py-2 text-xs font-medium"
-                                            >
-                                                usar placa
-                                            </button>
+                                            <div className="mt-3 space-y-1 text-xs text-slate-500">
+                                                <div>Rastreador: {veiculoRastreador(v)}</div>
+                                                <div>Motorista: {veiculoMotorista(v)}</div>
+                                                <div>Última posição: {fmtDataHora(veiculoDataPosicao(v))} • {sinal.label}</div>
+                                                <div>Localização: {v.localizacao || "-"}</div>
+                                                <div>Hodômetro: {v.hodometro != null ? fmtM(v.hodometro) : "-"}</div>
+                                            </div>
 
-                                            <button
-                                                onClick={() => fetchHistoricoVeicular("1d", v.placa)}
-                                                disabled={loadingHistoricoVeicular}
-                                                className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
-                                            >
-                                                histórico hoje
-                                            </button>
+                                            {eventos.length > 0 && (
+                                                <div className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
+                                                    {eventos.map((ev, i) => (
+                                                        <div key={i}>
+                                                            {ev.idEvento ? `${ev.idEvento} - ` : ""}
+                                                            {ev.descricaoEvento || "Evento"}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedPlaca(normalizePlaca(v.placa));
+                                                        setTab("historico_veicular");
+                                                    }}
+                                                    className="rounded-xl border px-3 py-2 text-xs font-medium"
+                                                >
+                                                    usar placa
+                                                </button>
+
+                                                <button
+                                                    onClick={() => fetchHistoricoVeicular("1d", v.placa)}
+                                                    disabled={loadingHistoricoVeicular}
+                                                    className="rounded-xl border px-3 py-2 text-xs font-medium disabled:opacity-60"
+                                                >
+                                                    histórico hoje
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                    );
+                                })}
+                            </div>
+                        ))}
                 </section>
             )}
 
@@ -1416,7 +1683,7 @@ export default function TelemetriaOperacionalPage() {
                             </p>
                         </div>
 
-                        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                        <div className="grid w-full gap-2 md:grid-cols-[1fr_auto_auto] xl:w-auto xl:grid-cols-[260px_auto_auto_auto_auto]">
                             <input
                                 value={busca}
                                 onChange={(e) => setBusca(e.target.value)}
@@ -1435,7 +1702,7 @@ export default function TelemetriaOperacionalPage() {
                                 <option value="para_sepultamento">Para sepultamento</option>
                             </select>
 
-                            <label className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm">
+                            <label className="inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm">
                                 <input
                                     type="checkbox"
                                     checked={somenteComPlaca}
@@ -1443,6 +1710,21 @@ export default function TelemetriaOperacionalPage() {
                                 />
                                 com placa
                             </label>
+
+                            <button
+                                onClick={limparFiltrosAtendimentos}
+                                className="inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium"
+                            >
+                                Limpar
+                            </button>
+
+                            <button
+                                onClick={exportarAtendimentosCsv}
+                                disabled={rowsFiltradas.length === 0}
+                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+                            >
+                                Exportar CSV
+                            </button>
                         </div>
                     </div>
 
@@ -1488,7 +1770,7 @@ export default function TelemetriaOperacionalPage() {
                                             </div>
                                         </div>
 
-                                        <div className="mt-3 flex flex-wrap gap-2">
+                                        <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
                                             <button
                                                 onClick={() => selecionarAtendimento(row)}
                                                 className="rounded-xl border px-3 py-2 text-xs font-medium"
@@ -1549,7 +1831,7 @@ export default function TelemetriaOperacionalPage() {
                             </p>
                         </div>
 
-                        <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                        <div className="grid w-full gap-2 sm:grid-cols-2 md:w-auto md:grid-cols-none md:flex md:items-end">
                             <PeriodoControls
                                 periodo={periodoMotorista}
                                 setPeriodo={setPeriodoMotorista}
@@ -1565,19 +1847,27 @@ export default function TelemetriaOperacionalPage() {
                             <button
                                 onClick={() => fetchMotoristas(periodoMotorista, true)}
                                 disabled={loadingMotoristas}
-                                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 md:w-auto"
                             >
                                 {loadingMotoristas ? "Atualizando..." : "Atualizar iTrack"}
+                            </button>
+
+                            <button
+                                onClick={exportarMotoristasCsv}
+                                disabled={motoristasOrdenados.length === 0}
+                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 md:w-auto"
+                            >
+                                Exportar CSV
                             </button>
                         </div>
                     </div>
 
-                    {motoristas.length === 0 ? (
+                    {motoristasOrdenados.length === 0 ? (
                         <EmptyState title="Nenhum motorista encontrado" text="Consulte um período para ver velocidade média e máxima por motorista." />
                     ) : (
                         <div className="space-y-4">
                             <div className="grid gap-2 md:grid-cols-4">
-                                <KPI label="Motoristas" value={String(motoristas.length)} />
+                                <KPI label="Motoristas" value={String(motoristasOrdenados.length)} />
                                 <KPI
                                     label="Maior velocidade"
                                     value={fmtKmH(Math.max(...motoristas.map((m) => Number(m.velocidade_maxima ?? 0)).filter(Number.isFinite), 0))}
@@ -1585,8 +1875,8 @@ export default function TelemetriaOperacionalPage() {
                                 <KPI
                                     label="Média geral"
                                     value={fmtKmH(
-                                        motoristas.length
-                                            ? motoristas
+                                        motoristasOrdenados.length
+                                            ? motoristasOrdenados
                                                 .map((m) => Number(m.velocidade_media ?? 0))
                                                 .filter(Number.isFinite)
                                                 .reduce((a, b) => a + b, 0) / Math.max(1, motoristas.map((m) => Number(m.velocidade_media ?? 0)).filter(Number.isFinite).length)
@@ -1600,24 +1890,29 @@ export default function TelemetriaOperacionalPage() {
                                 <table className="min-w-full text-left text-sm">
                                     <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                                         <tr>
-                                            <th className="px-3 py-2">Motorista</th>
-                                            <th className="px-3 py-2">Vel. média</th>
-                                            <th className="px-3 py-2">Vel. máxima</th>
-                                            <th className="px-3 py-2">Veículos</th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "motorista"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("motorista")}>Motorista</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_media"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_media")}>Vel. média</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_maxima"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_maxima")}>Vel. máxima</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "total_veiculos"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("total_veiculos")}>Veículos</SortButton></th>
                                             <th className="px-3 py-2">Placas</th>
-                                            <th className="px-3 py-2">Posições</th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "total_posicoes"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("total_posicoes")}>Posições</SortButton></th>
                                             <th className="px-3 py-2">Primeira posição</th>
-                                            <th className="px-3 py-2">Última posição</th>
+                                            <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "ultima_posicao"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("ultima_posicao")}>Última posição</SortButton></th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {motoristas.map((m, idx) => {
+                                        {motoristasOrdenados.map((m, idx) => {
                                             const motorista = m.motorista ?? m.nome_motorista ?? "Não informado";
                                             return (
                                                 <tr key={`${motorista}-${idx}`} className="border-b last:border-0">
                                                     <td className="px-3 py-2 font-medium">{motorista}</td>
                                                     <td className="px-3 py-2">{fmtKmH(m.velocidade_media)}</td>
-                                                    <td className="px-3 py-2 font-semibold">{fmtKmH(m.velocidade_maxima)}</td>
+                                                    <td className="px-3 py-2 font-semibold">
+                                                        <span className="inline-flex items-center gap-2">
+                                                            {fmtKmH(m.velocidade_maxima)}
+                                                            {velocidadeAlerta(m.velocidade_maxima) && <Badge tone="red">Alta</Badge>}
+                                                        </span>
+                                                    </td>
                                                     <td className="px-3 py-2">{m.total_veiculos ?? "-"}</td>
                                                     <td className="px-3 py-2 text-xs">
                                                         {String(m.placas || "-")
@@ -1663,7 +1958,7 @@ export default function TelemetriaOperacionalPage() {
                         />
                     </div>
 
-                    <div className="mb-4 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                    <div className="mb-4 grid gap-2 md:grid-cols-2 xl:grid-cols-[1fr_auto_auto_auto_auto]">
                         <input
                             value={selectedPlaca}
                             onChange={(e) => setSelectedPlaca(normalizePlaca(e.target.value))}
@@ -1683,22 +1978,37 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={() => fetchHistoricoVeicular(periodoVeicular, selectedPlaca || undefined, true)}
                             disabled={loadingHistoricoVeicular}
-                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                            className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 xl:w-auto"
                         >
                             {loadingHistoricoVeicular ? "Atualizando..." : "Atualizar iTrack"}
                         </button>
+
+                        <button
+                            onClick={limparFiltroHistoricoVeicular}
+                            className="inline-flex w-full items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium xl:w-auto"
+                        >
+                            Limpar
+                        </button>
+
+                        <button
+                            onClick={exportarHistoricoVeicularCsv}
+                            disabled={historicoVeicularOrdenado.length === 0}
+                            className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto"
+                        >
+                            Exportar CSV
+                        </button>
                     </div>
 
-                    {historicoVeicular.length === 0 ? (
+                    {historicoVeicularOrdenado.length === 0 ? (
                         <EmptyState title="Nenhum histórico veicular encontrado" text="Consulte um período ou clique em Atualizar iTrack para buscar distância, posições, velocidade e motorista." />
                     ) : (
                         <div className="space-y-4">
                             <div className="grid gap-2 md:grid-cols-4">
-                                <KPI label="Veículos" value={String(historicoVeicular.length)} />
+                                <KPI label="Veículos" value={String(historicoVeicularOrdenado.length)} />
                                 <KPI label="Km oficial iTrack" value={fmtKm(historicoVeicularTotalKm)} />
                                 <KPI
                                     label="Maior km no período"
-                                    value={fmtKm(Math.max(...historicoVeicular.map((v) => Number(v.distancia_percorrida_km ?? distanciaKm(v as any))).filter(Number.isFinite), 0))}
+                                    value={fmtKm(Math.max(...historicoVeicularOrdenado.map((v) => Number(v.distancia_percorrida_km ?? distanciaKm(v as any))).filter(Number.isFinite), 0))}
                                 />
                                 <KPI label="Período" value={periodoLabel(periodoVeicular)} />
                             </div>
@@ -1707,27 +2017,32 @@ export default function TelemetriaOperacionalPage() {
                                 <table className="min-w-full text-left text-sm">
                                     <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                                         <tr>
-                                            <th className="px-3 py-2">Placa</th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "placa"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("placa")}>Placa</SortButton></th>
                                             <th className="px-3 py-2">Veículo</th>
                                             <th className="px-3 py-2">Cliente</th>
-                                            <th className="px-3 py-2">Km no período</th>
-                                            <th className="px-3 py-2">Vel. média</th>
-                                            <th className="px-3 py-2">Vel. máxima</th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "distancia"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("distancia")}>Km no período</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "velocidade_media"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("velocidade_media")}>Vel. média</SortButton></th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "velocidade_maxima"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("velocidade_maxima")}>Vel. máxima</SortButton></th>
                                             <th className="px-3 py-2">Hod. inicial</th>
-                                            <th className="px-3 py-2">Hod. final</th>
+                                            <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "hodometro_final"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("hodometro_final")}>Hod. final</SortButton></th>
                                             <th className="px-3 py-2">Origem do cálculo</th>
                                             <th className="px-3 py-2">Período</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {historicoVeicular.map((d, idx) => (
+                                        {historicoVeicularOrdenado.map((d, idx) => (
                                             <tr key={`${d.placa}-${idx}`} className="border-b last:border-0">
                                                 <td className="px-3 py-2 font-medium">{placaComTraco(d.placa)}</td>
                                                 <td className="px-3 py-2">{d.descricao_veiculo ?? d.descricaoVeiculo ?? "-"}</td>
                                                 <td className="px-3 py-2">{d.cliente ?? "-"}</td>
                                                 <td className="px-3 py-2 font-semibold">{fmtKm(d.distancia_percorrida_km ?? distanciaKm(d as any))}</td>
                                                 <td className="px-3 py-2">{fmtKmH(d.velocidade_media)}</td>
-                                                <td className="px-3 py-2">{fmtKmH(d.velocidade_maxima)}</td>
+                                                <td className="px-3 py-2">
+                                                    <span className="inline-flex items-center gap-2">
+                                                        {fmtKmH(d.velocidade_maxima)}
+                                                        {velocidadeAlerta(d.velocidade_maxima) && <Badge tone="red">Alta</Badge>}
+                                                    </span>
+                                                </td>
                                                 <td className="px-3 py-2">{fmtM(d.hodometro_inicial ?? d.hodometroInicial)}</td>
                                                 <td className="px-3 py-2">{fmtM(d.hodometro_final ?? d.hodometroFinal)}</td>
                                                 <td className="px-3 py-2 text-xs">{fonteDistanciaLabel(d.fonte_distancia)}</td>
@@ -1770,7 +2085,7 @@ function PeriodoControls({
     buttonText: string;
 }) {
     return (
-        <div className="flex flex-col gap-2 md:flex-row md:items-end">
+        <div className="grid w-full gap-2 sm:grid-cols-2 md:w-auto md:grid-cols-none md:flex md:items-end">
             <div className="grid gap-1">
                 <label className="text-xs font-medium text-slate-500">Período</label>
                 <select
@@ -1812,7 +2127,7 @@ function PeriodoControls({
             <button
                 onClick={onConsultar}
                 disabled={loading}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 md:w-auto"
             >
                 {loading ? "Consultando..." : buttonText}
             </button>
@@ -1951,7 +2266,9 @@ function Badge({
                 ? "bg-amber-50 text-amber-700 border-amber-200"
                 : tone === "blue"
                     ? "bg-blue-50 text-blue-700 border-blue-200"
-                    : "bg-slate-50 text-slate-700 border-slate-200";
+                    : tone === "red"
+                        ? "bg-red-50 text-red-700 border-red-200"
+                        : "bg-slate-50 text-slate-700 border-slate-200";
 
     return (
         <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
@@ -1972,9 +2289,32 @@ function TabButton({
     return (
         <button
             onClick={onClick}
-            className={`rounded-xl border px-4 py-2 text-sm font-medium ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            className={`inline-flex w-full items-center justify-center rounded-xl border px-3 py-2 text-center text-sm font-medium sm:w-auto ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700"}`}
         >
             {children}
+        </button>
+    );
+}
+
+function SortButton({
+    active,
+    direction,
+    onClick,
+    children,
+}: {
+    active: boolean;
+    direction: SortDirection;
+    onClick: () => void;
+    children: React.ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="inline-flex items-center gap-1 font-semibold hover:text-slate-900"
+        >
+            <span>{children}</span>
+            {active && <span className="text-[10px]">{direction === "asc" ? "▲" : "▼"}</span>}
         </button>
     );
 }
