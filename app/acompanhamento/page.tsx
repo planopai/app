@@ -450,6 +450,31 @@ export default function AcompanhamentoPage() {
   const [teleActive, setTeleActive] = useState(false);
   const [teleStartFase, setTeleStartFase] = useState<string | null>(null);
 
+  // ✅ refs para evitar estado atrasado no momento de encerrar a telemetria
+  const teleActiveRef = useRef(false);
+  const teleStartFaseRef = useRef<string | null>(null);
+  const teleRegistroIdRef = useRef<Registro["id"] | null>(null);
+
+  const definirTeleRegistroId = useCallback((id: Registro["id"] | null | undefined) => {
+    const normalized = id != null ? String(id) : null;
+    teleRegistroIdRef.current = normalized;
+    setTeleRegistroId(normalized);
+  }, []);
+
+  const marcarTeleAtiva = useCallback((fase: string) => {
+    teleActiveRef.current = true;
+    teleStartFaseRef.current = fase;
+    setTeleActive(true);
+    setTeleStartFase(fase);
+  }, []);
+
+  const limparTeleAtiva = useCallback(() => {
+    teleActiveRef.current = false;
+    teleStartFaseRef.current = null;
+    setTeleActive(false);
+    setTeleStartFase(null);
+  }, []);
+
   /* -------------------- Config por tipo -------------------- */
   const {
     wizardStepIndexes: wizardStepIndexesForTipo,
@@ -1669,15 +1694,17 @@ export default function AcompanhamentoPage() {
       if (json?.sucesso) {
         setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`, ok: true });
 
+        const faseInicioTele = teleStartFaseRef.current ?? teleStartFase;
+        const teleEstaAtiva = teleActiveRef.current || teleActive;
+
         if (
-          teleActive &&
-          teleStartFase &&
-          STOP_BY_START[teleStartFase] &&
-          STOP_BY_START[teleStartFase] === (statusCode || acao)
+          teleEstaAtiva &&
+          faseInicioTele &&
+          STOP_BY_START[faseInicioTele] &&
+          STOP_BY_START[faseInicioTele] === (statusCode || acao)
         ) {
           await teleRef.current?.stopAndSave();
-          setTeleActive(false);
-          setTeleStartFase(null);
+          limparTeleAtiva();
         }
 
         await fetchRegistros();
@@ -1709,40 +1736,62 @@ export default function AcompanhamentoPage() {
 
       setAcaoMsg({ text: msg || "Erro ao atualizar status.", ok: false });
       return false;
-    }
- finally {
+    } finally {
       setAcaoSubmitting(false);
       flushOfflineQueue();
     }
   }, [
-    acaoSubmitting,
-    acaoId,
-    registros,
-    teleActive,
-    teleStartFase,
-    fetchRegistros,
-    flushOfflineQueue,
-    baixarItensFase05,
-  ]);
+  acaoSubmitting,
+  acaoId,
+  registros,
+  teleActive,
+  teleStartFase,
+  fetchRegistros,
+  flushOfflineQueue,
+  baixarItensFase05,
+  limparTeleAtiva,
+]);
 
 
   const confirmarAcaoSilenciosa = useCallback(async (fase: string) => {
-    const id = teleRegistroId ?? acaoId;
+    const id = teleRegistroIdRef.current ?? teleRegistroId ?? acaoId;
     if (id == null) return;
 
     const statusCode = normalizeStatusCode(fase);
     const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
 
     if (!isOnlineNow()) {
-      enqueueOffline({ acao: "atualizar_status", id, status: statusCode || fase, ...(needsBackendConfirm ? { confirmar: true } : {}) }, "offline");
+      enqueueOffline(
+        {
+          acao: "atualizar_status",
+          id,
+          status: statusCode || fase,
+          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        },
+        "offline"
+      );
       return;
     }
 
     try {
-      await enviarRegistroPHP({ acao: "atualizar_status", id, status: statusCode || fase, ...(needsBackendConfirm ? { confirmar: true } : {}) });
+      await enviarRegistroPHP({
+        acao: "atualizar_status",
+        id,
+        status: statusCode || fase,
+        ...(needsBackendConfirm ? { confirmar: true } : {}),
+      });
+
       await fetchRegistros();
     } catch (e: any) {
-      enqueueOffline({ acao: "atualizar_status", id, status: statusCode || fase, ...(needsBackendConfirm ? { confirmar: true } : {}) }, e?.message);
+      enqueueOffline(
+        {
+          acao: "atualizar_status",
+          id,
+          status: statusCode || fase,
+          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        },
+        e?.message
+      );
     } finally {
       flushOfflineQueue();
     }
@@ -1784,18 +1833,22 @@ export default function AcompanhamentoPage() {
 
   /* -------------------- Telemetria -------------------- */
   const handleVeiculoRequired = useCallback((id: Registro["id"] | null | undefined, fase: string) => {
+    const normalizedId = id != null ? String(id) : null;
     const tipo = mapFaseToTipo(fase);
+
     if (!tipo) {
-      setAcaoId(id != null ? String(id) : null);
+      setAcaoId(normalizedId);
       registrarAcao(fase);
       return;
     }
-    setTeleRegistroId(id != null ? String(id) : null);
+
+    setAcaoId(normalizedId);
+    definirTeleRegistroId(normalizedId);
     setTeleFase(fase);
     setTeleTipo(tipo);
     setTeleOpen(true);
     setAcaoOpen(false);
-  }, [registrarAcao]);
+  }, [registrarAcao, definirTeleRegistroId]);
 
   /* -------------------- Resumos -------------------- */
   const materiaisSelecionadosResumo = useMemo(() => {
@@ -1988,12 +2041,10 @@ export default function AcompanhamentoPage() {
         tipo={teleTipo}
         onConfirmAcao={confirmarAcaoSilenciosa}
         onStarted={({ fase }) => {
-          setTeleActive(true);
-          setTeleStartFase(fase);
+          marcarTeleAtiva(fase);
         }}
         onSaved={() => {
-          setTeleActive(false);
-          setTeleStartFase(null);
+          limparTeleAtiva();
           fetchRegistros();
         }}
       />
