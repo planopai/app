@@ -13,7 +13,7 @@ import { Registro } from "./types";
 
 import TextFeedback from "./TextFeedback";
 
-const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+const TELEMETRIA_URL = "https://api.planoassistencialintegrado.com.br/telemetria.php";
 
 /* ======================= Tipos ======================= */
 export type TipoTele = "remocao" | "para_velorio" | "para_sepultamento";
@@ -267,7 +267,7 @@ export default forwardRef<
         registro?: Registro;
         fase: string; // fase01/fase07/fase09
         tipo: TipoTele;
-        /** Lista real de veículos carregada no page.tsx via PHP/iTrack. */
+        /** Opcional: se o page.tsx passar a frota, usa ela; caso contrário, o modal busca direto na API. */
         veiculos?: ItrackVeiculo[];
         /** Atualiza status sem perguntar (ex.: fase01) */
         onConfirmAcao?: (fase: string) => Promise<void> | void;
@@ -282,6 +282,9 @@ export default forwardRef<
     const [saving, setSaving] = useState(false);
     const [starting, setStarting] = useState(false);
     const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [veiculosApi, setVeiculosApi] = useState<ItrackVeiculo[]>([]);
+    const [loadingVeiculos, setLoadingVeiculos] = useState(false);
+    const [erroVeiculos, setErroVeiculos] = useState<string | null>(null);
 
     // coleta
     const watchIdRef = useRef<number | null>(null);
@@ -293,6 +296,7 @@ export default forwardRef<
     const relockHandlerRef = useRef<() => void>(() => { });
     const veiculoRef = useRef<VeiculoOpcao | null>(null);
     const activeRef = useRef(false);
+    const veiculosAbortRef = useRef<AbortController | null>(null);
 
     useImperativeHandle(ref, () => ({
         stopAndSave: async () => {
@@ -306,11 +310,66 @@ export default forwardRef<
         return "Transporte para Sepultamento";
     }, [tipo]);
 
+    const veiculosFonte = useMemo(() => {
+        // Prioridade para a prop, se o page.tsx passar. Caso contrário, usa a frota buscada direto na API.
+        return Array.isArray(veiculos) && veiculos.length > 0 ? veiculos : veiculosApi;
+    }, [veiculos, veiculosApi]);
+
     const veiculosOpcoes = useMemo(() => {
-        // Fonte única: frota real recebida do page.tsx via PHP/iTrack.
-        // Não existe fallback local com nomes fixos.
-        return veiculosItrackToOpcoes(veiculos);
-    }, [veiculos]);
+        // Sem lista estática: somente veículos reais vindos da API/prop.
+        return veiculosItrackToOpcoes(veiculosFonte);
+    }, [veiculosFonte]);
+
+    async function carregarVeiculosReais(force = false) {
+        if (!force && (loadingVeiculos || veiculosApi.length > 0 || (Array.isArray(veiculos) && veiculos.length > 0))) return;
+
+        veiculosAbortRef.current?.abort();
+        const controller = new AbortController();
+        veiculosAbortRef.current = controller;
+
+        setLoadingVeiculos(true);
+        setErroVeiculos(null);
+
+        try {
+            const qs = new URLSearchParams({
+                itrack: "listaveiculos",
+                _t: String(Date.now()),
+            });
+
+            const r = await fetch(`${TELEMETRIA_URL}?${qs.toString()}`, {
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Cache-Control": "no-cache" },
+                signal: controller.signal,
+            });
+
+            const text = await r.text();
+            let payload: any = null;
+
+            try {
+                payload = text ? JSON.parse(text) : null;
+            } catch {
+                throw new Error("A API não retornou JSON válido ao listar veículos.");
+            }
+
+            if (!r.ok || payload?.erro) {
+                throw new Error(payload?.msg || `Erro HTTP ${r.status} ao consultar veículos.`);
+            }
+
+            const list = payload?.dados?.data ?? payload?.dados ?? payload?.data ?? payload;
+            setVeiculosApi(Array.isArray(list) ? list : []);
+        } catch (e: any) {
+            if (e?.name !== "AbortError") {
+                setErroVeiculos(e?.message || "Falha ao carregar veículos reais.");
+                setVeiculosApi([]);
+            }
+        } finally {
+            if (veiculosAbortRef.current === controller) {
+                veiculosAbortRef.current = null;
+                setLoadingVeiculos(false);
+            }
+        }
+    }
 
     const veiculoSelecionado = useMemo(() => {
         return veiculosOpcoes.find((v) => veiculoLabel(v) === veiculo) || null;
@@ -512,7 +571,7 @@ export default forwardRef<
 
             try {
                 if (navigator.onLine) {
-                    const r = await fetch(`${ENDPOINT}/api/php/telemetria.php`, {
+                    const r = await fetch(TELEMETRIA_URL, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         credentials: "include",
@@ -536,7 +595,7 @@ export default forwardRef<
                 }
             } catch {
                 const q = readQueue();
-                q.push({ when: Date.now(), url: `${ENDPOINT}/api/php/telemetria.php`, body: payload });
+                q.push({ when: Date.now(), url: TELEMETRIA_URL, body: payload });
                 writeQueue(q);
 
                 try {
@@ -559,6 +618,13 @@ export default forwardRef<
     }
 
     /* ====== efeitos ====== */
+    useEffect(() => {
+        if (open) {
+            carregarVeiculosReais();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
+
     useEffect(() => {
         if (!open) {
             setVeiculo(veiculoRef.current ? veiculoLabel(veiculoRef.current) : "");
@@ -595,6 +661,9 @@ export default forwardRef<
             window.removeEventListener("visibilitychange", relockHandlerRef.current);
             window.removeEventListener("online", flushQueue);
 
+            veiculosAbortRef.current?.abort();
+            veiculosAbortRef.current = null;
+
             if (wakeLockRef.current) {
                 try {
                     wakeLockRef.current.release?.();
@@ -620,7 +689,7 @@ export default forwardRef<
                 <select
                     className="w-full rounded-md border px-3 py-2 text-sm"
                     value={veiculo}
-                    disabled={saving || starting || veiculosOpcoes.length === 0}
+                    disabled={saving || starting || loadingVeiculos || veiculosOpcoes.length === 0}
                     onChange={async (e) => {
                         const label = e.target.value;
                         if (!label) return;
@@ -635,7 +704,7 @@ export default forwardRef<
                     }}
                 >
                     <option value="">
-                        {veiculosOpcoes.length === 0 ? "Nenhum veículo real carregado" : "Selecione…"}
+                        {loadingVeiculos ? "Carregando veículos reais..." : veiculosOpcoes.length === 0 ? "Nenhum veículo real carregado" : "Selecione…"}
                     </option>
                     {veiculosOpcoes.map((v) => {
                         const label = veiculoLabel(v);
@@ -648,12 +717,22 @@ export default forwardRef<
                 </select>
 
                 <p className="mt-2 text-xs text-slate-500">
-                    A lista usa somente os veículos reais carregados pela iTrack/PHP no page.tsx. A placa será salva separadamente quando disponível, melhorando o vínculo com os atendimentos.
+                    A lista usa somente veículos reais carregados diretamente de https://api.planoassistencialintegrado.com.br/telemetria.php. A placa será salva separadamente quando disponível, melhorando o vínculo com os atendimentos.
                 </p>
-                {veiculosOpcoes.length === 0 && (
-                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        Nenhum veículo real foi recebido pelo modal. Confirme se o page.tsx está passando a prop veiculos para o TelemetriaModal.
-                    </p>
+                {veiculosOpcoes.length === 0 && !loadingVeiculos && (
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        <p>
+                            Nenhum veículo real foi retornado pela API. Verifique se o endpoint telemetria.php responde a ?itrack=listaveiculos e se o navegador permite a consulta.
+                        </p>
+                        {erroVeiculos && <p className="mt-1">Erro: {erroVeiculos}</p>}
+                        <button
+                            type="button"
+                            onClick={() => carregarVeiculosReais(true)}
+                            className="mt-2 rounded-md border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                        >
+                            Tentar carregar novamente
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -662,7 +741,7 @@ export default forwardRef<
                     type="button"
                     onClick={saving || starting ? undefined : onClose}
                     className="w-full rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60 sm:w-auto"
-                    disabled={saving || starting || veiculosOpcoes.length === 0}
+                    disabled={saving || starting}
                 >
                     Fechar
                 </button>
