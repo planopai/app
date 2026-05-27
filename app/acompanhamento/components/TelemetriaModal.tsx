@@ -188,6 +188,19 @@ function clearActiveSnapshot() {
     } catch { }
 }
 
+function readActiveSnapshot(): any | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = localStorage.getItem("tele_active_snapshot");
+        if (!raw) return null;
+
+        const snap = JSON.parse(raw);
+        return snap && typeof snap === "object" ? snap : null;
+    } catch {
+        return null;
+    }
+}
+
 /* ======================= Wake Lock ======================= */
 
 async function requestWakeLock(): Promise<any | null> {
@@ -261,6 +274,7 @@ export default forwardRef<
             tipo,
             veiculo: veic ? veiculoLabel(veic) : veiculo,
             veiculo_nome: veic?.nome || veiculo || null,
+            falecido: getFalecido(registro),
             placa: veic?.placa || null,
             startTs: startTsRef.current,
             origem_dados: veic?.placa ? "itrack" : "manual_sem_rota",
@@ -342,21 +356,50 @@ export default forwardRef<
         clearActiveSnapshot();
     }
 
-    function buildPayload() {
+    function buildPayload(snapshotFallback?: any) {
         const veic = veiculoRef.current || veiculoSelecionado;
-        const placa = normalizePlaca(veic?.placa || "");
 
-        const inicioMs = startTsRef.current || Date.now();
+        const placa = normalizePlaca(
+            veic?.placa ||
+            snapshotFallback?.placa ||
+            ""
+        );
+
+        const inicioMs =
+            startTsRef.current ||
+            Number(snapshotFallback?.startTs || 0) ||
+            Date.now();
+
         const fimMs = endTsRef.current || Date.now();
         const durS = Math.max(1, Math.round((fimMs - inicioMs) / 1000));
 
+        const veiculoNome =
+            veic?.nome ||
+            snapshotFallback?.veiculo_nome ||
+            snapshotFallback?.veiculo ||
+            veiculo ||
+            null;
+
+        const sepultamentoId =
+            getRegistroId(registro) ??
+            snapshotFallback?.id ??
+            snapshotFallback?.sepultamento_id ??
+            null;
+
+        const falecido =
+            getFalecido(registro) ??
+            snapshotFallback?.falecido ??
+            null;
+
+        const tipoPayload = snapshotFallback?.tipo || tipo;
+
         const base = {
-            sepultamento_id: getRegistroId(registro),
-            tipo,
-            falecido: getFalecido(registro),
-            veiculo_nome: veic?.nome || veiculo || null,
+            sepultamento_id: sepultamentoId,
+            tipo: tipoPayload,
+            falecido,
+            veiculo_nome: veiculoNome,
             placa: placa || null,
-            veiculo_obs: veic?.placa ? null : "OUTRA EMPRESA / sem rastreador",
+            veiculo_obs: placa ? null : "OUTRA EMPRESA / sem rastreador",
             inicio_ts: toMysqlDateTime(new Date(inicioMs)),
             fim_ts: toMysqlDateTime(new Date(fimMs)),
             duracao_seg: durS,
@@ -392,8 +435,11 @@ export default forwardRef<
     async function stopAndSave() {
         if (saving) return;
 
-        // Se não há sessão ativa, não tenta gravar rota fantasma.
-        if (!activeRef.current && !startTsRef.current && !veiculoRef.current) {
+        const snap = readActiveSnapshot();
+
+        // Se a sessão ativa foi perdida por remount/reload, recupera pelo snapshot local.
+        if (!activeRef.current && !startTsRef.current && !veiculoRef.current && !snap) {
+            console.warn("[TELEMETRIA] Nenhuma sessão ativa encontrada para salvar.");
             return;
         }
 
@@ -401,16 +447,21 @@ export default forwardRef<
 
         try {
             endTsRef.current = Date.now();
-            const payload = buildPayload();
+
+            const payload = buildPayload(snap);
+
+            console.log("[TELEMETRIA] payload stopAndSave", payload);
 
             try {
                 if (typeof navigator === "undefined" || navigator.onLine !== false) {
-                    await postTelemetria(payload);
+                    const retorno = await postTelemetria(payload);
+                    console.log("[TELEMETRIA] retorno PHP", retorno);
                     setMsg({ text: "Telemetria salva!", ok: true });
                 } else {
                     throw new Error("offline");
                 }
             } catch (e: any) {
+                console.error("[TELEMETRIA] falha ao salvar, enfileirando", e);
                 enqueueTelemetria(payload);
                 setMsg({
                     text: "Telemetria salva no aparelho e será reenviada quando houver conexão.",
