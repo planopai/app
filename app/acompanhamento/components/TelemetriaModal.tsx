@@ -11,8 +11,7 @@ import React, {
 import Modal from "./Modal";
 import { Registro } from "./types";
 
-const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
-const TELEMETRIA_URL = `${ENDPOINT}/api/php/telemetria.php`;
+const TELEMETRIA_URL = "https://api.planoassistencialintegrado.com.br/telemetria.php";
 
 /* ======================= Tipos ======================= */
 
