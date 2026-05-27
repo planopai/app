@@ -67,27 +67,6 @@ export type TelemetriaHandle = {
     stopAndSave: () => Promise<void>;
 };
 
-/* ======================= Veículos (fallback local) ======================= */
-/**
- * Lista local com nome + placa separada.
- *
- * Isso evita salvar apenas "Strada RDR 8G25" em veiculo_nome e deixar placa vazia.
- * A tela de Atendimentos Funerários consegue consultar melhor a iTrack quando o campo placa vem separado.
- */
-const VEICULOS: VeiculoOpcao[] = [
-    { nome: "Strada", placa: "RDR8G25" },
-    { nome: "S10", placa: "PRY7H63" },
-    { nome: "SPRINTER", placa: "RDG9170" },
-    { nome: "DOBLO", placa: "OZP9875" },
-    { nome: "SAVEIRO", placa: "RCQ5B26" },
-    { nome: "HILUX", placa: "SKT5G28" },
-    { nome: "HILUX", placa: "QTV4I21" },
-    { nome: "SAVEIRO", placa: "ONQ6794" },
-    { nome: "DUCATO", placa: null, obs: "PLV" },
-    { nome: "DUCATO", placa: "PLL6E98" },
-    { nome: "OUTRA EMPRESA", placa: null, obs: "Veículo externo" },
-];
-
 /* ======================= Utils ======================= */
 function isNum(v: any): v is number {
     return Number.isFinite(v);
@@ -328,11 +307,9 @@ export default forwardRef<
     }, [tipo]);
 
     const veiculosOpcoes = useMemo(() => {
-        const opcoesReais = veiculosItrackToOpcoes(veiculos);
-
-        // Usa a frota real quando ela vier do page.tsx.
-        // Mantém a lista local apenas como fallback para não quebrar o modal caso a API ainda não tenha carregado.
-        return opcoesReais.length > 0 ? opcoesReais : VEICULOS;
+        // Fonte única: frota real recebida do page.tsx via PHP/iTrack.
+        // Não existe fallback local com nomes fixos.
+        return veiculosItrackToOpcoes(veiculos);
     }, [veiculos]);
 
     const veiculoSelecionado = useMemo(() => {
@@ -643,7 +620,7 @@ export default forwardRef<
                 <select
                     className="w-full rounded-md border px-3 py-2 text-sm"
                     value={veiculo}
-                    disabled={saving || starting}
+                    disabled={saving || starting || veiculosOpcoes.length === 0}
                     onChange={async (e) => {
                         const label = e.target.value;
                         if (!label) return;
@@ -657,7 +634,9 @@ export default forwardRef<
                         await startAfterSelect(escolhido);
                     }}
                 >
-                    <option value="">Selecione…</option>
+                    <option value="">
+                        {veiculosOpcoes.length === 0 ? "Nenhum veículo real carregado" : "Selecione…"}
+                    </option>
                     {veiculosOpcoes.map((v) => {
                         const label = veiculoLabel(v);
                         return (
@@ -669,8 +648,13 @@ export default forwardRef<
                 </select>
 
                 <p className="mt-2 text-xs text-slate-500">
-                    A lista usa os veículos reais carregados pela iTrack. A placa será salva separadamente quando disponível, melhorando o vínculo com os atendimentos.
+                    A lista usa somente os veículos reais carregados pela iTrack/PHP no page.tsx. A placa será salva separadamente quando disponível, melhorando o vínculo com os atendimentos.
                 </p>
+                {veiculosOpcoes.length === 0 && (
+                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        Nenhum veículo real foi recebido pelo modal. Confirme se o page.tsx está passando a prop veiculos para o TelemetriaModal.
+                    </p>
+                )}
             </div>
 
             <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -678,7 +662,7 @@ export default forwardRef<
                     type="button"
                     onClick={saving || starting ? undefined : onClose}
                     className="w-full rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60 sm:w-auto"
-                    disabled={saving || starting}
+                    disabled={saving || starting || veiculosOpcoes.length === 0}
                 >
                     Fechar
                 </button>
