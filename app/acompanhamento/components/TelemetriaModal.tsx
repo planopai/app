@@ -20,7 +20,7 @@ export type TipoTele = "remocao" | "para_velorio" | "para_sepultamento";
 
 type VeiculoOpcao = {
     nome: string;
-    placa: string;
+    placa: string | null;
 };
 
 type OffPayload = {
@@ -47,6 +47,7 @@ const VEICULOS_FIXOS: VeiculoOpcao[] = [
     { nome: "SAVEIRO", placa: "ONQ6794" },
     { nome: "DUCATO", placa: "PLV6H34" },
     { nome: "DUCATO", placa: "PLL6E98" },
+    { nome: "OUTRA EMPRESA", placa: null },
 ];
 
 /* ======================= Utils ======================= */
@@ -65,7 +66,8 @@ function placaComTraco(v?: string | null) {
 }
 
 function veiculoLabel(v: VeiculoOpcao) {
-    return `${v.nome} ${placaComTraco(v.placa)}`;
+    const placa = placaComTraco(v.placa);
+    return placa ? `${v.nome} ${placa}` : v.nome;
 }
 
 function getRegistroId(registro?: Registro) {
@@ -230,7 +232,7 @@ export default forwardRef<
             tipo,
             veiculo: veic ? veiculoLabel(veic) : veiculo,
             veiculo_nome: veic?.nome || veiculo || null,
-            placa: veic?.placa || null,
+            placa: normalizePlaca(veic?.placa || "") || null,
             startTs: startTsRef.current,
             origem_dados: "itrack",
             source_device: "rastreador",
@@ -240,19 +242,13 @@ export default forwardRef<
     async function startAfterSelect(veiculoEscolhido: VeiculoOpcao) {
         if (starting || activeRef.current) return;
 
-        const placa = normalizePlaca(veiculoEscolhido.placa);
-        if (!placa) {
-            try {
-                alert("Selecione um veículo com placa.");
-            } catch { }
-            return;
-        }
+        const placa = normalizePlaca(veiculoEscolhido.placa || "");
 
         setStarting(true);
 
         veiculoRef.current = {
             ...veiculoEscolhido,
-            placa,
+            placa: placa || null,
         };
 
         activeRef.current = true;
@@ -315,11 +311,8 @@ export default forwardRef<
             const veic = veiculoRef.current || veiculoSelecionado;
             const placa = normalizePlaca(veic?.placa || "");
 
-            if (!veic || !placa) {
+            if (!veic) {
                 activeRef.current = false;
-                try {
-                    alert("Nenhum veículo com placa foi selecionado para buscar a rota do rastreador.");
-                } catch { }
                 return;
             }
 
@@ -327,24 +320,53 @@ export default forwardRef<
             const fimMs = Date.now();
             endTsRef.current = fimMs;
 
-            const payload = {
-                acao: "inserir_itrack",
+            const inicio_ts = toMysqlDateTime(new Date(inicioMs));
+            const fim_ts = toMysqlDateTime(new Date(fimMs));
 
-                sepultamento_id: getRegistroId(registro),
-                tipo,
-                falecido: getFalecido(registro),
+            const payload = placa
+                ? {
+                    acao: "inserir_itrack",
 
-                veiculo_nome: veic.nome || veiculoLabel(veic),
-                placa,
-                veiculo_obs: null,
+                    sepultamento_id: getRegistroId(registro),
+                    tipo,
+                    falecido: getFalecido(registro),
 
-                inicio_ts: toMysqlDateTime(new Date(inicioMs)),
-                fim_ts: toMysqlDateTime(new Date(fimMs)),
+                    veiculo_nome: veic.nome || veiculoLabel(veic),
+                    placa,
+                    veiculo_obs: null,
 
-                source_device: "rastreador",
-                origem_dados: "itrack",
-                encerrado: 1,
-            };
+                    inicio_ts,
+                    fim_ts,
+
+                    source_device: "rastreador",
+                    origem_dados: "itrack",
+                    encerrado: 1,
+                }
+                : {
+                    acao: "inserir",
+
+                    sepultamento_id: getRegistroId(registro),
+                    tipo,
+                    falecido: getFalecido(registro),
+
+                    veiculo_nome: veic.nome || veiculoLabel(veic),
+                    placa: null,
+                    veiculo_obs: "Veículo de outra empresa sem placa/rastreador vinculado.",
+
+                    inicio_ts,
+                    fim_ts,
+
+                    distancia_km: null,
+                    duracao_seg: Math.max(1, Math.round((fimMs - inicioMs) / 1000)),
+                    vel_media_kmh: null,
+                    vel_max_kmh: null,
+                    amostras: 0,
+                    pontos_json: [],
+
+                    source_device: "sem_rastreador",
+                    origem_dados: "manual_sem_rota",
+                    encerrado: 1,
+                };
 
             let sent = false;
 
@@ -465,18 +487,11 @@ export default forwardRef<
                         const escolhido = veiculosOpcoes.find((v) => veiculoLabel(v) === label);
                         if (!escolhido) return;
 
-                        const placa = normalizePlaca(escolhido.placa);
-                        if (!placa) {
-                            setVeiculo("");
-                            try {
-                                alert("Selecione um veículo com placa.");
-                            } catch { }
-                            return;
-                        }
+                        const placa = normalizePlaca(escolhido.placa || "");
 
                         const escolhidoNormalizado = {
                             ...escolhido,
-                            placa,
+                            placa: placa || null,
                         };
 
                         veiculoRef.current = escolhidoNormalizado;
@@ -490,7 +505,7 @@ export default forwardRef<
                         const label = veiculoLabel(v);
 
                         return (
-                            <option key={`${v.nome}-${v.placa}`} value={label}>
+                            <option key={`${v.nome}-${v.placa || "sem-placa"}`} value={label}>
                                 {label}
                             </option>
                         );
