@@ -44,6 +44,24 @@ type VeiculoOpcao = {
     obs?: string | null;
 };
 
+type ItrackVeiculo = {
+    idVeiculo?: number | string | null;
+    id_veiculo?: number | string | null;
+    placa?: string | null;
+    descricaoVeiculo?: string | null;
+    descricao_veiculo?: string | null;
+    descricao?: string | null;
+    nome?: string | null;
+    modelo?: string | null;
+    marca?: string | null;
+    grupoVeiculo?: string | null;
+    grupo_veiculo?: string | null;
+    idRastreador?: string | number | null;
+    id_rastreador?: string | number | null;
+    nomeMotorista?: string | null;
+    nome_motorista?: string | null;
+};
+
 export type TelemetriaHandle = {
     /** Chamado externamente (ex.: quando chega a fase que encerra) */
     stopAndSave: () => Promise<void>;
@@ -106,6 +124,56 @@ function veiculoLabel(v: VeiculoOpcao) {
     if (placa) return `${v.nome} ${placa}`;
     if (v.obs) return `${v.nome} - ${v.obs}`;
     return v.nome;
+}
+
+function textoValido(v: unknown) {
+    const s = String(v ?? "").trim();
+    if (!s) return "";
+    if (s.toLowerCase() === "null" || s.toLowerCase() === "undefined") return "";
+    return s;
+}
+
+function nomeVeiculoItrack(v: ItrackVeiculo) {
+    const candidatos = [
+        v.descricaoVeiculo,
+        v.descricao_veiculo,
+        v.descricao,
+        v.nome,
+        v.modelo,
+        v.marca,
+        v.grupoVeiculo,
+        v.grupo_veiculo,
+    ];
+
+    return candidatos.map(textoValido).find(Boolean) || "Veículo";
+}
+
+function veiculosItrackToOpcoes(veiculos?: ItrackVeiculo[]): VeiculoOpcao[] {
+    if (!Array.isArray(veiculos) || veiculos.length === 0) return [];
+
+    const vistos = new Set<string>();
+    const opcoes: VeiculoOpcao[] = [];
+
+    for (const item of veiculos) {
+        const placa = normalizePlaca(item?.placa || "");
+        const nome = nomeVeiculoItrack(item);
+        const rastreador = textoValido(item?.idRastreador ?? item?.id_rastreador);
+        const motorista = textoValido(item?.nomeMotorista ?? item?.nome_motorista);
+
+        if (!placa && !nome) continue;
+
+        const key = placa || `${nome}-${rastreador}-${motorista}`.toUpperCase();
+        if (vistos.has(key)) continue;
+        vistos.add(key);
+
+        opcoes.push({
+            nome,
+            placa: placa || null,
+            obs: !placa ? (rastreador || motorista || null) : null,
+        });
+    }
+
+    return opcoes.sort((a, b) => veiculoLabel(a).localeCompare(veiculoLabel(b), "pt-BR"));
 }
 
 function pontoToPayload(p: Ponto): PontoPayload {
@@ -220,13 +288,15 @@ export default forwardRef<
         registro?: Registro;
         fase: string; // fase01/fase07/fase09
         tipo: TipoTele;
+        /** Lista real de veículos carregada no page.tsx via PHP/iTrack. */
+        veiculos?: ItrackVeiculo[];
         /** Atualiza status sem perguntar (ex.: fase01) */
         onConfirmAcao?: (fase: string) => Promise<void> | void;
         onStarted?: (info: { fase: string }) => void;
         onSaved?: () => void;
     }
 >(function TelemetriaModal(
-    { open, onClose, registro, fase, tipo, onConfirmAcao, onStarted, onSaved },
+    { open, onClose, registro, fase, tipo, veiculos = [], onConfirmAcao, onStarted, onSaved },
     ref
 ) {
     const [veiculo, setVeiculo] = useState<string>("");
@@ -257,9 +327,17 @@ export default forwardRef<
         return "Transporte para Sepultamento";
     }, [tipo]);
 
+    const veiculosOpcoes = useMemo(() => {
+        const opcoesReais = veiculosItrackToOpcoes(veiculos);
+
+        // Usa a frota real quando ela vier do page.tsx.
+        // Mantém a lista local apenas como fallback para não quebrar o modal caso a API ainda não tenha carregado.
+        return opcoesReais.length > 0 ? opcoesReais : VEICULOS;
+    }, [veiculos]);
+
     const veiculoSelecionado = useMemo(() => {
-        return VEICULOS.find((v) => veiculoLabel(v) === veiculo) || null;
-    }, [veiculo]);
+        return veiculosOpcoes.find((v) => veiculoLabel(v) === veiculo) || null;
+    }, [veiculo, veiculosOpcoes]);
 
     function snapshotBase(pontos: Ponto[] = pontosRef.current) {
         const veic = veiculoRef.current;
@@ -570,7 +648,7 @@ export default forwardRef<
                         const label = e.target.value;
                         if (!label) return;
 
-                        const escolhido = VEICULOS.find((v) => veiculoLabel(v) === label);
+                        const escolhido = veiculosOpcoes.find((v) => veiculoLabel(v) === label);
                         if (!escolhido) return;
 
                         // Guarda em ref antes de iniciar para não depender do setState assíncrono.
@@ -580,7 +658,7 @@ export default forwardRef<
                     }}
                 >
                     <option value="">Selecione…</option>
-                    {VEICULOS.map((v) => {
+                    {veiculosOpcoes.map((v) => {
                         const label = veiculoLabel(v);
                         return (
                             <option key={`${v.nome}-${v.placa || v.obs || label}`} value={label}>
@@ -591,7 +669,7 @@ export default forwardRef<
                 </select>
 
                 <p className="mt-2 text-xs text-slate-500">
-                    A placa será salva separadamente quando disponível, melhorando o vínculo com os atendimentos e com a iTrack.
+                    A lista usa os veículos reais carregados pela iTrack. A placa será salva separadamente quando disponível, melhorando o vínculo com os atendimentos.
                 </p>
             </div>
 
