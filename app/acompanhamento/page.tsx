@@ -1694,16 +1694,33 @@ export default function AcompanhamentoPage() {
       if (json?.sucesso) {
         setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`, ok: true });
 
+        const faseAtual = statusCode || acao;
         const faseInicioTele = teleStartFaseRef.current ?? teleStartFase;
         const teleEstaAtiva = teleActiveRef.current || teleActive;
 
-        if (
+        const faseEncerraTelemetria =
+          faseAtual === "fase02" ||
+          faseAtual === "fase08" ||
+          faseAtual === "fase10";
+
+        const deveEncerrarPorFluxo =
           teleEstaAtiva &&
           faseInicioTele &&
           STOP_BY_START[faseInicioTele] &&
-          STOP_BY_START[faseInicioTele] === (statusCode || acao)
-        ) {
-          await teleRef.current?.stopAndSave();
+          STOP_BY_START[faseInicioTele] === faseAtual;
+
+        if (deveEncerrarPorFluxo || faseEncerraTelemetria) {
+          console.log("[TELEMETRIA] tentando encerrar", {
+            faseAtual,
+            faseInicioTele,
+            teleEstaAtiva,
+            deveEncerrarPorFluxo,
+          });
+
+          const salvo = await teleRef.current?.stopAndSave();
+
+          console.log("[TELEMETRIA] retorno stopAndSave", salvo);
+
           limparTeleAtiva();
         }
 
