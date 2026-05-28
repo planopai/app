@@ -1762,8 +1762,8 @@ export default function QuadroAtendimentoPage() {
                 }
             `}</style>
 
-            <div className="qa-page-root qa-no-scrollbar flex h-[calc(100dvh-96px)] max-h-[calc(100dvh-96px)] w-full min-w-0 flex-col gap-3 overflow-hidden px-3 py-3 sm:px-4">
-                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-2xl border px-4 py-3 sm:px-5">
+            <div className="qa-page-root qa-no-scrollbar flex h-[calc(100dvh-96px)] max-h-[calc(100dvh-96px)] w-full max-w-full min-w-0 flex-col gap-3 overflow-hidden px-3 py-3 sm:px-3">
+                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-2xl border px-4 py-3 sm:px-4">
                     <div className="flex min-w-0 items-start justify-between gap-4">
                         <div className="min-w-0">
                             <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-slate-100 sm:text-2xl">
@@ -2024,8 +2024,8 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <section className="hidden h-full min-h-0 overflow-hidden rounded-2xl border qa-panel-premium sm:flex sm:flex-col">
-            <div className="grid h-11 shrink-0 grid-cols-[96px_minmax(160px,1.18fr)_minmax(150px,1fr)_132px_112px_300px] items-center gap-3 border-b border-slate-700/50 bg-slate-800/45 px-4 text-xs font-bold text-slate-300">
+        <section className="hidden h-full min-h-0 w-full max-w-full overflow-hidden rounded-2xl border qa-panel-premium sm:flex sm:flex-col">
+            <div className="grid h-10 shrink-0 grid-cols-[78px_220px_minmax(170px,1fr)_112px_92px_228px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-xs font-bold text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2044,36 +2044,36 @@ const DesktopTable = React.memo(function DesktopTable({
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[88px] grid-cols-[96px_minmax(160px,1.18fr)_minmax(150px,1fr)_132px_112px_300px] items-center gap-3 border-b border-slate-700/45 px-4 text-[13px] text-slate-100 last:border-b-0"
+                                className="grid h-[76px] grid-cols-[78px_220px_minmax(170px,1fr)_112px_92px_228px] items-center gap-2 border-b border-slate-700/45 px-3 text-[13px] text-slate-100 last:border-b-0"
                             >
                                 <div className="min-w-0">
-                                    <div className="mb-1.5 flex justify-center">
+                                    <div className="mb-1 flex justify-center">
                                         <EtapasInlineDots filled={preenchidas} />
                                     </div>
-                                    <div className="text-center text-sm font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
-                                    <div className="mt-1 flex justify-center">
+                                    <div className="text-center text-[13px] font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
+                                    <div className="mt-0.5 flex justify-center">
                                         <ConvenioBadge convenio={r.convenio} size="xs" />
                                     </div>
                                 </div>
 
                                 <button
-                                    className="min-w-0 text-left text-sm font-bold leading-snug text-slate-100 underline-offset-2 hover:underline"
+                                    className="min-w-0 text-left text-[13px] font-bold leading-snug text-slate-100 underline-offset-2 hover:underline"
                                     onClick={() => onSelect(r)}
                                     title={shown(r.falecido)}
                                 >
                                     <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
 
-                                <div className="min-w-0 text-sm font-medium leading-snug text-slate-200" title={shown(r.local_velorio)}>
+                                <div className="min-w-0 text-[13px] font-medium leading-snug text-slate-200" title={shown(r.local_velorio)}>
                                     <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
 
                                 <div className="min-w-0 leading-tight">
                                     <div className="text-xs font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
-                                    <div className="mt-1 truncate text-sm font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                    <div className="mt-0.5 truncate text-[13px] font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
                                 </div>
 
-                                <div className="min-w-0 truncate text-sm font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
 
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
                             </div>
@@ -2224,7 +2224,7 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-between gap-1 overflow-hidden">
+        <div className="flex w-full min-w-0 items-center justify-start gap-1 overflow-hidden pr-0">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2265,7 +2265,7 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`flex h-10 min-w-0 flex-1 flex-col items-center justify-center rounded-xl border px-1 text-center leading-none transition ${active
+            className={`flex h-8 w-[34px] shrink-0 flex-col items-center justify-center rounded-lg border px-0.5 text-center leading-none transition ${active
                     ? "border-cyan-300/80 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,.25)]"
                     : total
                         ? "border-amber-300/30 bg-amber-300/10"
@@ -2275,9 +2275,9 @@ function StatusPill({
                 }`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[11px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-0.5 w-full truncate text-[7px] font-black leading-none text-slate-400">{label}</div>
-            <div className="mt-0.5 w-full truncate text-[8px] font-black leading-none tabular-nums text-slate-100">{time}</div>
+            <div className={`text-[9px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[1px] w-full truncate text-[5.5px] font-black leading-none text-slate-400">{label}</div>
+            <div className="mt-[1px] w-full truncate text-[6.5px] font-black leading-none tabular-nums text-slate-100">{time}</div>
         </div>
     );
 }
