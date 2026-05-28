@@ -1195,21 +1195,21 @@ function iconForAction(acao?: string, status?: string): string {
 }
 
 /* ===== Status visual com tempo por etapa ===== */
-type StatusStepInfo = { key: string; label: string; icon: string };
-type StatusSegment = { key: string; label: string; icon: string; start: number; end: number; active: boolean };
+type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: string };
+type StatusSegment = { key: string; label: string; shortLabel: string; icon: string; start: number; end: number; active: boolean };
 
 const STATUS_STEPS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", icon: "🚗" },
-    { key: "fase02", label: "Aguardando Procedimento", icon: "⏳" },
-    { key: "fase03", label: "Preparando", icon: "🧑‍⚕️" },
-    { key: "fase04", label: "Aguardando Ornamentação", icon: "💐" },
-    { key: "fase05", label: "Ornamentando", icon: "🌸" },
-    { key: "fase06", label: "Corpo Pronto", icon: "✅" },
-    { key: "fase07", label: "Transportando P/ Velório", icon: "🚗" },
-    { key: "fase08", label: "Velando", icon: "⚰️" },
-    { key: "fase09", label: "Sepultando", icon: "🚙" },
-    { key: "fase10", label: "Sepultamento Concluído", icon: "🪦" },
-    { key: "fase11", label: "Material Recolhido", icon: "📦" },
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚨" },
+    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "⏳" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧑‍⚕️" },
+    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "💐" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "🌸" },
+    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "✅" },
+    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "🚗" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "⚰️" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "🚙" },
+    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "🪦" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "📦" },
 ];
 
 const STATUS_STEP_MAP = STATUS_STEPS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
@@ -1219,7 +1219,7 @@ const STATUS_STEP_MAP = STATUS_STEPS.reduce<Record<string, StatusStepInfo>>((acc
 
 function getStatusStepInfo(status?: string): StatusStepInfo {
     const key = normalizarStatus(status) || "";
-    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", icon: "•" };
+    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", shortLabel: "Status", icon: "•" };
 }
 
 function getRegistroBackendId(r: Registro): string | undefined {
@@ -1280,7 +1280,7 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
         const key = currentKey || "indefinido";
         const info = getStatusStepInfo(key);
         const start = parseRegistroDateTime(registro) || nowMs;
-        return [{ key: info.key, label: info.label, icon: info.icon, start, end: nowMs, active: !!currentKey }];
+        return [{ key: info.key, label: info.label, shortLabel: info.shortLabel, icon: info.icon, start, end: nowMs, active: !!currentKey }];
     }
 
     if (currentKey && unique[unique.length - 1].key !== currentKey) {
@@ -1294,6 +1294,7 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
         return {
             key: info.key,
             label: info.label,
+            shortLabel: info.shortLabel,
             icon: info.icon,
             start: ev.ts,
             end,
@@ -1953,15 +1954,15 @@ const DesktopTable = React.memo(function DesktopTable({
 }) {
     return (
         <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
-            <div className="overflow-x-auto rounded-2xl">
-                <table className="min-w-full text-sm">
+            <div className="rounded-2xl">
+                <table className="w-full table-fixed text-sm">
                     <thead className="bg-muted/60 text-muted-foreground">
                         <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left">
-                            <th>Data</th>
-                            <th>Falecido(a)</th>
-                            <th>Local</th>
-                            <th>Sepultamento</th>
-                            <th>Agente</th>
+                            <th className="w-[90px]">Data</th>
+                            <th className="w-[20%]">Falecido(a)</th>
+                            <th className="w-[16%]">Local</th>
+                            <th className="w-[105px]">Sepultamento</th>
+                            <th className="w-[12%]">Agente</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -1980,7 +1981,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                 return (
                                     <tr key={trackingId || i} className="[&>td]:px-4 [&>td]:py-3 align-top">
                                         <td>
-                                            <div className="flex flex-col items-start gap-1 leading-tight">
+                                            <div className="flex flex-col items-center gap-1 leading-tight text-center">
                                                 <EtapasInlineDots filled={preenchidas} />
                                                 <div>{dateOr(r.data)}</div>
                                                 <ConvenioBadge convenio={r.convenio} size="xs" />
@@ -2009,7 +2010,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                         </td>
 
                                         <td>{shown(r.agente)}</td>
-                                        <td className="min-w-[320px]">
+                                        <td className="align-middle">
                                             <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
                                         </td>
                                     </tr>
@@ -2134,24 +2135,30 @@ function StatusTimelineCell({ registro, logs, nowMs }: { registro: Registro; log
     const totalMs = Math.max(0, nowMs - firstStart);
 
     return (
-        <div className="flex items-center gap-3 overflow-x-auto pb-1">
-            <div className="shrink-0 rounded-lg border bg-background px-2 py-1 text-center leading-tight" title="Tempo total em atendimento">
-                <div className="text-[10px] font-semibold text-muted-foreground">Total</div>
-                <div className="text-base">⏱️</div>
-                <div className="text-[11px] font-semibold tabular-nums">{formatDurationMs(totalMs)}</div>
-            </div>
+        <div className="w-full max-w-full">
+            <div className="flex max-w-full flex-wrap items-center gap-1.5 overflow-visible">
+                <div
+                    className="flex h-[54px] w-[50px] shrink-0 flex-col items-center justify-center rounded-lg border bg-background px-1 text-center leading-none"
+                    title="Tempo total em atendimento"
+                >
+                    <div className="text-[9px] font-semibold text-muted-foreground">Total</div>
+                    <div className="mt-0.5 text-[13px]">⏱️</div>
+                    <div className="mt-0.5 text-[10px] font-semibold tabular-nums">{formatDurationMs(totalMs)}</div>
+                </div>
 
-            <div className="flex items-start gap-2">
                 {segments.map((seg, idx) => {
                     const duration = Math.max(0, seg.end - seg.start);
                     return (
                         <div
                             key={`${seg.key}-${seg.start}-${idx}`}
-                            className={`min-w-[58px] rounded-lg border bg-background px-2 py-1 text-center leading-tight ${seg.active ? "ring-1 ring-primary/40" : "opacity-75"}`}
+                            className={`flex h-[54px] w-[50px] shrink-0 flex-col items-center justify-center rounded-lg border bg-background px-1 text-center leading-none ${seg.active ? "ring-1 ring-primary/60" : "opacity-75"}`}
                             title={`${seg.label} • ${formatDurationMs(duration)}`}
                         >
-                            <div className={`text-lg ${seg.active ? "qa-status-blink" : ""}`}>{seg.icon}</div>
-                            <div className="mt-0.5 text-[10px] font-semibold tabular-nums">{formatDurationMs(duration)}</div>
+                            <div className={`text-[14px] leading-none ${seg.active ? "qa-status-blink" : ""}`}>{seg.icon}</div>
+                            <div className="mt-0.5 max-w-full truncate text-[8px] font-semibold leading-none text-muted-foreground">
+                                {seg.shortLabel}
+                            </div>
+                            <div className="mt-1 text-[10px] font-semibold leading-none tabular-nums">{formatDurationMs(duration)}</div>
                         </div>
                     );
                 })}
