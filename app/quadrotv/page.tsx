@@ -2031,7 +2031,7 @@ const DesktopTable = React.memo(function DesktopTable({
 }) {
     return (
         <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
-            <div className="grid h-8 shrink-0 grid-cols-[70px_176px_minmax(135px,1fr)_86px_76px_188px] items-center gap-1.5 border-b border-slate-700/50 bg-slate-800/45 px-2 text-[11px] font-bold text-slate-300">
+            <div className="grid h-8 shrink-0 grid-cols-[82px_230px_320px_112px_108px_204px] items-center gap-1 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2050,7 +2050,7 @@ const DesktopTable = React.memo(function DesktopTable({
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[58px] grid-cols-[70px_176px_minmax(135px,1fr)_86px_76px_188px] items-center gap-1.5 border-b border-slate-700/45 px-2 text-[12px] text-slate-100 last:border-b-0"
+                                className="grid h-[58px] grid-cols-[82px_230px_320px_112px_108px_204px] items-center gap-1 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
                             >
                                 <div className="min-w-0">
                                     <div className="mb-0.5 flex justify-center">
