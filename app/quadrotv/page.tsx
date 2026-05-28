@@ -1198,21 +1198,25 @@ function iconForAction(acao?: string, status?: string): string {
 type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: string };
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: string; start: number; end: number; active: boolean };
 
-const STATUS_STEPS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", shortLabel: "Remov", icon: "🚨" },
-    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguar", icon: "⏳" },
+const STATUS_STEP_DEFS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚨" },
+    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "⏳" },
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧑‍⚕️" },
-    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A.Orn", icon: "💐" },
+    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "💐" },
     { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "🌸" },
     { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "✅" },
-    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T.Vel", icon: "🚗" },
+    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "🚗" },
     { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "⚰️" },
-    { key: "fase09", label: "Sepultando", shortLabel: "Sepul", icon: "🚙" },
-    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl", icon: "🪦" },
-    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat.R", icon: "📦" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "🚙" },
+    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "🪦" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "📦" },
 ];
 
-const STATUS_STEP_MAP = STATUS_STEPS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
+const STATUS_STEPS: StatusStepInfo[] = STATUS_STEP_DEFS.filter((step) =>
+    ["fase01", "fase03", "fase05", "fase08", "fase09"].includes(step.key)
+);
+
+const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
     acc[step.key] = step;
     return acc;
 }, {});
@@ -1695,9 +1699,9 @@ export default function QuadroAtendimentoPage() {
     }, []);
 
     return (
-        <div className="mx-auto w-full max-w-7xl p-3 sm:p-5 space-y-6 overflow-x-hidden">
-            <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <div className="flex flex-col gap-3">
+        <div className="mx-auto flex h-[calc(100dvh-5rem)] w-full max-w-7xl flex-col gap-4 overflow-hidden p-2 sm:p-4">
+            <div className="shrink-0 rounded-2xl border bg-card/60 p-4 sm:p-5 shadow-sm">
+                <div className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
@@ -1710,7 +1714,7 @@ export default function QuadroAtendimentoPage() {
                         </div>
                     </div>
 
-                    <div className="border-t pt-2">
+                    <div className="border-t pt-2 overflow-hidden">
                         <AvisosTicker avisos={avisosParaExibir} />
                     </div>
                 </div>
@@ -1953,16 +1957,16 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <div className="hidden sm:block rounded-2xl border bg-card/60 p-3 shadow-sm overflow-hidden">
+        <div className="hidden min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/60 p-3 shadow-sm sm:block">
             <div className="overflow-hidden rounded-xl border border-border/60">
                 <table className="w-full table-fixed text-sm">
                     <thead className="bg-muted/60 text-muted-foreground">
-                        <tr className="[&>th]:px-3 [&>th]:py-3 [&>th]:text-left">
-                            <th className="w-[92px] text-center">Data</th>
-                            <th className="w-[18%]">Falecido(a)</th>
-                            <th className="w-[17%]">Local</th>
-                            <th className="w-[110px]">Sepultamento</th>
-                            <th className="w-[112px]">Agente</th>
+                        <tr className="[&>th]:px-3 [&>th]:py-2.5 [&>th]:text-left">
+                            <th className="w-[105px] text-center">Data</th>
+                            <th className="w-[19%]">Falecido(a)</th>
+                            <th className="w-[18%]">Local</th>
+                            <th className="w-[120px]">Sepultamento</th>
+                            <th className="w-[130px]">Agente</th>
                             <th className="min-w-0">Status</th>
                         </tr>
                     </thead>
@@ -1979,7 +1983,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                 const preenchidas = etapasPreenchidas(r);
                                 const trackingId = getRegistroTrackingId(r);
                                 return (
-                                    <tr key={trackingId || i} className="[&>td]:px-3 [&>td]:py-3 align-middle">
+                                    <tr key={trackingId || i} className="[&>td]:px-3 [&>td]:py-2.5 align-middle">
                                         <td>
                                             <div className="flex flex-col items-center gap-1 leading-tight text-center">
                                                 <EtapasInlineDots filled={preenchidas} />
@@ -2157,7 +2161,6 @@ function StatusTimelineCell({
         return (
             <div className="w-full min-w-0 overflow-hidden">
                 <div className="grid grid-cols-2 gap-2">
-                    <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" />
                     <StatusMiniCard
                         label={current?.shortLabel ?? "Status"}
                         icon={current?.icon ?? "•"}
@@ -2165,6 +2168,7 @@ function StatusTimelineCell({
                         title={current?.label ?? "Status"}
                         active={!!current?.active}
                     />
+                    <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" />
                 </div>
                 <StatusBlinkStyle />
             </div>
@@ -2172,10 +2176,8 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="w-full min-w-0 overflow-hidden pr-1">
-            <div className="grid w-full min-w-0 grid-cols-12 items-stretch gap-1 overflow-hidden">
-                <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" total />
-
+        <div className="w-full min-w-0 overflow-hidden">
+            <div className="grid w-full min-w-0 grid-cols-6 items-stretch gap-2 overflow-hidden">
                 {STATUS_STEPS.map((step) => {
                     const seg = segmentByKey.get(step.key);
                     const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2194,6 +2196,8 @@ function StatusTimelineCell({
                         />
                     );
                 })}
+
+                <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" total />
             </div>
             <StatusBlinkStyle />
         </div>
@@ -2219,15 +2223,15 @@ function StatusMiniCard({
 }) {
     return (
         <div
-            className={`flex h-[48px] min-w-0 flex-col items-center justify-center rounded-lg border bg-background/80 px-0.5 text-center leading-none shadow-sm ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
+            className={`flex h-[50px] min-w-0 flex-col items-center justify-center rounded-lg border bg-background/80 px-1 text-center leading-none shadow-sm ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
                 }`}
             title={title}
         >
-            <div className={`leading-none text-[12px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[3px] w-full truncate px-[1px] text-[6px] font-bold leading-none text-muted-foreground">
+            <div className={`leading-none text-[13px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[3px] w-full truncate px-[1px] text-[7px] font-bold leading-none text-muted-foreground">
                 {label}
             </div>
-            <div className="mt-[4px] w-full truncate px-[1px] text-[7.5px] font-bold leading-none tabular-nums">
+            <div className="mt-[4px] w-full truncate px-[1px] text-[8px] font-bold leading-none tabular-nums">
                 {time}
             </div>
         </div>
