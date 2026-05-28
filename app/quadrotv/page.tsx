@@ -928,7 +928,7 @@ function ConvenioBadge({
     const kind = normalizeConvenio(convenio);
     const sizeClass =
         size === "xs"
-            ? "px-2 py-0.5 text-[10px]"
+            ? "px-1.5 py-0.5 text-[9px]"
             : "px-2.5 py-1 text-[11px]";
 
     return (
@@ -1702,27 +1702,49 @@ export default function QuadroAtendimentoPage() {
         <>
             <style jsx global>{`
                 html,
-                body {
+                body,
+                #__next,
+                body > div {
+                    max-width: 100vw !important;
                     overflow-x: hidden !important;
                     overflow-y: hidden !important;
                 }
+                body {
+                    scrollbar-width: none !important;
+                }
+                body::-webkit-scrollbar {
+                    display: none !important;
+                }
+                .qa-page-root {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-width: 0 !important;
+                    overflow: hidden !important;
+                    box-sizing: border-box !important;
+                }
+                .qa-no-scrollbar {
+                    scrollbar-width: none !important;
+                }
+                .qa-no-scrollbar::-webkit-scrollbar {
+                    display: none !important;
+                }
             `}</style>
-            <div className="flex h-[calc(100dvh-5rem)] w-full max-w-full flex-col gap-3 overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
-                <div className="shrink-0 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
+            <div className="qa-page-root flex h-[calc(100dvh-7rem)] w-full max-w-full min-w-0 flex-col gap-2 overflow-hidden px-2 py-2 sm:px-3 sm:py-3">
+                <div className="shrink-0 rounded-2xl border bg-card/60 p-3 shadow-sm">
                     <div className="flex flex-col gap-2">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
-                                <p className="mt-1 text-sm text-muted-foreground">Atualizado em tempo real</p>
+                                <h1 className="text-xl font-bold tracking-tight">Quadro de Atendimentos</h1>
+                                <p className="mt-0.5 text-xs text-muted-foreground">Atualizado em tempo real</p>
                             </div>
 
                             <div className="text-right leading-tight">
-                                <div className="text-lg sm:text-xl font-bold tabular-nums">{clockTime}</div>
-                                <div className="text-xs sm:text-sm text-muted-foreground">{clockDate}</div>
+                                <div className="text-lg font-bold tabular-nums">{clockTime}</div>
+                                <div className="text-xs text-muted-foreground">{clockDate}</div>
                             </div>
                         </div>
 
-                        <div className="border-t pt-2 overflow-hidden">
+                        <div className="border-t pt-1 overflow-hidden">
                             <AvisosTicker avisos={avisosParaExibir} />
                         </div>
                     </div>
@@ -1902,13 +1924,13 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     }, [items]);
 
     if (items.length === 0) {
-        return <p className="text-xs text-muted-foreground">Nenhum aviso no momento.</p>;
+        return <p className="text-[11px] text-muted-foreground">Nenhum aviso no momento.</p>;
     }
 
     const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
-        <div className="flex items-center gap-10 px-4 py-2 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
+        <div className="flex items-center gap-8 px-2 py-1 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
             {items.map((x, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-foreground dark:text-white">
+                <div key={i} className="flex items-center gap-2 text-xs text-foreground dark:text-white">
                     {x.usuario ? <strong className="font-semibold text-foreground dark:text-white">{x.usuario}</strong> : null}
                     {x.mensagem ? <span className="text-foreground dark:text-white">{x.mensagem}</span> : null}
                     <span className="text-muted-foreground dark:text-white/70">•</span>
@@ -1966,17 +1988,17 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <div className="hidden min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/60 p-2 shadow-sm sm:block">
-            <div className="h-full overflow-hidden rounded-xl border border-border/60">
-                <table className="h-full w-full table-fixed text-[13px]">
+        <div className="hidden min-h-0 flex-1 max-w-full min-w-0 overflow-hidden rounded-2xl border bg-card/60 p-1.5 shadow-sm sm:block qa-no-scrollbar">
+            <div className="h-full max-w-full min-w-0 overflow-hidden rounded-xl border border-border/60 qa-no-scrollbar">
+                <table className="h-full w-full max-w-full table-fixed text-[12px]">
                     <thead className="bg-muted/60 text-muted-foreground">
                         <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
-                            <th className="w-[92px] text-center">Data</th>
-                            <th className="w-[18%]">Falecido(a)</th>
-                            <th className="w-[18%]">Local</th>
-                            <th className="w-[112px]">Sepultamento</th>
-                            <th className="w-[112px]">Agente</th>
-                            <th className="w-[330px] min-w-0">Status</th>
+                            <th className="w-[82px] text-center">Data</th>
+                            <th className="w-[17%]">Falecido(a)</th>
+                            <th className="w-[19%]">Local</th>
+                            <th className="w-[104px]">Sepultamento</th>
+                            <th className="w-[104px]">Agente</th>
+                            <th className="w-[230px] min-w-0">Status</th>
                         </tr>
                     </thead>
 
@@ -1992,11 +2014,11 @@ const DesktopTable = React.memo(function DesktopTable({
                                 const preenchidas = etapasPreenchidas(r);
                                 const trackingId = getRegistroTrackingId(r);
                                 return (
-                                    <tr key={trackingId || i} className="[&>td]:px-2 [&>td]:py-1.5 align-middle">
+                                    <tr key={trackingId || i} className="[&>td]:px-2 [&>td]:py-1 align-middle">
                                         <td>
                                             <div className="flex flex-col items-center gap-1 leading-tight text-center">
                                                 <EtapasInlineDots filled={preenchidas} />
-                                                <div>{dateOr(r.data)}</div>
+                                                <div className="text-[12px] leading-none">{dateOr(r.data)}</div>
                                                 <ConvenioBadge convenio={r.convenio} size="xs" />
                                             </div>
                                         </td>
@@ -2011,7 +2033,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                             </button>
                                         </td>
 
-                                        <td>
+                                        <td className="truncate">
                                             <LocalVelorioValue value={r.local_velorio} />
                                         </td>
 
@@ -2022,7 +2044,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                             </div>
                                         </td>
 
-                                        <td>{shown(r.agente)}</td>
+                                        <td className="truncate">{shown(r.agente)}</td>
                                         <td className="align-middle">
                                             <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="desktop" />
                                         </td>
@@ -2134,9 +2156,9 @@ function Field({ label, value, className = "" }: { label: string; value: React.R
 
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     return (
-        <div className="flex items-center gap-1.5" title="Etapas preenchidas">
+        <div className="flex items-center gap-1" title="Etapas preenchidas">
             {[0, 1, 2, 3].map((k) => (
-                <span key={k} className={`h-2 w-2 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                <span key={k} className={`h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
             ))}
         </div>
     );
@@ -2186,7 +2208,7 @@ function StatusTimelineCell({
 
     return (
         <div className="w-full min-w-0 overflow-hidden">
-            <div className="grid w-full min-w-0 grid-cols-6 items-stretch gap-0.5 overflow-hidden">
+            <div className="grid w-full min-w-0 grid-cols-6 items-stretch gap-px overflow-hidden">
                 {STATUS_STEPS.map((step) => {
                     const seg = segmentByKey.get(step.key);
                     const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2232,15 +2254,15 @@ function StatusMiniCard({
 }) {
     return (
         <div
-            className={`flex h-[34px] min-w-0 flex-col items-center justify-center rounded-md border bg-background/80 px-px text-center leading-none ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
+            className={`flex h-[26px] min-w-0 flex-col items-center justify-center rounded-[7px] border bg-background/75 px-0 text-center leading-none ${active ? "border-primary/70 ring-1 ring-primary/55" : done || total ? "border-border/70" : "border-border/35 opacity-40"
                 }`}
             title={title}
         >
-            <div className={`leading-none text-[9px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[1px] w-full truncate px-px text-[5.5px] font-bold leading-none text-muted-foreground">
+            <div className={`leading-none text-[7px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[1px] w-full truncate px-[1px] text-[4.2px] font-bold leading-none text-muted-foreground">
                 {label}
             </div>
-            <div className="mt-[2px] w-full truncate px-px text-[6.5px] font-bold leading-none tabular-nums">
+            <div className="mt-[1px] w-full truncate px-[1px] text-[5.6px] font-bold leading-none tabular-nums">
                 {time}
             </div>
         </div>
