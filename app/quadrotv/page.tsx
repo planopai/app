@@ -2234,7 +2234,7 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden pr-4">
+        <div className="flex w-full min-w-0 items-center justify-center gap-1 overflow-hidden px-2 pr-7">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2275,19 +2275,19 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`flex h-[38px] w-[43px] shrink-0 flex-col items-center justify-center rounded-lg border px-0 text-center leading-none transition ${active
+            className={`flex h-[36px] w-[40px] shrink-0 flex-col items-center justify-center rounded-lg border px-0 text-center leading-none transition ${total ? "ml-1 mr-2" : ""} ${active
                     ? "border-cyan-300/80 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,.25)]"
                     : total
-                        ? "border-amber-300/30 bg-amber-300/10"
+                        ? "border-amber-300/40 bg-amber-300/10"
                         : muted
                             ? "border-slate-700/35 bg-slate-950/20 opacity-45"
                             : "border-slate-600/50 bg-slate-950/35"
                 }`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[12px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[2px] w-full truncate text-[6.5px] font-black leading-none text-slate-400">{label}</div>
-            <div className="mt-[2px] w-full truncate text-[7.3px] font-black leading-none tabular-nums text-slate-100">{time}</div>
+            <div className={`text-[11.5px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[2px] w-full truncate text-[6px] font-black leading-none text-slate-400">{label}</div>
+            <div className="mt-[2px] w-full truncate text-[7px] font-black leading-none tabular-nums text-slate-100">{time}</div>
         </div>
     );
 }
