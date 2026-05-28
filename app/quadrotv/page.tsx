@@ -1199,17 +1199,17 @@ type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: st
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: string; start: number; end: number; active: boolean };
 
 const STATUS_STEPS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚨" },
-    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "⏳" },
+    { key: "fase01", label: "Removendo", shortLabel: "Remov", icon: "🚨" },
+    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguar", icon: "⏳" },
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧑‍⚕️" },
-    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "💐" },
+    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A.Orn", icon: "💐" },
     { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "🌸" },
     { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "✅" },
-    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "🚗" },
+    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T.Vel", icon: "🚗" },
     { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "⚰️" },
-    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "🚙" },
-    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "🪦" },
-    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "📦" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepul", icon: "🚙" },
+    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl", icon: "🪦" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat.R", icon: "📦" },
 ];
 
 const STATUS_STEP_MAP = STATUS_STEPS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
@@ -1260,7 +1260,7 @@ function formatDurationMs(msRaw: number): string {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
 
-    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+    if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}m`;
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
@@ -1695,7 +1695,7 @@ export default function QuadroAtendimentoPage() {
     }, []);
 
     return (
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
+        <div className="mx-auto w-full max-w-7xl p-3 sm:p-5 space-y-6 overflow-x-hidden">
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <div className="flex flex-col gap-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1957,13 +1957,13 @@ const DesktopTable = React.memo(function DesktopTable({
             <div className="rounded-2xl">
                 <table className="w-full table-fixed text-sm">
                     <thead className="bg-muted/60 text-muted-foreground">
-                        <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left">
-                            <th className="w-[90px]">Data</th>
-                            <th className="w-[20%]">Falecido(a)</th>
-                            <th className="w-[16%]">Local</th>
-                            <th className="w-[105px]">Sepultamento</th>
-                            <th className="w-[12%]">Agente</th>
-                            <th>Status</th>
+                        <tr className="[&>th]:px-2 [&>th]:py-3 [&>th]:text-left">
+                            <th className="w-[76px] text-center">Data</th>
+                            <th className="w-[17%]">Falecido(a)</th>
+                            <th className="w-[13%]">Local</th>
+                            <th className="w-[86px]">Sepultamento</th>
+                            <th className="w-[88px]">Agente</th>
+                            <th className="min-w-0">Status</th>
                         </tr>
                     </thead>
 
@@ -1979,7 +1979,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                 const preenchidas = etapasPreenchidas(r);
                                 const trackingId = getRegistroTrackingId(r);
                                 return (
-                                    <tr key={trackingId || i} className="[&>td]:px-4 [&>td]:py-3 align-top">
+                                    <tr key={trackingId || i} className="[&>td]:px-2 [&>td]:py-3 align-top">
                                         <td>
                                             <div className="flex flex-col items-center gap-1 leading-tight text-center">
                                                 <EtapasInlineDots filled={preenchidas} />
@@ -2011,7 +2011,7 @@ const DesktopTable = React.memo(function DesktopTable({
 
                                         <td>{shown(r.agente)}</td>
                                         <td className="align-middle">
-                                            <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
+                                            <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="desktop" />
                                         </td>
                                     </tr>
                                 );
@@ -2066,7 +2066,7 @@ const MobileCards = React.memo(function MobileCards({
 
                             <div className="mt-3 rounded-lg border bg-background p-3">
                                 <div className="mb-2 text-xs font-semibold text-muted-foreground">Status</div>
-                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
                             </div>
 
                             <div className="mt-2 text-xs">
@@ -2129,21 +2129,39 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     );
 }
 
-function StatusTimelineCell({ registro, logs, nowMs }: { registro: Registro; logs?: LogItem[]; nowMs: number }) {
+function StatusTimelineCell({
+    registro,
+    logs,
+    nowMs,
+    variant = "desktop",
+}: {
+    registro: Registro;
+    logs?: LogItem[];
+    nowMs: number;
+    variant?: "desktop" | "mobile";
+}) {
     const segments = buildStatusSegments(registro, logs, nowMs);
     const firstStart = segments[0]?.start ?? nowMs;
     const totalMs = Math.max(0, nowMs - firstStart);
 
+    const isMobile = variant === "mobile";
+    const cardClass = isMobile
+        ? "h-[43px] w-[23px] rounded-md px-[1px]"
+        : "h-[46px] w-[34px] rounded-md px-[2px]";
+    const labelClass = isMobile ? "text-[5.5px]" : "text-[6.5px]";
+    const iconClass = isMobile ? "text-[10px]" : "text-[12px]";
+    const timeClass = isMobile ? "text-[7px]" : "text-[8px]";
+
     return (
-        <div className="w-full max-w-full">
-            <div className="flex max-w-full flex-wrap items-center gap-1.5 overflow-visible">
+        <div className="w-full max-w-full min-w-0 overflow-hidden">
+            <div className="flex w-full max-w-full min-w-0 flex-nowrap items-center justify-start gap-[2px] overflow-hidden">
                 <div
-                    className="flex h-[54px] w-[50px] shrink-0 flex-col items-center justify-center rounded-lg border bg-background px-1 text-center leading-none"
+                    className={`flex shrink-0 flex-col items-center justify-center border bg-background text-center leading-none ${cardClass}`}
                     title="Tempo total em atendimento"
                 >
-                    <div className="text-[9px] font-semibold text-muted-foreground">Total</div>
-                    <div className="mt-0.5 text-[13px]">⏱️</div>
-                    <div className="mt-0.5 text-[10px] font-semibold tabular-nums">{formatDurationMs(totalMs)}</div>
+                    <div className={`${labelClass} max-w-full truncate font-semibold leading-none text-muted-foreground`}>Total</div>
+                    <div className={`mt-[2px] leading-none ${iconClass}`}>⏱️</div>
+                    <div className={`mt-[3px] max-w-full truncate font-semibold leading-none tabular-nums ${timeClass}`}>{formatDurationMs(totalMs)}</div>
                 </div>
 
                 {segments.map((seg, idx) => {
@@ -2151,14 +2169,14 @@ function StatusTimelineCell({ registro, logs, nowMs }: { registro: Registro; log
                     return (
                         <div
                             key={`${seg.key}-${seg.start}-${idx}`}
-                            className={`flex h-[54px] w-[50px] shrink-0 flex-col items-center justify-center rounded-lg border bg-background px-1 text-center leading-none ${seg.active ? "ring-1 ring-primary/60" : "opacity-75"}`}
+                            className={`flex shrink-0 flex-col items-center justify-center border bg-background text-center leading-none ${cardClass} ${seg.active ? "ring-1 ring-primary/60" : "opacity-75"}`}
                             title={`${seg.label} • ${formatDurationMs(duration)}`}
                         >
-                            <div className={`text-[14px] leading-none ${seg.active ? "qa-status-blink" : ""}`}>{seg.icon}</div>
-                            <div className="mt-0.5 max-w-full truncate text-[8px] font-semibold leading-none text-muted-foreground">
+                            <div className={`leading-none ${iconClass} ${seg.active ? "qa-status-blink" : ""}`}>{seg.icon}</div>
+                            <div className={`mt-[2px] max-w-full truncate font-semibold leading-none text-muted-foreground ${labelClass}`}>
                                 {seg.shortLabel}
                             </div>
-                            <div className="mt-1 text-[10px] font-semibold leading-none tabular-nums">{formatDurationMs(duration)}</div>
+                            <div className={`mt-[3px] max-w-full truncate font-semibold leading-none tabular-nums ${timeClass}`}>{formatDurationMs(duration)}</div>
                         </div>
                     );
                 })}
