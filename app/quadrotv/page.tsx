@@ -1194,6 +1194,114 @@ function iconForAction(acao?: string, status?: string): string {
     return "•";
 }
 
+/* ===== Status visual com tempo por etapa ===== */
+type StatusStepInfo = { key: string; label: string; icon: string };
+type StatusSegment = { key: string; label: string; icon: string; start: number; end: number; active: boolean };
+
+const STATUS_STEPS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", icon: "🚗" },
+    { key: "fase02", label: "Aguardando Procedimento", icon: "⏳" },
+    { key: "fase03", label: "Preparando", icon: "🧑‍⚕️" },
+    { key: "fase04", label: "Aguardando Ornamentação", icon: "💐" },
+    { key: "fase05", label: "Ornamentando", icon: "🌸" },
+    { key: "fase06", label: "Corpo Pronto", icon: "✅" },
+    { key: "fase07", label: "Transportando P/ Velório", icon: "🚗" },
+    { key: "fase08", label: "Velando", icon: "⚰️" },
+    { key: "fase09", label: "Sepultando", icon: "🚙" },
+    { key: "fase10", label: "Sepultamento Concluído", icon: "🪦" },
+    { key: "fase11", label: "Material Recolhido", icon: "📦" },
+];
+
+const STATUS_STEP_MAP = STATUS_STEPS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
+    acc[step.key] = step;
+    return acc;
+}, {});
+
+function getStatusStepInfo(status?: string): StatusStepInfo {
+    const key = normalizarStatus(status) || "";
+    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", icon: "•" };
+}
+
+function getRegistroBackendId(r: Registro): string | undefined {
+    const raw =
+        (r as any).sepultamento_id ??
+        (r as any).sepultamentoId ??
+        (r as any).id ??
+        (r as any).id_atendimento ??
+        (r as any).codigo;
+
+    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
+    return s || undefined;
+}
+
+function getRegistroTrackingId(r: Registro): string {
+    return (
+        getRegistroBackendId(r) ??
+        `${decodeHtmlEntitiesDeep(String(r.falecido ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.data ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.hora_fim_velorio ?? "")).trim()}`
+    );
+}
+
+function getStatusFromLog(log: LogItem): string | undefined {
+    const detalhes = isPlainObject(log.detalhes) ? (log.detalhes as Record<string, unknown>) : {};
+    const raw =
+        log.status_novo ??
+        (detalhes.status_novo as string | undefined) ??
+        (detalhes.status as string | undefined) ??
+        (detalhes.novo_status as string | undefined);
+
+    const normalized = normalizarStatus(raw);
+    return normalized?.startsWith("fase") ? normalized : undefined;
+}
+
+function formatDurationMs(msRaw: number): string {
+    const ms = Math.max(0, Number.isFinite(msRaw) ? msRaw : 0);
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
+    const currentKey = normalizarStatus(registro.status);
+    const events = (logs ?? [])
+        .map((log) => ({ key: getStatusFromLog(log), ts: parseLogTs(log.datahora) }))
+        .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
+        .sort((a, b) => a.ts - b.ts);
+
+    const unique: { key: string; ts: number }[] = [];
+    for (const ev of events) {
+        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) unique.push(ev);
+    }
+
+    if (unique.length === 0) {
+        const key = currentKey || "indefinido";
+        const info = getStatusStepInfo(key);
+        const start = parseRegistroDateTime(registro) || nowMs;
+        return [{ key: info.key, label: info.label, icon: info.icon, start, end: nowMs, active: !!currentKey }];
+    }
+
+    if (currentKey && unique[unique.length - 1].key !== currentKey) {
+        unique.push({ key: currentKey, ts: nowMs });
+    }
+
+    return unique.map((ev, idx) => {
+        const info = getStatusStepInfo(ev.key);
+        const isLast = idx === unique.length - 1;
+        const end = isLast ? nowMs : unique[idx + 1].ts;
+        return {
+            key: info.key,
+            label: info.label,
+            icon: info.icon,
+            start: ev.ts,
+            end,
+            active: isLast && (!currentKey || ev.key === currentKey),
+        };
+    });
+}
+
 /* =========================
    Página
    ========================= */
@@ -1202,6 +1310,7 @@ const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quint
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
+    const [nowMs, setNowMs] = useState(() => Date.now());
 
     const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
     const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
@@ -1216,10 +1325,12 @@ export default function QuadroAtendimentoPage() {
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
+    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
 
     useEffect(() => {
         const update = () => {
             const now = new Date();
+            setNowMs(now.getTime());
             const h = now.getHours().toString().padStart(2, "0");
             const m = now.getMinutes().toString().padStart(2, "0");
             const s = now.getSeconds().toString().padStart(2, "0");
@@ -1390,6 +1501,48 @@ export default function QuadroAtendimentoPage() {
         return withTs.map((x) => x.r);
     }, [registros]);
 
+    useEffect(() => {
+        let alive = true;
+
+        async function loadStatusLogs() {
+            const updates: Record<string, LogItem[]> = {};
+            const ativosComId = ativosOrdenados
+                .map((r) => ({ r, id: getRegistroBackendId(r), trackingId: getRegistroTrackingId(r) }))
+                .filter((x) => !!x.id);
+
+            await Promise.all(
+                ativosComId.map(async ({ id, trackingId }) => {
+                    try {
+                        const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
+                        const url = `${BASE}&_ts=${Date.now()}`;
+                        const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${id}` });
+
+                        let logs: LogItem[] = [];
+                        if (Array.isArray(json)) logs = json as LogItem[];
+                        else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
+
+                        updates[trackingId] = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+                    } catch {
+                        updates[trackingId] = [];
+                    }
+                })
+            );
+
+            if (!alive) return;
+            setStatusLogsById((prev) => ({ ...prev, ...updates }));
+        }
+
+        loadStatusLogs();
+        const id = window.setInterval(() => {
+            void loadStatusLogs();
+        }, 30000);
+
+        return () => {
+            alive = false;
+            window.clearInterval(id);
+        };
+    }, [ativosOrdenados]);
+
     const TAG_SERVICO = "Atendimento:";
 
     function normNome(s?: string) {
@@ -1543,26 +1696,27 @@ export default function QuadroAtendimentoPage() {
     return (
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
-                        </p>
+                <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
+                            <p className="mt-1 text-sm text-muted-foreground">Atualizado em tempo real</p>
+                        </div>
+
+                        <div className="text-right leading-tight">
+                            <div className="text-xl font-bold tabular-nums">{clockTime}</div>
+                            <div className="text-xs sm:text-sm text-muted-foreground">{clockDate}</div>
+                        </div>
+                    </div>
+
+                    <div className="border-t pt-2">
+                        <AvisosTicker avisos={avisosParaExibir} />
                     </div>
                 </div>
             </div>
 
-            <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} />
-            <MobileCards ativos={ativosOrdenados} onSelect={showDetail} />
-
-            <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <h2 className="text-lg font-semibold">Avisos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
-                <div className="mt-4">
-                    <AvisosTicker avisos={avisosParaExibir} />
-                </div>
-            </div>
+            <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
+            <MobileCards ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
 
             {open && detail && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
@@ -1734,7 +1888,7 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     }, [items]);
 
     if (items.length === 0) {
-        return <p className="text-muted-foreground">Nenhum aviso no momento.</p>;
+        return <p className="text-xs text-muted-foreground">Nenhum aviso no momento.</p>;
     }
 
     const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
@@ -1750,7 +1904,7 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     );
 
     return (
-        <div className="relative w-full overflow-hidden rounded-xl border bg-background/60">
+        <div className="relative w-full overflow-hidden">
             <div className="qa-avisos-track flex w-max" style={{ animationDuration: `${durationSec}s` }}>
                 <RenderItems />
                 <RenderItems ariaHidden />
@@ -1789,9 +1943,13 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
 const DesktopTable = React.memo(function DesktopTable({
     ativos,
     onSelect,
+    statusLogsById,
+    nowMs,
 }: {
     ativos: Registro[];
     onSelect: (r: Registro) => void;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
 }) {
     return (
         <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
@@ -1805,24 +1963,25 @@ const DesktopTable = React.memo(function DesktopTable({
                             <th>Sepultamento</th>
                             <th>Agente</th>
                             <th>Status</th>
-                            <th>Etapas</th>
                         </tr>
                     </thead>
 
                     <tbody className="divide-y">
                         {ativos.length === 0 ? (
                             <tr>
-                                <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                                <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
                                     Nenhum atendimento encontrado.
                                 </td>
                             </tr>
                         ) : (
                             ativos.map((r, i) => {
                                 const preenchidas = etapasPreenchidas(r);
+                                const trackingId = getRegistroTrackingId(r);
                                 return (
-                                    <tr key={i} className="[&>td]:px-4 [&>td]:py-3 align-top">
+                                    <tr key={trackingId || i} className="[&>td]:px-4 [&>td]:py-3 align-top">
                                         <td>
                                             <div className="flex flex-col items-start gap-1 leading-tight">
+                                                <EtapasInlineDots filled={preenchidas} />
                                                 <div>{dateOr(r.data)}</div>
                                                 <ConvenioBadge convenio={r.convenio} size="xs" />
                                             </div>
@@ -1850,13 +2009,8 @@ const DesktopTable = React.memo(function DesktopTable({
                                         </td>
 
                                         <td>{shown(r.agente)}</td>
-                                        <td>
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}>
-                                                {capStatus(r.status) || "a definir"}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <EtapasInlineDots filled={preenchidas} />
+                                        <td className="min-w-[320px]">
+                                            <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
                                         </td>
                                     </tr>
                                 );
@@ -1872,9 +2026,13 @@ const DesktopTable = React.memo(function DesktopTable({
 const MobileCards = React.memo(function MobileCards({
     ativos,
     onSelect,
+    statusLogsById,
+    nowMs,
 }: {
     ativos: Registro[];
     onSelect: (r: Registro) => void;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
 }) {
     return (
         <div className="sm:hidden space-y-3">
@@ -1883,14 +2041,13 @@ const MobileCards = React.memo(function MobileCards({
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
+                    const trackingId = getRegistroTrackingId(r);
                     const dataBR = dateOr(r.data);
                     const hora = timeOr(r.hora_fim_velorio);
-                    const statusTxt = capStatus(r.status) || "a definir";
-                    const statusBg = badgeClass(r.status);
                     const localSep = shown(r.local_sepultamento || r.local);
 
                     return (
-                        <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                        <div key={trackingId || i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
                             <div className="flex items-start justify-between gap-3">
                                 <button
                                     className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
@@ -1900,21 +2057,20 @@ const MobileCards = React.memo(function MobileCards({
                                     {shown(r.falecido)}
                                 </button>
                                 <div className="shrink-0 flex flex-col items-end gap-1 mt-0.5">
+                                    <EtapasInlineDots filled={preenchidas} />
                                     <div className="text-xs text-muted-foreground">{dataBR}</div>
                                     <ConvenioBadge convenio={r.convenio} size="xs" />
                                 </div>
                             </div>
 
-                            <div className="mt-2 flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2">
-                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
-                                        {statusTxt}
-                                    </span>
-                                </div>
-                                <div className="text-xs">
-                                    <span className="text-muted-foreground">Agente:&nbsp;</span>
-                                    <b>{shown(r.agente)}</b>
-                                </div>
+                            <div className="mt-3 rounded-lg border bg-background p-3">
+                                <div className="mb-2 text-xs font-semibold text-muted-foreground">Status</div>
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
+                            </div>
+
+                            <div className="mt-2 text-xs">
+                                <span className="text-muted-foreground">Agente:&nbsp;</span>
+                                <b>{shown(r.agente)}</b>
                             </div>
 
                             <div className="mt-2 text-sm">
@@ -1931,11 +2087,6 @@ const MobileCards = React.memo(function MobileCards({
                                     <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
                                     <div className="text-right">{hora}</div>
                                 </div>
-                            </div>
-
-                            <div className="mt-3">
-                                <div className="text-xs text-muted-foreground">Etapas:</div>
-                                <EtapasInlineDots filled={preenchidas} />
                             </div>
                         </div>
                     );
@@ -1968,15 +2119,65 @@ function Field({ label, value, className = "" }: { label: string; value: React.R
 }
 
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
-    const labels = ["D", "I", "V", "S"];
     return (
-        <div className="mt-1 flex items-center gap-4">
-            {labels.map((label, k) => (
-                <div key={k} className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
-                </div>
+        <div className="flex items-center gap-1.5" title="Etapas preenchidas">
+            {[0, 1, 2, 3].map((k) => (
+                <span key={k} className={`h-2.5 w-2.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
             ))}
+        </div>
+    );
+}
+
+function StatusTimelineCell({ registro, logs, nowMs }: { registro: Registro; logs?: LogItem[]; nowMs: number }) {
+    const segments = buildStatusSegments(registro, logs, nowMs);
+    const firstStart = segments[0]?.start ?? nowMs;
+    const totalMs = Math.max(0, nowMs - firstStart);
+
+    return (
+        <div className="flex items-center gap-3 overflow-x-auto pb-1">
+            <div className="shrink-0 rounded-lg border bg-background px-2 py-1 text-center leading-tight" title="Tempo total em atendimento">
+                <div className="text-[10px] font-semibold text-muted-foreground">Total</div>
+                <div className="text-base">⏱️</div>
+                <div className="text-[11px] font-semibold tabular-nums">{formatDurationMs(totalMs)}</div>
+            </div>
+
+            <div className="flex items-start gap-2">
+                {segments.map((seg, idx) => {
+                    const duration = Math.max(0, seg.end - seg.start);
+                    return (
+                        <div
+                            key={`${seg.key}-${seg.start}-${idx}`}
+                            className={`min-w-[58px] rounded-lg border bg-background px-2 py-1 text-center leading-tight ${seg.active ? "ring-1 ring-primary/40" : "opacity-75"}`}
+                            title={`${seg.label} • ${formatDurationMs(duration)}`}
+                        >
+                            <div className={`text-lg ${seg.active ? "qa-status-blink" : ""}`}>{seg.icon}</div>
+                            <div className="mt-0.5 text-[10px] font-semibold tabular-nums">{formatDurationMs(duration)}</div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <style jsx global>{`
+                @keyframes qa-status-pulse {
+                    0%, 100% {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                    50% {
+                        opacity: 0.35;
+                        transform: scale(1.12);
+                    }
+                }
+                .qa-status-blink {
+                    display: inline-block;
+                    animation: qa-status-pulse 1s ease-in-out infinite;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .qa-status-blink {
+                        animation: none !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
