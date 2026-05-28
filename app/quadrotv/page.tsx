@@ -1699,179 +1699,188 @@ export default function QuadroAtendimentoPage() {
     }, []);
 
     return (
-        <div className="mx-auto flex h-[calc(100dvh-5rem)] w-full max-w-7xl flex-col gap-4 overflow-hidden p-2 sm:p-4">
-            <div className="shrink-0 rounded-2xl border bg-card/60 p-4 sm:p-5 shadow-sm">
-                <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
-                            <p className="mt-1 text-sm text-muted-foreground">Atualizado em tempo real</p>
-                        </div>
-
-                        <div className="text-right leading-tight">
-                            <div className="text-xl font-bold tabular-nums">{clockTime}</div>
-                            <div className="text-xs sm:text-sm text-muted-foreground">{clockDate}</div>
-                        </div>
-                    </div>
-
-                    <div className="border-t pt-2 overflow-hidden">
-                        <AvisosTicker avisos={avisosParaExibir} />
-                    </div>
-                </div>
-            </div>
-
-            <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
-            <MobileCards ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
-
-            {open && detail && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
-                    <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
-
-                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain">
-                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3 overflow-x-hidden">
-                            <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
-                                <button
-                                    onClick={toggleTimelineDetalhe}
-                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
-                                    aria-label="Linha do tempo"
-                                    title="Ver linha do tempo deste atendimento"
-                                >
-                                    Linha do tempo
-                                </button>
-
-                                <button
-                                    onClick={handleCopy}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Copiar"
-                                    title="Copiar informações"
-                                >
-                                    {copied ? "Copiado!" : "Copiar"}
-                                </button>
-
-                                <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
-                                    Fechar
-                                </button>
+        <>
+            <style jsx global>{`
+                html,
+                body {
+                    overflow-x: hidden !important;
+                    overflow-y: hidden !important;
+                }
+            `}</style>
+            <div className="flex h-[calc(100dvh-5rem)] w-full max-w-full flex-col gap-3 overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
+                <div className="shrink-0 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
+                    <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
+                                <p className="mt-1 text-sm text-muted-foreground">Atualizado em tempo real</p>
                             </div>
 
-                            <div className="mt-3">
-                                <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
-                                    {shown(detail.falecido)}
-                                </h3>
+                            <div className="text-right leading-tight">
+                                <div className="text-lg sm:text-xl font-bold tabular-nums">{clockTime}</div>
+                                <div className="text-xs sm:text-sm text-muted-foreground">{clockDate}</div>
+                            </div>
+                        </div>
 
-                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                    <span className="text-muted-foreground">
-                                        Data: <b>{dateOr(detail.data)}</b>
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                        • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                        • Agente: <b>{shown(detail.agente)}</b>
-                                    </span>
+                        <div className="border-t pt-2 overflow-hidden">
+                            <AvisosTicker avisos={avisosParaExibir} />
+                        </div>
+                    </div>
+                </div>
+
+                <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
+                <MobileCards ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
+
+                {open && detail && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
+                        <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
+
+                        <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain">
+                            <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3 overflow-x-hidden">
+                                <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
+                                    <button
+                                        onClick={toggleTimelineDetalhe}
+                                        className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
+                                        aria-label="Linha do tempo"
+                                        title="Ver linha do tempo deste atendimento"
+                                    >
+                                        Linha do tempo
+                                    </button>
+
+                                    <button
+                                        onClick={handleCopy}
+                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                        aria-label="Copiar"
+                                        title="Copiar informações"
+                                    >
+                                        {copied ? "Copiado!" : "Copiar"}
+                                    </button>
+
+                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
+                                        Fechar
+                                    </button>
                                 </div>
 
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
-                                        {capStatus(detail.status)}
-                                    </span>
-                                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                                        ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
-                                    </span>
-                                </div>
+                                <div className="mt-3">
+                                    <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
+                                    <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
+                                        {shown(detail.falecido)}
+                                    </h3>
 
-                                {detailTimelineOpen && (
-                                    <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
-                                        <div className="flex items-start justify-between gap-2 min-w-0">
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
-                                                <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                    Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => setDetailTimelineOpen(false)}
-                                                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
-                                                aria-label="Ocultar linha do tempo"
-                                            >
-                                                Ocultar
-                                            </button>
-                                        </div>
-
-                                        {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
-                                        {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
-
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
-                                        )}
-
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
-                                            <div className="mt-2">
-                                                <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
-                                            </div>
-                                        )}
+                                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
+                                        <span className="text-muted-foreground">
+                                            Data: <b>{dateOr(detail.data)}</b>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            • Agente: <b>{shown(detail.agente)}</b>
+                                        </span>
                                     </div>
-                                )}
-                            </div>
-                        </div>
 
-                        <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
-                            <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field label="Falecido" value={shown(detail.falecido)} />
-                                    <Field label="Religião" value={shown(detail.religiao)} />
-                                    <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
-                                    <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
+                                            {capStatus(detail.status)}
+                                        </span>
+                                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                            ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
+                                        </span>
+                                    </div>
 
-                            <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field label="Urna" value={shown(detail.urna)} />
-                                    <Field label="Roupa" value={shown(detail.roupa)} />
-                                    <Field label="Assistência" value={shown(detail.assistencia)} />
-                                    <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                    <Field label="Invol" value={involSimNao(detail.invol)} />
-                                    <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
+                                    {detailTimelineOpen && (
+                                        <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
+                                            <div className="flex items-start justify-between gap-2 min-w-0">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
+                                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                                        Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setDetailTimelineOpen(false)}
+                                                    className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
+                                                    aria-label="Ocultar linha do tempo"
+                                                >
+                                                    Ocultar
+                                                </button>
+                                            </div>
 
-                                    {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
-                                        <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                            {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
+                                            {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
+
+                                            {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
+                                                <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
+                                            )}
+
+                                            {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
+                                                <div className="mt-2">
+                                                    <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
-
-                                    <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
                                 </div>
-                            </Topic>
+                            </div>
 
-                            <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
-                                    <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                </div>
-                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
+                            <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
+                                <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
+                                        <Field label="Falecido" value={shown(detail.falecido)} />
+                                        <Field label="Religião" value={shown(detail.religiao)} />
+                                        <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
+                                        <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
+                                        <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
+                                    </div>
+                                </Topic>
 
-                            <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
-                                    <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
-                                    <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
+                                <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
+                                        <Field label="Urna" value={shown(detail.urna)} />
+                                        <Field label="Roupa" value={shown(detail.roupa)} />
+                                        <Field label="Assistência" value={shown(detail.assistencia)} />
+                                        <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+                                        <Field label="Invol" value={involSimNao(detail.invol)} />
+                                        <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
 
-                            <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
-                                <EtapasRow registro={detail} />
+                                        {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
+                                            <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                        )}
+
+                                        <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
+                                    </div>
+                                </Topic>
+
+                                <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
+                                        <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
+                                        <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
+                                    </div>
+                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
+                                        <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
+                                        <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
+                                    </div>
+                                </Topic>
+
+                                <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
+                                        <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
+                                        <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
+                                        <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
+                                        <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
+                                    </div>
+                                </Topic>
+
+                                <div className="rounded-xl border bg-background p-3">
+                                    <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
+                                    <EtapasRow registro={detail} />
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )}
+            </div>
+        </>
     );
 }
 
@@ -1957,17 +1966,17 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <div className="hidden min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/60 p-3 shadow-sm sm:block">
-            <div className="overflow-hidden rounded-xl border border-border/60">
-                <table className="w-full table-fixed text-sm">
+        <div className="hidden min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/60 p-2 shadow-sm sm:block">
+            <div className="h-full overflow-hidden rounded-xl border border-border/60">
+                <table className="h-full w-full table-fixed text-[13px]">
                     <thead className="bg-muted/60 text-muted-foreground">
-                        <tr className="[&>th]:px-3 [&>th]:py-2.5 [&>th]:text-left">
-                            <th className="w-[105px] text-center">Data</th>
-                            <th className="w-[19%]">Falecido(a)</th>
+                        <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
+                            <th className="w-[92px] text-center">Data</th>
+                            <th className="w-[18%]">Falecido(a)</th>
                             <th className="w-[18%]">Local</th>
-                            <th className="w-[120px]">Sepultamento</th>
-                            <th className="w-[130px]">Agente</th>
-                            <th className="min-w-0">Status</th>
+                            <th className="w-[112px]">Sepultamento</th>
+                            <th className="w-[112px]">Agente</th>
+                            <th className="w-[330px] min-w-0">Status</th>
                         </tr>
                     </thead>
 
@@ -1983,7 +1992,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                 const preenchidas = etapasPreenchidas(r);
                                 const trackingId = getRegistroTrackingId(r);
                                 return (
-                                    <tr key={trackingId || i} className="[&>td]:px-3 [&>td]:py-2.5 align-middle">
+                                    <tr key={trackingId || i} className="[&>td]:px-2 [&>td]:py-1.5 align-middle">
                                         <td>
                                             <div className="flex flex-col items-center gap-1 leading-tight text-center">
                                                 <EtapasInlineDots filled={preenchidas} />
@@ -1994,7 +2003,7 @@ const DesktopTable = React.memo(function DesktopTable({
 
                                         <td className="text-left">
                                             <button
-                                                className="w-full text-left font-semibold underline-offset-2 hover:underline break-words [overflow-wrap:anywhere]"
+                                                className="w-full text-left font-semibold leading-tight underline-offset-2 hover:underline break-words [overflow-wrap:anywhere]"
                                                 onClick={() => onSelect(r)}
                                                 title="Ver detalhes"
                                             >
@@ -2127,7 +2136,7 @@ function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     return (
         <div className="flex items-center gap-1.5" title="Etapas preenchidas">
             {[0, 1, 2, 3].map((k) => (
-                <span key={k} className={`h-2.5 w-2.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                <span key={k} className={`h-2 w-2 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
             ))}
         </div>
     );
@@ -2177,7 +2186,7 @@ function StatusTimelineCell({
 
     return (
         <div className="w-full min-w-0 overflow-hidden">
-            <div className="grid w-full min-w-0 grid-cols-6 items-stretch gap-2 overflow-hidden">
+            <div className="grid w-full min-w-0 grid-cols-6 items-stretch gap-0.5 overflow-hidden">
                 {STATUS_STEPS.map((step) => {
                     const seg = segmentByKey.get(step.key);
                     const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2223,15 +2232,15 @@ function StatusMiniCard({
 }) {
     return (
         <div
-            className={`flex h-[50px] min-w-0 flex-col items-center justify-center rounded-lg border bg-background/80 px-1 text-center leading-none shadow-sm ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
+            className={`flex h-[34px] min-w-0 flex-col items-center justify-center rounded-md border bg-background/80 px-px text-center leading-none ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
                 }`}
             title={title}
         >
-            <div className={`leading-none text-[13px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[3px] w-full truncate px-[1px] text-[7px] font-bold leading-none text-muted-foreground">
+            <div className={`leading-none text-[9px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[1px] w-full truncate px-px text-[5.5px] font-bold leading-none text-muted-foreground">
                 {label}
             </div>
-            <div className="mt-[4px] w-full truncate px-[1px] text-[8px] font-bold leading-none tabular-nums">
+            <div className="mt-[2px] w-full truncate px-px text-[6.5px] font-bold leading-none tabular-nums">
                 {time}
             </div>
         </div>
@@ -2248,7 +2257,7 @@ function StatusBlinkStyle() {
                 }
                 50% {
                     opacity: 0.35;
-                    transform: scale(1.12);
+                    transform: scale(1.08);
                 }
             }
             .qa-status-blink {
