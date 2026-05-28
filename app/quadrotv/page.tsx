@@ -1719,8 +1719,10 @@ export default function QuadroAtendimentoPage() {
                     box-sizing: border-box;
                 }
                 .qa-page-root {
-                    width: calc(100dvw - 112px) !important;
-                    max-width: calc(100dvw - 112px) !important;
+                    width: min(calc(100dvw - 156px), 1400px) !important;
+                    max-width: min(calc(100dvw - 156px), 1400px) !important;
+                    margin-left: auto !important;
+                    margin-right: auto !important;
                     min-width: 0 !important;
                     overflow: hidden !important;
                 }
@@ -1728,6 +1730,8 @@ export default function QuadroAtendimentoPage() {
                     .qa-page-root {
                         width: calc(100dvw - 18px) !important;
                         max-width: calc(100dvw - 18px) !important;
+                        margin-left: auto !important;
+                        margin-right: auto !important;
                     }
                 }
                 .qa-panel-premium {
@@ -1768,7 +1772,7 @@ export default function QuadroAtendimentoPage() {
                 }
             `}</style>
 
-            <div className="qa-page-root qa-no-scrollbar flex h-[calc(100dvh-84px)] max-h-[calc(100dvh-84px)] w-[calc(100dvw-112px)] max-w-[calc(100dvw-112px)] min-w-0 flex-col gap-2 overflow-hidden px-2 py-2 sm:px-2">
+            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-84px)] max-h-[calc(100dvh-84px)] min-w-0 flex-col gap-2 overflow-hidden px-2 py-2 sm:px-3">
                 <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
                     <div className="flex min-w-0 items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -2031,7 +2035,7 @@ const DesktopTable = React.memo(function DesktopTable({
 }) {
     return (
         <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
-            <div className="grid h-8 shrink-0 grid-cols-[82px_230px_320px_112px_108px_204px] items-center gap-1 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
+            <div className="grid h-8 shrink-0 grid-cols-[90px_230px_280px_112px_110px_280px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-4 text-[11px] font-bold text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2050,7 +2054,7 @@ const DesktopTable = React.memo(function DesktopTable({
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[58px] grid-cols-[82px_230px_320px_112px_108px_204px] items-center gap-1 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
+                                className="grid h-[58px] grid-cols-[90px_230px_280px_112px_110px_280px] items-center gap-2 border-b border-slate-700/45 px-4 text-[12px] text-slate-100 last:border-b-0"
                             >
                                 <div className="min-w-0">
                                     <div className="mb-0.5 flex justify-center">
@@ -2230,7 +2234,7 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-between gap-0.5 overflow-hidden pr-0">
+        <div className="flex w-full min-w-0 items-center justify-start gap-2 overflow-hidden pr-0">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2271,7 +2275,7 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`flex h-[28px] w-[29px] shrink-0 flex-col items-center justify-center rounded-md border px-0 text-center leading-none transition ${active
+            className={`flex h-[34px] w-[37px] shrink-0 flex-col items-center justify-center rounded-lg border px-0 text-center leading-none transition ${active
                     ? "border-cyan-300/80 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,.25)]"
                     : total
                         ? "border-amber-300/30 bg-amber-300/10"
@@ -2281,9 +2285,9 @@ function StatusPill({
                 }`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[8px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[1px] w-full truncate text-[5px] font-black leading-none text-slate-400">{label}</div>
-            <div className="mt-[1px] w-full truncate text-[5.8px] font-black leading-none tabular-nums text-slate-100">{time}</div>
+            <div className={`text-[10px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[2px] w-full truncate text-[6px] font-black leading-none text-slate-400">{label}</div>
+            <div className="mt-[2px] w-full truncate text-[6.8px] font-black leading-none tabular-nums text-slate-100">{time}</div>
         </div>
     );
 }
