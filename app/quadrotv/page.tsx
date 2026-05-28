@@ -928,7 +928,7 @@ function ConvenioBadge({
     const kind = normalizeConvenio(convenio);
     const sizeClass =
         size === "xs"
-            ? "px-2 py-0.5 text-[10px]"
+            ? "px-1.5 py-0.5 text-[9px]"
             : "px-2.5 py-1 text-[11px]";
 
     return (
@@ -1698,182 +1698,238 @@ export default function QuadroAtendimentoPage() {
         return "Pendências de horário.";
     }, []);
 
+    const desktopVisibleLimit = 3;
+    const mobileVisibleLimit = 2;
+    const desktopAtivos = ativosOrdenados.slice(0, desktopVisibleLimit);
+    const mobileAtivos = ativosOrdenados.slice(0, mobileVisibleLimit);
+    const desktopHiddenCount = Math.max(0, ativosOrdenados.length - desktopAtivos.length);
+    const mobileHiddenCount = Math.max(0, ativosOrdenados.length - mobileAtivos.length);
+
     return (
         <>
             <style jsx global>{`
                 html,
-                body {
-                    overflow-x: hidden !important;
-                    overflow-y: hidden !important;
+                body,
+                #__next,
+                body > div {
+                    max-width: 100vw !important;
+                    overflow: hidden !important;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                .qa-page-root {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-width: 0 !important;
+                    overflow: hidden !important;
+                }
+                .qa-panel-premium {
+                    background:
+                        radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 34%),
+                        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.9));
+                    border-color: rgba(148, 163, 184, 0.18);
+                    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+                }
+                .qa-card-soft {
+                    background: rgba(15, 23, 42, 0.72);
+                    border-color: rgba(148, 163, 184, 0.14);
+                }
+                .qa-text-muted {
+                    color: rgba(203, 213, 225, 0.68);
+                }
+                .qa-no-scrollbar,
+                .qa-no-scrollbar * {
+                    scrollbar-width: none !important;
+                }
+                .qa-no-scrollbar::-webkit-scrollbar,
+                .qa-no-scrollbar *::-webkit-scrollbar {
+                    display: none !important;
+                }
+                .qa-truncate-2 {
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                }
+                @media (max-width: 640px) {
+                    html,
+                    body,
+                    #__next,
+                    body > div {
+                        overflow: hidden !important;
+                    }
                 }
             `}</style>
-            <div className="flex h-[calc(100dvh-5rem)] w-full max-w-full flex-col gap-3 overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
-                <div className="shrink-0 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
-                    <div className="flex flex-col gap-2">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
-                                <p className="mt-1 text-sm text-muted-foreground">Atualizado em tempo real</p>
-                            </div>
 
-                            <div className="text-right leading-tight">
-                                <div className="text-lg sm:text-xl font-bold tabular-nums">{clockTime}</div>
-                                <div className="text-xs sm:text-sm text-muted-foreground">{clockDate}</div>
-                            </div>
+            <div className="qa-page-root qa-no-scrollbar flex h-[calc(100dvh-96px)] max-h-[calc(100dvh-96px)] w-full min-w-0 flex-col gap-3 overflow-hidden px-3 py-3 sm:px-4">
+                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-2xl border px-4 py-3 sm:px-5">
+                    <div className="flex min-w-0 items-start justify-between gap-4">
+                        <div className="min-w-0">
+                            <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-slate-100 sm:text-2xl">
+                                Quadro de Atendimentos
+                            </h1>
+                            <p className="mt-1 text-xs font-medium qa-text-muted">Atualizado em tempo real</p>
                         </div>
 
-                        <div className="border-t pt-2 overflow-hidden">
-                            <AvisosTicker avisos={avisosParaExibir} />
+                        <div className="shrink-0 text-right leading-tight">
+                            <div className="text-xl font-bold tabular-nums text-slate-100 sm:text-2xl">{clockTime}</div>
+                            <div className="mt-1 text-[11px] font-medium qa-text-muted sm:text-xs">{clockDate}</div>
                         </div>
                     </div>
-                </div>
 
-                <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
-                <MobileCards ativos={ativosOrdenados} onSelect={showDetail} statusLogsById={statusLogsById} nowMs={nowMs} />
+                    <div className="mt-3 h-px bg-slate-700/50" />
+                    <div className="mt-2 h-7 overflow-hidden">
+                        <AvisosTicker avisos={avisosParaExibir} />
+                    </div>
+                </header>
+
+                <main className="min-h-0 flex-1 overflow-hidden">
+                    <DesktopTable
+                        ativos={desktopAtivos}
+                        hiddenCount={desktopHiddenCount}
+                        onSelect={showDetail}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                    />
+                    <MobileCards
+                        ativos={mobileAtivos}
+                        hiddenCount={mobileHiddenCount}
+                        onSelect={showDetail}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                    />
+                </main>
 
                 {open && detail && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
-                        <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
+                    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-3 sm:p-6" aria-modal role="dialog">
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDetail} aria-hidden />
 
-                        <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain">
-                            <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3 overflow-x-hidden">
-                                <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
-                                    <button
-                                        onClick={toggleTimelineDetalhe}
-                                        className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
-                                        aria-label="Linha do tempo"
-                                        title="Ver linha do tempo deste atendimento"
-                                    >
-                                        Linha do tempo
-                                    </button>
-
-                                    <button
-                                        onClick={handleCopy}
-                                        className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                        aria-label="Copiar"
-                                        title="Copiar informações"
-                                    >
-                                        {copied ? "Copiado!" : "Copiar"}
-                                    </button>
-
-                                    <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
-                                        Fechar
-                                    </button>
-                                </div>
-
-                                <div className="mt-3">
-                                    <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                    <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
-                                        {shown(detail.falecido)}
-                                    </h3>
-
-                                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                        <span className="text-muted-foreground">
-                                            Data: <b>{dateOr(detail.data)}</b>
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            • Agente: <b>{shown(detail.agente)}</b>
-                                        </span>
-                                    </div>
-
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
-                                            {capStatus(detail.status)}
-                                        </span>
-                                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                                            ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
-                                        </span>
-                                    </div>
-
-                                    {detailTimelineOpen && (
-                                        <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
-                                            <div className="flex items-start justify-between gap-2 min-w-0">
-                                                <div className="min-w-0">
-                                                    <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
-                                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                        Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={() => setDetailTimelineOpen(false)}
-                                                    className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
-                                                    aria-label="Ocultar linha do tempo"
-                                                >
-                                                    Ocultar
-                                                </button>
-                                            </div>
-
-                                            {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
-                                            {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
-
-                                            {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                                <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
-                                            )}
-
-                                            {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
-                                                <div className="mt-2">
-                                                    <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
-                                                </div>
-                                            )}
+                        <div className="qa-panel-premium relative z-10 flex max-h-[86dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
+                            <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 backdrop-blur sm:px-5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] qa-text-muted">Detalhes do atendimento</div>
+                                        <h3 className="mt-1 truncate text-lg font-bold leading-tight text-slate-100 sm:text-xl">
+                                            {shown(detail.falecido)}
+                                        </h3>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs qa-text-muted">
+                                            <span>Data: <b className="text-slate-200">{dateOr(detail.data)}</b></span>
+                                            <span>Hora: <b className="text-slate-200">{timeOr(detail.hora_fim_velorio)}</b></span>
+                                            <span>Agente: <b className="text-slate-200">{shown(detail.agente)}</b></span>
                                         </div>
-                                    )}
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-white ${badgeClass(detail.status)}`}>
+                                                {capStatus(detail.status)}
+                                            </span>
+                                            <ConvenioBadge convenio={detail.convenio} size="xs" />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <button
+                                            onClick={toggleTimelineDetalhe}
+                                            className={`rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 ${detailTimelineOpen ? "bg-slate-800" : "bg-slate-900/50"}`}
+                                            aria-label="Linha do tempo"
+                                            title="Ver linha do tempo deste atendimento"
+                                        >
+                                            Linha do tempo
+                                        </button>
+
+                                        <button
+                                            onClick={handleCopy}
+                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                            aria-label="Copiar"
+                                            title="Copiar informações"
+                                        >
+                                            {copied ? "Copiado!" : "Copiar"}
+                                        </button>
+
+                                        <button
+                                            onClick={closeDetail}
+                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                            aria-label="Fechar"
+                                        >
+                                            Fechar
+                                        </button>
+                                    </div>
                                 </div>
+
+                                {detailTimelineOpen && (
+                                    <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-950/55 p-3">
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-bold text-slate-200">Linha do Tempo</div>
+                                                <div className="truncate text-[11px] qa-text-muted">Logs deste atendimento: {shown(detail.falecido)}</div>
+                                            </div>
+                                            <button
+                                                onClick={() => setDetailTimelineOpen(false)}
+                                                className="shrink-0 rounded-full border border-slate-700/70 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                                                aria-label="Ocultar linha do tempo"
+                                            >
+                                                Ocultar
+                                            </button>
+                                        </div>
+
+                                        {detailLogsLoading && <p className="text-sm qa-text-muted">Carregando histórico…</p>}
+                                        {detailLogsError && <p className="text-sm text-red-400">{detailLogsError}</p>}
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
+                                            <p className="text-sm qa-text-muted">Nenhum log encontrado para este atendimento.</p>
+                                        )}
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />}
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
-                                <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                        <Field label="Falecido" value={shown(detail.falecido)} />
-                                        <Field label="Religião" value={shown(detail.religiao)} />
-                                        <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
-                                        <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                        <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
+                            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                                <div className="grid gap-3">
+                                    <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                            <Field label="Falecido" value={shown(detail.falecido)} />
+                                            <Field label="Religião" value={shown(detail.religiao)} />
+                                            <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
+                                            <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
+                                            <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                            <Field label="Urna" value={shown(detail.urna)} />
+                                            <Field label="Roupa" value={shown(detail.roupa)} />
+                                            <Field label="Assistência" value={shown(detail.assistencia)} />
+                                            <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+                                            <Field label="Invol" value={involSimNao(detail.invol)} />
+                                            <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
+                                            {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
+                                                <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                            )}
+                                            <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+                                            <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
+                                            <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
+                                            <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
+                                            <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-3" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+                                            <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
+                                            <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
+                                            <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
+                                            <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-3" />
+                                        </div>
+                                    </Topic>
+
+                                    <div className="rounded-xl border border-slate-700/60 bg-slate-950/45 p-3">
+                                        <div className="mb-2 text-xs font-semibold qa-text-muted">Etapas preenchidas</div>
+                                        <EtapasRow registro={detail} />
                                     </div>
-                                </Topic>
-
-                                <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                        <Field label="Urna" value={shown(detail.urna)} />
-                                        <Field label="Roupa" value={shown(detail.roupa)} />
-                                        <Field label="Assistência" value={shown(detail.assistencia)} />
-                                        <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                        <Field label="Invol" value={involSimNao(detail.invol)} />
-                                        <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
-
-                                        {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
-                                            <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
-                                        )}
-
-                                        <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
-                                    </div>
-                                </Topic>
-
-                                <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                        <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
-                                        <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                    </div>
-                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                        <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                        <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
-                                    </div>
-                                </Topic>
-
-                                <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                        <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
-                                        <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
-                                        <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                        <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
-                                    </div>
-                                </Topic>
-
-                                <div className="rounded-xl border bg-background p-3">
-                                    <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
-                                    <EtapasRow registro={detail} />
                                 </div>
                             </div>
                         </div>
@@ -1902,16 +1958,16 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
     }, [items]);
 
     if (items.length === 0) {
-        return <p className="text-xs text-muted-foreground">Nenhum aviso no momento.</p>;
+        return <p className="text-[11px] text-muted-foreground">Nenhum aviso no momento.</p>;
     }
 
     const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
-        <div className="flex items-center gap-10 px-4 py-2 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
+        <div className="flex items-center gap-7 px-2 py-1 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
             {items.map((x, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-foreground dark:text-white">
-                    {x.usuario ? <strong className="font-semibold text-foreground dark:text-white">{x.usuario}</strong> : null}
-                    {x.mensagem ? <span className="text-foreground dark:text-white">{x.mensagem}</span> : null}
-                    <span className="text-muted-foreground dark:text-white/70">•</span>
+                <div key={i} className="flex items-center gap-2 text-[12px] font-semibold text-slate-200">
+                    {x.usuario ? <strong className="font-bold text-slate-100">{x.usuario}</strong> : null}
+                    {x.mensagem ? <span className="text-slate-200">{x.mensagem}</span> : null}
+                    <span className="text-slate-500">•</span>
                 </div>
             ))}
         </div>
@@ -1956,166 +2012,161 @@ function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
 /* ===== Listas Memoizadas ===== */
 const DesktopTable = React.memo(function DesktopTable({
     ativos,
+    hiddenCount = 0,
     onSelect,
     statusLogsById,
     nowMs,
 }: {
     ativos: Registro[];
+    hiddenCount?: number;
     onSelect: (r: Registro) => void;
     statusLogsById: Record<string, LogItem[]>;
     nowMs: number;
 }) {
     return (
-        <div className="hidden min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card/60 p-2 shadow-sm sm:block">
-            <div className="h-full overflow-hidden rounded-xl border border-border/60">
-                <table className="h-full w-full table-fixed text-[13px]">
-                    <thead className="bg-muted/60 text-muted-foreground">
-                        <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
-                            <th className="w-[92px] text-center">Data</th>
-                            <th className="w-[18%]">Falecido(a)</th>
-                            <th className="w-[18%]">Local</th>
-                            <th className="w-[112px]">Sepultamento</th>
-                            <th className="w-[112px]">Agente</th>
-                            <th className="w-[330px] min-w-0">Status</th>
-                        </tr>
-                    </thead>
-
-                    <tbody className="divide-y">
-                        {ativos.length === 0 ? (
-                            <tr>
-                                <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
-                                    Nenhum atendimento encontrado.
-                                </td>
-                            </tr>
-                        ) : (
-                            ativos.map((r, i) => {
-                                const preenchidas = etapasPreenchidas(r);
-                                const trackingId = getRegistroTrackingId(r);
-                                return (
-                                    <tr key={trackingId || i} className="[&>td]:px-2 [&>td]:py-1.5 align-middle">
-                                        <td>
-                                            <div className="flex flex-col items-center gap-1 leading-tight text-center">
-                                                <EtapasInlineDots filled={preenchidas} />
-                                                <div>{dateOr(r.data)}</div>
-                                                <ConvenioBadge convenio={r.convenio} size="xs" />
-                                            </div>
-                                        </td>
-
-                                        <td className="text-left">
-                                            <button
-                                                className="w-full text-left font-semibold leading-tight underline-offset-2 hover:underline break-words [overflow-wrap:anywhere]"
-                                                onClick={() => onSelect(r)}
-                                                title="Ver detalhes"
-                                            >
-                                                {shown(r.falecido)}
-                                            </button>
-                                        </td>
-
-                                        <td>
-                                            <LocalVelorioValue value={r.local_velorio} />
-                                        </td>
-
-                                        <td>
-                                            <div className="leading-tight">
-                                                <div className="text-xs text-muted-foreground">{dateDayMonthOr(r.data_fim_velorio)}</div>
-                                                <div className="mt-0.5">{timeOr(r.hora_fim_velorio)}</div>
-                                            </div>
-                                        </td>
-
-                                        <td>{shown(r.agente)}</td>
-                                        <td className="align-middle">
-                                            <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="desktop" />
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
+        <section className="hidden h-full min-h-0 overflow-hidden rounded-2xl border qa-panel-premium sm:flex sm:flex-col">
+            <div className="grid h-11 shrink-0 grid-cols-[96px_minmax(160px,1.18fr)_minmax(150px,1fr)_132px_112px_300px] items-center gap-3 border-b border-slate-700/50 bg-slate-800/45 px-4 text-xs font-bold text-slate-300">
+                <div>Data</div>
+                <div>Falecido(a)</div>
+                <div>Local</div>
+                <div>Sepultamento</div>
+                <div>Agente</div>
+                <div>Status</div>
             </div>
-        </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden">
+                {ativos.length === 0 ? (
+                    <div className="flex h-40 items-center justify-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
+                ) : (
+                    ativos.map((r, i) => {
+                        const preenchidas = etapasPreenchidas(r);
+                        const trackingId = getRegistroTrackingId(r);
+                        return (
+                            <div
+                                key={trackingId || i}
+                                className="grid h-[88px] grid-cols-[96px_minmax(160px,1.18fr)_minmax(150px,1fr)_132px_112px_300px] items-center gap-3 border-b border-slate-700/45 px-4 text-[13px] text-slate-100 last:border-b-0"
+                            >
+                                <div className="min-w-0">
+                                    <div className="mb-1.5 flex justify-center">
+                                        <EtapasInlineDots filled={preenchidas} />
+                                    </div>
+                                    <div className="text-center text-sm font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
+                                    <div className="mt-1 flex justify-center">
+                                        <ConvenioBadge convenio={r.convenio} size="xs" />
+                                    </div>
+                                </div>
+
+                                <button
+                                    className="min-w-0 text-left text-sm font-bold leading-snug text-slate-100 underline-offset-2 hover:underline"
+                                    onClick={() => onSelect(r)}
+                                    title={shown(r.falecido)}
+                                >
+                                    <span className="block truncate">{shown(r.falecido)}</span>
+                                </button>
+
+                                <div className="min-w-0 text-sm font-medium leading-snug text-slate-200" title={shown(r.local_velorio)}>
+                                    <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
+                                </div>
+
+                                <div className="min-w-0 leading-tight">
+                                    <div className="text-xs font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                    <div className="mt-1 truncate text-sm font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                </div>
+
+                                <div className="min-w-0 truncate text-sm font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+
+            {hiddenCount > 0 && (
+                <div className="flex h-9 shrink-0 items-center justify-center border-t border-slate-700/50 bg-slate-950/45 text-xs font-semibold qa-text-muted">
+                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"} para manter a tela sem rolagem
+                </div>
+            )}
+        </section>
     );
 });
 
 const MobileCards = React.memo(function MobileCards({
     ativos,
+    hiddenCount = 0,
     onSelect,
     statusLogsById,
     nowMs,
 }: {
     ativos: Registro[];
+    hiddenCount?: number;
     onSelect: (r: Registro) => void;
     statusLogsById: Record<string, LogItem[]>;
     nowMs: number;
 }) {
     return (
-        <div className="sm:hidden space-y-3">
+        <section className="flex h-full min-h-0 flex-col gap-2 overflow-hidden sm:hidden">
             {ativos.length === 0 ? (
-                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">Nenhum atendimento encontrado.</div>
+                <div className="qa-panel-premium rounded-2xl border p-4 text-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
                     const trackingId = getRegistroTrackingId(r);
-                    const dataBR = dateOr(r.data);
-                    const hora = timeOr(r.hora_fim_velorio);
-                    const localSep = shown(r.local_sepultamento || r.local);
-
                     return (
-                        <div key={trackingId || i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                        <article key={trackingId || i} className="qa-panel-premium overflow-hidden rounded-2xl border p-3">
                             <div className="flex items-start justify-between gap-3">
                                 <button
-                                    className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
+                                    className="min-w-0 text-left text-base font-bold leading-snug text-slate-100"
                                     onClick={() => onSelect(r)}
-                                    title="Ver detalhes"
+                                    title={shown(r.falecido)}
                                 >
-                                    {shown(r.falecido)}
+                                    <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
-                                <div className="shrink-0 flex flex-col items-end gap-1 mt-0.5">
+                                <div className="shrink-0 text-right">
                                     <EtapasInlineDots filled={preenchidas} />
-                                    <div className="text-xs text-muted-foreground">{dataBR}</div>
-                                    <ConvenioBadge convenio={r.convenio} size="xs" />
+                                    <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
+                                    <div className="mt-1"><ConvenioBadge convenio={r.convenio} size="xs" /></div>
                                 </div>
                             </div>
 
-                            <div className="mt-3 rounded-lg border bg-background p-3">
-                                <div className="mb-2 text-xs font-semibold text-muted-foreground">Status</div>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="qa-text-muted">Local</div>
+                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
+                                </div>
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="qa-text-muted">Sepultamento</div>
+                                    <div className="mt-1 font-semibold text-slate-100">{dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}</div>
+                                </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                                <div className="min-w-0 truncate qa-text-muted">Agente: <b className="text-slate-200">{shown(r.agente)}</b></div>
+                            </div>
+
+                            <div className="mt-2 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
                             </div>
-
-                            <div className="mt-2 text-xs">
-                                <span className="text-muted-foreground">Agente:&nbsp;</span>
-                                <b>{shown(r.agente)}</b>
-                            </div>
-
-                            <div className="mt-2 text-sm">
-                                <span className="text-muted-foreground">Local:&nbsp;</span>
-                                <LocalVelorioValue value={r.local_velorio} />
-                            </div>
-
-                            <div className="mt-3 rounded-lg border bg-background p-3">
-                                <div className="text-sm">
-                                    <span className="text-muted-foreground">Sepultamento&nbsp;</span>
-                                    <b>{localSep}</b>
-                                </div>
-                                <div className="mt-1 grid grid-cols-2 text-sm">
-                                    <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
-                                    <div className="text-right">{hora}</div>
-                                </div>
-                            </div>
-                        </div>
+                        </article>
                     );
                 })
             )}
-        </div>
+
+            {hiddenCount > 0 && (
+                <div className="qa-panel-premium rounded-xl border px-3 py-2 text-center text-xs font-semibold qa-text-muted">
+                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
+                </div>
+            )}
+        </section>
     );
 });
 
 /* ===== Componentes auxiliares ===== */
 function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
     return (
-        <section className="rounded-xl border bg-background p-3 sm:p-4">
+        <section className="rounded-xl border border-slate-700/60 bg-slate-950/35 p-3">
             <div className="flex items-start justify-between gap-2">
-                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
+                <h4 className="mb-3 text-xs font-bold tracking-wide text-slate-300">{title}</h4>
                 {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
             </div>
             {children}
@@ -2126,17 +2177,17 @@ function Topic({ title, children, note }: { title: string; children: React.React
 function Field({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
-            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">{value}</span>
+            <span className="min-w-[120px] shrink-0 text-xs font-bold text-slate-400">{label}:</span>
+            <span className="min-w-0 text-xs font-semibold text-slate-100 break-words [overflow-wrap:anywhere]">{value}</span>
         </div>
     );
 }
 
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     return (
-        <div className="flex items-center gap-1.5" title="Etapas preenchidas">
+        <div className="flex items-center gap-1" title="Etapas preenchidas">
             {[0, 1, 2, 3].map((k) => (
-                <span key={k} className={`h-2 w-2 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                <span key={k} className={`h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
             ))}
         </div>
     );
@@ -2156,93 +2207,77 @@ function StatusTimelineCell({
     const segments = buildStatusSegments(registro, logs, nowMs);
     const firstStart = segments[0]?.start ?? nowMs;
     const totalMs = Math.max(0, nowMs - firstStart);
+    const current = segments[segments.length - 1];
 
     const segmentByKey = new Map<string, StatusSegment>();
-    for (const seg of segments) {
-        segmentByKey.set(seg.key, seg);
-    }
+    for (const seg of segments) segmentByKey.set(seg.key, seg);
 
-    const isMobile = variant === "mobile";
-
-    if (isMobile) {
-        const current = segments[segments.length - 1];
+    if (variant === "mobile") {
         const currentDuration = current ? Math.max(0, current.end - current.start) : 0;
         return (
-            <div className="w-full min-w-0 overflow-hidden">
-                <div className="grid grid-cols-2 gap-2">
-                    <StatusMiniCard
-                        label={current?.shortLabel ?? "Status"}
-                        icon={current?.icon ?? "•"}
-                        time={formatDurationMs(currentDuration)}
-                        title={current?.label ?? "Status"}
-                        active={!!current?.active}
-                    />
-                    <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" />
-                </div>
+            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                <StatusPill icon={current?.icon ?? "•"} label={current?.shortLabel ?? "Status"} time={formatDurationMs(currentDuration)} active={!!current?.active} />
+                <StatusPill icon="⏱️" label="Total" time={formatDurationMs(totalMs)} total />
                 <StatusBlinkStyle />
             </div>
         );
     }
 
     return (
-        <div className="w-full min-w-0 overflow-hidden">
-            <div className="grid w-full min-w-0 grid-cols-6 items-stretch gap-0.5 overflow-hidden">
-                {STATUS_STEPS.map((step) => {
-                    const seg = segmentByKey.get(step.key);
-                    const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
-                    const active = !!seg?.active;
-                    const done = !!seg && !active;
-
-                    return (
-                        <StatusMiniCard
-                            key={step.key}
-                            label={step.shortLabel}
-                            icon={step.icon}
-                            time={duration > 0 ? formatDurationMs(duration) : "00:00"}
-                            title={`${step.label} • ${duration > 0 ? formatDurationMs(duration) : "00:00"}`}
-                            active={active}
-                            done={done}
-                        />
-                    );
-                })}
-
-                <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" total />
-            </div>
+        <div className="flex w-full min-w-0 items-center justify-between gap-1 overflow-hidden">
+            {STATUS_STEPS.map((step) => {
+                const seg = segmentByKey.get(step.key);
+                const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
+                return (
+                    <StatusPill
+                        key={step.key}
+                        icon={step.icon}
+                        label={step.shortLabel}
+                        time={duration > 0 ? formatDurationMs(duration) : "00:00"}
+                        active={!!seg?.active}
+                        muted={!seg}
+                        title={`${step.label} • ${duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                    />
+                );
+            })}
+            <StatusPill icon="⏱️" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
             <StatusBlinkStyle />
         </div>
     );
 }
 
-function StatusMiniCard({
-    label,
+function StatusPill({
     icon,
+    label,
     time,
-    title,
     active = false,
-    done = false,
+    muted = false,
     total = false,
+    title,
 }: {
-    label: string;
     icon: string;
+    label: string;
     time: string;
-    title: string;
     active?: boolean;
-    done?: boolean;
+    muted?: boolean;
     total?: boolean;
+    title?: string;
 }) {
     return (
         <div
-            className={`flex h-[34px] min-w-0 flex-col items-center justify-center rounded-md border bg-background/80 px-px text-center leading-none ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
+            className={`flex h-10 min-w-0 flex-1 flex-col items-center justify-center rounded-xl border px-1 text-center leading-none transition ${active
+                    ? "border-cyan-300/80 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,.25)]"
+                    : total
+                        ? "border-amber-300/30 bg-amber-300/10"
+                        : muted
+                            ? "border-slate-700/35 bg-slate-950/20 opacity-45"
+                            : "border-slate-600/50 bg-slate-950/35"
                 }`}
-            title={title}
+            title={title ?? `${label} • ${time}`}
         >
-            <div className={`leading-none text-[9px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[1px] w-full truncate px-px text-[5.5px] font-bold leading-none text-muted-foreground">
-                {label}
-            </div>
-            <div className="mt-[2px] w-full truncate px-px text-[6.5px] font-bold leading-none tabular-nums">
-                {time}
-            </div>
+            <div className={`text-[11px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-0.5 w-full truncate text-[7px] font-black leading-none text-slate-400">{label}</div>
+            <div className="mt-0.5 w-full truncate text-[8px] font-black leading-none tabular-nums text-slate-100">{time}</div>
         </div>
     );
 }
@@ -2251,23 +2286,15 @@ function StatusBlinkStyle() {
     return (
         <style jsx global>{`
             @keyframes qa-status-pulse {
-                0%, 100% {
-                    opacity: 1;
-                    transform: scale(1);
-                }
-                50% {
-                    opacity: 0.35;
-                    transform: scale(1.08);
-                }
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.38; transform: scale(1.1); }
             }
             .qa-status-blink {
                 display: inline-block;
                 animation: qa-status-pulse 1s ease-in-out infinite;
             }
             @media (prefers-reduced-motion: reduce) {
-                .qa-status-blink {
-                    animation: none !important;
-                }
+                .qa-status-blink { animation: none !important; }
             }
         `}</style>
     );
