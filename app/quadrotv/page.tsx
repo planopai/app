@@ -1953,16 +1953,16 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
-            <div className="rounded-2xl">
+        <div className="hidden sm:block rounded-2xl border bg-card/60 p-3 shadow-sm overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-border/60">
                 <table className="w-full table-fixed text-sm">
                     <thead className="bg-muted/60 text-muted-foreground">
-                        <tr className="[&>th]:px-2 [&>th]:py-3 [&>th]:text-left">
-                            <th className="w-[76px] text-center">Data</th>
-                            <th className="w-[17%]">Falecido(a)</th>
-                            <th className="w-[13%]">Local</th>
-                            <th className="w-[86px]">Sepultamento</th>
-                            <th className="w-[88px]">Agente</th>
+                        <tr className="[&>th]:px-3 [&>th]:py-3 [&>th]:text-left">
+                            <th className="w-[92px] text-center">Data</th>
+                            <th className="w-[18%]">Falecido(a)</th>
+                            <th className="w-[17%]">Local</th>
+                            <th className="w-[110px]">Sepultamento</th>
+                            <th className="w-[112px]">Agente</th>
                             <th className="min-w-0">Status</th>
                         </tr>
                     </thead>
@@ -1979,7 +1979,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                 const preenchidas = etapasPreenchidas(r);
                                 const trackingId = getRegistroTrackingId(r);
                                 return (
-                                    <tr key={trackingId || i} className="[&>td]:px-2 [&>td]:py-3 align-top">
+                                    <tr key={trackingId || i} className="[&>td]:px-3 [&>td]:py-3 align-middle">
                                         <td>
                                             <div className="flex flex-col items-center gap-1 leading-tight text-center">
                                                 <EtapasInlineDots filled={preenchidas} />
@@ -2144,66 +2144,119 @@ function StatusTimelineCell({
     const firstStart = segments[0]?.start ?? nowMs;
     const totalMs = Math.max(0, nowMs - firstStart);
 
+    const segmentByKey = new Map<string, StatusSegment>();
+    for (const seg of segments) {
+        segmentByKey.set(seg.key, seg);
+    }
+
     const isMobile = variant === "mobile";
-    const cardClass = isMobile
-        ? "h-[43px] w-[23px] rounded-md px-[1px]"
-        : "h-[46px] w-[34px] rounded-md px-[2px]";
-    const labelClass = isMobile ? "text-[5.5px]" : "text-[6.5px]";
-    const iconClass = isMobile ? "text-[10px]" : "text-[12px]";
-    const timeClass = isMobile ? "text-[7px]" : "text-[8px]";
+
+    if (isMobile) {
+        const current = segments[segments.length - 1];
+        const currentDuration = current ? Math.max(0, current.end - current.start) : 0;
+        return (
+            <div className="w-full min-w-0 overflow-hidden">
+                <div className="grid grid-cols-2 gap-2">
+                    <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" />
+                    <StatusMiniCard
+                        label={current?.shortLabel ?? "Status"}
+                        icon={current?.icon ?? "•"}
+                        time={formatDurationMs(currentDuration)}
+                        title={current?.label ?? "Status"}
+                        active={!!current?.active}
+                    />
+                </div>
+                <StatusBlinkStyle />
+            </div>
+        );
+    }
 
     return (
-        <div className="w-full max-w-full min-w-0 overflow-hidden">
-            <div className="flex w-full max-w-full min-w-0 flex-nowrap items-center justify-start gap-[2px] overflow-hidden">
-                <div
-                    className={`flex shrink-0 flex-col items-center justify-center border bg-background text-center leading-none ${cardClass}`}
-                    title="Tempo total em atendimento"
-                >
-                    <div className={`${labelClass} max-w-full truncate font-semibold leading-none text-muted-foreground`}>Total</div>
-                    <div className={`mt-[2px] leading-none ${iconClass}`}>⏱️</div>
-                    <div className={`mt-[3px] max-w-full truncate font-semibold leading-none tabular-nums ${timeClass}`}>{formatDurationMs(totalMs)}</div>
-                </div>
+        <div className="w-full min-w-0 overflow-hidden pr-1">
+            <div className="grid w-full min-w-0 grid-cols-12 items-stretch gap-1 overflow-hidden">
+                <StatusMiniCard label="Total" icon="⏱️" time={formatDurationMs(totalMs)} title="Tempo total em atendimento" total />
 
-                {segments.map((seg, idx) => {
-                    const duration = Math.max(0, seg.end - seg.start);
+                {STATUS_STEPS.map((step) => {
+                    const seg = segmentByKey.get(step.key);
+                    const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
+                    const active = !!seg?.active;
+                    const done = !!seg && !active;
+
                     return (
-                        <div
-                            key={`${seg.key}-${seg.start}-${idx}`}
-                            className={`flex shrink-0 flex-col items-center justify-center border bg-background text-center leading-none ${cardClass} ${seg.active ? "ring-1 ring-primary/60" : "opacity-75"}`}
-                            title={`${seg.label} • ${formatDurationMs(duration)}`}
-                        >
-                            <div className={`leading-none ${iconClass} ${seg.active ? "qa-status-blink" : ""}`}>{seg.icon}</div>
-                            <div className={`mt-[2px] max-w-full truncate font-semibold leading-none text-muted-foreground ${labelClass}`}>
-                                {seg.shortLabel}
-                            </div>
-                            <div className={`mt-[3px] max-w-full truncate font-semibold leading-none tabular-nums ${timeClass}`}>{formatDurationMs(duration)}</div>
-                        </div>
+                        <StatusMiniCard
+                            key={step.key}
+                            label={step.shortLabel}
+                            icon={step.icon}
+                            time={duration > 0 ? formatDurationMs(duration) : "00:00"}
+                            title={`${step.label} • ${duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                            active={active}
+                            done={done}
+                        />
                     );
                 })}
             </div>
-
-            <style jsx global>{`
-                @keyframes qa-status-pulse {
-                    0%, 100% {
-                        opacity: 1;
-                        transform: scale(1);
-                    }
-                    50% {
-                        opacity: 0.35;
-                        transform: scale(1.12);
-                    }
-                }
-                .qa-status-blink {
-                    display: inline-block;
-                    animation: qa-status-pulse 1s ease-in-out infinite;
-                }
-                @media (prefers-reduced-motion: reduce) {
-                    .qa-status-blink {
-                        animation: none !important;
-                    }
-                }
-            `}</style>
+            <StatusBlinkStyle />
         </div>
+    );
+}
+
+function StatusMiniCard({
+    label,
+    icon,
+    time,
+    title,
+    active = false,
+    done = false,
+    total = false,
+}: {
+    label: string;
+    icon: string;
+    time: string;
+    title: string;
+    active?: boolean;
+    done?: boolean;
+    total?: boolean;
+}) {
+    return (
+        <div
+            className={`flex h-[48px] min-w-0 flex-col items-center justify-center rounded-lg border bg-background/80 px-0.5 text-center leading-none shadow-sm ${active ? "border-primary/70 ring-1 ring-primary/60" : done || total ? "border-border/80" : "border-border/45 opacity-45"
+                }`}
+            title={title}
+        >
+            <div className={`leading-none text-[12px] ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[3px] w-full truncate px-[1px] text-[6px] font-bold leading-none text-muted-foreground">
+                {label}
+            </div>
+            <div className="mt-[4px] w-full truncate px-[1px] text-[7.5px] font-bold leading-none tabular-nums">
+                {time}
+            </div>
+        </div>
+    );
+}
+
+function StatusBlinkStyle() {
+    return (
+        <style jsx global>{`
+            @keyframes qa-status-pulse {
+                0%, 100% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+                50% {
+                    opacity: 0.35;
+                    transform: scale(1.12);
+                }
+            }
+            .qa-status-blink {
+                display: inline-block;
+                animation: qa-status-pulse 1s ease-in-out infinite;
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .qa-status-blink {
+                    animation: none !important;
+                }
+            }
+        `}</style>
     );
 }
 
