@@ -1719,10 +1719,16 @@ export default function QuadroAtendimentoPage() {
                     box-sizing: border-box;
                 }
                 .qa-page-root {
-                    width: 100% !important;
-                    max-width: 100% !important;
+                    width: calc(100dvw - 112px) !important;
+                    max-width: calc(100dvw - 112px) !important;
                     min-width: 0 !important;
                     overflow: hidden !important;
+                }
+                @media (max-width: 900px) {
+                    .qa-page-root {
+                        width: calc(100dvw - 18px) !important;
+                        max-width: calc(100dvw - 18px) !important;
+                    }
                 }
                 .qa-panel-premium {
                     background:
@@ -1762,24 +1768,24 @@ export default function QuadroAtendimentoPage() {
                 }
             `}</style>
 
-            <div className="qa-page-root qa-no-scrollbar flex h-[calc(100dvh-96px)] max-h-[calc(100dvh-96px)] w-full max-w-full min-w-0 flex-col gap-3 overflow-hidden px-3 py-3 sm:px-3">
-                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-2xl border px-4 py-3 sm:px-4">
-                    <div className="flex min-w-0 items-start justify-between gap-4">
+            <div className="qa-page-root qa-no-scrollbar flex h-[calc(100dvh-84px)] max-h-[calc(100dvh-84px)] w-[calc(100dvw-112px)] max-w-[calc(100dvw-112px)] min-w-0 flex-col gap-2 overflow-hidden px-2 py-2 sm:px-2">
+                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
                         <div className="min-w-0">
-                            <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-slate-100 sm:text-2xl">
+                            <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
                                 Quadro de Atendimentos
                             </h1>
-                            <p className="mt-1 text-xs font-medium qa-text-muted">Atualizado em tempo real</p>
+                            <p className="mt-0.5 text-[11px] font-medium qa-text-muted">Atualizado em tempo real</p>
                         </div>
 
                         <div className="shrink-0 text-right leading-tight">
-                            <div className="text-xl font-bold tabular-nums text-slate-100 sm:text-2xl">{clockTime}</div>
-                            <div className="mt-1 text-[11px] font-medium qa-text-muted sm:text-xs">{clockDate}</div>
+                            <div className="text-lg font-bold tabular-nums text-slate-100 sm:text-xl">{clockTime}</div>
+                            <div className="mt-0.5 text-[10px] font-medium qa-text-muted sm:text-[11px]">{clockDate}</div>
                         </div>
                     </div>
 
-                    <div className="mt-3 h-px bg-slate-700/50" />
-                    <div className="mt-2 h-7 overflow-hidden">
+                    <div className="mt-2 h-px bg-slate-700/50" />
+                    <div className="mt-1.5 h-6 overflow-hidden">
                         <AvisosTicker avisos={avisosParaExibir} />
                     </div>
                 </header>
@@ -2024,8 +2030,8 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <section className="hidden h-full min-h-0 w-full max-w-full overflow-hidden rounded-2xl border qa-panel-premium sm:flex sm:flex-col">
-            <div className="grid h-10 shrink-0 grid-cols-[78px_220px_minmax(170px,1fr)_112px_92px_228px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-xs font-bold text-slate-300">
+        <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
+            <div className="grid h-8 shrink-0 grid-cols-[70px_176px_minmax(135px,1fr)_86px_76px_188px] items-center gap-1.5 border-b border-slate-700/50 bg-slate-800/45 px-2 text-[11px] font-bold text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2034,7 +2040,7 @@ const DesktopTable = React.memo(function DesktopTable({
                 <div>Status</div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="min-h-0 overflow-hidden">
                 {ativos.length === 0 ? (
                     <div className="flex h-40 items-center justify-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
                 ) : (
@@ -2044,36 +2050,36 @@ const DesktopTable = React.memo(function DesktopTable({
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[76px] grid-cols-[78px_220px_minmax(170px,1fr)_112px_92px_228px] items-center gap-2 border-b border-slate-700/45 px-3 text-[13px] text-slate-100 last:border-b-0"
+                                className="grid h-[58px] grid-cols-[70px_176px_minmax(135px,1fr)_86px_76px_188px] items-center gap-1.5 border-b border-slate-700/45 px-2 text-[12px] text-slate-100 last:border-b-0"
                             >
                                 <div className="min-w-0">
-                                    <div className="mb-1 flex justify-center">
+                                    <div className="mb-0.5 flex justify-center">
                                         <EtapasInlineDots filled={preenchidas} />
                                     </div>
-                                    <div className="text-center text-[13px] font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
+                                    <div className="text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
                                     <div className="mt-0.5 flex justify-center">
                                         <ConvenioBadge convenio={r.convenio} size="xs" />
                                     </div>
                                 </div>
 
                                 <button
-                                    className="min-w-0 text-left text-[13px] font-bold leading-snug text-slate-100 underline-offset-2 hover:underline"
+                                    className="min-w-0 text-left text-[12px] font-bold leading-tight text-slate-100 underline-offset-2 hover:underline"
                                     onClick={() => onSelect(r)}
                                     title={shown(r.falecido)}
                                 >
                                     <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
 
-                                <div className="min-w-0 text-[13px] font-medium leading-snug text-slate-200" title={shown(r.local_velorio)}>
+                                <div className="min-w-0 text-[12px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
                                     <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
 
                                 <div className="min-w-0 leading-tight">
-                                    <div className="text-xs font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
-                                    <div className="mt-0.5 truncate text-[13px] font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                    <div className="text-[11px] font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                    <div className="mt-0.5 truncate text-[12px] font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
                                 </div>
 
-                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+                                <div className="min-w-0 truncate text-[12px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
 
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
                             </div>
@@ -2083,7 +2089,7 @@ const DesktopTable = React.memo(function DesktopTable({
             </div>
 
             {hiddenCount > 0 && (
-                <div className="flex h-9 shrink-0 items-center justify-center border-t border-slate-700/50 bg-slate-950/45 text-xs font-semibold qa-text-muted">
+                <div className="flex h-7 shrink-0 items-center justify-center border-t border-slate-700/50 bg-slate-950/45 text-[11px] font-semibold qa-text-muted">
                     + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"} para manter a tela sem rolagem
                 </div>
             )}
@@ -2224,7 +2230,7 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-start gap-1 overflow-hidden pr-0">
+        <div className="flex w-full min-w-0 items-center justify-between gap-0.5 overflow-hidden pr-0">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2265,7 +2271,7 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`flex h-8 w-[34px] shrink-0 flex-col items-center justify-center rounded-lg border px-0.5 text-center leading-none transition ${active
+            className={`flex h-[28px] w-[29px] shrink-0 flex-col items-center justify-center rounded-md border px-0 text-center leading-none transition ${active
                     ? "border-cyan-300/80 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,.25)]"
                     : total
                         ? "border-amber-300/30 bg-amber-300/10"
@@ -2275,9 +2281,9 @@ function StatusPill({
                 }`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[9px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[1px] w-full truncate text-[5.5px] font-black leading-none text-slate-400">{label}</div>
-            <div className="mt-[1px] w-full truncate text-[6.5px] font-black leading-none tabular-nums text-slate-100">{time}</div>
+            <div className={`text-[8px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
+            <div className="mt-[1px] w-full truncate text-[5px] font-black leading-none text-slate-400">{label}</div>
+            <div className="mt-[1px] w-full truncate text-[5.8px] font-black leading-none tabular-nums text-slate-100">{time}</div>
         </div>
     );
 }
