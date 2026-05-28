@@ -2234,7 +2234,7 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden pr-0">
+        <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden pr-4">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
