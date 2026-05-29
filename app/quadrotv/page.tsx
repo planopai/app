@@ -1195,21 +1195,22 @@ function iconForAction(acao?: string, status?: string): string {
 }
 
 /* ===== Status visual com tempo por etapa ===== */
-type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: string };
-type StatusSegment = { key: string; label: string; shortLabel: string; icon: string; start: number; end: number; active: boolean };
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "timer" | "dot";
+type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
+type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
 const STATUS_STEP_DEFS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚗" },
-    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "⏳" },
-    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧪" },
-    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "💐" },
-    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "🌸" },
-    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "✅" },
-    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "🚗" },
-    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "⚰️" },
-    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "🚙" },
-    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "🪦" },
-    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "📦" },
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
+    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "timer" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
+    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "flower" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
+    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
+    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "car" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "timer" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "timer" },
 ];
 
 const STATUS_STEPS: StatusStepInfo[] = STATUS_STEP_DEFS.filter((step) =>
@@ -1223,7 +1224,7 @@ const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>(
 
 function getStatusStepInfo(status?: string): StatusStepInfo {
     const key = normalizarStatus(status) || "";
-    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", shortLabel: "Status", icon: "•" };
+    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", shortLabel: "Status", icon: "dot" };
 }
 
 function getRegistroBackendId(r: Registro): string | undefined {
@@ -1259,13 +1260,10 @@ function getStatusFromLog(log: LogItem): string | undefined {
 
 function formatDurationMs(msRaw: number): string {
     const ms = Math.max(0, Number.isFinite(msRaw) ? msRaw : 0);
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}m`;
-    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    const totalMinutes = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
@@ -2057,11 +2055,11 @@ const DesktopTable = React.memo(function DesktopTable({
                                 className="grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_315px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
                             >
                                 <div className="min-w-0">
-                                    <div className="mb-0.5 flex justify-center">
+                                    <div className="mb-1 flex justify-center">
                                         <EtapasInlineDots filled={preenchidas} />
                                     </div>
                                     <div className="text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
-                                    <div className="mt-0.5 flex justify-center">
+                                    <div className="mt-1 flex justify-center">
                                         <ConvenioBadge convenio={r.convenio} size="xs" />
                                     </div>
                                 </div>
@@ -2226,15 +2224,15 @@ function StatusTimelineCell({
         const currentDuration = current ? Math.max(0, current.end - current.start) : 0;
         return (
             <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                <StatusPill icon={current?.icon ?? "•"} label={current?.shortLabel ?? "Status"} time={formatDurationMs(currentDuration)} active={!!current?.active} />
-                <StatusPill icon="⏱️" label="Total" time={formatDurationMs(totalMs)} total />
+                <StatusPill icon={current?.icon ?? "dot"} label={current?.shortLabel ?? "Status"} time={formatDurationMs(currentDuration)} active={!!current?.active} />
+                <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total />
                 <StatusBlinkStyle />
             </div>
         );
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-center gap-1 overflow-hidden px-2 pr-7">
+        <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden px-0 pr-4">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2250,7 +2248,7 @@ function StatusTimelineCell({
                     />
                 );
             })}
-            <StatusPill icon="⏱️" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
+            <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
             <StatusBlinkStyle />
         </div>
     );
@@ -2265,7 +2263,7 @@ function StatusPill({
     total = false,
     title,
 }: {
-    icon: string;
+    icon: StatusIconKey;
     label: string;
     time: string;
     active?: boolean;
@@ -2275,20 +2273,103 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`flex h-[36px] w-[40px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-2" : ""} ${active
-                    ? "bg-cyan-400/12 shadow-[0_0_12px_rgba(34,211,238,.22)]"
-                    : total
-                        ? "bg-amber-300/10 shadow-[0_0_10px_rgba(251,191,36,.12)]"
-                        : muted
-                            ? "bg-slate-950/10 opacity-20 grayscale"
-                            : "bg-slate-950/22"
-                }`}
+            className={`relative flex h-[34px] w-[42px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-3" : ""} ${active
+                    ? "border border-emerald-300/55 shadow-[0_0_12px_rgba(34,197,94,.18)]"
+                    : "border border-transparent"
+                } ${muted ? "opacity-30" : ""}`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[14px] leading-none ${active ? "qa-status-blink" : ""} ${muted ? "opacity-35" : ""}`}>{icon}</div>
-            <div className={`mt-[3px] w-full truncate text-[8px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : "text-slate-100"}`}>{time}</div>
+            <div
+                className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-45" : ""}`}
+                aria-hidden="true"
+            >
+                <StatusIcon type={icon} />
+                {muted && (
+                    <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[15px] font-black leading-none text-red-500 drop-shadow-[0_0_3px_rgba(239,68,68,.55)]">
+                        ×
+                    </span>
+                )}
+            </div>
+            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/45" : "text-slate-100"}`}>{time}</div>
         </div>
     );
+}
+
+function StatusIcon({ type }: { type: StatusIconKey }) {
+    const common = {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2.15,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+        className: "h-full w-full",
+    };
+
+    switch (type) {
+        case "hospital":
+            return (
+                <svg {...common}>
+                    <path d="M4 21V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V21" />
+                    <path d="M9 21v-5a3 3 0 0 1 6 0v5" />
+                    <path d="M12 7.5v5" />
+                    <path d="M9.5 10h5" />
+                    <path d="M6.5 21h11" />
+                </svg>
+            );
+        case "testTube":
+            return (
+                <svg {...common}>
+                    <path d="M10 2h7" />
+                    <path d="M14 2v6.6l4.5 7.8A3.7 3.7 0 0 1 15.3 22H8.7a3.7 3.7 0 0 1-3.2-5.6L10 8.6V2" />
+                    <path d="M8.2 15h7.6" />
+                </svg>
+            );
+        case "flower":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M12 4.5c1.7 1.7 1.7 3.3 0 5-1.7-1.7-1.7-3.3 0-5Z" />
+                    <path d="M12 19.5c-1.7-1.7-1.7-3.3 0-5 1.7 1.7 1.7 3.3 0 5Z" />
+                    <path d="M4.5 12c1.7-1.7 3.3-1.7 5 0-1.7 1.7-3.3 1.7-5 0Z" />
+                    <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
+                </svg>
+            );
+        case "coffin":
+            return (
+                <svg {...common}>
+                    <path d="M9 3h6l3 5-1.5 13h-9L6 8l3-5Z" />
+                    <path d="M12 7v8" />
+                    <path d="M9.8 10h4.4" />
+                </svg>
+            );
+        case "car":
+            return (
+                <svg {...common}>
+                    <path d="M5 16h14" />
+                    <path d="M6.5 16l1.4-5.2A3 3 0 0 1 10.8 8h2.4a3 3 0 0 1 2.9 2.8L17.5 16" />
+                    <circle cx="8" cy="17" r="2" />
+                    <circle cx="16" cy="17" r="2" />
+                    <path d="M9 12h6" />
+                </svg>
+            );
+        case "timer":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="13" r="7" />
+                    <path d="M12 13V9" />
+                    <path d="M12 13l3 2" />
+                    <path d="M9 2h6" />
+                    <path d="M12 2v3" />
+                </svg>
+            );
+        default:
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+                </svg>
+            );
+    }
 }
 
 function StatusBlinkStyle() {
@@ -2296,7 +2377,7 @@ function StatusBlinkStyle() {
         <style jsx global>{`
             @keyframes qa-status-pulse {
                 0%, 100% { opacity: 1; transform: scale(1); }
-                50% { opacity: 0.38; transform: scale(1.1); }
+                50% { opacity: 0.55; transform: scale(1.08); }
             }
             .qa-status-blink {
                 display: inline-block;
