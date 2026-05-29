@@ -1195,7 +1195,7 @@ function iconForAction(acao?: string, status?: string): string {
 }
 
 /* ===== Status visual com tempo por etapa ===== */
-type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "dot";
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "dot";
 type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
@@ -1213,9 +1213,18 @@ const STATUS_STEP_DEFS: StatusStepInfo[] = [
     { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
 ];
 
-const STATUS_STEPS: StatusStepInfo[] = STATUS_STEP_DEFS.filter((step) =>
-    ["fase01", "fase03", "fase05", "fase08", "fase09", "fase11"].includes(step.key)
-);
+const STATUS_STEPS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    // Conta do comando "Sepultamento Concluído" até "Material Recolhido".
+    { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
+    // Soma os intervalos entre as etapas principais: aguardando procedimento,
+    // aguardando ornamentação, corpo pronto e transportando para velório.
+    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
+];
 
 const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
     acc[step.key] = step;
@@ -1266,26 +1275,45 @@ function formatDurationMs(msRaw: number): string {
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
+const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase07"]);
+
+function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
+    const logTimes = (logs ?? [])
+        .map((log) => parseLogTs(log.datahora))
+        .filter((ts) => ts > 0)
+        .sort((a, b) => a - b);
+
+    if (logTimes.length > 0) return logTimes[0];
+
+    const registroTs = parseRegistroDateTime(registro);
+    return registroTs > 0 ? registroTs : nowMs;
+}
+
 function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
     const currentKey = normalizarStatus(registro.status);
-    const events = (logs ?? [])
+    const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
+
+    const statusEvents = (logs ?? [])
         .map((log) => ({ key: getStatusFromLog(log), ts: parseLogTs(log.datahora) }))
         .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
         .sort((a, b) => a.ts - b.ts);
 
-    const unique: { key: string; ts: number }[] = [];
-    for (const ev of events) {
-        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) unique.push(ev);
+    const unique: { key: string; ts: number }[] = [{ key: "fase01", ts: createdTs }];
+
+    for (const ev of statusEvents) {
+        if (ev.ts < createdTs) continue;
+
+        // Removendo começa no momento da criação do atendimento, então não esperamos
+        // um comando explícito de retirada para iniciar essa contagem.
+        if (ev.key === "fase01") continue;
+
+        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
+            unique.push(ev);
+        }
     }
 
-    if (unique.length === 0) {
-        const key = currentKey || "indefinido";
-        const info = getStatusStepInfo(key);
-        const start = parseRegistroDateTime(registro) || nowMs;
-        return [{ key: info.key, label: info.label, shortLabel: info.shortLabel, icon: info.icon, start, end: nowMs, active: !!currentKey }];
-    }
-
-    if (currentKey && unique[unique.length - 1].key !== currentKey) {
+    if (currentKey && unique[unique.length - 1]?.key !== currentKey) {
         unique.push({ key: currentKey, ts: nowMs });
     }
 
@@ -1303,6 +1331,22 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
             active: isLast && (!currentKey || ev.key === currentKey),
         };
     });
+}
+
+function getStatusDisplayData(segments: StatusSegment[]) {
+    const durations = new Map<string, number>();
+    let activeKey: string | undefined;
+
+    for (const seg of segments) {
+        const duration = Math.max(0, seg.end - seg.start);
+        const displayKey = STATUS_IDLE_KEYS.has(seg.key) ? "idle" : STATUS_MAIN_KEYS.has(seg.key) ? seg.key : undefined;
+        if (!displayKey) continue;
+
+        durations.set(displayKey, (durations.get(displayKey) ?? 0) + duration);
+        if (seg.active) activeKey = displayKey;
+    }
+
+    return { durations, activeKey };
 }
 
 /* =========================
@@ -2088,11 +2132,6 @@ const DesktopTable = React.memo(function DesktopTable({
                 )}
             </div>
 
-            {hiddenCount > 0 && (
-                <div className="flex h-7 shrink-0 items-center justify-center border-t border-slate-700/50 bg-slate-950/45 text-[11px] font-semibold qa-text-muted">
-                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"} para manter a tela sem rolagem
-                </div>
-            )}
         </section>
     );
 });
@@ -2215,14 +2254,14 @@ function StatusTimelineCell({
     const totalMs = Math.max(0, nowMs - firstStart);
     const current = segments[segments.length - 1];
 
-    const segmentByKey = new Map<string, StatusSegment>();
-    for (const seg of segments) segmentByKey.set(seg.key, seg);
+    const { durations, activeKey } = getStatusDisplayData(segments);
 
     if (variant === "mobile") {
-        const currentDuration = current ? Math.max(0, current.end - current.start) : 0;
+        const activeStep = STATUS_STEPS.find((step) => step.key === activeKey) ?? STATUS_STEPS[0];
+        const activeDuration = durations.get(activeStep.key) ?? 0;
         return (
-            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                <StatusPill icon={current?.icon ?? "dot"} label={current?.shortLabel ?? "Status"} time={formatDurationMs(currentDuration)} active={!!current?.active} />
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                <StatusPill icon={activeStep.icon} label={activeStep.shortLabel} time={formatDurationMs(activeDuration)} active={!!activeKey} />
                 <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total />
                 <StatusBlinkStyle />
             </div>
@@ -2230,19 +2269,19 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="-ml-3 flex w-full min-w-0 items-center justify-start gap-1.5 overflow-visible px-0 pr-2">
+        <div className="-ml-6 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1">
             {STATUS_STEPS.map((step) => {
-                const seg = segmentByKey.get(step.key);
-                const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
+                const duration = durations.get(step.key) ?? 0;
                 const skipped = isStatusStepSkipped(registro, step.key);
+                const isActive = !skipped && activeKey === step.key;
                 return (
                     <StatusPill
                         key={step.key}
                         icon={step.icon}
                         label={step.shortLabel}
-                        time={duration > 0 ? formatDurationMs(duration) : "00:00"}
-                        active={!skipped && !!seg?.active}
-                        muted={!seg || skipped}
+                        time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
+                        active={isActive}
+                        muted={duration <= 0 || skipped}
                         skipped={skipped}
                         title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
                     />
@@ -2281,24 +2320,23 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`relative flex h-[34px] w-[34px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-1" : ""} ${active
-                    ? "border border-emerald-300/55 shadow-[0_0_12px_rgba(34,197,94,.18)]"
-                    : "border border-transparent"
-                }`}
+            className={`relative flex h-[34px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
             title={title ?? `${label} • ${time}`}
         >
-            <div
-                className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-15" : ""}`}
-                aria-hidden="true"
-            >
-                <StatusIcon type={icon} />
-                {skipped && (
-                    <span className="pointer-events-none absolute -inset-1 z-10 flex items-center justify-center text-[18px] font-black leading-none text-red-500 drop-shadow-[0_0_4px_rgba(239,68,68,.85)]">
-                        ×
-                    </span>
-                )}
+            <div className={`relative flex h-[20px] w-[20px] items-center justify-center rounded-full ${active ? "border border-emerald-300/70 shadow-[0_0_10px_rgba(34,197,94,.35)]" : "border border-transparent"}`}>
+                <div
+                    className={`relative flex h-[15px] w-[15px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
+                    aria-hidden="true"
+                >
+                    <StatusIcon type={icon} />
+                </div>
             </div>
-            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/45" : "text-slate-100"}`}>{time}</div>
+            <div className={`mt-[2px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-emerald-200" : "text-slate-100"}`}>{time}</div>
+            {skipped && (
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[28px] font-black leading-none text-[#00AEEC] drop-shadow-[0_0_5px_rgba(0,174,236,.75)]">
+                    ×
+                </span>
+            )}
         </div>
     );
 }
@@ -2368,6 +2406,17 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M4 8.5V16l8 4 8-4V8.5" />
                     <path d="M12 13v7" />
                     <path d="M8.2 6.2 16 10.6" />
+                </svg>
+            );
+        case "hourglass":
+            return (
+                <svg {...common}>
+                    <path d="M6 3h12" />
+                    <path d="M6 21h12" />
+                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
+                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
+                    <path d="M10 8h4" />
+                    <path d="M10 16h4" />
                 </svg>
             );
         case "timer":
