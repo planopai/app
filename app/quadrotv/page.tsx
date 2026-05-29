@@ -1195,7 +1195,7 @@ function iconForAction(acao?: string, status?: string): string {
 }
 
 /* ===== Status visual com tempo por etapa ===== */
-type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "timer" | "dot";
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "dot";
 type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
@@ -1210,11 +1210,11 @@ const STATUS_STEP_DEFS: StatusStepInfo[] = [
     { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
     { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
     { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "timer" },
-    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "timer" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
 ];
 
 const STATUS_STEPS: StatusStepInfo[] = STATUS_STEP_DEFS.filter((step) =>
-    ["fase01", "fase03", "fase05", "fase08", "fase09"].includes(step.key)
+    ["fase01", "fase03", "fase05", "fase08", "fase09", "fase11"].includes(step.key)
 );
 
 const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
@@ -1696,12 +1696,10 @@ export default function QuadroAtendimentoPage() {
         return "Pendências de horário.";
     }, []);
 
-    const desktopVisibleLimit = 3;
-    const mobileVisibleLimit = 2;
-    const desktopAtivos = ativosOrdenados.slice(0, desktopVisibleLimit);
-    const mobileAtivos = ativosOrdenados.slice(0, mobileVisibleLimit);
-    const desktopHiddenCount = Math.max(0, ativosOrdenados.length - desktopAtivos.length);
-    const mobileHiddenCount = Math.max(0, ativosOrdenados.length - mobileAtivos.length);
+    const desktopAtivos = ativosOrdenados;
+    const mobileAtivos = ativosOrdenados;
+    const desktopHiddenCount = 0;
+    const mobileHiddenCount = 0;
 
     return (
         <>
@@ -2033,7 +2031,7 @@ const DesktopTable = React.memo(function DesktopTable({
 }) {
     return (
         <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
-            <div className="grid h-8 shrink-0 grid-cols-[88px_220px_260px_106px_108px_315px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
+            <div className="grid h-8 shrink-0 grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2052,7 +2050,7 @@ const DesktopTable = React.memo(function DesktopTable({
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_315px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
+                                className="grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
                             >
                                 <div className="min-w-0">
                                     <div className="mb-1 flex justify-center">
@@ -2232,7 +2230,7 @@ function StatusTimelineCell({
     }
 
     return (
-        <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-hidden px-0 pr-4">
+        <div className="-ml-3 flex w-full min-w-0 items-center justify-start gap-1.5 overflow-visible px-0 pr-2">
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
@@ -2273,14 +2271,14 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`relative flex h-[34px] w-[42px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-3" : ""} ${active
+            className={`relative flex h-[34px] w-[34px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-1" : ""} ${active
                     ? "border border-emerald-300/55 shadow-[0_0_12px_rgba(34,197,94,.18)]"
                     : "border border-transparent"
-                } ${muted ? "opacity-30" : ""}`}
+                } ${muted ? "opacity-20" : ""}`}
             title={title ?? `${label} • ${time}`}
         >
             <div
-                className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-45" : ""}`}
+                className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-25" : ""}`}
                 aria-hidden="true"
             >
                 <StatusIcon type={icon} />
@@ -2351,6 +2349,15 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <circle cx="8" cy="17" r="2" />
                     <circle cx="16" cy="17" r="2" />
                     <path d="M9 12h6" />
+                </svg>
+            );
+        case "box":
+            return (
+                <svg {...common}>
+                    <path d="M4 8.5 12 4l8 4.5-8 4.5L4 8.5Z" />
+                    <path d="M4 8.5V16l8 4 8-4V8.5" />
+                    <path d="M12 13v7" />
+                    <path d="M8.2 6.2 16 10.6" />
                 </svg>
             );
         case "timer":
