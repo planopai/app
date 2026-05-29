@@ -1201,7 +1201,7 @@ type StatusSegment = { key: string; label: string; shortLabel: string; icon: str
 const STATUS_STEP_DEFS: StatusStepInfo[] = [
     { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚗" },
     { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "⏳" },
-    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧑‍⚕️" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧪" },
     { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "💐" },
     { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "🌸" },
     { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "✅" },
@@ -2285,9 +2285,8 @@ function StatusPill({
                 }`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[11.5px] leading-none ${active ? "qa-status-blink" : ""} ${muted ? "opacity-45" : ""}`}>{icon}</div>
-            <div className={`mt-[2px] w-full truncate text-[6px] font-black leading-none ${muted ? "text-slate-500/45" : "text-slate-400"}`}>{label}</div>
-            <div className={`mt-[2px] w-full truncate text-[7px] font-black leading-none tabular-nums ${muted ? "text-slate-500/45" : "text-slate-100"}`}>{time}</div>
+            <div className={`text-[14px] leading-none ${active ? "qa-status-blink" : ""} ${muted ? "opacity-35" : ""}`}>{icon}</div>
+            <div className={`mt-[3px] w-full truncate text-[8px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : "text-slate-100"}`}>{time}</div>
         </div>
     );
 }
