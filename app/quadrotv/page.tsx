@@ -2327,20 +2327,20 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`relative flex h-[34px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
+            className={`relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`relative flex h-[21px] w-[21px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-emerald-300/80 shadow-[0_0_12px_rgba(34,197,94,.55)]" : "border border-transparent"}`}>
+            <div className={`relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-emerald-300/80 shadow-[0_0_10px_rgba(34,197,94,.5)]" : "border border-transparent"}`}>
                 <div
-                    className={`relative flex h-[16px] w-[16px] items-center justify-center ${active ? "qa-status-blink text-emerald-300" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
+                    className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-300" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
                     aria-hidden="true"
                 >
                     <StatusIcon type={icon} />
                 </div>
             </div>
-            <div className={`mt-[2px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-emerald-200" : "text-slate-100"}`}>{time}</div>
+            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-emerald-200" : "text-slate-100"}`}>{time}</div>
             {skipped && (
-                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[38px] font-black leading-none text-[#00AEEC] drop-shadow-[0_0_7px_rgba(0,174,236,.9)]">
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
                     ×
                 </span>
             )}
