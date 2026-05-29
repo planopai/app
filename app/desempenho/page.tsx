@@ -1,29 +1,47 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Nunito } from "next/font/google";
+
+const nunito = Nunito({
+    subsets: ["latin"],
+    weight: ["400", "600", "700", "800", "900"],
+});
 
 /* =========================================================
    CONFIG
 ========================================================= */
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
-
 const INFORMATICO_URL = `${API_BASE}/informativo.php?listar=1`;
 const TELEMETRIA_URL = `${API_BASE}/telemetria.php`;
+
+const COLORS = {
+    bg: "#F5FAFE",
+    card: "#FFFFFF",
+    text: "#1F3552",
+    textSoft: "#5C7492",
+    borderLight: "#CFE4F3",
+    borderStrong: "#2F6F91",
+    blue: "#4D8FD5",
+    blueDark: "#226385",
+    yellow: "#F2BC00",
+    green: "#1F7A2D",
+    slate: "#5A6F86",
+};
 
 type PeriodPreset = "hoje" | "ontem" | "7d" | "mes" | "30d" | "custom";
 
 type PeriodRange = {
     preset: PeriodPreset;
-    inicio: string; // yyyy-mm-dd
-    fim: string; // yyyy-mm-dd
+    inicio: string;
+    fim: string;
     label: string;
 };
 
 type Registro = {
-    id?: string | number;
-    sepultamento_id?: string | number;
-
+    id?: number | string;
+    sepultamento_id?: number | string;
     falecido?: string;
     agente?: string;
     usuario?: string;
@@ -50,7 +68,6 @@ type Registro = {
     ornamentacao_tipo?: string;
     invol?: string;
     local_velorio?: string;
-
     materiais_json?: any;
 
     [key: string]: any;
@@ -88,12 +105,11 @@ type ApiResp<T> =
         erro?: boolean;
         dados?: T[];
         data?: T[];
-        total?: number;
         msg?: string;
     };
 
 /* =========================================================
-   FETCH / CACHE
+   CACHE / FETCH
 ========================================================= */
 
 type CacheEntry = { exp: number; data: any };
@@ -119,7 +135,7 @@ async function fetchJson<T>(
     opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
 ): Promise<T> {
     const ttlMs = opts?.ttlMs ?? 12000;
-    const timeoutMs = opts?.timeoutMs ?? 18000;
+    const timeoutMs = opts?.timeoutMs ?? 20000;
     const cacheKey = opts?.cacheKey ?? url;
 
     const cached = getCache<T>(cacheKey);
@@ -140,13 +156,11 @@ async function fetchJson<T>(
                 signal: ac.signal,
             });
 
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`);
-            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-            const data = await res.json();
-            setCache(cacheKey, data, ttlMs);
-            return data as T;
+            const json = (await res.json()) as T;
+            setCache(cacheKey, json, ttlMs);
+            return json;
         } finally {
             clearTimeout(timer);
             INFLIGHT.delete(cacheKey);
@@ -279,33 +293,18 @@ function makeRange(preset: PeriodPreset, inicioCustom?: string, fimCustom?: stri
     if (preset === "7d") {
         const start = new Date(now);
         start.setDate(start.getDate() - 6);
-        return {
-            preset,
-            inicio: toIsoDate(start),
-            fim: toIsoDate(now),
-            label: "Últimos 7 dias",
-        };
+        return { preset, inicio: toIsoDate(start), fim: toIsoDate(now), label: "Últimos 7 dias" };
     }
 
     if (preset === "mes") {
         const start = new Date(now.getFullYear(), now.getMonth(), 1);
-        return {
-            preset,
-            inicio: toIsoDate(start),
-            fim: toIsoDate(now),
-            label: "Mês atual",
-        };
+        return { preset, inicio: toIsoDate(start), fim: toIsoDate(now), label: "Mês atual" };
     }
 
     if (preset === "30d") {
         const start = new Date(now);
         start.setDate(start.getDate() - 29);
-        return {
-            preset,
-            inicio: toIsoDate(start),
-            fim: toIsoDate(now),
-            label: "Últimos 30 dias",
-        };
+        return { preset, inicio: toIsoDate(start), fim: toIsoDate(now), label: "Últimos 30 dias" };
     }
 
     const ini = inicioCustom || toIsoDate(now);
@@ -411,9 +410,7 @@ function hasMateriais(r: Registro) {
     if (r.materiais_json) {
         try {
             const obj =
-                typeof r.materiais_json === "string"
-                    ? JSON.parse(r.materiais_json)
-                    : r.materiais_json;
+                typeof r.materiais_json === "string" ? JSON.parse(r.materiais_json) : r.materiais_json;
 
             if (obj && typeof obj === "object") {
                 return Object.values(obj).some((v: any) => {
@@ -455,14 +452,6 @@ function IconCalendar() {
     );
 }
 
-function IconAssistencia() {
-    return (
-        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2.4">
-            <path d="M12 4v16M4 12h16" />
-        </svg>
-    );
-}
-
 function IconTanato() {
     return (
         <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2.1">
@@ -485,8 +474,8 @@ function IconOrnamentacao() {
 function IconInvol() {
     return (
         <svg viewBox="0 0 24 24" className="h-10 w-10" fill="currentColor">
-            <path d="M12 2l7 4 2 8-9 8-9-8 2-8 7-4z" opacity=".9" />
-            <path d="M7 19l10-11" fill="none" stroke="white" strokeWidth="1.7" />
+            <path d="M12 2l7 4 2 8-9 8-9-8 2-8 7-4z" opacity=".92" />
+            <path d="M7 19l10-11" fill="none" stroke="white" strokeWidth="1.8" />
         </svg>
     );
 }
@@ -512,12 +501,6 @@ function IconMaterial() {
 }
 
 const METRICAS = [
-    {
-        key: "assistencia",
-        label: "Assistência",
-        icon: <IconAssistencia />,
-        match: (r: Registro) => isSim(r.assistencia),
-    },
     {
         key: "tanato",
         label: "Tanato",
@@ -554,159 +537,169 @@ const METRICAS = [
 ] as const;
 
 /* =========================================================
-   CHARTS
+   COMPONENTES BASE
 ========================================================= */
 
-const COLORS = ["#0C6289", "#F4BC00", "#1F7A25", "#4C8ED6", "#7C3AED", "#EF4444"];
+function Surface({
+    children,
+    className = "",
+}: {
+    children: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <div
+            className={`rounded-[24px] border bg-white shadow-[0_6px_18px_rgba(34,99,133,0.05)] ${className}`}
+            style={{
+                borderColor: COLORS.borderLight,
+                backgroundColor: COLORS.card,
+            }}
+        >
+            {children}
+        </div>
+    );
+}
 
-function PieChart({
+function ChartPanel({
     title,
-    data,
+    children,
 }: {
     title: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <Surface className="overflow-hidden">
+            <div
+                className="border-b px-4 py-3 text-center text-[14px] font-extrabold uppercase tracking-[0.06em] sm:text-[15px]"
+                style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
+            >
+                {title}
+            </div>
+            <div className="p-4">{children}</div>
+        </Surface>
+    );
+}
+
+/* =========================================================
+   GRÁFICOS
+========================================================= */
+
+function PieChart({
+    data,
+}: {
     data: Array<{ label: string; value: number }>;
 }) {
-    const size = 170;
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = 54;
     const total = data.reduce((s, d) => s + d.value, 0);
 
+    const palette = [COLORS.blueDark, COLORS.yellow, COLORS.green, COLORS.blue];
+
     let acc = 0;
-
-    function polarToCartesian(centerX: number, centerY: number, radius: number, angleInDegrees: number) {
-        const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
-        return {
-            x: centerX + radius * Math.cos(angleInRadians),
-            y: centerY + radius * Math.sin(angleInRadians),
-        };
-    }
-
-    function describeArc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
-        const start = polarToCartesian(x, y, radius, endAngle);
-        const end = polarToCartesian(x, y, radius, startAngle);
-        const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-        return `M ${x} ${y} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
-    }
+    const gradient =
+        total > 0
+            ? data
+                .map((d, i) => {
+                    const start = (acc / total) * 100;
+                    acc += d.value;
+                    const end = (acc / total) * 100;
+                    return `${palette[i % palette.length]} ${start}% ${end}%`;
+                })
+                .join(", ")
+            : "#E6EEF5";
 
     return (
-        <div className="rounded-sm bg-[#d9d9d9] p-3 shadow-inner">
-            <div className="mb-2 text-center text-[18px] font-black tracking-tight text-[#414141] md:text-[20px]">
-                {title.toUpperCase()}
+        <div className="grid items-center gap-4 md:grid-cols-[160px_1fr]">
+            <div className="mx-auto flex items-center justify-center">
+                <div
+                    className="h-[135px] w-[135px] rounded-full border shadow-inner"
+                    style={{
+                        background: total > 0 ? `conic-gradient(${gradient})` : "#E6EEF5",
+                        borderColor: COLORS.borderLight,
+                    }}
+                />
             </div>
 
-            <div className="grid grid-cols-[180px_1fr] items-center gap-2">
-                <div className="flex items-center justify-center">
-                    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-                        {total <= 0 ? (
-                            <circle cx={cx} cy={cy} r={r} fill="#cfcfcf" />
-                        ) : (
-                            data.map((d, i) => {
-                                const startAngle = (acc / total) * 360;
-                                acc += d.value;
-                                const endAngle = (acc / total) * 360;
-                                const path = describeArc(cx, cy, r, startAngle, endAngle);
-
-                                const mid = (startAngle + endAngle) / 2;
-                                const pos = polarToCartesian(cx, cy, 28, mid);
-
-                                return (
-                                    <g key={d.label}>
-                                        <path d={path} fill={COLORS[i % COLORS.length]} />
-                                        <rect
-                                            x={pos.x - 12}
-                                            y={pos.y - 10}
-                                            rx="2"
-                                            ry="2"
-                                            width="24"
-                                            height="20"
-                                            fill="#404040"
-                                            opacity="0.92"
-                                        />
-                                        <text
-                                            x={pos.x}
-                                            y={pos.y + 4}
-                                            textAnchor="middle"
-                                            fontSize="12"
-                                            fontWeight="700"
-                                            fill="white"
-                                        >
-                                            {fmt0(d.value)}
-                                        </text>
-                                    </g>
-                                );
-                            })
-                        )}
-                    </svg>
-                </div>
-
-                <div className="space-y-2 bg-white/25 p-2">
-                    {data.length === 0 ? (
-                        <div className="text-sm text-[#555]">Sem dados</div>
-                    ) : (
-                        data.map((d, i) => (
-                            <div key={d.label} className="flex items-start gap-2 text-[13px] text-[#4b4b4b]">
+            <div className="space-y-2 rounded-2xl border bg-[#F8FCFF] p-3" style={{ borderColor: COLORS.borderLight }}>
+                {data.length === 0 ? (
+                    <div className="text-sm" style={{ color: COLORS.textSoft }}>
+                        Sem dados
+                    </div>
+                ) : (
+                    data.map((d, i) => (
+                        <div key={d.label} className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2">
                                 <span
-                                    className="mt-1 inline-block h-3 w-3 shrink-0"
-                                    style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                                    className="h-3 w-3 rounded-sm"
+                                    style={{ backgroundColor: palette[i % palette.length] }}
                                 />
-                                <span className="break-words">{d.label}</span>
+                                <span
+                                    className="truncate text-[14px] font-semibold"
+                                    style={{ color: COLORS.text }}
+                                    title={d.label}
+                                >
+                                    {d.label}
+                                </span>
                             </div>
-                        ))
-                    )}
-                </div>
+                            <span
+                                className="rounded-lg px-2 py-1 text-[12px] font-extrabold text-white"
+                                style={{ backgroundColor: COLORS.blueDark }}
+                            >
+                                {fmt0(d.value)}
+                            </span>
+                        </div>
+                    ))
+                )}
             </div>
         </div>
     );
 }
 
-function SimpleBarChart({
-    title,
+function BarChart({
     data,
 }: {
-    title: string;
     data: Array<{ label: string; value: number }>;
 }) {
     const max = Math.max(1, ...data.map((d) => d.value));
 
     return (
-        <div className="rounded-sm bg-[#d9d9d9] p-3 shadow-inner">
-            <div className="mb-3 text-center text-[10px] font-black uppercase tracking-wide text-[#505050]">
-                {title}
-            </div>
-
-            <div className="h-[120px] rounded-sm bg-white/10 p-2">
-                <div className="flex h-[86px] items-end gap-3 border-b-2 border-[#555] px-1">
-                    {data.length === 0 ? (
-                        <div className="grid h-full w-full place-items-center text-xs text-[#666]">
-                            Sem dados
-                        </div>
-                    ) : (
-                        data.slice(0, 6).map((d) => {
-                            const h = Math.max(16, (d.value / max) * 62);
-                            return (
-                                <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center">
-                                    <div
-                                        className="mb-1 flex w-full max-w-[56px] items-center justify-center bg-[#3E7C9A] text-[12px] font-black text-white"
-                                        style={{ height: h }}
-                                    >
-                                        {fmt0(d.value)}
-                                    </div>
-                                    <div className="mt-2 max-w-[64px] truncate text-center text-[11px] text-[#4d4d4d]">
-                                        {d.label}
-                                    </div>
+        <div className="rounded-2xl border bg-[#F8FCFF] p-3" style={{ borderColor: COLORS.borderLight }}>
+            <div className="flex h-[180px] items-end gap-3 border-b-2 px-2 pb-2" style={{ borderColor: COLORS.slate }}>
+                {data.length === 0 ? (
+                    <div className="grid h-full w-full place-items-center text-sm" style={{ color: COLORS.textSoft }}>
+                        Sem dados
+                    </div>
+                ) : (
+                    data.slice(0, 4).map((d, idx) => {
+                        const height = Math.max(18, (d.value / max) * 105);
+                        return (
+                            <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center">
+                                <div
+                                    className="mb-2 flex w-full max-w-[82px] items-center justify-center rounded-t-xl px-1 text-center text-[12px] font-black text-white"
+                                    style={{
+                                        height,
+                                        backgroundColor: idx % 2 === 0 ? COLORS.blueDark : COLORS.blue,
+                                    }}
+                                >
+                                    {fmt0(d.value)}
                                 </div>
-                            );
-                        })
-                    )}
-                </div>
+
+                                <div
+                                    className="max-w-[88px] truncate text-center text-[12px] font-bold"
+                                    style={{ color: COLORS.text }}
+                                    title={d.label}
+                                >
+                                    {d.label}
+                                </div>
+                            </div>
+                        );
+                    })
+                )}
             </div>
         </div>
     );
 }
 
 /* =========================================================
-   MODAL PERÍODO
+   MODAL
 ========================================================= */
 
 function ModalPeriodo({
@@ -733,7 +726,7 @@ function ModalPeriodo({
 
     if (!aberto) return null;
 
-    const botoes: Array<{ key: PeriodPreset; label: string }> = [
+    const opcoes: Array<{ key: PeriodPreset; label: string }> = [
         { key: "hoje", label: "Hoje" },
         { key: "ontem", label: "Ontem" },
         { key: "7d", label: "Semana" },
@@ -743,52 +736,58 @@ function ModalPeriodo({
     ];
 
     return (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-                <div className="border-b p-4">
-                    <div className="flex items-center justify-between gap-3">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
+            <div className="w-full max-w-xl overflow-hidden rounded-[24px] border bg-white shadow-2xl" style={{ borderColor: COLORS.borderLight }}>
+                <div className="border-b px-5 py-4" style={{ borderColor: COLORS.borderLight }}>
+                    <div className="flex items-start justify-between gap-3">
                         <div>
-                            <h2 className="text-lg font-black text-slate-900">Filtrar período</h2>
-                            <p className="text-sm text-slate-500">
-                                Escolha um período para atualizar todos os gráficos.
+                            <h2 className="text-xl font-black" style={{ color: COLORS.text }}>
+                                Filtrar período
+                            </h2>
+                            <p className="text-sm" style={{ color: COLORS.textSoft }}>
+                                Todos os números e gráficos serão recalculados.
                             </p>
                         </div>
+
                         <button
                             onClick={onFechar}
-                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
+                            className="rounded-xl border px-3 py-1.5 text-sm font-bold hover:bg-slate-50"
+                            style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
                         >
                             Fechar
                         </button>
                     </div>
                 </div>
 
-                <div className="space-y-4 p-4">
+                <div className="space-y-4 p-5">
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        {botoes.map((b) => (
+                        {opcoes.map((o) => (
                             <button
-                                key={b.key}
+                                key={o.key}
                                 type="button"
                                 onClick={() => {
-                                    setPreset(b.key);
-                                    if (b.key !== "custom") {
-                                        const r = makeRange(b.key, inicio, fim);
+                                    setPreset(o.key);
+                                    if (o.key !== "custom") {
+                                        const r = makeRange(o.key, inicio, fim);
                                         setInicio(r.inicio);
                                         setFim(r.fim);
                                     }
                                 }}
-                                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${preset === b.key
-                                    ? "border-blue-600 bg-blue-50 text-blue-700"
-                                    : "hover:bg-slate-50"
-                                    }`}
+                                className="rounded-2xl border px-3 py-2 text-sm font-extrabold transition"
+                                style={{
+                                    borderColor: preset === o.key ? COLORS.borderStrong : COLORS.borderLight,
+                                    backgroundColor: preset === o.key ? "#ECF6FD" : "#FFFFFF",
+                                    color: preset === o.key ? COLORS.blueDark : COLORS.text,
+                                }}
                             >
-                                {b.label}
+                                {o.label}
                             </button>
                         ))}
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
                         <label className="block">
-                            <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                            <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide" style={{ color: COLORS.textSoft }}>
                                 Data inicial
                             </span>
                             <input
@@ -798,12 +797,13 @@ function ModalPeriodo({
                                     setInicio(e.target.value);
                                     setPreset("custom");
                                 }}
-                                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-blue-600"
+                                className="w-full rounded-2xl border px-3 py-2 outline-none"
+                                style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
                             />
                         </label>
 
                         <label className="block">
-                            <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                            <span className="mb-1 block text-xs font-extrabold uppercase tracking-wide" style={{ color: COLORS.textSoft }}>
                                 Data final
                             </span>
                             <input
@@ -813,16 +813,18 @@ function ModalPeriodo({
                                     setFim(e.target.value);
                                     setPreset("custom");
                                 }}
-                                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-blue-600"
+                                className="w-full rounded-2xl border px-3 py-2 outline-none"
+                                style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
                             />
                         </label>
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-2 border-t bg-slate-50 p-4">
+                <div className="flex justify-end gap-2 border-t bg-[#F8FCFF] p-4" style={{ borderColor: COLORS.borderLight }}>
                     <button
                         onClick={onFechar}
-                        className="rounded-xl border bg-white px-4 py-2 text-sm font-bold hover:bg-slate-100"
+                        className="rounded-2xl border bg-white px-4 py-2 text-sm font-extrabold"
+                        style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
                     >
                         Cancelar
                     </button>
@@ -832,7 +834,8 @@ function ModalPeriodo({
                             onAplicar(r);
                             onFechar();
                         }}
-                        className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                        className="rounded-2xl px-4 py-2 text-sm font-extrabold text-white"
+                        style={{ backgroundColor: COLORS.blueDark }}
                     >
                         Aplicar
                     </button>
@@ -843,11 +846,271 @@ function ModalPeriodo({
 }
 
 /* =========================================================
+   BLOCO ESQUERDO - MOBILE
+========================================================= */
+
+function SummaryMobile({
+    periodo,
+    totalAtendimentos,
+    tempoMedioGeral,
+    metricasGerais,
+    matrizColaboradores,
+}: {
+    periodo: PeriodRange;
+    totalAtendimentos: number;
+    tempoMedioGeral: number | null;
+    metricasGerais: Array<{
+        key: string;
+        label: string;
+        icon: React.ReactNode;
+        qtd: number;
+        tempoMedio: number | null;
+    }>;
+    matrizColaboradores: Array<{
+        nome: string;
+        colunas: Array<{ key: string; qtd: number; tempoMedio: number | null }>;
+    }>;
+}) {
+    return (
+        <div className="space-y-4 lg:hidden">
+            <Surface className="p-4">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                    <div>
+                        <div className="text-sm font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
+                            Período
+                        </div>
+                        <div className="mt-1 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
+                            {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
+                        <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
+                            Qntd. de atendimentos
+                        </div>
+                        <div className="mt-1 text-2xl font-black" style={{ color: COLORS.text }}>
+                            {fmt0(totalAtendimentos)}
+                        </div>
+                    </div>
+
+                    <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
+                        <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
+                            Tempo médio
+                        </div>
+                        <div className="mt-1 text-2xl font-black" style={{ color: COLORS.text }}>
+                            {fmtHm(tempoMedioGeral)}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {metricasGerais.map((m) => (
+                        <div
+                            key={m.key}
+                            className="rounded-2xl border p-3 text-center"
+                            style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
+                        >
+                            <div className="mx-auto flex h-[42px] w-[42px] items-center justify-center" style={{ color: COLORS.blue }}>
+                                {m.icon}
+                            </div>
+                            <div className="mt-2 text-lg font-black" style={{ color: COLORS.text }}>
+                                {fmt0(m.qtd)}
+                            </div>
+                            <div className="text-[12px] font-bold" style={{ color: COLORS.textSoft }}>
+                                {fmtHm(m.tempoMedio)}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Surface>
+
+            <Surface className="overflow-hidden">
+                <div className="border-b px-4 py-3 text-sm font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
+                    Colaboradores
+                </div>
+                <div className="overflow-x-auto">
+                    <div className="min-w-[760px] p-4">
+                        <div
+                            className="grid text-center"
+                            style={{
+                                gridTemplateColumns: `180px repeat(${metricasGerais.length}, minmax(90px, 1fr))`,
+                            }}
+                        >
+                            <div className="border-b pb-3 text-left text-xs font-black uppercase" style={{ borderColor: COLORS.borderStrong, color: COLORS.textSoft }}>
+                                Nome
+                            </div>
+                            {metricasGerais.map((m) => (
+                                <div
+                                    key={m.key}
+                                    className="border-b pb-3 text-xs font-black uppercase"
+                                    style={{ borderColor: COLORS.borderStrong, color: COLORS.textSoft }}
+                                >
+                                    {m.label}
+                                </div>
+                            ))}
+
+                            {matrizColaboradores.map((row) => (
+                                <React.Fragment key={row.nome}>
+                                    <div
+                                        className="border-r py-3 pr-3 text-left text-[14px] font-extrabold"
+                                        style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
+                                    >
+                                        {row.nome}
+                                    </div>
+
+                                    {row.colunas.map((c) => (
+                                        <div key={`${row.nome}-${c.key}`} className="py-3 text-center">
+                                            <div className="text-[15px] font-black" style={{ color: COLORS.text }}>
+                                                {fmt0(c.qtd)}
+                                            </div>
+                                            <div className="text-[12px] font-semibold" style={{ color: COLORS.textSoft }}>
+                                                {fmtHm(c.tempoMedio)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </Surface>
+        </div>
+    );
+}
+
+/* =========================================================
+   BLOCO ESQUERDO - DESKTOP
+========================================================= */
+
+function SummaryDesktop({
+    periodo,
+    totalAtendimentos,
+    tempoMedioGeral,
+    metricasGerais,
+    matrizColaboradores,
+}: {
+    periodo: PeriodRange;
+    totalAtendimentos: number;
+    tempoMedioGeral: number | null;
+    metricasGerais: Array<{
+        key: string;
+        label: string;
+        icon: React.ReactNode;
+        qtd: number;
+        tempoMedio: number | null;
+    }>;
+    matrizColaboradores: Array<{
+        nome: string;
+        colunas: Array<{ key: string; qtd: number; tempoMedio: number | null }>;
+    }>;
+}) {
+    return (
+        <Surface className="hidden overflow-hidden lg:block">
+            <div className="overflow-x-auto">
+                <div className="min-w-[860px]">
+                    <div
+                        className="grid"
+                        style={{
+                            gridTemplateColumns: `200px repeat(${metricasGerais.length}, minmax(110px, 1fr))`,
+                        }}
+                    >
+                        {/* TOPO / PERÍODO */}
+                        <div
+                            className="border-r px-5 py-5"
+                            style={{
+                                borderColor: COLORS.borderStrong,
+                                borderBottom: `2px solid ${COLORS.borderStrong}`,
+                            }}
+                        >
+                            <div className="text-[16px] font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
+                                Período
+                            </div>
+
+                            <div className="mt-2 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
+                                {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
+                            </div>
+
+                            <div className="mt-6 grid grid-cols-[1fr_auto] gap-y-4">
+                                <div className="text-[12px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
+                                    Qntd. de
+                                    <br />
+                                    atendimentos
+                                </div>
+                                <div className="text-[28px] font-black" style={{ color: COLORS.text }}>
+                                    {fmt0(totalAtendimentos)}
+                                </div>
+
+                                <div className="text-[12px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
+                                    Tempo
+                                    <br />
+                                    médio
+                                </div>
+                                <div className="text-[28px] font-black" style={{ color: COLORS.text }}>
+                                    {fmtHm(tempoMedioGeral)}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* TOPO / MÉTRICAS */}
+                        {metricasGerais.map((m) => (
+                            <div
+                                key={m.key}
+                                className="px-3 py-5 text-center"
+                                style={{
+                                    borderBottom: `2px solid ${COLORS.borderStrong}`,
+                                }}
+                            >
+                                <div className="mx-auto flex h-[48px] w-[48px] items-center justify-center" style={{ color: COLORS.blue }}>
+                                    {m.icon}
+                                </div>
+
+                                <div className="mt-4 text-[30px] font-black leading-none" style={{ color: COLORS.text }}>
+                                    {fmt0(m.qtd)}
+                                </div>
+
+                                <div className="mt-2 text-[16px] font-bold" style={{ color: COLORS.textSoft }}>
+                                    {fmtHm(m.tempoMedio)}
+                                </div>
+                            </div>
+                        ))}
+
+                        {/* LINHAS */}
+                        {matrizColaboradores.map((row) => (
+                            <React.Fragment key={row.nome}>
+                                <div
+                                    className="border-r px-5 py-4 text-center text-[18px] font-extrabold uppercase"
+                                    style={{ borderColor: COLORS.borderStrong, color: COLORS.text }}
+                                >
+                                    {row.nome}
+                                </div>
+
+                                {row.colunas.map((c) => (
+                                    <div key={`${row.nome}-${c.key}`} className="px-3 py-4 text-center">
+                                        <div className="text-[20px] font-black leading-tight" style={{ color: COLORS.text }}>
+                                            {fmt0(c.qtd)}
+                                        </div>
+                                        <div className="text-[15px] font-semibold leading-tight" style={{ color: COLORS.textSoft }}>
+                                            {fmtHm(c.tempoMedio)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </Surface>
+    );
+}
+
+/* =========================================================
    PAGE
 ========================================================= */
 
 export default function Page() {
-    const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("7d"));
+    const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("mes"));
     const [modalAberto, setModalAberto] = useState(false);
 
     const [registros, setRegistros] = useState<Registro[]>([]);
@@ -893,7 +1156,7 @@ export default function Page() {
             setMotoristas(extractArray(motJson));
             setVeiculos(extractArray(veiJson));
         } catch (e: any) {
-            setErro(e?.message || "Falha ao carregar análise.");
+            setErro(e?.message || "Falha ao carregar os dados.");
         } finally {
             setLoading(false);
         }
@@ -960,8 +1223,8 @@ export default function Page() {
         const map = new Map<string, number>();
 
         for (const r of dadosPeriodo) {
-            const c = normalizeConvenio(r.convenio);
-            map.set(c, (map.get(c) || 0) + 1);
+            const convenio = normalizeConvenio(r.convenio);
+            map.set(convenio, (map.get(convenio) || 0) + 1);
         }
 
         return Array.from(map.entries())
@@ -998,7 +1261,6 @@ export default function Page() {
     const barColaboradores = useMemo(() => {
         const map = new Map<string, number>();
 
-        // 1) tenta km por motorista vindo do histórico veicular
         for (const v of veiculos || []) {
             const nome = String(v.motorista || v.nome_motorista || "").trim().toUpperCase();
             const km = getVeiculoKm(v);
@@ -1006,14 +1268,11 @@ export default function Page() {
             map.set(nome, (map.get(nome) || 0) + km);
         }
 
-        // 2) fallback motoristas
         if (map.size === 0) {
             for (const m of motoristas || []) {
                 const nome = String(m.motorista || m.nome_motorista || "SEM NOME").trim().toUpperCase();
                 const km = num(m.distancia_km ?? m.distancia_percorrida_km);
-                if (km > 0) {
-                    map.set(nome, (map.get(nome) || 0) + km);
-                }
+                if (km > 0) map.set(nome, (map.get(nome) || 0) + km);
             }
         }
 
@@ -1023,24 +1282,37 @@ export default function Page() {
             .slice(0, 4);
     }, [veiculos, motoristas]);
 
+    const tempoMedioGeral = useMemo(() => average(dadosPeriodo.map(getDurationMinutes)), [dadosPeriodo]);
+
     return (
-        <main className="min-h-screen bg-[#efefef] p-2 sm:p-3 md:p-4">
-            <div className="mx-auto max-w-[1400px]">
-                {/* topo */}
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <main
+            className={`${nunito.className} min-h-screen overflow-x-hidden px-3 py-4 sm:px-4 lg:px-6`}
+            style={{ backgroundColor: COLORS.bg }}
+        >
+            <div className="mx-auto w-full max-w-[1480px]">
+                {/* HEADER */}
+                <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <h1 className="text-xl font-black tracking-tight text-[#333] sm:text-2xl">
-                            ANÁLISE DE DESEMPENHO
+                        <h1
+                            className="text-[30px] font-black uppercase leading-none sm:text-[38px]"
+                            style={{ color: COLORS.text }}
+                        >
+                            Análise de Desempenho
                         </h1>
-                        <div className="text-xs text-[#666]">
+                        <p className="mt-2 text-[15px] font-semibold" style={{ color: COLORS.textSoft }}>
                             Período: {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
-                        </div>
+                        </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-3">
                         <button
                             onClick={() => setModalAberto(true)}
-                            className="inline-flex items-center gap-2 rounded-lg border border-[#6b9fc5] bg-white px-3 py-2 text-sm font-bold text-[#2c6f96] hover:bg-[#f4faff]"
+                            className="inline-flex items-center gap-2 rounded-[18px] border px-4 py-3 text-[15px] font-extrabold transition hover:opacity-95"
+                            style={{
+                                borderColor: COLORS.blue,
+                                color: COLORS.blueDark,
+                                backgroundColor: "#FFFFFF",
+                            }}
                         >
                             <IconCalendar />
                             Filtrar período
@@ -1049,100 +1321,66 @@ export default function Page() {
                         <button
                             onClick={carregar}
                             disabled={loading}
-                            className="rounded-lg bg-[#2f6f91] px-3 py-2 text-sm font-bold text-white hover:bg-[#245e7a] disabled:opacity-60"
+                            className="rounded-[18px] px-5 py-3 text-[15px] font-extrabold text-white transition hover:opacity-95 disabled:opacity-60"
+                            style={{ backgroundColor: COLORS.blueDark }}
                         >
-                            {loading ? "Carregando..." : "Atualizar"}
+                            {loading ? "Atualizando..." : "Atualizar"}
                         </button>
                     </div>
                 </div>
 
                 {erro ? (
-                    <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div
+                        className="mb-4 rounded-2xl border px-4 py-3 text-sm font-bold"
+                        style={{
+                            borderColor: "#F2B0B0",
+                            backgroundColor: "#FFF5F5",
+                            color: "#B53B3B",
+                        }}
+                    >
                         {erro}
                     </div>
                 ) : null}
 
-                {/* layout principal exatamente no espírito da imagem */}
-                <div className="grid gap-4 xl:grid-cols-[1.1fr_0.95fr]">
+                <div className="grid gap-5 xl:grid-cols-[1.18fr_0.92fr]">
                     {/* ESQUERDA */}
-                    <div className="overflow-hidden rounded-sm bg-[#efefef]">
-                        <div className="overflow-x-auto">
-                            <div className="min-w-[930px]">
-                                <div
-                                    className="grid"
-                                    style={{
-                                        gridTemplateColumns: "190px repeat(6, 1fr)",
-                                    }}
-                                >
-                                    {/* cabeçalho esquerda */}
-                                    <div className="border-b-2 border-r-2 border-[#1E7096] px-3 pb-4 pt-4">
-                                        <div className="text-[18px] font-black text-[#1f1f1f]">PERIODO</div>
+                    <div className="min-w-0">
+                        <SummaryMobile
+                            periodo={periodo}
+                            totalAtendimentos={dadosPeriodo.length}
+                            tempoMedioGeral={tempoMedioGeral}
+                            metricasGerais={metricasGerais}
+                            matrizColaboradores={matrizColaboradores}
+                        />
 
-                                        <div className="mt-8 grid grid-cols-[1fr_auto] gap-y-3 text-[#1f1f1f]">
-                                            <div className="text-[12px] leading-tight">
-                                                QNTD. DE
-                                                <br />
-                                                ATENDIMENTOS
-                                            </div>
-                                            <div className="text-[16px]">{fmt0(dadosPeriodo.length)}</div>
-
-                                            <div className="text-[12px] leading-tight">
-                                                TEMPO
-                                                <br />
-                                                MÉDIO
-                                            </div>
-                                            <div className="text-[16px]">
-                                                {fmtHm(average(dadosPeriodo.map(getDurationMinutes)))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* cabeçalho métricas */}
-                                    {metricasGerais.map((m) => (
-                                        <div
-                                            key={m.key}
-                                            className="border-b-2 border-[#1E7096] px-2 pb-4 pt-3 text-center"
-                                        >
-                                            <div className="mx-auto flex h-[46px] w-[46px] items-center justify-center text-[#4C8ED6]">
-                                                {m.icon}
-                                            </div>
-                                            <div className="mt-2 text-[15px] text-[#1f1f1f]">{fmt0(m.qtd)}</div>
-                                            <div className="text-[14px] text-[#1f1f1f]">
-                                                {fmtHm(m.tempoMedio)}
-                                            </div>
-                                        </div>
-                                    ))}
-
-                                    {/* linhas colaboradores */}
-                                    {matrizColaboradores.map((row) => (
-                                        <React.Fragment key={row.nome}>
-                                            <div className="border-r-2 border-[#1E7096] px-3 py-3 text-center text-[20px] leading-none text-[#161616]">
-                                                {row.nome}
-                                            </div>
-
-                                            {row.colunas.map((c) => (
-                                                <div key={`${row.nome}-${c.key}`} className="px-2 py-3 text-center">
-                                                    <div className="text-[15px] leading-tight text-[#1f1f1f]">
-                                                        {fmt0(c.qtd)}
-                                                    </div>
-                                                    <div className="text-[14px] leading-tight text-[#1f1f1f]">
-                                                        {fmtHm(c.tempoMedio)}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </React.Fragment>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <SummaryDesktop
+                            periodo={periodo}
+                            totalAtendimentos={dadosPeriodo.length}
+                            tempoMedioGeral={tempoMedioGeral}
+                            metricasGerais={metricasGerais}
+                            matrizColaboradores={matrizColaboradores}
+                        />
                     </div>
 
                     {/* DIREITA */}
-                    <div className="grid gap-3 md:grid-cols-2">
-                        <PieChart title="Atendimentos" data={pieAtendimentos} />
-                        <PieChart title="Tanatopraxia" data={pieTanato} />
-                        <SimpleBarChart title="Quilometragem por veículo (km)" data={barVeiculos} />
-                        <SimpleBarChart title="Quilometragem por colaborador" data={barColaboradores} />
+                    <div className="min-w-0">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <ChartPanel title="Atendimentos">
+                                <PieChart data={pieAtendimentos} />
+                            </ChartPanel>
+
+                            <ChartPanel title="Tanatopraxia">
+                                <PieChart data={pieTanato} />
+                            </ChartPanel>
+
+                            <ChartPanel title="Quilometragem por veículo (km)">
+                                <BarChart data={barVeiculos} />
+                            </ChartPanel>
+
+                            <ChartPanel title="Quilometragem por colaborador">
+                                <BarChart data={barColaboradores} />
+                            </ChartPanel>
+                        </div>
                     </div>
                 </div>
             </div>
