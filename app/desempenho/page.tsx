@@ -2,24 +2,16 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-/* ============================================================
+/* =========================================================
    CONFIG
-   ============================================================ */
+========================================================= */
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 
-const ENDPOINTS = {
-    informativo: `${API_BASE}/informativo.php?listar=1`,
-    telemetria: `${API_BASE}/telemetria.php`,
-};
+const INFORMATICO_URL = `${API_BASE}/informativo.php?listar=1`;
+const TELEMETRIA_URL = `${API_BASE}/telemetria.php`;
 
-type PeriodPreset =
-    | "hoje"
-    | "ontem"
-    | "7d"
-    | "mes_atual"
-    | "30d"
-    | "custom";
+type PeriodPreset = "hoje" | "ontem" | "7d" | "mes" | "30d" | "custom";
 
 type PeriodRange = {
     preset: PeriodPreset;
@@ -29,12 +21,14 @@ type PeriodRange = {
 };
 
 type Registro = {
-    id?: number | string;
-    sepultamento_id?: number | string;
+    id?: string | number;
+    sepultamento_id?: string | number;
 
     falecido?: string;
     agente?: string;
     usuario?: string;
+    operador?: string;
+    responsavel?: string;
 
     data?: string;
     created_at?: string;
@@ -55,26 +49,22 @@ type Registro = {
     ornamentacao?: string;
     ornamentacao_tipo?: string;
     invol?: string;
+    local_velorio?: string;
 
     materiais_json?: any;
-    arrumacao_json?: any;
-
-    local?: string;
-    local_velorio?: string;
-    local_sepultamento?: string;
 
     [key: string]: any;
 };
 
 type MotoristaRow = {
     motorista?: string;
-    total_posicoes?: number | string;
-    total_veiculos?: number | string;
+    nome_motorista?: string;
     placas?: string;
     velocidade_media?: number | string;
     velocidade_maxima?: number | string;
-    primeira_posicao?: string;
-    ultima_posicao?: string;
+    total_posicoes?: number | string;
+    distancia_km?: number | string;
+    distancia_percorrida_km?: number | string;
     [key: string]: any;
 };
 
@@ -84,18 +74,27 @@ type VeiculoRow = {
     veiculo?: string;
     motorista?: string;
     nome_motorista?: string;
-    distancia_percorrida_km?: number | string;
     distancia_km?: number | string;
+    distancia_percorrida_km?: number | string;
     velocidade_media?: number | string;
     velocidade_maxima?: number | string;
     [key: string]: any;
 };
 
-type ApiListResponse<T> = T[] | { sucesso?: boolean; erro?: boolean; msg?: string; dados?: T[]; total?: number; total_km?: number };
+type ApiResp<T> =
+    | T[]
+    | {
+        sucesso?: boolean;
+        erro?: boolean;
+        dados?: T[];
+        data?: T[];
+        total?: number;
+        msg?: string;
+    };
 
-/* ============================================================
-   FETCH
-   ============================================================ */
+/* =========================================================
+   FETCH / CACHE
+========================================================= */
 
 type CacheEntry = { exp: number; data: any };
 const MEM_CACHE = new Map<string, CacheEntry>();
@@ -119,15 +118,15 @@ async function fetchJson<T>(
     url: string,
     opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
 ): Promise<T> {
-    const ttlMs = opts?.ttlMs ?? 15_000;
-    const timeoutMs = opts?.timeoutMs ?? 18_000;
+    const ttlMs = opts?.ttlMs ?? 12000;
+    const timeoutMs = opts?.timeoutMs ?? 18000;
     const cacheKey = opts?.cacheKey ?? url;
 
     const cached = getCache<T>(cacheKey);
     if (cached) return cached;
 
     const inflight = INFLIGHT.get(cacheKey);
-    if (inflight) return (await inflight) as T;
+    if (inflight) return inflight as Promise<T>;
 
     const promise = (async () => {
         const ac = new AbortController();
@@ -136,8 +135,8 @@ async function fetchJson<T>(
         try {
             const res = await fetch(url, {
                 method: "GET",
-                cache: "no-store",
                 credentials: "include",
+                cache: "no-store",
                 signal: ac.signal,
             });
 
@@ -145,22 +144,29 @@ async function fetchJson<T>(
                 throw new Error(`HTTP ${res.status}`);
             }
 
-            const data = (await res.json()) as T;
+            const data = await res.json();
             setCache(cacheKey, data, ttlMs);
-            return data;
+            return data as T;
         } finally {
-            window.clearTimeout(timer);
+            clearTimeout(timer);
             INFLIGHT.delete(cacheKey);
         }
     })();
 
     INFLIGHT.set(cacheKey, promise);
-    return promise as Promise<T>;
+    return promise;
 }
 
-/* ============================================================
+function extractArray<T>(json: ApiResp<T>): T[] {
+    if (Array.isArray(json)) return json;
+    if (json && Array.isArray((json as any).dados)) return (json as any).dados;
+    if (json && Array.isArray((json as any).data)) return (json as any).data;
+    return [];
+}
+
+/* =========================================================
    HELPERS
-   ============================================================ */
+========================================================= */
 
 function pad2(n: number) {
     return String(n).padStart(2, "0");
@@ -170,78 +176,11 @@ function toIsoDate(d: Date) {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function startOfDay(d: Date) {
-    const x = new Date(d);
-    x.setHours(0, 0, 0, 0);
-    return x;
-}
-
-function endOfDay(d: Date) {
-    const x = new Date(d);
-    x.setHours(23, 59, 59, 999);
-    return x;
-}
-
-function todayRange(): PeriodRange {
-    const now = new Date();
-    const iso = toIsoDate(now);
-    return { preset: "hoje", inicio: iso, fim: iso, label: "Hoje" };
-}
-
-function makeRange(preset: PeriodPreset, customInicio?: string, customFim?: string): PeriodRange {
-    const now = new Date();
-
-    if (preset === "ontem") {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 1);
-        const iso = toIsoDate(d);
-        return { preset, inicio: iso, fim: iso, label: "Ontem" };
-    }
-
-    if (preset === "7d") {
-        const start = new Date(now);
-        start.setDate(start.getDate() - 6);
-        return {
-            preset,
-            inicio: toIsoDate(start),
-            fim: toIsoDate(now),
-            label: "Últimos 7 dias",
-        };
-    }
-
-    if (preset === "30d") {
-        const start = new Date(now);
-        start.setDate(start.getDate() - 29);
-        return {
-            preset,
-            inicio: toIsoDate(start),
-            fim: toIsoDate(now),
-            label: "Últimos 30 dias",
-        };
-    }
-
-    if (preset === "mes_atual") {
-        const start = new Date(now.getFullYear(), now.getMonth(), 1);
-        return {
-            preset,
-            inicio: toIsoDate(start),
-            fim: toIsoDate(now),
-            label: "Mês atual",
-        };
-    }
-
-    if (preset === "custom") {
-        const ini = customInicio || toIsoDate(now);
-        const fim = customFim || ini;
-        return {
-            preset,
-            inicio: ini <= fim ? ini : fim,
-            fim: fim >= ini ? fim : ini,
-            label: `${formatDateBR(ini <= fim ? ini : fim)} até ${formatDateBR(fim >= ini ? fim : ini)}`,
-        };
-    }
-
-    return todayRange();
+function formatDateBR(iso?: string) {
+    if (!iso) return "—";
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return iso;
+    return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 function parseDateFlex(v?: string | null): Date | null {
@@ -267,42 +206,16 @@ function parseDateFlex(v?: string | null): Date | null {
     return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function getRegistroDate(r: Registro): Date | null {
-    const candidates = [
-        r.data,
-        r.created_at,
-        r.datahora,
-        r.ultima_datahora,
-        r.data_inicio_velorio,
-        r.data_fim_velorio,
-    ];
-
-    for (const c of candidates) {
-        const d = parseDateFlex(String(c || ""));
-        if (d) return d;
-    }
-
-    return null;
+function startOfDay(d: Date) {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
 }
 
-function rangeToDates(range: PeriodRange) {
-    return {
-        start: startOfDay(new Date(`${range.inicio}T00:00:00`)),
-        end: endOfDay(new Date(`${range.fim}T00:00:00`)),
-    };
-}
-
-function rangeTo14(range: PeriodRange) {
-    const inicio = range.inicio.replaceAll("-", "") + "000000";
-    const fim = range.fim.replaceAll("-", "") + "235959";
-    return { inicio, fim };
-}
-
-function formatDateBR(iso?: string) {
-    if (!iso) return "—";
-    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return iso;
-    return `${m[3]}/${m[2]}/${m[1]}`;
+function endOfDay(d: Date) {
+    const x = new Date(d);
+    x.setHours(23, 59, 59, 999);
+    return x;
 }
 
 function norm(v: any) {
@@ -315,10 +228,10 @@ function norm(v: any) {
 
 function isSim(v: any) {
     const s = norm(v);
-    return s === "sim" || s === "s" || s === "1" || s === "true";
+    return s === "sim" || s === "1" || s === "true" || s === "s";
 }
 
-function number(v: any) {
+function num(v: any) {
     const n = Number(String(v ?? "0").replace(",", "."));
     return Number.isFinite(n) ? n : 0;
 }
@@ -334,350 +247,452 @@ function fmt1(n: number) {
     }).format(n || 0);
 }
 
-function fmtKm(n: number) {
-    return `${fmt1(n)} km`;
+function fmtHm(totalMinutes?: number | null) {
+    if (totalMinutes == null || !Number.isFinite(totalMinutes)) return "—";
+    const mins = Math.max(0, Math.round(totalMinutes));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-function average(nums: number[]) {
-    const arr = nums.filter((n) => Number.isFinite(n));
-    if (!arr.length) return 0;
+function average(values: Array<number | null | undefined>) {
+    const arr = values.filter((v): v is number => v != null && Number.isFinite(v));
+    if (!arr.length) return null;
     return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
-function countBy<T>(
-    arr: T[],
-    getKey: (item: T) => string,
-    fallback = "Não informado"
-): Array<{ label: string; value: number }> {
-    const map = new Map<string, number>();
-    for (const item of arr) {
-        const raw = getKey(item);
-        const key = String(raw || "").trim() || fallback;
-        map.set(key, (map.get(key) || 0) + 1);
+function makeRange(preset: PeriodPreset, inicioCustom?: string, fimCustom?: string): PeriodRange {
+    const now = new Date();
+
+    if (preset === "hoje") {
+        const iso = toIsoDate(now);
+        return { preset, inicio: iso, fim: iso, label: "Hoje" };
     }
-    return Array.from(map.entries())
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value);
+
+    if (preset === "ontem") {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 1);
+        const iso = toIsoDate(d);
+        return { preset, inicio: iso, fim: iso, label: "Ontem" };
+    }
+
+    if (preset === "7d") {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 6);
+        return {
+            preset,
+            inicio: toIsoDate(start),
+            fim: toIsoDate(now),
+            label: "Últimos 7 dias",
+        };
+    }
+
+    if (preset === "mes") {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        return {
+            preset,
+            inicio: toIsoDate(start),
+            fim: toIsoDate(now),
+            label: "Mês atual",
+        };
+    }
+
+    if (preset === "30d") {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 29);
+        return {
+            preset,
+            inicio: toIsoDate(start),
+            fim: toIsoDate(now),
+            label: "Últimos 30 dias",
+        };
+    }
+
+    const ini = inicioCustom || toIsoDate(now);
+    const fim = fimCustom || ini;
+    const start = ini <= fim ? ini : fim;
+    const end = fim >= ini ? fim : ini;
+
+    return {
+        preset: "custom",
+        inicio: start,
+        fim: end,
+        label: `${formatDateBR(start)} a ${formatDateBR(end)}`,
+    };
+}
+
+function rangeToDates(range: PeriodRange) {
+    return {
+        start: startOfDay(new Date(`${range.inicio}T00:00:00`)),
+        end: endOfDay(new Date(`${range.fim}T00:00:00`)),
+    };
+}
+
+function rangeTo14(range: PeriodRange) {
+    return {
+        inicio: range.inicio.replaceAll("-", "") + "000000",
+        fim: range.fim.replaceAll("-", "") + "235959",
+    };
+}
+
+function getRegistroDate(r: Registro): Date | null {
+    const candidates = [
+        r.data,
+        r.created_at,
+        r.datahora,
+        r.ultima_datahora,
+        r.data_inicio_velorio,
+        r.data_fim_velorio,
+    ];
+
+    for (const c of candidates) {
+        const d = parseDateFlex(String(c || ""));
+        if (d) return d;
+    }
+    return null;
+}
+
+function getStartDate(r: Registro): Date | null {
+    const candidates = [r.created_at, r.data, r.datahora, r.data_inicio_velorio];
+    for (const c of candidates) {
+        const d = parseDateFlex(String(c || ""));
+        if (d) return d;
+    }
+    return null;
+}
+
+function getEndDate(r: Registro): Date | null {
+    const candidates = [r.data_fim_velorio, r.ultima_datahora, r.datahora];
+    for (const c of candidates) {
+        const d = parseDateFlex(String(c || ""));
+        if (d) return d;
+    }
+    return null;
+}
+
+function getDurationMinutes(r: Registro): number | null {
+    const start = getStartDate(r);
+    const end = getEndDate(r);
+    if (!start || !end) return null;
+    const diff = (end.getTime() - start.getTime()) / 60000;
+    if (!Number.isFinite(diff) || diff < 0) return null;
+    return diff;
 }
 
 function normalizeConvenio(v: any) {
     const s = norm(v);
-    if (!s) return "Não informado";
-    if (s.includes("pref")) return "Prefeitura";
-    if (s.includes("part")) return "Particular";
-    if (s.includes("assoc")) return "Associado";
-    return String(v).trim();
+    if (!s) return "PARTICULAR";
+    if (s.includes("part")) return "PARTICULAR";
+    if (s.includes("pref")) return "PREFEITURA";
+    if (s.includes("assoc")) return "ASSOCIADO";
+    return String(v || "PARTICULAR").toUpperCase();
 }
 
-function getAgente(r: Registro) {
-    return String(r.agente || r.usuario || r.operador || r.responsavel || "Não informado").trim();
+function getAgenteNome(r: Registro) {
+    return String(r.agente || r.usuario || r.operador || r.responsavel || "SEM NOME")
+        .trim()
+        .toUpperCase();
 }
 
-function getStatus(r: Registro) {
-    const s = norm(r.status_novo || r.status);
-
-    if (s.includes("fase01") || s.includes("remov")) return "remoção";
-    if (s.includes("fase02") || s.includes("clinica") || s.includes("clínica")) return "clínica";
-    if (s.includes("fase03") || s.includes("conserv")) return "conservação";
-    if (s.includes("fase04")) return "fim conservação";
-    if (s.includes("fase05") || s.includes("ornament")) return "ornamentação";
-    if (s.includes("fase06") || s.includes("corpo pronto")) return "corpo pronto";
-    if (s.includes("fase07") || s.includes("velorio") || s.includes("velório")) return "velório";
-    if (s.includes("fase08") || s.includes("velando")) return "velando";
-    if (s.includes("fase09") || s.includes("sepultando")) return "sepultamento";
-    if (s.includes("fase10") || s.includes("concluido") || s.includes("concluído")) return "concluído";
-    if (s.includes("fase11") || s.includes("material recolhido")) return "material recolhido";
-
-    return "atendimento";
-}
-
-function getTanatoAgente(r: Registro) {
-    const anyR = r as any;
+function getTanatoNome(r: Registro) {
     return String(
-        anyR.agente_tanato ||
-        anyR.tanatopraxista ||
-        anyR.usuario_tanato ||
-        anyR.agente_conservacao ||
-        anyR.responsavel_tanato ||
-        anyR.agente ||
-        "Não informado"
-    ).trim();
+        r.agente_tanato ||
+        r.tanatopraxista ||
+        r.usuario_tanato ||
+        r.agente_conservacao ||
+        r.agente ||
+        "SEM NOME"
+    )
+        .trim()
+        .toUpperCase();
 }
 
-function hasMaterial(r: Registro) {
+function hasMateriais(r: Registro) {
     if (r.materiais_json) {
         try {
-            const obj = typeof r.materiais_json === "string" ? JSON.parse(r.materiais_json) : r.materiais_json;
+            const obj =
+                typeof r.materiais_json === "string"
+                    ? JSON.parse(r.materiais_json)
+                    : r.materiais_json;
+
             if (obj && typeof obj === "object") {
                 return Object.values(obj).some((v: any) => {
-                    const qtd = number(v?.qtd);
-                    return qtd > 0 || v?.checked === true || v?.checked === "true" || v?.checked === "1";
+                    const qtd = num(v?.qtd);
+                    const checked =
+                        v?.checked === true ||
+                        v?.checked === "true" ||
+                        v?.checked === "1" ||
+                        v?.checked === 1;
+                    return checked || qtd > 0;
                 });
             }
         } catch {
-            // segue fallback
+            //
         }
     }
 
-    return Object.keys(r).some((k) => /^materiais_.+_qtd$/i.test(k) && number((r as any)[k]) > 0);
+    return Object.keys(r).some((k) => /^materiais_.+_qtd$/i.test(k) && num((r as any)[k]) > 0);
 }
 
-function getOrnamentacaoTipo(r: Registro) {
-    const txt = norm(`${r.ornamentacao_tipo || ""} ${r.ornamentacao || ""}`);
-    if (!txt) return "Não informado";
-    if (txt.includes("natural")) return "Natural";
-    if (txt.includes("artificial")) return "Artificial";
-    if (txt.includes("flores")) return "Flores";
-    return r.ornamentacao_tipo || r.ornamentacao || "Não informado";
+function getVeiculoNome(v: VeiculoRow) {
+    return String(v.descricao_veiculo || v.veiculo || v.placa || "VEÍCULO").trim().toUpperCase();
 }
 
-function getVehicleLabel(v: VeiculoRow) {
-    return String(v.descricao_veiculo || v.veiculo || v.placa || "Veículo").trim();
+function getVeiculoKm(v: VeiculoRow) {
+    return num(v.distancia_percorrida_km ?? v.distancia_km);
 }
 
-function getVehicleKm(v: VeiculoRow) {
-    return number(v.distancia_percorrida_km ?? v.distancia_km);
-}
+/* =========================================================
+   ÍCONES
+========================================================= */
 
-function getMotoristaLabel(m: MotoristaRow) {
-    return String(m.motorista || "Não informado").trim();
-}
-
-/* ============================================================
-   UI COMPONENTS
-   ============================================================ */
-
-function LoadingBar({ show }: { show: boolean }) {
-    if (!show) return null;
+function IconCalendar() {
     return (
-        <div className="fixed left-0 top-0 z-[80] h-1 w-full overflow-hidden bg-blue-100">
-            <div className="h-full w-1/3 animate-[loading_1s_ease-in-out_infinite] bg-blue-600" />
-            <style jsx>{`
-                @keyframes loading {
-                    0% {
-                        transform: translateX(-100%);
-                    }
-                    100% {
-                        transform: translateX(400%);
-                    }
-                }
-            `}</style>
-        </div>
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <path d="M16 3v4M8 3v4M3 10h18" />
+        </svg>
     );
 }
 
-function Card({
-    children,
-    className = "",
-}: {
-    children: React.ReactNode;
-    className?: string;
-}) {
+function IconAssistencia() {
     return (
-        <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>
-            {children}
-        </div>
+        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2.4">
+            <path d="M12 4v16M4 12h16" />
+        </svg>
     );
 }
 
-function SectionTitle({
-    title,
-    subtitle,
-}: {
-    title: string;
-    subtitle?: string;
-}) {
+function IconTanato() {
     return (
-        <div className="mb-3">
-            <h2 className="text-base font-extrabold tracking-tight text-slate-900 sm:text-lg">
-                {title}
-            </h2>
-            {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
-        </div>
+        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2.1">
+            <path d="M4 20l6-6M10 14l8-8" />
+            <path d="M13 3l8 8" />
+            <circle cx="18" cy="6" r="2" />
+        </svg>
     );
 }
 
-function KpiCard({
-    label,
-    value,
-    sub,
-    icon,
-}: {
-    label: string;
-    value: React.ReactNode;
-    sub?: React.ReactNode;
-    icon: React.ReactNode;
-}) {
+function IconOrnamentacao() {
     return (
-        <Card className="p-4">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {label}
-                    </div>
-                    <div className="mt-2 text-2xl font-black text-slate-900">{value}</div>
-                    {sub ? <div className="mt-1 text-xs text-slate-500">{sub}</div> : null}
-                </div>
-                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-50 text-2xl text-blue-600">
-                    {icon}
-                </div>
-            </div>
-        </Card>
+        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="2.2" />
+            <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.5 5.5l2.8 2.8M15.7 15.7l2.8 2.8M18.5 5.5l-2.8 2.8M8.3 15.7l-2.8 2.8" />
+        </svg>
     );
 }
 
-function MiniStatusCard({
-    icon,
-    title,
-    qtd,
-    media,
-}: {
-    icon: React.ReactNode;
-    title: string;
-    qtd: number;
-    media?: string;
-}) {
+function IconInvol() {
     return (
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm">
-            <div className="mx-auto grid h-12 w-12 place-items-center text-4xl text-blue-500">
-                {icon}
-            </div>
-            <div className="mt-2 text-lg font-black text-slate-900">{fmt0(qtd)}</div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {title}
-            </div>
-            {media ? <div className="mt-1 text-xs text-slate-500">Média: {media}</div> : null}
-        </div>
+        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="currentColor">
+            <path d="M12 2l7 4 2 8-9 8-9-8 2-8 7-4z" opacity=".9" />
+            <path d="M7 19l10-11" fill="none" stroke="white" strokeWidth="1.7" />
+        </svg>
     );
 }
 
-const CHART_COLORS = [
-    "#0f6b8f",
-    "#fbbf24",
-    "#167a2f",
-    "#4f8fd8",
-    "#7c3aed",
-    "#ef4444",
-    "#14b8a6",
-    "#f97316",
-];
+function IconVelorio() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 14h18M5 14v-3a3 3 0 013-3h5a5 5 0 015 5v1" />
+            <circle cx="7" cy="17" r="2" />
+            <circle cx="17" cy="17" r="2" />
+        </svg>
+    );
+}
 
-function DonutChart({
+function IconMaterial() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-4z" />
+            <path d="M12 7v5l3 2" />
+            <path d="M4 9l3-1M17 8l3 1M6 19l2-2M16 17l2 2" />
+        </svg>
+    );
+}
+
+const METRICAS = [
+    {
+        key: "assistencia",
+        label: "Assistência",
+        icon: <IconAssistencia />,
+        match: (r: Registro) => isSim(r.assistencia),
+    },
+    {
+        key: "tanato",
+        label: "Tanato",
+        icon: <IconTanato />,
+        match: (r: Registro) => isSim(r.tanato),
+    },
+    {
+        key: "ornamentacao",
+        label: "Ornamentação",
+        icon: <IconOrnamentacao />,
+        match: (r: Registro) => {
+            const s = norm(`${r.ornamentacao || ""} ${r.ornamentacao_tipo || ""}`);
+            return !!s && s !== "nao" && s !== "não";
+        },
+    },
+    {
+        key: "invol",
+        label: "Invol",
+        icon: <IconInvol />,
+        match: (r: Registro) => isSim(r.invol),
+    },
+    {
+        key: "velorio",
+        label: "Velório",
+        icon: <IconVelorio />,
+        match: (r: Registro) => !!String(r.local_velorio || r.data_inicio_velorio || "").trim(),
+    },
+    {
+        key: "material",
+        label: "Material",
+        icon: <IconMaterial />,
+        match: (r: Registro) => hasMateriais(r),
+    },
+] as const;
+
+/* =========================================================
+   CHARTS
+========================================================= */
+
+const COLORS = ["#0C6289", "#F4BC00", "#1F7A25", "#4C8ED6", "#7C3AED", "#EF4444"];
+
+function PieChart({
     title,
     data,
-    emptyLabel = "Sem dados",
 }: {
     title: string;
     data: Array<{ label: string; value: number }>;
-    emptyLabel?: string;
 }) {
-    const total = data.reduce((s, x) => s + x.value, 0);
+    const size = 170;
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = 54;
+    const total = data.reduce((s, d) => s + d.value, 0);
+
     let acc = 0;
 
-    const gradient =
-        total <= 0
-            ? "#e5e7eb"
-            : data
-                .map((d, i) => {
-                    const start = (acc / total) * 100;
-                    acc += d.value;
-                    const end = (acc / total) * 100;
-                    return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}% ${end}%`;
-                })
-                .join(", ");
+    function polarToCartesian(centerX: number, centerY: number, radius: number, angleInDegrees: number) {
+        const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+        return {
+            x: centerX + radius * Math.cos(angleInRadians),
+            y: centerY + radius * Math.sin(angleInRadians),
+        };
+    }
+
+    function describeArc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
+        const start = polarToCartesian(x, y, radius, endAngle);
+        const end = polarToCartesian(x, y, radius, startAngle);
+        const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+        return `M ${x} ${y} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
+    }
 
     return (
-        <Card className="overflow-hidden">
-            <div className="bg-gradient-to-br from-slate-100 via-white to-slate-200 p-4">
-                <h3 className="text-center text-xl font-black uppercase tracking-tight text-slate-800">
-                    {title}
-                </h3>
+        <div className="rounded-sm bg-[#d9d9d9] p-3 shadow-inner">
+            <div className="mb-2 text-center text-[18px] font-black tracking-tight text-[#414141] md:text-[20px]">
+                {title.toUpperCase()}
+            </div>
 
-                <div className="mt-4 grid items-center gap-4 sm:grid-cols-[160px_1fr]">
-                    <div className="relative mx-auto h-40 w-40">
-                        <div
-                            className="h-40 w-40 rounded-full shadow-inner"
-                            style={{
-                                background: total > 0 ? `conic-gradient(${gradient})` : "#e5e7eb",
-                            }}
-                        />
-                        <div className="absolute inset-8 grid place-items-center rounded-full bg-white shadow">
-                            <div className="text-center">
-                                <div className="text-2xl font-black text-slate-900">
-                                    {fmt0(total)}
-                                </div>
-                                <div className="text-[10px] uppercase text-slate-500">total</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
+            <div className="grid grid-cols-[180px_1fr] items-center gap-2">
+                <div className="flex items-center justify-center">
+                    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
                         {total <= 0 ? (
-                            <div className="rounded-xl border bg-white/70 p-3 text-sm text-slate-500">
-                                {emptyLabel}
-                            </div>
+                            <circle cx={cx} cy={cy} r={r} fill="#cfcfcf" />
                         ) : (
-                            data.slice(0, 8).map((d, i) => (
-                                <div key={d.label} className="flex items-center gap-2 text-sm">
-                                    <span
-                                        className="h-3 w-3 rounded-sm"
-                                        style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                                    />
-                                    <span className="min-w-0 flex-1 truncate text-slate-700">
-                                        {d.label}
-                                    </span>
-                                    <span className="rounded bg-slate-800 px-2 py-0.5 text-xs font-bold text-white">
-                                        {fmt0(d.value)}
-                                    </span>
-                                </div>
-                            ))
+                            data.map((d, i) => {
+                                const startAngle = (acc / total) * 360;
+                                acc += d.value;
+                                const endAngle = (acc / total) * 360;
+                                const path = describeArc(cx, cy, r, startAngle, endAngle);
+
+                                const mid = (startAngle + endAngle) / 2;
+                                const pos = polarToCartesian(cx, cy, 28, mid);
+
+                                return (
+                                    <g key={d.label}>
+                                        <path d={path} fill={COLORS[i % COLORS.length]} />
+                                        <rect
+                                            x={pos.x - 12}
+                                            y={pos.y - 10}
+                                            rx="2"
+                                            ry="2"
+                                            width="24"
+                                            height="20"
+                                            fill="#404040"
+                                            opacity="0.92"
+                                        />
+                                        <text
+                                            x={pos.x}
+                                            y={pos.y + 4}
+                                            textAnchor="middle"
+                                            fontSize="12"
+                                            fontWeight="700"
+                                            fill="white"
+                                        >
+                                            {fmt0(d.value)}
+                                        </text>
+                                    </g>
+                                );
+                            })
                         )}
-                    </div>
+                    </svg>
+                </div>
+
+                <div className="space-y-2 bg-white/25 p-2">
+                    {data.length === 0 ? (
+                        <div className="text-sm text-[#555]">Sem dados</div>
+                    ) : (
+                        data.map((d, i) => (
+                            <div key={d.label} className="flex items-start gap-2 text-[13px] text-[#4b4b4b]">
+                                <span
+                                    className="mt-1 inline-block h-3 w-3 shrink-0"
+                                    style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                                />
+                                <span className="break-words">{d.label}</span>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
-        </Card>
+        </div>
     );
 }
 
-function BarChart({
+function SimpleBarChart({
     title,
-    subtitle,
     data,
-    valueSuffix = "",
 }: {
     title: string;
-    subtitle?: string;
     data: Array<{ label: string; value: number }>;
-    valueSuffix?: string;
 }) {
     const max = Math.max(1, ...data.map((d) => d.value));
 
     return (
-        <Card className="overflow-hidden">
-            <div className="bg-gradient-to-br from-slate-100 via-white to-slate-200 p-4">
-                <h3 className="text-center text-sm font-black uppercase tracking-tight text-slate-700">
-                    {title}
-                </h3>
-                {subtitle ? <p className="text-center text-[11px] text-slate-500">{subtitle}</p> : null}
+        <div className="rounded-sm bg-[#d9d9d9] p-3 shadow-inner">
+            <div className="mb-3 text-center text-[10px] font-black uppercase tracking-wide text-[#505050]">
+                {title}
+            </div>
 
-                <div className="mt-5 flex h-44 items-end gap-3 border-b border-slate-500 px-2">
+            <div className="h-[120px] rounded-sm bg-white/10 p-2">
+                <div className="flex h-[86px] items-end gap-3 border-b-2 border-[#555] px-1">
                     {data.length === 0 ? (
-                        <div className="grid h-full flex-1 place-items-center text-sm text-slate-500">
+                        <div className="grid h-full w-full place-items-center text-xs text-[#666]">
                             Sem dados
                         </div>
                     ) : (
-                        data.slice(0, 6).map((d, i) => {
-                            const h = Math.max(8, (d.value / max) * 130);
+                        data.slice(0, 6).map((d) => {
+                            const h = Math.max(16, (d.value / max) * 62);
                             return (
                                 <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center">
                                     <div
-                                        className="mb-1 grid w-full max-w-[64px] place-items-center rounded-t bg-sky-700 text-xs font-black text-white shadow"
+                                        className="mb-1 flex w-full max-w-[56px] items-center justify-center bg-[#3E7C9A] text-[12px] font-black text-white"
                                         style={{ height: h }}
                                     >
-                                        {fmt1(d.value)}
-                                        {valueSuffix}
+                                        {fmt0(d.value)}
                                     </div>
-                                    <div className="mt-2 max-w-[80px] truncate text-center text-xs font-semibold text-slate-700">
+                                    <div className="mt-2 max-w-[64px] truncate text-center text-[11px] text-[#4d4d4d]">
                                         {d.label}
                                     </div>
                                 </div>
@@ -686,137 +701,94 @@ function BarChart({
                     )}
                 </div>
             </div>
-        </Card>
+        </div>
     );
 }
 
-function HorizontalBarChart({
-    title,
-    data,
-    valueSuffix = "",
-}: {
-    title: string;
-    data: Array<{ label: string; value: number }>;
-    valueSuffix?: string;
-}) {
-    const max = Math.max(1, ...data.map((d) => d.value));
+/* =========================================================
+   MODAL PERÍODO
+========================================================= */
 
-    return (
-        <Card className="p-4">
-            <SectionTitle title={title} />
-            <div className="space-y-3">
-                {data.length === 0 ? (
-                    <div className="rounded-xl border bg-slate-50 p-4 text-center text-sm text-slate-500">
-                        Sem dados para o período.
-                    </div>
-                ) : (
-                    data.slice(0, 8).map((d, i) => (
-                        <div key={d.label}>
-                            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                                <span className="truncate font-semibold text-slate-700">{d.label}</span>
-                                <span className="font-black text-slate-900">
-                                    {fmt1(d.value)}
-                                    {valueSuffix}
-                                </span>
-                            </div>
-                            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                                <div
-                                    className="h-full rounded-full"
-                                    style={{
-                                        width: `${Math.max(4, (d.value / max) * 100)}%`,
-                                        backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-        </Card>
-    );
-}
-
-function PeriodModal({
-    open,
-    value,
-    onClose,
-    onApply,
+function ModalPeriodo({
+    aberto,
+    valor,
+    onFechar,
+    onAplicar,
 }: {
-    open: boolean;
-    value: PeriodRange;
-    onClose: () => void;
-    onApply: (range: PeriodRange) => void;
+    aberto: boolean;
+    valor: PeriodRange;
+    onFechar: () => void;
+    onAplicar: (v: PeriodRange) => void;
 }) {
-    const [preset, setPreset] = useState<PeriodPreset>(value.preset);
-    const [inicio, setInicio] = useState(value.inicio);
-    const [fim, setFim] = useState(value.fim);
+    const [preset, setPreset] = useState<PeriodPreset>(valor.preset);
+    const [inicio, setInicio] = useState(valor.inicio);
+    const [fim, setFim] = useState(valor.fim);
 
     useEffect(() => {
-        if (!open) return;
-        setPreset(value.preset);
-        setInicio(value.inicio);
-        setFim(value.fim);
-    }, [open, value]);
+        if (!aberto) return;
+        setPreset(valor.preset);
+        setInicio(valor.inicio);
+        setFim(valor.fim);
+    }, [aberto, valor]);
 
-    if (!open) return null;
+    if (!aberto) return null;
 
-    const presets: Array<{ key: PeriodPreset; label: string; desc: string }> = [
-        { key: "hoje", label: "Hoje", desc: "00:00 até agora" },
-        { key: "ontem", label: "Ontem", desc: "Dia anterior" },
-        { key: "7d", label: "Semana", desc: "Últimos 7 dias" },
-        { key: "mes_atual", label: "Mês atual", desc: "Do dia 1 até hoje" },
-        { key: "30d", label: "30 dias", desc: "Últimos 30 dias" },
-        { key: "custom", label: "Personalizado", desc: "Escolher datas" },
+    const botoes: Array<{ key: PeriodPreset; label: string }> = [
+        { key: "hoje", label: "Hoje" },
+        { key: "ontem", label: "Ontem" },
+        { key: "7d", label: "Semana" },
+        { key: "mes", label: "Mês atual" },
+        { key: "30d", label: "30 dias" },
+        { key: "custom", label: "Personalizado" },
     ];
 
     return (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3">
-            <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-                <div className="border-b p-5">
-                    <div className="flex items-start justify-between gap-3">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+                <div className="border-b p-4">
+                    <div className="flex items-center justify-between gap-3">
                         <div>
-                            <h2 className="text-xl font-black text-slate-900">Filtrar período</h2>
+                            <h2 className="text-lg font-black text-slate-900">Filtrar período</h2>
                             <p className="text-sm text-slate-500">
-                                Todos os indicadores serão recalculados com base nas datas selecionadas.
+                                Escolha um período para atualizar todos os gráficos.
                             </p>
                         </div>
                         <button
-                            onClick={onClose}
-                            className="rounded-xl border px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                            onClick={onFechar}
+                            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
                         >
                             Fechar
                         </button>
                     </div>
                 </div>
 
-                <div className="max-h-[75vh] overflow-auto p-5">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {presets.map((p) => (
+                <div className="space-y-4 p-4">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {botoes.map((b) => (
                             <button
-                                key={p.key}
+                                key={b.key}
                                 type="button"
                                 onClick={() => {
-                                    setPreset(p.key);
-                                    const next = makeRange(p.key, inicio, fim);
-                                    if (p.key !== "custom") {
-                                        setInicio(next.inicio);
-                                        setFim(next.fim);
+                                    setPreset(b.key);
+                                    if (b.key !== "custom") {
+                                        const r = makeRange(b.key, inicio, fim);
+                                        setInicio(r.inicio);
+                                        setFim(r.fim);
                                     }
                                 }}
-                                className={`rounded-2xl border p-4 text-left transition ${preset === p.key
-                                        ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100"
-                                        : "hover:bg-slate-50"
+                                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${preset === b.key
+                                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                                    : "hover:bg-slate-50"
                                     }`}
                             >
-                                <div className="font-black text-slate-900">{p.label}</div>
-                                <div className="mt-1 text-xs text-slate-500">{p.desc}</div>
+                                {b.label}
                             </button>
                         ))}
                     </div>
 
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <label className="block">
-                            <span className="text-xs font-bold uppercase text-slate-500">
+                            <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
                                 Data inicial
                             </span>
                             <input
@@ -826,12 +798,12 @@ function PeriodModal({
                                     setInicio(e.target.value);
                                     setPreset("custom");
                                 }}
-                                className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:border-blue-600"
+                                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-blue-600"
                             />
                         </label>
 
                         <label className="block">
-                            <span className="text-xs font-bold uppercase text-slate-500">
+                            <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
                                 Data final
                             </span>
                             <input
@@ -841,28 +813,28 @@ function PeriodModal({
                                     setFim(e.target.value);
                                     setPreset("custom");
                                 }}
-                                className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:border-blue-600"
+                                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-blue-600"
                             />
                         </label>
                     </div>
                 </div>
 
-                <div className="flex flex-col gap-2 border-t bg-slate-50 p-5 sm:flex-row sm:justify-end">
+                <div className="flex justify-end gap-2 border-t bg-slate-50 p-4">
                     <button
-                        onClick={onClose}
+                        onClick={onFechar}
                         className="rounded-xl border bg-white px-4 py-2 text-sm font-bold hover:bg-slate-100"
                     >
                         Cancelar
                     </button>
                     <button
                         onClick={() => {
-                            const next = makeRange(preset, inicio, fim);
-                            onApply(next);
-                            onClose();
+                            const r = makeRange(preset, inicio, fim);
+                            onAplicar(r);
+                            onFechar();
                         }}
                         className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
                     >
-                        Aplicar filtro
+                        Aplicar
                     </button>
                 </div>
             </div>
@@ -870,13 +842,13 @@ function PeriodModal({
     );
 }
 
-/* ============================================================
+/* =========================================================
    PAGE
-   ============================================================ */
+========================================================= */
 
 export default function Page() {
     const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("7d"));
-    const [periodOpen, setPeriodOpen] = useState(false);
+    const [modalAberto, setModalAberto] = useState(false);
 
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [motoristas, setMotoristas] = useState<MotoristaRow[]>([]);
@@ -890,43 +862,36 @@ export default function Page() {
         setErro(null);
 
         try {
-            const { inicio, fim } = rangeTo14(periodo);
+            const r14 = rangeTo14(periodo);
 
-            const infoUrl = `${ENDPOINTS.informativo}&_ts=${Date.now()}`;
-            const motoristasUrl =
-                `${ENDPOINTS.telemetria}?itrack=motoristas` +
-                `&inicio=${encodeURIComponent(inicio)}` +
-                `&fim=${encodeURIComponent(fim)}` +
+            const urlInformativo = `${INFORMATICO_URL}&_ts=${Date.now()}`;
+            const urlMotoristas =
+                `${TELEMETRIA_URL}?itrack=motoristas` +
+                `&inicio=${encodeURIComponent(r14.inicio)}` +
+                `&fim=${encodeURIComponent(r14.fim)}` +
                 `&_ts=${Date.now()}`;
 
-            const veiculosUrl =
-                `${ENDPOINTS.telemetria}?itrack=historico_veicular` +
-                `&inicio=${encodeURIComponent(inicio)}` +
-                `&fim=${encodeURIComponent(fim)}` +
+            const urlVeiculos =
+                `${TELEMETRIA_URL}?itrack=historico_veicular` +
+                `&inicio=${encodeURIComponent(r14.inicio)}` +
+                `&fim=${encodeURIComponent(r14.fim)}` +
                 `&_ts=${Date.now()}`;
 
             const [infoJson, motJson, veiJson] = await Promise.all([
-                fetchJson<ApiListResponse<Registro>>(infoUrl, {
-                    ttlMs: 8_000,
-                    cacheKey: `info-${periodo.inicio}-${periodo.fim}`,
+                fetchJson<ApiResp<Registro>>(urlInformativo, {
+                    cacheKey: `informativo-${periodo.inicio}-${periodo.fim}`,
                 }),
-                fetchJson<ApiListResponse<MotoristaRow>>(motoristasUrl, {
-                    ttlMs: 20_000,
-                    cacheKey: `mot-${periodo.inicio}-${periodo.fim}`,
+                fetchJson<ApiResp<MotoristaRow>>(urlMotoristas, {
+                    cacheKey: `motoristas-${periodo.inicio}-${periodo.fim}`,
                 }),
-                fetchJson<ApiListResponse<VeiculoRow>>(veiculosUrl, {
-                    ttlMs: 20_000,
-                    cacheKey: `vei-${periodo.inicio}-${periodo.fim}`,
+                fetchJson<ApiResp<VeiculoRow>>(urlVeiculos, {
+                    cacheKey: `veiculos-${periodo.inicio}-${periodo.fim}`,
                 }),
             ]);
 
-            const infoArr = Array.isArray(infoJson) ? infoJson : infoJson?.dados || [];
-            const motArr = Array.isArray(motJson) ? motJson : motJson?.dados || [];
-            const veiArr = Array.isArray(veiJson) ? veiJson : veiJson?.dados || [];
-
-            setRegistros(infoArr);
-            setMotoristas(motArr);
-            setVeiculos(veiArr);
+            setRegistros(extractArray(infoJson));
+            setMotoristas(extractArray(motJson));
+            setVeiculos(extractArray(veiJson));
         } catch (e: any) {
             setErro(e?.message || "Falha ao carregar análise.");
         } finally {
@@ -940,7 +905,6 @@ export default function Page() {
 
     const dadosPeriodo = useMemo(() => {
         const { start, end } = rangeToDates(periodo);
-
         return (registros || []).filter((r) => {
             const d = getRegistroDate(r);
             if (!d) return false;
@@ -948,395 +912,246 @@ export default function Page() {
         });
     }, [registros, periodo]);
 
-    const metricas = useMemo(() => {
-        const total = dadosPeriodo.length;
-
-        const assistenciaSim = dadosPeriodo.filter((r) => isSim(r.assistencia)).length;
-        const tanatoSim = dadosPeriodo.filter((r) => isSim(r.tanato)).length;
-        const involSim = dadosPeriodo.filter((r) => isSim(r.invol)).length;
-        const comMaterial = dadosPeriodo.filter(hasMaterial).length;
-
-        const ornamentacao = dadosPeriodo.filter((r) => {
-            const txt = norm(`${r.ornamentacao || ""} ${r.ornamentacao_tipo || ""}`);
-            return txt && txt !== "nao" && txt !== "não";
-        }).length;
-
-        const velorio = dadosPeriodo.filter((r) => r.local_velorio || r.data_inicio_velorio).length;
-        const sepultamento = dadosPeriodo.filter((r) => {
-            const s = getStatus(r);
-            return s === "sepultamento" || s === "concluído" || !!r.local_sepultamento;
-        }).length;
-
-        const convenios = countBy(dadosPeriodo, (r) => normalizeConvenio(r.convenio));
-        const status = countBy(dadosPeriodo, (r) => getStatus(r));
-        const porAgente = countBy(dadosPeriodo, (r) => getAgente(r));
-
-        const tanatoPorAgente = countBy(
-            dadosPeriodo.filter((r) => isSim(r.tanato)),
-            (r) => getTanatoAgente(r)
-        );
-
-        const ornamentacaoTipos = countBy(
-            dadosPeriodo.filter((r) => {
-                const t = getOrnamentacaoTipo(r);
-                return norm(t) !== "nao informado";
-            }),
-            (r) => getOrnamentacaoTipo(r)
-        );
-
-        return {
-            total,
-            assistenciaSim,
-            tanatoSim,
-            involSim,
-            comMaterial,
-            ornamentacao,
-            velorio,
-            sepultamento,
-            convenios,
-            status,
-            porAgente,
-            tanatoPorAgente,
-            ornamentacaoTipos,
-        };
+    const metricasGerais = useMemo(() => {
+        return METRICAS.map((m) => {
+            const subset = dadosPeriodo.filter(m.match);
+            return {
+                key: m.key,
+                label: m.label,
+                icon: m.icon,
+                qtd: subset.length,
+                tempoMedio: average(subset.map(getDurationMinutes)),
+            };
+        });
     }, [dadosPeriodo]);
 
-    const telemetria = useMemo(() => {
-        const kmPorVeiculo = (veiculos || [])
+    const colaboradores = useMemo(() => {
+        const map = new Map<string, number>();
+
+        for (const r of dadosPeriodo) {
+            const nome = getAgenteNome(r);
+            map.set(nome, (map.get(nome) || 0) + 1);
+        }
+
+        return Array.from(map.entries())
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .slice(0, 8)
+            .map(([nome]) => nome);
+    }, [dadosPeriodo]);
+
+    const matrizColaboradores = useMemo(() => {
+        return colaboradores.map((nome) => {
+            const doAgente = dadosPeriodo.filter((r) => getAgenteNome(r) === nome);
+
+            const colunas = METRICAS.map((m) => {
+                const subset = doAgente.filter(m.match);
+                return {
+                    key: m.key,
+                    qtd: subset.length,
+                    tempoMedio: average(subset.map(getDurationMinutes)),
+                };
+            });
+
+            return { nome, colunas };
+        });
+    }, [colaboradores, dadosPeriodo]);
+
+    const pieAtendimentos = useMemo(() => {
+        const map = new Map<string, number>();
+
+        for (const r of dadosPeriodo) {
+            const c = normalizeConvenio(r.convenio);
+            map.set(c, (map.get(c) || 0) + 1);
+        }
+
+        return Array.from(map.entries())
+            .map(([label, value]) => ({ label, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 4);
+    }, [dadosPeriodo]);
+
+    const pieTanato = useMemo(() => {
+        const map = new Map<string, number>();
+
+        for (const r of dadosPeriodo.filter((x) => isSim(x.tanato))) {
+            const nome = getTanatoNome(r);
+            map.set(nome, (map.get(nome) || 0) + 1);
+        }
+
+        return Array.from(map.entries())
+            .map(([label, value]) => ({ label, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 4);
+    }, [dadosPeriodo]);
+
+    const barVeiculos = useMemo(() => {
+        return (veiculos || [])
             .map((v) => ({
-                label: getVehicleLabel(v),
-                value: getVehicleKm(v),
+                label: getVeiculoNome(v),
+                value: getVeiculoKm(v),
             }))
             .filter((x) => x.value > 0)
-            .sort((a, b) => b.value - a.value);
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 4);
+    }, [veiculos]);
 
-        const totalKm = kmPorVeiculo.reduce((s, x) => s + x.value, 0);
+    const barColaboradores = useMemo(() => {
+        const map = new Map<string, number>();
 
-        const kmPorMotorista = (motoristas || [])
-            .map((m) => ({
-                label: getMotoristaLabel(m),
-                value: number(m.total_posicoes),
-                velocidadeMedia: number(m.velocidade_media),
-                velocidadeMaxima: number(m.velocidade_maxima),
-                placas: String(m.placas || ""),
-            }))
-            .sort((a, b) => b.value - a.value);
+        // 1) tenta km por motorista vindo do histórico veicular
+        for (const v of veiculos || []) {
+            const nome = String(v.motorista || v.nome_motorista || "").trim().toUpperCase();
+            const km = getVeiculoKm(v);
+            if (!nome || km <= 0) continue;
+            map.set(nome, (map.get(nome) || 0) + km);
+        }
 
-        const velocidadeMediaGeral = average(
-            motoristas.map((m) => number(m.velocidade_media)).filter((n) => n > 0)
-        );
+        // 2) fallback motoristas
+        if (map.size === 0) {
+            for (const m of motoristas || []) {
+                const nome = String(m.motorista || m.nome_motorista || "SEM NOME").trim().toUpperCase();
+                const km = num(m.distancia_km ?? m.distancia_percorrida_km);
+                if (km > 0) {
+                    map.set(nome, (map.get(nome) || 0) + km);
+                }
+            }
+        }
 
-        const velocidadeMaximaGeral = Math.max(
-            0,
-            ...motoristas.map((m) => number(m.velocidade_maxima))
-        );
-
-        return {
-            kmPorVeiculo,
-            totalKm,
-            kmPorMotorista,
-            velocidadeMediaGeral,
-            velocidadeMaximaGeral,
-        };
-    }, [motoristas, veiculos]);
-
-    const cardsStatus = [
-        {
-            icon: "✚",
-            title: "Assistência",
-            qtd: metricas.assistenciaSim,
-        },
-        {
-            icon: "💉",
-            title: "Tanato",
-            qtd: metricas.tanatoSim,
-        },
-        {
-            icon: "✿",
-            title: "Ornamentação",
-            qtd: metricas.ornamentacao,
-        },
-        {
-            icon: "⚰️",
-            title: "Invol",
-            qtd: metricas.involSim,
-        },
-        {
-            icon: "🚗",
-            title: "Velório",
-            qtd: metricas.velorio,
-        },
-        {
-            icon: "🔁",
-            title: "Material",
-            qtd: metricas.comMaterial,
-        },
-    ];
+        return Array.from(map.entries())
+            .map(([label, value]) => ({ label, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 4);
+    }, [veiculos, motoristas]);
 
     return (
-        <main className="min-h-screen bg-slate-50 p-3 sm:p-5">
-            <LoadingBar show={loading} />
-
-            <div className="mx-auto w-full max-w-7xl">
-                {/* HEADER */}
-                <div className="mb-4 flex flex-col gap-3 rounded-3xl border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <main className="min-h-screen bg-[#efefef] p-2 sm:p-3 md:p-4">
+            <div className="mx-auto max-w-[1400px]">
+                {/* topo */}
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-                            Análise de Desempenho
+                        <h1 className="text-xl font-black tracking-tight text-[#333] sm:text-2xl">
+                            ANÁLISE DE DESEMPENHO
                         </h1>
-                        <p className="mt-1 text-sm text-slate-500">
-                            Indicadores gerais por período, atendimentos, tanatopraxia e telemetria.
-                        </p>
+                        <div className="text-xs text-[#666]">
+                            Período: {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
+                        </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex flex-wrap gap-2">
                         <button
-                            type="button"
-                            onClick={() => setPeriodOpen(true)}
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
+                            onClick={() => setModalAberto(true)}
+                            className="inline-flex items-center gap-2 rounded-lg border border-[#6b9fc5] bg-white px-3 py-2 text-sm font-bold text-[#2c6f96] hover:bg-[#f4faff]"
                         >
-                            <span>📅</span>
-                            <span>{periodo.label}</span>
+                            <IconCalendar />
+                            Filtrar período
                         </button>
 
                         <button
-                            type="button"
                             onClick={carregar}
                             disabled={loading}
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-60"
+                            className="rounded-lg bg-[#2f6f91] px-3 py-2 text-sm font-bold text-white hover:bg-[#245e7a] disabled:opacity-60"
                         >
-                            <span>↻</span>
-                            <span>Atualizar</span>
+                            {loading ? "Carregando..." : "Atualizar"}
                         </button>
                     </div>
                 </div>
 
                 {erro ? (
-                    <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                    <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
                         {erro}
                     </div>
                 ) : null}
 
-                {/* RESUMO SUPERIOR NO ESTILO DA IMAGEM */}
-                <Card className="mb-4 p-4">
-                    <div className="grid gap-4 lg:grid-cols-[190px_1fr]">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                            <div className="text-sm font-black uppercase text-slate-900">Período</div>
-                            <div className="mt-3 text-xs text-slate-500">
-                                {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
+                {/* layout principal exatamente no espírito da imagem */}
+                <div className="grid gap-4 xl:grid-cols-[1.1fr_0.95fr]">
+                    {/* ESQUERDA */}
+                    <div className="overflow-hidden rounded-sm bg-[#efefef]">
+                        <div className="overflow-x-auto">
+                            <div className="min-w-[930px]">
+                                <div
+                                    className="grid"
+                                    style={{
+                                        gridTemplateColumns: "190px repeat(6, 1fr)",
+                                    }}
+                                >
+                                    {/* cabeçalho esquerda */}
+                                    <div className="border-b-2 border-r-2 border-[#1E7096] px-3 pb-4 pt-4">
+                                        <div className="text-[18px] font-black text-[#1f1f1f]">PERIODO</div>
+
+                                        <div className="mt-8 grid grid-cols-[1fr_auto] gap-y-3 text-[#1f1f1f]">
+                                            <div className="text-[12px] leading-tight">
+                                                QNTD. DE
+                                                <br />
+                                                ATENDIMENTOS
+                                            </div>
+                                            <div className="text-[16px]">{fmt0(dadosPeriodo.length)}</div>
+
+                                            <div className="text-[12px] leading-tight">
+                                                TEMPO
+                                                <br />
+                                                MÉDIO
+                                            </div>
+                                            <div className="text-[16px]">
+                                                {fmtHm(average(dadosPeriodo.map(getDurationMinutes)))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* cabeçalho métricas */}
+                                    {metricasGerais.map((m) => (
+                                        <div
+                                            key={m.key}
+                                            className="border-b-2 border-[#1E7096] px-2 pb-4 pt-3 text-center"
+                                        >
+                                            <div className="mx-auto flex h-[46px] w-[46px] items-center justify-center text-[#4C8ED6]">
+                                                {m.icon}
+                                            </div>
+                                            <div className="mt-2 text-[15px] text-[#1f1f1f]">{fmt0(m.qtd)}</div>
+                                            <div className="text-[14px] text-[#1f1f1f]">
+                                                {fmtHm(m.tempoMedio)}
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {/* linhas colaboradores */}
+                                    {matrizColaboradores.map((row) => (
+                                        <React.Fragment key={row.nome}>
+                                            <div className="border-r-2 border-[#1E7096] px-3 py-3 text-center text-[20px] leading-none text-[#161616]">
+                                                {row.nome}
+                                            </div>
+
+                                            {row.colunas.map((c) => (
+                                                <div key={`${row.nome}-${c.key}`} className="px-2 py-3 text-center">
+                                                    <div className="text-[15px] leading-tight text-[#1f1f1f]">
+                                                        {fmt0(c.qtd)}
+                                                    </div>
+                                                    <div className="text-[14px] leading-tight text-[#1f1f1f]">
+                                                        {fmtHm(c.tempoMedio)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
                             </div>
-
-                            <div className="mt-5 grid grid-cols-[1fr_auto] gap-y-3 text-sm">
-                                <div className="font-semibold uppercase text-slate-600">
-                                    Qntd. de atendimentos
-                                </div>
-                                <div className="font-black text-slate-900">{fmt0(metricas.total)}</div>
-
-                                <div className="font-semibold uppercase text-slate-600">
-                                    Km total
-                                </div>
-                                <div className="font-black text-slate-900">{fmtKm(telemetria.totalKm)}</div>
-
-                                <div className="font-semibold uppercase text-slate-600">
-                                    Vel. média
-                                </div>
-                                <div className="font-black text-slate-900">
-                                    {fmt1(telemetria.velocidadeMediaGeral)} km/h
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                            {cardsStatus.map((c) => (
-                                <MiniStatusCard key={c.title} icon={c.icon} title={c.title} qtd={c.qtd} />
-                            ))}
                         </div>
                     </div>
-                </Card>
 
-                {/* KPIS */}
-                <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <KpiCard
-                        label="Atendimentos no período"
-                        value={fmt0(metricas.total)}
-                        sub="Registros filtrados por data"
-                        icon="📋"
-                    />
-                    <KpiCard
-                        label="Tanatopraxias"
-                        value={fmt0(metricas.tanatoSim)}
-                        sub={`${metricas.total ? fmt1((metricas.tanatoSim / metricas.total) * 100) : "0"}% dos atendimentos`}
-                        icon="💉"
-                    />
-                    <KpiCard
-                        label="Quilometragem total"
-                        value={fmtKm(telemetria.totalKm)}
-                        sub={`${fmt0(telemetria.kmPorVeiculo.length)} veículo(s) com movimentação`}
-                        icon="🚗"
-                    />
-                    <KpiCard
-                        label="Velocidade máxima"
-                        value={`${fmt1(telemetria.velocidadeMaximaGeral)} km/h`}
-                        sub="Com base na telemetria por motorista"
-                        icon="📈"
-                    />
-                </div>
-
-                {/* GRÁFICOS PRINCIPAIS */}
-                <div className="mb-4 grid gap-4 lg:grid-cols-2">
-                    <DonutChart
-                        title="Atendimentos"
-                        data={metricas.convenios.slice(0, 6)}
-                        emptyLabel="Nenhum atendimento encontrado no período."
-                    />
-
-                    <DonutChart
-                        title="Tanatopraxia"
-                        data={metricas.tanatoPorAgente.slice(0, 6)}
-                        emptyLabel="Nenhuma tanatopraxia encontrada no período."
-                    />
-                </div>
-
-                <div className="mb-4 grid gap-4 lg:grid-cols-2">
-                    <BarChart
-                        title="Quilometragem por veículo (km)"
-                        data={telemetria.kmPorVeiculo.slice(0, 6)}
-                    />
-
-                    <BarChart
-                        title="Telemetria por colaborador"
-                        subtitle="Quantidade de posições registradas no período"
-                        data={telemetria.kmPorMotorista.slice(0, 6)}
-                    />
-                </div>
-
-                {/* LISTAS E RANKINGS */}
-                <div className="grid gap-4 lg:grid-cols-3">
-                    <HorizontalBarChart
-                        title="Atendimentos por colaborador"
-                        data={metricas.porAgente}
-                    />
-
-                    <HorizontalBarChart
-                        title="Status dos atendimentos"
-                        data={metricas.status}
-                    />
-
-                    <HorizontalBarChart
-                        title="Tipos de ornamentação"
-                        data={metricas.ornamentacaoTipos}
-                    />
-                </div>
-
-                {/* TABELAS */}
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                    <Card className="overflow-hidden">
-                        <div className="border-b p-4">
-                            <SectionTitle
-                                title="Ranking de veículos"
-                                subtitle="Distância percorrida no período selecionado"
-                            />
-                        </div>
-
-                        <div className="overflow-x-auto">
-                            <table className="w-full min-w-[520px] text-sm">
-                                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-                                    <tr>
-                                        <th className="px-4 py-3">Veículo</th>
-                                        <th className="px-4 py-3">Placa</th>
-                                        <th className="px-4 py-3 text-right">Km</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {veiculos.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
-                                                Sem dados de veículo no período.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        veiculos.slice(0, 10).map((v, idx) => (
-                                            <tr key={`${v.placa || idx}`} className="border-t">
-                                                <td className="px-4 py-3 font-semibold text-slate-800">
-                                                    {getVehicleLabel(v)}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {v.placa || "—"}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-black text-slate-900">
-                                                    {fmtKm(getVehicleKm(v))}
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
-
-                    <Card className="overflow-hidden">
-                        <div className="border-b p-4">
-                            <SectionTitle
-                                title="Ranking de motoristas"
-                                subtitle="Velocidade média, máxima e placas vinculadas"
-                            />
-                        </div>
-
-                        <div className="overflow-x-auto">
-                            <table className="w-full min-w-[620px] text-sm">
-                                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-                                    <tr>
-                                        <th className="px-4 py-3">Motorista</th>
-                                        <th className="px-4 py-3">Placas</th>
-                                        <th className="px-4 py-3 text-right">Vel. média</th>
-                                        <th className="px-4 py-3 text-right">Vel. máx.</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {motoristas.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
-                                                Sem dados de motoristas no período.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        motoristas.slice(0, 10).map((m, idx) => (
-                                            <tr key={`${m.motorista || idx}`} className="border-t">
-                                                <td className="px-4 py-3 font-semibold text-slate-800">
-                                                    {getMotoristaLabel(m)}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {m.placas || "—"}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-black text-slate-900">
-                                                    {fmt1(number(m.velocidade_media))} km/h
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-black text-slate-900">
-                                                    {fmt1(number(m.velocidade_maxima))} km/h
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800">
-                    <b>Observação:</b> esta página filtra os registros que o endpoint de atendimento retornar.
-                    Se o seu <code className="font-bold">informativo.php?listar=1</code> estiver retornando
-                    somente atendimentos ainda não recolhidos, a análise histórica de atendimentos também ficará
-                    limitada a esses dados. Para histórico completo, o backend precisa liberar a listagem por período
-                    incluindo registros já finalizados.
+                    {/* DIREITA */}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <PieChart title="Atendimentos" data={pieAtendimentos} />
+                        <PieChart title="Tanatopraxia" data={pieTanato} />
+                        <SimpleBarChart title="Quilometragem por veículo (km)" data={barVeiculos} />
+                        <SimpleBarChart title="Quilometragem por colaborador" data={barColaboradores} />
+                    </div>
                 </div>
             </div>
 
-            <PeriodModal
-                open={periodOpen}
-                value={periodo}
-                onClose={() => setPeriodOpen(false)}
-                onApply={setPeriodo}
+            <ModalPeriodo
+                aberto={modalAberto}
+                valor={periodo}
+                onFechar={() => setModalAberto(false)}
+                onAplicar={setPeriodo}
             />
         </main>
     );
