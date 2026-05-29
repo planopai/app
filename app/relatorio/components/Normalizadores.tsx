@@ -38,6 +38,56 @@ export function isNoChangeKey(k: string) {
     return /^sem[\s_]*alterac(?:o|oe)es?$/i.test((k || "").trim());
 }
 
+/* ======================== NOVO: regra Assistência = Não ======================== */
+
+function normTexto(v: any) {
+    return String(v ?? "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isNao(v: any) {
+    const s = normTexto(v);
+    return s === "nao" || s === "não";
+}
+
+/**
+ * Procura o último valor de "assistencia" nos logs.
+ * Se o atendimento foi editado, considera o valor mais recente.
+ */
+export function assistenciaEhNao(logs: LogItem[]) {
+    const ordenados = [...(logs || [])].sort((a, b) =>
+        (a.datahora || "").localeCompare(b.datahora || "")
+    );
+
+    for (let i = ordenados.length - 1; i >= 0; i--) {
+        const log = ordenados[i] as any;
+
+        // 1) Campo direto no próprio log
+        if (log.assistencia != null && String(log.assistencia).trim() !== "") {
+            return isNao(log.assistencia);
+        }
+
+        // 2) Campo dentro de detalhes
+        const det = safeJsonParse(log.detalhes);
+        if (det && typeof det === "object") {
+            const valor =
+                det.assistencia ??
+                det.Assistencia ??
+                det["Assistência"] ??
+                det["assistência"];
+
+            if (valor != null && String(valor).trim() !== "") {
+                return isNao(valor);
+            }
+        }
+    }
+
+    return false;
+}
+
 /** Detecta se existe "algo selecionado" em materiais_json (novo) */
 function hasMateriaisJsonChanges(materiaisJson: any): boolean {
     const mj = safeJsonParse(materiaisJson);
@@ -263,9 +313,45 @@ export function montarResumoFinalDoLog(log: LogItem[], materiaisMap?: MateriaisM
     return resumo;
 }
 
+/**
+ * Define se o Resumo Final pode aparecer.
+ *
+ * Regra:
+ * - Assistência = Sim: só mostra quando chegar em fase11 / Material Recolhido.
+ * - Assistência = Não: não existe material para recolher, então mostra quando chegar
+ *   em fase10 / Sepultamento Concluído.
+ */
 export function estaFinalizado(log: LogItem[]) {
     if (!log?.length) return false;
-    const ult = [...log].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || "")).at(-1);
-    const s = (ult?.status_novo || "").toLowerCase();
-    return s === "fase11" || s === "material recolhido";
+
+    const logsOrdenados = [...log].sort((a, b) =>
+        (a.datahora || "").localeCompare(b.datahora || "")
+    );
+
+    // ✅ Caso especial: Assistência = Não
+    if (assistenciaEhNao(logsOrdenados)) {
+        return logsOrdenados.some((l: any) => {
+            const status = normTexto(l.status_novo || l.status || "");
+            const acao = normTexto(l.acao || "");
+
+            return (
+                status === "fase10" ||
+                status === "sepultamento concluido" ||
+                status === "concluido" ||
+                acao.includes("sepultamento concluido")
+            );
+        });
+    }
+
+    // ✅ Regra normal: quando tem assistência/material, espera recolher material
+    return logsOrdenados.some((l: any) => {
+        const status = normTexto(l.status_novo || l.status || "");
+        const acao = normTexto(l.acao || "");
+
+        return (
+            status === "fase11" ||
+            status === "material recolhido" ||
+            acao.includes("material recolhido")
+        );
+    });
 }
