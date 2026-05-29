@@ -1199,7 +1199,7 @@ type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: st
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: string; start: number; end: number; active: boolean };
 
 const STATUS_STEP_DEFS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚨" },
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "🚗" },
     { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "⏳" },
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "🧑‍⚕️" },
     { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "💐" },
@@ -2275,19 +2275,19 @@ function StatusPill({
 }) {
     return (
         <div
-            className={`flex h-[36px] w-[40px] shrink-0 flex-col items-center justify-center rounded-lg border px-0 text-center leading-none transition ${total ? "ml-1 mr-2" : ""} ${active
-                    ? "border-cyan-300/80 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,.25)]"
+            className={`flex h-[36px] w-[40px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-2" : ""} ${active
+                    ? "bg-cyan-400/12 shadow-[0_0_12px_rgba(34,211,238,.22)]"
                     : total
-                        ? "border-amber-300/40 bg-amber-300/10"
+                        ? "bg-amber-300/10 shadow-[0_0_10px_rgba(251,191,36,.12)]"
                         : muted
-                            ? "border-slate-700/35 bg-slate-950/20 opacity-45"
-                            : "border-slate-600/50 bg-slate-950/35"
+                            ? "bg-slate-950/10 opacity-20 grayscale"
+                            : "bg-slate-950/22"
                 }`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`text-[11.5px] leading-none ${active ? "qa-status-blink" : ""}`}>{icon}</div>
-            <div className="mt-[2px] w-full truncate text-[6px] font-black leading-none text-slate-400">{label}</div>
-            <div className="mt-[2px] w-full truncate text-[7px] font-black leading-none tabular-nums text-slate-100">{time}</div>
+            <div className={`text-[11.5px] leading-none ${active ? "qa-status-blink" : ""} ${muted ? "opacity-45" : ""}`}>{icon}</div>
+            <div className={`mt-[2px] w-full truncate text-[6px] font-black leading-none ${muted ? "text-slate-500/45" : "text-slate-400"}`}>{label}</div>
+            <div className={`mt-[2px] w-full truncate text-[7px] font-black leading-none tabular-nums ${muted ? "text-slate-500/45" : "text-slate-100"}`}>{time}</div>
         </div>
     );
 }
