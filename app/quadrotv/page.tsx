@@ -2234,15 +2234,17 @@ function StatusTimelineCell({
             {STATUS_STEPS.map((step) => {
                 const seg = segmentByKey.get(step.key);
                 const duration = seg ? Math.max(0, seg.end - seg.start) : 0;
+                const skipped = isStatusStepSkipped(registro, step.key);
                 return (
                     <StatusPill
                         key={step.key}
                         icon={step.icon}
                         label={step.shortLabel}
                         time={duration > 0 ? formatDurationMs(duration) : "00:00"}
-                        active={!!seg?.active}
-                        muted={!seg}
-                        title={`${step.label} • ${duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                        active={!skipped && !!seg?.active}
+                        muted={!seg || skipped}
+                        skipped={skipped}
+                        title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
                     />
                 );
             })}
@@ -2252,6 +2254,12 @@ function StatusTimelineCell({
     );
 }
 
+function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
+    if (stepKey === "fase03") return isNao(registro.tanato);
+    if (stepKey === "fase05") return isNao((registro.ornamentacao_tipo ?? registro.ornamentacao) as string | undefined);
+    return false;
+}
+
 function StatusPill({
     icon,
     label,
@@ -2259,6 +2267,7 @@ function StatusPill({
     active = false,
     muted = false,
     total = false,
+    skipped = false,
     title,
 }: {
     icon: StatusIconKey;
@@ -2267,6 +2276,7 @@ function StatusPill({
     active?: boolean;
     muted?: boolean;
     total?: boolean;
+    skipped?: boolean;
     title?: string;
 }) {
     return (
@@ -2274,16 +2284,16 @@ function StatusPill({
             className={`relative flex h-[34px] w-[34px] shrink-0 flex-col items-center justify-center rounded-lg px-0 text-center leading-none transition ${total ? "ml-1 mr-1" : ""} ${active
                     ? "border border-emerald-300/55 shadow-[0_0_12px_rgba(34,197,94,.18)]"
                     : "border border-transparent"
-                } ${muted ? "opacity-20" : ""}`}
+                }`}
             title={title ?? `${label} • ${time}`}
         >
             <div
-                className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-25" : ""}`}
+                className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-15" : ""}`}
                 aria-hidden="true"
             >
                 <StatusIcon type={icon} />
-                {muted && (
-                    <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[15px] font-black leading-none text-red-500 drop-shadow-[0_0_3px_rgba(239,68,68,.55)]">
+                {skipped && (
+                    <span className="pointer-events-none absolute -inset-1 z-10 flex items-center justify-center text-[18px] font-black leading-none text-red-500 drop-shadow-[0_0_4px_rgba(239,68,68,.85)]">
                         ×
                     </span>
                 )}
