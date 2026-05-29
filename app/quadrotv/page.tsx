@@ -2323,9 +2323,9 @@ function StatusPill({
             className={`relative flex h-[34px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`relative flex h-[20px] w-[20px] items-center justify-center rounded-full ${active ? "border border-emerald-300/70 shadow-[0_0_10px_rgba(34,197,94,.35)]" : "border border-transparent"}`}>
+            <div className={`relative flex h-[21px] w-[21px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-emerald-300/80 shadow-[0_0_12px_rgba(34,197,94,.55)]" : "border border-transparent"}`}>
                 <div
-                    className={`relative flex h-[15px] w-[15px] items-center justify-center ${active ? "qa-status-blink text-emerald-400" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
+                    className={`relative flex h-[16px] w-[16px] items-center justify-center ${active ? "qa-status-blink text-emerald-300" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
                     aria-hidden="true"
                 >
                     <StatusIcon type={icon} />
@@ -2333,7 +2333,7 @@ function StatusPill({
             </div>
             <div className={`mt-[2px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-emerald-200" : "text-slate-100"}`}>{time}</div>
             {skipped && (
-                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[28px] font-black leading-none text-[#00AEEC] drop-shadow-[0_0_5px_rgba(0,174,236,.75)]">
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[34px] font-black leading-none text-[#00AEEC] drop-shadow-[0_0_7px_rgba(0,174,236,.9)]">
                     ×
                 </span>
             )}
@@ -2442,15 +2442,23 @@ function StatusBlinkStyle() {
     return (
         <style jsx global>{`
             @keyframes qa-status-pulse {
-                0%, 100% { opacity: 1; transform: scale(1); }
-                50% { opacity: 0.55; transform: scale(1.08); }
+                0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.95)); }
+                50% { opacity: 0.28; transform: scale(1.22); filter: drop-shadow(0 0 14px rgba(52, 211, 153, 1)); }
+            }
+            @keyframes qa-status-ring-pulse {
+                0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px rgba(52, 211, 153, 0.55); border-color: rgba(110, 231, 183, 0.9); }
+                50% { opacity: 0.45; transform: scale(1.2); box-shadow: 0 0 18px rgba(52, 211, 153, 0.95); border-color: rgba(16, 185, 129, 1); }
             }
             .qa-status-blink {
                 display: inline-block;
-                animation: qa-status-pulse 1s ease-in-out infinite;
+                animation: qa-status-pulse 0.52s ease-in-out infinite;
+            }
+            .qa-status-active-ring {
+                animation: qa-status-ring-pulse 0.52s ease-in-out infinite;
             }
             @media (prefers-reduced-motion: reduce) {
-                .qa-status-blink { animation: none !important; }
+                .qa-status-blink,
+                .qa-status-active-ring { animation: none !important; }
             }
         `}</style>
     );
