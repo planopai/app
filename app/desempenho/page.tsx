@@ -406,6 +406,147 @@ function getTanatoNome(r: Registro) {
         .toUpperCase();
 }
 
+
+function getIdsParaTentar(r: Registro): string[] {
+    const candidates = [
+        r.sepultamento_id,
+        r.sepultamentoId,
+        r.id_sepultamento,
+        r.atendimento_id,
+        r.atendimentoId,
+        r.id,
+    ]
+        .map((x: any) => String(x || "").trim())
+        .filter(Boolean);
+
+    return Array.from(new Set(candidates));
+}
+
+function getEntityKey(r: Registro): string {
+    const primary = String(r.sepultamento_id || r.sepultamentoId || r.id_sepultamento || "").trim();
+    if (primary) return primary;
+
+    const ids = getIdsParaTentar(r);
+    return ids[0] || "";
+}
+
+function logTs(log: any): number {
+    const d = parseDateFlex(String(log?.datahora || log?.data || log?.created_at || ""));
+    return d ? d.getTime() : Number.NaN;
+}
+
+function agenteDoLog(log: any): string {
+    const pick = (o: any) =>
+        o?.usuario ||
+        o?.usuario_nome ||
+        o?.usuarioNome ||
+        o?.nome_usuario ||
+        o?.user ||
+        o?.user_name ||
+        o?.username ||
+        o?.operador ||
+        o?.agente ||
+        o?.nome ||
+        o?.name ||
+        "";
+
+    const direct = pick(log);
+    if (direct) return String(direct).trim();
+
+    try {
+        const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
+        const poss = pick(det) || det?.usuario_nome || det?.user_name || det?.nome_usuario;
+        if (poss) return String(poss).trim();
+    } catch {
+        // detalhes não é JSON; ignora
+    }
+
+    return "";
+}
+
+function isDetalhesVazio(log: any): boolean {
+    const d = log?.detalhes;
+
+    if (d === null || d === undefined) return true;
+
+    if (typeof d === "string") {
+        const s = d.trim();
+        if (!s || s === "null" || s === "{}") return true;
+
+        try {
+            const obj = JSON.parse(s);
+            if (obj === null) return true;
+            if (typeof obj === "object" && obj && Object.keys(obj).length === 0) return true;
+            return false;
+        } catch {
+            return false;
+        }
+    }
+
+    if (typeof d === "object") return Object.keys(d || {}).length === 0;
+
+    return false;
+}
+
+function isInicioConservacaoPuro(log: any): boolean {
+    const acao = norm(log?.acao || "");
+    const statusAnterior = norm(log?.status_anterior || "");
+    const statusNovo = norm(log?.status_novo || log?.status || "");
+    const titulo = norm(log?.titulo || "");
+    const texto = `${acao} ${statusNovo} ${titulo}`;
+
+    if (acao.includes("edit")) return false;
+
+    const matchMudancaStatus =
+        acao.includes("atualizou status") ||
+        acao.includes("atualizou situacao") ||
+        acao.includes("alterou status") ||
+        acao.includes("mudou status") ||
+        acao.includes("status");
+
+    if (!matchMudancaStatus) return false;
+
+    const temFases = !!(log?.status_anterior || log?.status_novo);
+    if (temFases) {
+        if (!(statusAnterior === "fase02" && statusNovo === "fase03")) return false;
+    } else {
+        const matchConservacao =
+            /inicio\s*(de\s*)?conservacao/.test(texto) ||
+            /iniciou\s*conservacao/.test(texto) ||
+            /conservacao\s*iniciada/.test(texto) ||
+            /fase\s*0*3\b/.test(texto);
+        if (!matchConservacao) return false;
+    }
+
+    return isDetalhesVazio(log);
+}
+
+type AgenteTanatoPermitido = "SANDRO" | "JOSEILDO";
+
+function agentePermitidoTanato(log: any): AgenteTanatoPermitido | "" {
+    const a = norm(agenteDoLog(log));
+    if (a === "sandro") return "SANDRO";
+    if (a === "joseildo") return "JOSEILDO";
+    return "";
+}
+
+function findPrimeiroInicioPuroNoPeriodo(logs: any[], start: Date, end: Date): any | null {
+    let best: any | null = null;
+
+    for (const log of logs || []) {
+        if (!isInicioConservacaoPuro(log)) continue;
+        if (!agentePermitidoTanato(log)) continue;
+
+        const t = logTs(log);
+        if (Number.isNaN(t)) continue;
+        if (t < start.getTime() || t > end.getTime()) continue;
+
+        if (!best || t < logTs(best)) best = log;
+    }
+
+    return best;
+}
+
 function hasMateriais(r: Registro) {
     if (r.materiais_json) {
         try {
@@ -1007,101 +1148,110 @@ function SummaryDesktop({
     }>;
 }) {
     return (
-        <Surface className="hidden overflow-hidden lg:block">
-            <div className="overflow-x-auto">
-                <div className="min-w-[860px]">
-                    <div
-                        className="grid"
-                        style={{
-                            gridTemplateColumns: `200px repeat(${metricasGerais.length}, minmax(110px, 1fr))`,
-                        }}
-                    >
-                        {/* TOPO / PERÍODO */}
-                        <div
-                            className="border-r px-5 py-5"
-                            style={{
-                                borderColor: COLORS.borderStrong,
-                                borderBottom: `2px solid ${COLORS.borderStrong}`,
-                            }}
-                        >
-                            <div className="text-[16px] font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
-                                Período
+        <div className="hidden space-y-4 lg:block">
+            <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+                <Surface className="p-5">
+                    <div className="text-[15px] font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
+                        Período
+                    </div>
+                    <div className="mt-2 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
+                        {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-1">
+                        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
+                            <div className="text-[11px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
+                                Qntd. de atendimentos
                             </div>
-
-                            <div className="mt-2 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
-                                {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
-                            </div>
-
-                            <div className="mt-6 grid grid-cols-[1fr_auto] gap-y-4">
-                                <div className="text-[12px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
-                                    Qntd. de
-                                    <br />
-                                    atendimentos
-                                </div>
-                                <div className="text-[28px] font-black" style={{ color: COLORS.text }}>
-                                    {fmt0(totalAtendimentos)}
-                                </div>
-
-                                <div className="text-[12px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
-                                    Tempo
-                                    <br />
-                                    médio
-                                </div>
-                                <div className="text-[28px] font-black" style={{ color: COLORS.text }}>
-                                    {fmtHm(tempoMedioGeral)}
-                                </div>
+                            <div className="mt-1 text-[30px] font-black" style={{ color: COLORS.text }}>
+                                {fmt0(totalAtendimentos)}
                             </div>
                         </div>
 
-                        {/* TOPO / MÉTRICAS */}
+                        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
+                            <div className="text-[11px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
+                                Tempo médio
+                            </div>
+                            <div className="mt-1 text-[30px] font-black" style={{ color: COLORS.text }}>
+                                {fmtHm(tempoMedioGeral)}
+                            </div>
+                        </div>
+                    </div>
+                </Surface>
+
+                <Surface className="p-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                         {metricasGerais.map((m) => (
                             <div
                                 key={m.key}
-                                className="px-3 py-5 text-center"
-                                style={{
-                                    borderBottom: `2px solid ${COLORS.borderStrong}`,
-                                }}
+                                className="rounded-2xl border p-4 text-center"
+                                style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
                             >
-                                <div className="mx-auto flex h-[48px] w-[48px] items-center justify-center" style={{ color: COLORS.blue }}>
+                                <div className="mx-auto flex h-[42px] w-[42px] items-center justify-center" style={{ color: COLORS.blue }}>
                                     {m.icon}
                                 </div>
-
-                                <div className="mt-4 text-[30px] font-black leading-none" style={{ color: COLORS.text }}>
+                                <div className="mt-2 text-[24px] font-black leading-tight" style={{ color: COLORS.text }}>
                                     {fmt0(m.qtd)}
                                 </div>
-
-                                <div className="mt-2 text-[16px] font-bold" style={{ color: COLORS.textSoft }}>
+                                <div className="text-[12px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
+                                    {m.label}
+                                </div>
+                                <div className="mt-1 text-[13px] font-bold" style={{ color: COLORS.textSoft }}>
                                     {fmtHm(m.tempoMedio)}
                                 </div>
                             </div>
                         ))}
-
-                        {/* LINHAS */}
-                        {matrizColaboradores.map((row) => (
-                            <React.Fragment key={row.nome}>
-                                <div
-                                    className="border-r px-5 py-4 text-center text-[18px] font-extrabold uppercase"
-                                    style={{ borderColor: COLORS.borderStrong, color: COLORS.text }}
-                                >
-                                    {row.nome}
-                                </div>
-
-                                {row.colunas.map((c) => (
-                                    <div key={`${row.nome}-${c.key}`} className="px-3 py-4 text-center">
-                                        <div className="text-[20px] font-black leading-tight" style={{ color: COLORS.text }}>
-                                            {fmt0(c.qtd)}
-                                        </div>
-                                        <div className="text-[15px] font-semibold leading-tight" style={{ color: COLORS.textSoft }}>
-                                            {fmtHm(c.tempoMedio)}
-                                        </div>
-                                    </div>
-                                ))}
-                            </React.Fragment>
-                        ))}
                     </div>
-                </div>
+                </Surface>
             </div>
-        </Surface>
+
+            <Surface className="overflow-hidden">
+                <div className="border-b px-4 py-3 text-sm font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
+                    Colaboradores
+                </div>
+
+                <div className="p-4">
+                    {matrizColaboradores.length === 0 ? (
+                        <div className="rounded-2xl border p-8 text-center text-sm font-semibold" style={{ borderColor: COLORS.borderLight, color: COLORS.textSoft }}>
+                            Sem dados para o período.
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {matrizColaboradores.map((row) => (
+                                <div
+                                    key={row.nome}
+                                    className="grid gap-3 rounded-2xl border p-3 xl:grid-cols-[170px_1fr]"
+                                    style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
+                                >
+                                    <div className="flex items-center text-[14px] font-black uppercase" style={{ color: COLORS.text }}>
+                                        {row.nome}
+                                    </div>
+
+                                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                                        {row.colunas.map((c) => {
+                                            const meta = metricasGerais.find((m) => m.key === c.key);
+                                            return (
+                                                <div key={`${row.nome}-${c.key}`} className="rounded-xl bg-white px-3 py-2 text-center shadow-sm">
+                                                    <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
+                                                        {meta?.label || c.key}
+                                                    </div>
+                                                    <div className="text-[18px] font-black leading-tight" style={{ color: COLORS.text }}>
+                                                        {fmt0(c.qtd)}
+                                                    </div>
+                                                    <div className="text-[12px] font-semibold" style={{ color: COLORS.textSoft }}>
+                                                        {fmtHm(c.tempoMedio)}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </Surface>
+        </div>
     );
 }
 
@@ -1119,6 +1269,7 @@ export default function Page() {
 
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
+
 
     const carregar = useCallback(async () => {
         setLoading(true);
@@ -1175,8 +1326,61 @@ export default function Page() {
         });
     }, [registros, periodo]);
 
+    const tanatoStats = useMemo(() => {
+        const porAgente: Record<AgenteTanatoPermitido, { qtd: number; duracoes: number[] }> = {
+            SANDRO: { qtd: 0, duracoes: [] },
+            JOSEILDO: { qtd: 0, duracoes: [] },
+        };
+        const contabilizados = new Set<string>();
+
+        for (const r of dadosPeriodo) {
+            if (!isSim(r.tanato)) continue;
+
+            const agente = agentePermitidoTanato(r);
+            if (!agente) continue;
+
+            const temCamposDeAuditoria = !!(
+                r.acao ||
+                r.titulo ||
+                r.status_anterior ||
+                r.status_novo ||
+                r.detalhes
+            );
+
+            // Quando o informativo já trouxer campos de auditoria/log, aplica a mesma regra do modal:
+            // status fase02 -> fase03, sem edição, detalhes vazio.
+            if (temCamposDeAuditoria && !isInicioConservacaoPuro(r)) continue;
+
+            const entityKey = getEntityKey(r) || String(r.id || `${getTanatoNome(r)}-${r.falecido || ""}`);
+            const dedupeKey = `${entityKey}:${agente}`;
+            if (contabilizados.has(dedupeKey)) continue;
+            contabilizados.add(dedupeKey);
+
+            porAgente[agente].qtd += 1;
+
+            const dur = getDurationMinutes(r);
+            if (dur != null && Number.isFinite(dur)) porAgente[agente].duracoes.push(dur);
+        }
+
+        return {
+            porAgente,
+            total: porAgente.SANDRO.qtd + porAgente.JOSEILDO.qtd,
+            tempoMedio: average([...porAgente.SANDRO.duracoes, ...porAgente.JOSEILDO.duracoes]),
+        };
+    }, [dadosPeriodo]);
+
     const metricasGerais = useMemo(() => {
         return METRICAS.map((m) => {
+            if (m.key === "tanato") {
+                return {
+                    key: m.key,
+                    label: m.label,
+                    icon: m.icon,
+                    qtd: tanatoStats.total,
+                    tempoMedio: tanatoStats.tempoMedio,
+                };
+            }
+
             const subset = dadosPeriodo.filter(m.match);
             return {
                 key: m.key,
@@ -1186,7 +1390,7 @@ export default function Page() {
                 tempoMedio: average(subset.map(getDurationMinutes)),
             };
         });
-    }, [dadosPeriodo]);
+    }, [dadosPeriodo, tanatoStats]);
 
     const colaboradores = useMemo(() => {
         const map = new Map<string, number>();
@@ -1196,17 +1400,35 @@ export default function Page() {
             map.set(nome, (map.get(nome) || 0) + 1);
         }
 
+        // Garante que os dois tanatopraxistas válidos apareçam quando tiverem contagem,
+        // mesmo que não sejam os agentes principais do atendimento.
+        for (const nome of ["SANDRO", "JOSEILDO"] as const) {
+            const qtdTanato = tanatoStats.porAgente[nome].qtd;
+            if (qtdTanato > 0) map.set(nome, Math.max(map.get(nome) || 0, qtdTanato));
+        }
+
         return Array.from(map.entries())
             .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
             .slice(0, 8)
             .map(([nome]) => nome);
-    }, [dadosPeriodo]);
+    }, [dadosPeriodo, tanatoStats]);
 
     const matrizColaboradores = useMemo(() => {
         return colaboradores.map((nome) => {
             const doAgente = dadosPeriodo.filter((r) => getAgenteNome(r) === nome);
 
             const colunas = METRICAS.map((m) => {
+                if (m.key === "tanato") {
+                    const agentePermitido = nome === "SANDRO" || nome === "JOSEILDO" ? nome : null;
+                    const item = agentePermitido ? tanatoStats.porAgente[agentePermitido] : null;
+
+                    return {
+                        key: m.key,
+                        qtd: item?.qtd || 0,
+                        tempoMedio: average(item?.duracoes || []),
+                    };
+                }
+
                 const subset = doAgente.filter(m.match);
                 return {
                     key: m.key,
@@ -1217,7 +1439,7 @@ export default function Page() {
 
             return { nome, colunas };
         });
-    }, [colaboradores, dadosPeriodo]);
+    }, [colaboradores, dadosPeriodo, tanatoStats]);
 
     const pieAtendimentos = useMemo(() => {
         const map = new Map<string, number>();
@@ -1234,18 +1456,11 @@ export default function Page() {
     }, [dadosPeriodo]);
 
     const pieTanato = useMemo(() => {
-        const map = new Map<string, number>();
-
-        for (const r of dadosPeriodo.filter((x) => isSim(x.tanato))) {
-            const nome = getTanatoNome(r);
-            map.set(nome, (map.get(nome) || 0) + 1);
-        }
-
-        return Array.from(map.entries())
-            .map(([label, value]) => ({ label, value }))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 4);
-    }, [dadosPeriodo]);
+        return (["SANDRO", "JOSEILDO"] as const)
+            .map((label) => ({ label, value: tanatoStats.porAgente[label].qtd }))
+            .filter((x) => x.value > 0)
+            .sort((a, b) => b.value - a.value);
+    }, [tanatoStats]);
 
     const barVeiculos = useMemo(() => {
         return (veiculos || [])
@@ -1342,7 +1557,7 @@ export default function Page() {
                     </div>
                 ) : null}
 
-                <div className="grid gap-5 xl:grid-cols-[1.18fr_0.92fr]">
+                <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
                     {/* ESQUERDA */}
                     <div className="min-w-0">
                         <SummaryMobile
@@ -1364,7 +1579,7 @@ export default function Page() {
 
                     {/* DIREITA */}
                     <div className="min-w-0">
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-2">
                             <ChartPanel title="Atendimentos">
                                 <PieChart data={pieAtendimentos} />
                             </ChartPanel>
