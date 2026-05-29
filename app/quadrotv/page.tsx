@@ -1304,8 +1304,8 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
     for (const ev of statusEvents) {
         if (ev.ts < createdTs) continue;
 
-        // Removendo começa no momento da criação do atendimento, então não esperamos
-        // um comando explícito de retirada para iniciar essa contagem.
+        // Removendo começa no momento da criação do atendimento. Portanto, o comando
+        // explícito de "Indo retirar" não é necessário para iniciar a contagem/piscada.
         if (ev.key === "fase01") continue;
 
         if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
@@ -1313,7 +1313,14 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
         }
     }
 
-    if (currentKey && unique[unique.length - 1]?.key !== currentKey) {
+    const hasAdvancedByLog = unique.some((ev) => ev.key !== "fase01");
+
+    // Enquanto ainda não existe nenhum log real indicando "Corpo na Clínica /
+    // Aguardando Procedimento" ou fase posterior, a etapa Removendo permanece ativa,
+    // piscando e contando desde a criação do atendimento.
+    const effectiveCurrentKey = hasAdvancedByLog ? currentKey : "fase01";
+
+    if (hasAdvancedByLog && currentKey && unique[unique.length - 1]?.key !== currentKey) {
         unique.push({ key: currentKey, ts: nowMs });
     }
 
@@ -1328,7 +1335,7 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
             icon: info.icon,
             start: ev.ts,
             end,
-            active: isLast && (!currentKey || ev.key === currentKey),
+            active: isLast && ev.key === effectiveCurrentKey,
         };
     });
 }
@@ -2281,7 +2288,7 @@ function StatusTimelineCell({
                         label={step.shortLabel}
                         time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
                         active={isActive}
-                        muted={duration <= 0 || skipped}
+                        muted={!isActive && (duration <= 0 || skipped)}
                         skipped={skipped}
                         title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
                     />
@@ -2333,7 +2340,7 @@ function StatusPill({
             </div>
             <div className={`mt-[2px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-emerald-200" : "text-slate-100"}`}>{time}</div>
             {skipped && (
-                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[34px] font-black leading-none text-[#00AEEC] drop-shadow-[0_0_7px_rgba(0,174,236,.9)]">
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[38px] font-black leading-none text-[#00AEEC] drop-shadow-[0_0_7px_rgba(0,174,236,.9)]">
                     ×
                 </span>
             )}
@@ -2442,19 +2449,19 @@ function StatusBlinkStyle() {
     return (
         <style jsx global>{`
             @keyframes qa-status-pulse {
-                0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.95)); }
-                50% { opacity: 0.28; transform: scale(1.22); filter: drop-shadow(0 0 14px rgba(52, 211, 153, 1)); }
+                0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.85)); }
+                50% { opacity: 0.34; transform: scale(1.12); filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.95)); }
             }
             @keyframes qa-status-ring-pulse {
-                0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px rgba(52, 211, 153, 0.55); border-color: rgba(110, 231, 183, 0.9); }
-                50% { opacity: 0.45; transform: scale(1.2); box-shadow: 0 0 18px rgba(52, 211, 153, 0.95); border-color: rgba(16, 185, 129, 1); }
+                0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px rgba(52, 211, 153, 0.48); border-color: rgba(110, 231, 183, 0.86); }
+                50% { opacity: 0.55; transform: scale(1.1); box-shadow: 0 0 12px rgba(52, 211, 153, 0.82); border-color: rgba(16, 185, 129, 1); }
             }
             .qa-status-blink {
                 display: inline-block;
-                animation: qa-status-pulse 0.52s ease-in-out infinite;
+                animation: qa-status-pulse 0.68s ease-in-out infinite;
             }
             .qa-status-active-ring {
-                animation: qa-status-ring-pulse 0.52s ease-in-out infinite;
+                animation: qa-status-ring-pulse 0.68s ease-in-out infinite;
             }
             @media (prefers-reduced-motion: reduce) {
                 .qa-status-blink,
