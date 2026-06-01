@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Nunito } from "next/font/google";
+import { listarLogPorId } from "./Api";
 
 const nunito = Nunito({
     subsets: ["latin"],
@@ -1268,7 +1269,13 @@ export default function Page() {
     const [veiculos, setVeiculos] = useState<VeiculoRow[]>([]);
 
     const [loading, setLoading] = useState(false);
+    const [loadingTanatoLogs, setLoadingTanatoLogs] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
+
+    type TanatoLogCacheEntry = { logs: any[]; fetched: boolean };
+    const tanatoLogCacheRef = useRef<Record<string, TanatoLogCacheEntry>>({});
+    const tanatoLogInFlightRef = useRef<Set<string>>(new Set());
+    const [tanatoLogCacheVersion, setTanatoLogCacheVersion] = useState(0);
 
 
     const carregar = useCallback(async () => {
@@ -1326,39 +1333,116 @@ export default function Page() {
         });
     }, [registros, periodo]);
 
+    const tanatoEntities = useMemo(() => {
+        const entityMap = new Map<string, Set<string>>();
+
+        for (const r of registros || []) {
+            if (!isSim(r.tanato)) continue;
+
+            const key = getEntityKey(r);
+            if (!key) continue;
+
+            const ids = getIdsParaTentar(r);
+            if (!ids.length) continue;
+
+            if (!entityMap.has(key)) entityMap.set(key, new Set<string>());
+            const set = entityMap.get(key)!;
+            for (const id of ids) set.add(id);
+        }
+
+        const list = Array.from(entityMap.entries()).map(([key, idSet]) => ({
+            key,
+            idsToTry: Array.from(idSet),
+        }));
+
+        return {
+            list,
+            keySet: new Set(list.map((x) => x.key)),
+        };
+    }, [registros]);
+
+    useEffect(() => {
+        const targets = tanatoEntities.list.filter(
+            (e) => !tanatoLogCacheRef.current[e.key]?.fetched && !tanatoLogInFlightRef.current.has(e.key)
+        );
+
+        if (!targets.length) return;
+
+        let cancel = false;
+        setLoadingTanatoLogs(true);
+
+        async function run(maxConc = 4) {
+            let index = 0;
+            for (const target of targets) tanatoLogInFlightRef.current.add(target.key);
+
+            async function worker() {
+                while (index < targets.length && !cancel) {
+                    const item = targets[index++];
+
+                    try {
+                        let logs: any[] = [];
+
+                        for (const id of item.idsToTry) {
+                            try {
+                                const res = await listarLogPorId(id);
+                                if (Array.isArray(res) && res.length) {
+                                    logs = res;
+                                    break;
+                                }
+                            } catch {
+                                // tenta o próximo ID da mesma entidade
+                            }
+                        }
+
+                        tanatoLogCacheRef.current[item.key] = { logs, fetched: true };
+                    } finally {
+                        tanatoLogInFlightRef.current.delete(item.key);
+                    }
+                }
+            }
+
+            await Promise.all(Array.from({ length: Math.min(maxConc, targets.length) }, worker));
+
+            if (!cancel) {
+                setTanatoLogCacheVersion((v) => v + 1);
+                setLoadingTanatoLogs(false);
+            }
+        }
+
+        run();
+
+        return () => {
+            cancel = true;
+        };
+    }, [tanatoEntities]);
+
     const tanatoStats = useMemo(() => {
+        const { start, end } = rangeToDates(periodo);
+
         const porAgente: Record<AgenteTanatoPermitido, { qtd: number; duracoes: number[] }> = {
             SANDRO: { qtd: 0, duracoes: [] },
             JOSEILDO: { qtd: 0, duracoes: [] },
         };
+
         const contabilizados = new Set<string>();
 
-        for (const r of dadosPeriodo) {
-            if (!isSim(r.tanato)) continue;
+        for (const [entityKey, entry] of Object.entries(tanatoLogCacheRef.current)) {
+            if (!entry?.fetched) continue;
+            if (!tanatoEntities.keySet.has(entityKey)) continue;
 
-            const agente = agentePermitidoTanato(r);
+            const inicio = findPrimeiroInicioPuroNoPeriodo(entry.logs || [], start, end);
+            if (!inicio) continue;
+
+            const agente = agentePermitidoTanato(inicio);
             if (!agente) continue;
 
-            const temCamposDeAuditoria = !!(
-                r.acao ||
-                r.titulo ||
-                r.status_anterior ||
-                r.status_novo ||
-                r.detalhes
-            );
-
-            // Quando o informativo já trouxer campos de auditoria/log, aplica a mesma regra do modal:
-            // status fase02 -> fase03, sem edição, detalhes vazio.
-            if (temCamposDeAuditoria && !isInicioConservacaoPuro(r)) continue;
-
-            const entityKey = getEntityKey(r) || String(r.id || `${getTanatoNome(r)}-${r.falecido || ""}`);
             const dedupeKey = `${entityKey}:${agente}`;
             if (contabilizados.has(dedupeKey)) continue;
             contabilizados.add(dedupeKey);
 
             porAgente[agente].qtd += 1;
 
-            const dur = getDurationMinutes(r);
+            const dur = getDurationMinutes(inicio as Registro);
             if (dur != null && Number.isFinite(dur)) porAgente[agente].duracoes.push(dur);
         }
 
@@ -1367,7 +1451,7 @@ export default function Page() {
             total: porAgente.SANDRO.qtd + porAgente.JOSEILDO.qtd,
             tempoMedio: average([...porAgente.SANDRO.duracoes, ...porAgente.JOSEILDO.duracoes]),
         };
-    }, [dadosPeriodo]);
+    }, [periodo, tanatoEntities, tanatoLogCacheVersion]);
 
     const metricasGerais = useMemo(() => {
         return METRICAS.map((m) => {
@@ -1554,6 +1638,19 @@ export default function Page() {
                         }}
                     >
                         {erro}
+                    </div>
+                ) : null}
+
+                {loadingTanatoLogs ? (
+                    <div
+                        className="mb-4 rounded-2xl border px-4 py-3 text-sm font-extrabold"
+                        style={{
+                            borderColor: COLORS.borderLight,
+                            backgroundColor: "#FFFFFF",
+                            color: COLORS.textSoft,
+                        }}
+                    >
+                        Buscando logs da Tanatopraxia para Sandro/Joseildo...
                     </div>
                 ) : null}
 
