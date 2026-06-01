@@ -659,7 +659,7 @@ function dedupeRegistros(records: Registro[]) {
 
 function IconCalendar() {
     return (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="5" width="18" height="16" rx="2" />
             <path d="M16 3v4M8 3v4M3 10h18" />
         </svg>
@@ -668,7 +668,7 @@ function IconCalendar() {
 
 function IconTanato() {
     return (
-        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2.1">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="2.1">
             <path d="M4 20l6-6M10 14l8-8" />
             <path d="M13 3l8 8" />
             <circle cx="18" cy="6" r="2" />
@@ -678,7 +678,7 @@ function IconTanato() {
 
 function IconOrnamentacao() {
     return (
-        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="2.2" />
             <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.5 5.5l2.8 2.8M15.7 15.7l2.8 2.8M18.5 5.5l-2.8 2.8M8.3 15.7l-2.8 2.8" />
         </svg>
@@ -687,7 +687,7 @@ function IconOrnamentacao() {
 
 function IconInvol() {
     return (
-        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="currentColor">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="currentColor">
             <path d="M12 2l7 4 2 8-9 8-9-8 2-8 7-4z" opacity=".92" />
             <path d="M7 19l10-11" fill="none" stroke="white" strokeWidth="1.8" />
         </svg>
@@ -696,7 +696,7 @@ function IconInvol() {
 
 function IconVelorio() {
     return (
-        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 14h18M5 14v-3a3 3 0 013-3h5a5 5 0 015 5v1" />
             <circle cx="7" cy="17" r="2" />
             <circle cx="17" cy="17" r="2" />
@@ -706,7 +706,7 @@ function IconVelorio() {
 
 function IconMaterial() {
     return (
-        <svg viewBox="0 0 24 24" className="h-10 w-10" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-4z" />
             <path d="M12 7v5l3 2" />
             <path d="M4 9l3-1M17 8l3 1M6 19l2-2M16 17l2 2" />
@@ -782,14 +782,14 @@ function ChartPanel({
     children: React.ReactNode;
 }) {
     return (
-        <Surface className="overflow-hidden">
+        <Surface className="min-w-0 overflow-hidden">
             <div
-                className="border-b px-4 py-3 text-center text-[14px] font-extrabold uppercase tracking-[0.06em] sm:text-[15px]"
+                className="border-b px-3 py-2 text-center text-[11px] font-extrabold uppercase leading-snug tracking-[0.06em] sm:text-xs"
                 style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
             >
                 {title}
             </div>
-            <div className="p-4">{children}</div>
+            <div className="p-3 sm:p-4">{children}</div>
         </Surface>
     );
 }
@@ -804,10 +804,9 @@ function PieChart({
     data: Array<{ label: string; value: number }>;
 }) {
     const total = data.reduce((s, d) => s + d.value, 0);
-
     const palette = [COLORS.blueDark, COLORS.yellow, COLORS.green, COLORS.teal, COLORS.blue];
-    let acc = 0;
 
+    let acc = 0;
     const gradient =
         total > 0
             ? data
@@ -821,11 +820,11 @@ function PieChart({
             : COLORS.empty;
 
     return (
-        <div className="grid items-center gap-4 md:grid-cols-[150px_minmax(0,1fr)]">
+        <div className="grid items-center gap-3 sm:grid-cols-[118px_minmax(0,1fr)] lg:grid-cols-[126px_minmax(0,1fr)]">
             <div className="mx-auto flex items-center justify-center">
                 <div className="relative">
                     <div
-                        className="h-[140px] w-[140px] rounded-full border shadow-inner"
+                        className="h-[104px] w-[104px] rounded-full border shadow-inner sm:h-[118px] sm:w-[118px]"
                         style={{
                             background: total > 0 ? `conic-gradient(${gradient})` : COLORS.empty,
                             borderColor: COLORS.borderLight,
@@ -833,7 +832,7 @@ function PieChart({
                     />
                     {total === 0 ? (
                         <div
-                            className="absolute inset-0 grid place-items-center text-center text-sm font-bold"
+                            className="absolute inset-0 grid place-items-center text-center text-xs font-bold"
                             style={{ color: COLORS.textSoft }}
                         >
                             Sem dados
@@ -843,39 +842,35 @@ function PieChart({
             </div>
 
             <div
-                className="min-w-0 rounded-2xl border bg-[#F8FCFF] p-3"
+                className="min-w-0 space-y-1.5 rounded-2xl border bg-[#F8FCFF] p-2.5"
                 style={{ borderColor: COLORS.borderLight }}
             >
                 {data.length === 0 ? (
-                    <div className="text-sm font-semibold" style={{ color: COLORS.textSoft }}>
-                        Nenhum dado disponível para o período.
+                    <div className="py-4 text-center text-xs font-semibold" style={{ color: COLORS.textSoft }}>
+                        Sem dados
                     </div>
                 ) : (
-                    <div className="space-y-2">
-                        {data.map((d, i) => (
-                            <div key={d.label} className="flex items-center justify-between gap-3">
-                                <div className="flex min-w-0 items-center gap-2">
-                                    <span
-                                        className="h-3 w-3 shrink-0 rounded-full"
-                                        style={{ backgroundColor: palette[i % palette.length] }}
-                                    />
-                                    <span
-                                        className="truncate text-[14px] font-semibold"
-                                        style={{ color: COLORS.text }}
-                                        title={d.label}
-                                    >
-                                        {d.label}
-                                    </span>
-                                </div>
-                                <span
-                                    className="shrink-0 rounded-lg px-2 py-1 text-[12px] font-extrabold text-white"
-                                    style={{ backgroundColor: COLORS.blueDark }}
-                                >
-                                    {fmt0(d.value)}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
+                    data.map((d, i) => (
+                        <div key={d.label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                            <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: palette[i % palette.length] }}
+                            />
+                            <span
+                                className="min-w-0 whitespace-normal break-words text-[11px] font-extrabold uppercase leading-tight sm:text-xs"
+                                style={{ color: COLORS.text }}
+                                title={d.label}
+                            >
+                                {d.label}
+                            </span>
+                            <span
+                                className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-extrabold text-white"
+                                style={{ backgroundColor: COLORS.blueDark }}
+                            >
+                                {fmt0(d.value)}
+                            </span>
+                        </div>
+                    ))
                 )}
             </div>
         </div>
@@ -892,27 +887,28 @@ function BarChart({
     return (
         <div className="rounded-2xl border bg-[#F8FCFF] p-3" style={{ borderColor: COLORS.borderLight }}>
             {data.length === 0 ? (
-                <div className="grid h-[220px] place-items-center text-sm font-semibold" style={{ color: COLORS.textSoft }}>
+                <div className="grid h-[160px] w-full place-items-center text-xs font-semibold" style={{ color: COLORS.textSoft }}>
                     Sem dados
                 </div>
             ) : (
-                <div className="flex h-[220px] items-end gap-3 border-b-2 px-2 pb-2" style={{ borderColor: COLORS.slate }}>
+                <div className="flex h-[185px] items-end gap-2 border-b-2 px-1 pb-2" style={{ borderColor: COLORS.slate }}>
                     {data.slice(0, 4).map((d, idx) => {
-                        const height = Math.max(18, (d.value / max) * 140);
+                        const height = Math.max(22, (d.value / max) * 120);
                         return (
                             <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center">
                                 <div
-                                    className="mb-2 flex w-full max-w-[92px] items-center justify-center rounded-t-xl px-1 text-center text-[12px] font-black text-white"
+                                    className="mb-2 flex w-full max-w-[78px] items-center justify-center rounded-t-xl px-1 text-center text-[10px] font-black leading-tight text-white sm:text-[11px]"
                                     style={{
                                         height,
                                         backgroundColor: idx % 2 === 0 ? COLORS.blueDark : COLORS.blue,
                                     }}
+                                    title={fmt1(d.value)}
                                 >
                                     {fmt1(d.value)}
                                 </div>
 
                                 <div
-                                    className="max-w-[96px] truncate text-center text-[12px] font-bold"
+                                    className="min-h-[30px] max-w-[92px] whitespace-normal break-words text-center text-[10px] font-extrabold uppercase leading-tight sm:text-[11px]"
                                     style={{ color: COLORS.text }}
                                     title={d.label}
                                 >
@@ -1100,6 +1096,60 @@ type LinhaColaborador = {
     colunas: Array<{ key: string; qtd: number; tempoMedio: number | null }>;
 };
 
+function MetricCard({ item }: { item: MetricaResumo }) {
+    return (
+        <div
+            className="min-w-0 rounded-2xl border p-2.5 text-center"
+            style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
+        >
+            <div className="mx-auto flex h-8 w-8 items-center justify-center sm:h-9 sm:w-9" style={{ color: COLORS.blue }}>
+                {item.icon}
+            </div>
+            <div className="mt-1 text-[20px] font-black leading-none" style={{ color: COLORS.text }}>
+                {fmt0(item.qtd)}
+            </div>
+            <div
+                className="mt-1 min-h-[28px] whitespace-normal break-words text-[10px] font-extrabold uppercase leading-tight sm:text-[11px]"
+                style={{ color: COLORS.textSoft }}
+                title={item.label}
+            >
+                {item.label}
+            </div>
+            <div className="mt-0.5 text-[11px] font-bold" style={{ color: COLORS.textSoft }}>
+                {fmtHm(item.tempoMedio)}
+            </div>
+        </div>
+    );
+}
+
+function ColaboradorMetricBox({
+    label,
+    qtd,
+    tempoMedio,
+}: {
+    label: string;
+    qtd: number;
+    tempoMedio: number | null;
+}) {
+    return (
+        <div className="min-w-0 rounded-xl bg-white px-2 py-2 text-center shadow-sm">
+            <div
+                className="min-h-[24px] whitespace-normal break-words text-[9px] font-extrabold uppercase leading-tight sm:text-[10px]"
+                style={{ color: COLORS.textSoft }}
+                title={label}
+            >
+                {label}
+            </div>
+            <div className="text-[16px] font-black leading-tight" style={{ color: COLORS.text }}>
+                {fmt0(qtd)}
+            </div>
+            <div className="text-[11px] font-semibold" style={{ color: COLORS.textSoft }}>
+                {fmtHm(tempoMedio)}
+            </div>
+        </div>
+    );
+}
+
 function SummaryMobile({
     periodo,
     totalAtendimentos,
@@ -1117,7 +1167,7 @@ function SummaryMobile({
         <div className="space-y-4 xl:hidden">
             <Surface className="p-4">
                 <div>
-                    <div className="text-sm font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
+                    <div className="text-xs font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
                         Período
                     </div>
                     <div className="mt-1 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
@@ -1127,7 +1177,7 @@ function SummaryMobile({
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                        <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
+                        <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
                             Qntd. de atendimentos
                         </div>
                         <div className="mt-1 text-2xl font-black" style={{ color: COLORS.text }}>
@@ -1136,7 +1186,7 @@ function SummaryMobile({
                     </div>
 
                     <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                        <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
+                        <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
                             Tempo médio
                         </div>
                         <div className="mt-1 text-2xl font-black" style={{ color: COLORS.text }}>
@@ -1145,32 +1195,15 @@ function SummaryMobile({
                     </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {metricasGerais.map((m) => (
-                        <div
-                            key={m.key}
-                            className="rounded-2xl border p-3 text-center"
-                            style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
-                        >
-                            <div className="mx-auto flex h-[42px] w-[42px] items-center justify-center" style={{ color: COLORS.blue }}>
-                                {m.icon}
-                            </div>
-                            <div className="mt-2 text-lg font-black" style={{ color: COLORS.text }}>
-                                {fmt0(m.qtd)}
-                            </div>
-                            <div className="text-[12px] font-bold uppercase" style={{ color: COLORS.textSoft }}>
-                                {m.label}
-                            </div>
-                            <div className="text-[12px] font-semibold" style={{ color: COLORS.textSoft }}>
-                                {fmtHm(m.tempoMedio)}
-                            </div>
-                        </div>
+                        <MetricCard key={m.key} item={m} />
                     ))}
                 </div>
             </Surface>
 
             <Surface className="overflow-hidden">
-                <div className="border-b px-4 py-3 text-sm font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
+                <div className="border-b px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
                     Colaboradores
                 </div>
 
@@ -1190,7 +1223,10 @@ function SummaryMobile({
                                     className="rounded-2xl border p-3"
                                     style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
                                 >
-                                    <div className="mb-3 text-[14px] font-black uppercase" style={{ color: COLORS.text }}>
+                                    <div
+                                        className="mb-3 whitespace-normal break-words text-[13px] font-black uppercase leading-tight"
+                                        style={{ color: COLORS.text }}
+                                    >
                                         {row.nome}
                                     </div>
 
@@ -1198,17 +1234,12 @@ function SummaryMobile({
                                         {row.colunas.map((c) => {
                                             const meta = metricasGerais.find((m) => m.key === c.key);
                                             return (
-                                                <div key={`${row.nome}-${c.key}`} className="rounded-xl bg-white px-3 py-2 text-center shadow-sm">
-                                                    <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
-                                                        {meta?.label || c.key}
-                                                    </div>
-                                                    <div className="text-[18px] font-black leading-tight" style={{ color: COLORS.text }}>
-                                                        {fmt0(c.qtd)}
-                                                    </div>
-                                                    <div className="text-[12px] font-semibold" style={{ color: COLORS.textSoft }}>
-                                                        {fmtHm(c.tempoMedio)}
-                                                    </div>
-                                                </div>
+                                                <ColaboradorMetricBox
+                                                    key={`${row.nome}-${c.key}`}
+                                                    label={meta?.label || c.key}
+                                                    qtd={c.qtd}
+                                                    tempoMedio={c.tempoMedio}
+                                                />
                                             );
                                         })}
                                     </div>
@@ -1237,64 +1268,47 @@ function SummaryDesktop({
 }) {
     return (
         <div className="hidden space-y-4 xl:block">
-            <div className="grid gap-4 2xl:grid-cols-[280px_1fr]">
-                <Surface className="p-5">
-                    <div className="text-[15px] font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
+            <div className="grid gap-4 2xl:grid-cols-[260px_1fr]">
+                <Surface className="p-4">
+                    <div className="text-[13px] font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
                         Período
                     </div>
                     <div className="mt-2 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
                         {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
                     </div>
 
-                    <div className="mt-5 grid grid-cols-2 gap-3 2xl:grid-cols-1">
-                        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                            <div className="text-[11px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
+                    <div className="mt-4 grid grid-cols-2 gap-3 2xl:grid-cols-1">
+                        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
+                            <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
                                 Qntd. de atendimentos
                             </div>
-                            <div className="mt-1 text-[30px] font-black" style={{ color: COLORS.text }}>
+                            <div className="mt-1 text-[26px] font-black" style={{ color: COLORS.text }}>
                                 {fmt0(totalAtendimentos)}
                             </div>
                         </div>
 
-                        <div className="rounded-2xl border p-4" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                            <div className="text-[11px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
+                        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
+                            <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
                                 Tempo médio
                             </div>
-                            <div className="mt-1 text-[30px] font-black" style={{ color: COLORS.text }}>
+                            <div className="mt-1 text-[26px] font-black" style={{ color: COLORS.text }}>
                                 {fmtHm(tempoMedioGeral)}
                             </div>
                         </div>
                     </div>
                 </Surface>
 
-                <Surface className="p-4">
-                    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
+                <Surface className="p-3">
+                    <div className="grid gap-2 sm:grid-cols-3 2xl:grid-cols-5">
                         {metricasGerais.map((m) => (
-                            <div
-                                key={m.key}
-                                className="rounded-2xl border p-4 text-center"
-                                style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
-                            >
-                                <div className="mx-auto flex h-[42px] w-[42px] items-center justify-center" style={{ color: COLORS.blue }}>
-                                    {m.icon}
-                                </div>
-                                <div className="mt-2 text-[24px] font-black leading-tight" style={{ color: COLORS.text }}>
-                                    {fmt0(m.qtd)}
-                                </div>
-                                <div className="text-[12px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
-                                    {m.label}
-                                </div>
-                                <div className="mt-1 text-[13px] font-bold" style={{ color: COLORS.textSoft }}>
-                                    {fmtHm(m.tempoMedio)}
-                                </div>
-                            </div>
+                            <MetricCard key={m.key} item={m} />
                         ))}
                     </div>
                 </Surface>
             </div>
 
             <Surface className="overflow-hidden">
-                <div className="border-b px-4 py-3 text-sm font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
+                <div className="border-b px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
                     Colaboradores
                 </div>
 
@@ -1311,28 +1325,26 @@ function SummaryDesktop({
                             {matrizColaboradores.map((row) => (
                                 <div
                                     key={row.nome}
-                                    className="grid gap-3 rounded-2xl border p-3 2xl:grid-cols-[170px_1fr]"
+                                    className="grid gap-3 rounded-2xl border p-3 2xl:grid-cols-[155px_1fr]"
                                     style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
                                 >
-                                    <div className="flex items-center text-[14px] font-black uppercase" style={{ color: COLORS.text }}>
+                                    <div
+                                        className="flex items-center whitespace-normal break-words text-[12px] font-black uppercase leading-tight"
+                                        style={{ color: COLORS.text }}
+                                    >
                                         {row.nome}
                                     </div>
 
-                                    <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-5">
+                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                                         {row.colunas.map((c) => {
                                             const meta = metricasGerais.find((m) => m.key === c.key);
                                             return (
-                                                <div key={`${row.nome}-${c.key}`} className="rounded-xl bg-white px-3 py-2 text-center shadow-sm">
-                                                    <div className="text-[11px] font-extrabold uppercase" style={{ color: COLORS.textSoft }}>
-                                                        {meta?.label || c.key}
-                                                    </div>
-                                                    <div className="text-[18px] font-black leading-tight" style={{ color: COLORS.text }}>
-                                                        {fmt0(c.qtd)}
-                                                    </div>
-                                                    <div className="text-[12px] font-semibold" style={{ color: COLORS.textSoft }}>
-                                                        {fmtHm(c.tempoMedio)}
-                                                    </div>
-                                                </div>
+                                                <ColaboradorMetricBox
+                                                    key={`${row.nome}-${c.key}`}
+                                                    label={meta?.label || c.key}
+                                                    qtd={c.qtd}
+                                                    tempoMedio={c.tempoMedio}
+                                                />
                                             );
                                         })}
                                     </div>
@@ -1681,7 +1693,7 @@ export default function Page() {
                 <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h1
-                            className="text-[30px] font-black uppercase leading-none sm:text-[38px]"
+                            className="text-[24px] font-black uppercase leading-tight tracking-[0.08em] sm:text-[30px] lg:text-[34px]"
                             style={{ color: COLORS.text }}
                         >
                             Análise de Desempenho
@@ -1742,7 +1754,7 @@ export default function Page() {
                     </div>
                 ) : null}
 
-                <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.82fr)] 2xl:grid-cols-[minmax(0,1fr)_minmax(520px,0.78fr)]">
                     <div className="min-w-0">
                         <SummaryMobile
                             periodo={periodo}
@@ -1762,7 +1774,7 @@ export default function Page() {
                     </div>
 
                     <div className="min-w-0">
-                        <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                             <ChartPanel title="Atendimentos">
                                 <PieChart data={pieAtendimentos} />
                             </ChartPanel>
