@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Nunito } from "next/font/google";
-import { listarLogPorId } from "./Api";
 
 const nunito = Nunito({
     subsets: ["latin"],
@@ -176,6 +175,42 @@ function extractArray<T>(json: ApiResp<T>): T[] {
     if (Array.isArray(json)) return json;
     if (json && Array.isArray((json as any).dados)) return (json as any).dados;
     if (json && Array.isArray((json as any).data)) return (json as any).data;
+    return [];
+}
+
+async function listarLogPorId(id: string | number): Promise<any[]> {
+    const safeId = encodeURIComponent(String(id ?? "").trim());
+    if (!safeId) return [];
+
+    // Como não há arquivo Api.ts no projeto, a busca do log fica aqui.
+    // Mantive múltiplas formas comuns de endpoint para não quebrar caso o PHP use
+    // `id` ou `sepultamento_id`, e para aceitar respostas em array, dados ou data.
+    const urls = [
+        `${API_BASE}/log_sepultamento.php?listar=1&sepultamento_id=${safeId}`,
+        `${API_BASE}/log_sepultamento.php?listar=1&id=${safeId}`,
+        `${API_BASE}/logs_sepultamento.php?listar=1&sepultamento_id=${safeId}`,
+        `${API_BASE}/logs_sepultamento.php?listar=1&id=${safeId}`,
+        `${API_BASE}/historico.php?listar=1&sepultamento_id=${safeId}`,
+        `${API_BASE}/historico.php?listar=1&id=${safeId}`,
+        `${API_BASE}/log.php?listar=1&sepultamento_id=${safeId}`,
+        `${API_BASE}/log.php?listar=1&id=${safeId}`,
+    ];
+
+    for (const url of urls) {
+        try {
+            const json = await fetchJson<ApiResp<any>>(url, {
+                ttlMs: 30000,
+                timeoutMs: 12000,
+                cacheKey: `tanato-log:${url}`,
+            });
+
+            const arr = extractArray<any>(json);
+            if (arr.length) return arr;
+        } catch {
+            // Tenta o próximo formato de endpoint.
+        }
+    }
+
     return [];
 }
 
@@ -1426,7 +1461,7 @@ export default function Page() {
 
         const contabilizados = new Set<string>();
 
-        for (const [entityKey, entry] of Object.entries(tanatoLogCacheRef.current)) {
+        for (const [entityKey, entry] of Object.entries(tanatoLogCacheRef.current) as Array<[string, TanatoLogCacheEntry]>) {
             if (!entry?.fetched) continue;
             if (!tanatoEntities.keySet.has(entityKey)) continue;
 
