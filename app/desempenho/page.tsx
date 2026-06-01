@@ -784,7 +784,7 @@ function ChartPanel({
     return (
         <Surface className="min-w-0 overflow-hidden">
             <div
-                className="border-b px-3 py-2 text-center text-[11px] font-extrabold uppercase leading-snug tracking-[0.06em] sm:text-xs"
+                className="border-b px-3 py-2 text-center text-[10px] font-extrabold uppercase leading-none tracking-[0.08em] sm:text-[11px]"
                 style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
             >
                 {title}
@@ -820,11 +820,11 @@ function PieChart({
             : COLORS.empty;
 
     return (
-        <div className="grid items-center gap-3 sm:grid-cols-[118px_minmax(0,1fr)] lg:grid-cols-[126px_minmax(0,1fr)]">
+        <div className="grid items-center gap-3 sm:grid-cols-[96px_minmax(0,1fr)] lg:grid-cols-[104px_minmax(0,1fr)]">
             <div className="mx-auto flex items-center justify-center">
                 <div className="relative">
                     <div
-                        className="h-[104px] w-[104px] rounded-full border shadow-inner sm:h-[118px] sm:w-[118px]"
+                        className="h-[92px] w-[92px] rounded-full border shadow-inner sm:h-[100px] sm:w-[100px]"
                         style={{
                             background: total > 0 ? `conic-gradient(${gradient})` : COLORS.empty,
                             borderColor: COLORS.borderLight,
@@ -842,7 +842,7 @@ function PieChart({
             </div>
 
             <div
-                className="min-w-0 space-y-1.5 rounded-2xl border bg-[#F8FCFF] p-2.5"
+                className="min-w-0 space-y-1 rounded-2xl border bg-[#F8FCFF] p-2"
                 style={{ borderColor: COLORS.borderLight }}
             >
                 {data.length === 0 ? (
@@ -851,20 +851,20 @@ function PieChart({
                     </div>
                 ) : (
                     data.map((d, i) => (
-                        <div key={d.label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                        <div key={d.label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
                             <span
-                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                className="h-2 w-2 shrink-0 rounded-full"
                                 style={{ backgroundColor: palette[i % palette.length] }}
                             />
                             <span
-                                className="min-w-0 whitespace-normal break-words text-[11px] font-extrabold uppercase leading-tight sm:text-xs"
+                                className="min-w-0 whitespace-nowrap text-[8.5px] font-extrabold uppercase leading-none tracking-tight sm:text-[9.5px]"
                                 style={{ color: COLORS.text }}
                                 title={d.label}
                             >
                                 {d.label}
                             </span>
                             <span
-                                className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-extrabold text-white"
+                                className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold text-white sm:text-[10px]"
                                 style={{ backgroundColor: COLORS.blueDark }}
                             >
                                 {fmt0(d.value)}
@@ -891,13 +891,13 @@ function BarChart({
                     Sem dados
                 </div>
             ) : (
-                <div className="flex h-[185px] items-end gap-2 border-b-2 px-1 pb-2" style={{ borderColor: COLORS.slate }}>
+                <div className="flex h-[170px] items-end gap-2 border-b-2 px-1 pb-2" style={{ borderColor: COLORS.slate }}>
                     {data.slice(0, 4).map((d, idx) => {
-                        const height = Math.max(22, (d.value / max) * 120);
+                        const height = Math.max(22, (d.value / max) * 108);
                         return (
                             <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center">
                                 <div
-                                    className="mb-2 flex w-full max-w-[78px] items-center justify-center rounded-t-xl px-1 text-center text-[10px] font-black leading-tight text-white sm:text-[11px]"
+                                    className="mb-2 flex w-full max-w-[74px] items-center justify-center rounded-t-xl px-1 text-center text-[9px] font-black leading-none text-white sm:text-[10px]"
                                     style={{
                                         height,
                                         backgroundColor: idx % 2 === 0 ? COLORS.blueDark : COLORS.blue,
@@ -908,7 +908,7 @@ function BarChart({
                                 </div>
 
                                 <div
-                                    className="min-h-[30px] max-w-[92px] whitespace-normal break-words text-center text-[10px] font-extrabold uppercase leading-tight sm:text-[11px]"
+                                    className="max-w-[112px] whitespace-nowrap text-center text-[8px] font-extrabold uppercase leading-none tracking-tight sm:text-[8.5px]"
                                     style={{ color: COLORS.text }}
                                     title={d.label}
                                 >
@@ -1099,23 +1099,23 @@ type LinhaColaborador = {
 function MetricCard({ item }: { item: MetricaResumo }) {
     return (
         <div
-            className="min-w-0 rounded-2xl border p-2.5 text-center"
+            className="min-w-0 rounded-2xl border p-2 text-center"
             style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
         >
-            <div className="mx-auto flex h-8 w-8 items-center justify-center sm:h-9 sm:w-9" style={{ color: COLORS.blue }}>
+            <div className="mx-auto flex h-7 w-7 items-center justify-center sm:h-8 sm:w-8" style={{ color: COLORS.blue }}>
                 {item.icon}
             </div>
-            <div className="mt-1 text-[20px] font-black leading-none" style={{ color: COLORS.text }}>
+            <div className="mt-1 text-[19px] font-black leading-none" style={{ color: COLORS.text }}>
                 {fmt0(item.qtd)}
             </div>
             <div
-                className="mt-1 min-h-[28px] whitespace-normal break-words text-[10px] font-extrabold uppercase leading-tight sm:text-[11px]"
+                className="mt-1 whitespace-nowrap text-[8.5px] font-extrabold uppercase leading-none tracking-tight sm:text-[9.5px]"
                 style={{ color: COLORS.textSoft }}
                 title={item.label}
             >
                 {item.label}
             </div>
-            <div className="mt-0.5 text-[11px] font-bold" style={{ color: COLORS.textSoft }}>
+            <div className="mt-1 text-[10px] font-bold leading-none" style={{ color: COLORS.textSoft }}>
                 {fmtHm(item.tempoMedio)}
             </div>
         </div>
@@ -1134,16 +1134,16 @@ function ColaboradorMetricBox({
     return (
         <div className="min-w-0 rounded-xl bg-white px-2 py-2 text-center shadow-sm">
             <div
-                className="min-h-[24px] whitespace-normal break-words text-[9px] font-extrabold uppercase leading-tight sm:text-[10px]"
+                className="whitespace-nowrap text-[8.5px] font-extrabold uppercase leading-none tracking-tight sm:text-[9px]"
                 style={{ color: COLORS.textSoft }}
                 title={label}
             >
                 {label}
             </div>
-            <div className="text-[16px] font-black leading-tight" style={{ color: COLORS.text }}>
+            <div className="mt-1 text-[16px] font-black leading-none" style={{ color: COLORS.text }}>
                 {fmt0(qtd)}
             </div>
-            <div className="text-[11px] font-semibold" style={{ color: COLORS.textSoft }}>
+            <div className="mt-1 text-[10px] font-semibold leading-none" style={{ color: COLORS.textSoft }}>
                 {fmtHm(tempoMedio)}
             </div>
         </div>
@@ -1224,7 +1224,7 @@ function SummaryMobile({
                                     style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
                                 >
                                     <div
-                                        className="mb-3 whitespace-normal break-words text-[13px] font-black uppercase leading-tight"
+                                        className="mb-3 whitespace-nowrap text-[12px] font-black uppercase leading-none tracking-tight"
                                         style={{ color: COLORS.text }}
                                     >
                                         {row.nome}
@@ -1693,7 +1693,7 @@ export default function Page() {
                 <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h1
-                            className="text-[24px] font-black uppercase leading-tight tracking-[0.08em] sm:text-[30px] lg:text-[34px]"
+                            className="text-[23px] font-black uppercase leading-tight tracking-[0.11em] sm:text-[29px] lg:text-[32px]"
                             style={{ color: COLORS.text }}
                         >
                             Análise de Desempenho
@@ -1754,7 +1754,7 @@ export default function Page() {
                     </div>
                 ) : null}
 
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.82fr)] 2xl:grid-cols-[minmax(0,1fr)_minmax(520px,0.78fr)]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(470px,0.82fr)] 2xl:grid-cols-[minmax(0,1fr)_minmax(560px,0.78fr)]">
                     <div className="min-w-0">
                         <SummaryMobile
                             periodo={periodo}
