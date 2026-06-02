@@ -1695,7 +1695,7 @@ function SummaryDesktop({
 ========================================================= */
 
 export default function Page() {
-    const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("mes"));
+    const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("hoje"));
     const [modalAberto, setModalAberto] = useState(false);
 
     const [registros, setRegistros] = useState<Registro[]>([]);
