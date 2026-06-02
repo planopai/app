@@ -810,7 +810,8 @@ const METRICAS = [
 function DashboardThemeStyles() {
     return (
         <style jsx global>{`
-            :root {
+            :root,
+            html:not(.dark) {
                 --dash-bg: #f5fafe;
                 --dash-card: #ffffff;
                 --dash-card-soft: #f8fcff;
@@ -832,33 +833,36 @@ function DashboardThemeStyles() {
                 color-scheme: light;
             }
 
-            @media (prefers-color-scheme: dark) {
-                :root {
-                    --dash-bg: #07111f;
-                    --dash-card: #101c2b;
-                    --dash-card-soft: #0c1725;
-                    --dash-cell: #f7fbff;
-                    --dash-text: #eaf4ff;
-                    --dash-text-soft: #9fb8d3;
-                    --dash-border-light: #213952;
-                    --dash-border-strong: #62b48f;
-                    --dash-blue: #6aa9ee;
-                    --dash-blue-dark: #2f7ea5;
-                    --dash-yellow: #f4c400;
-                    --dash-green: #45a85a;
-                    --dash-teal: #2db5b7;
-                    --dash-slate: #89a2ba;
-                    --dash-empty: #243446;
-                    --dash-danger-border: #8a3b44;
-                    --dash-danger-bg: #321820;
-                    --dash-danger-text: #ffb7c0;
-                    color-scheme: dark;
-                }
+            html.dark {
+                --dash-bg: #07111f;
+                --dash-card: #101c2b;
+                --dash-card-soft: #0b1624;
+                --dash-cell: #132238;
+                --dash-text: #eaf4ff;
+                --dash-text-soft: #9fb8d3;
+                --dash-border-light: #213952;
+                --dash-border-strong: #62b48f;
+                --dash-blue: #6aa9ee;
+                --dash-blue-dark: #2f7ea5;
+                --dash-yellow: #f4c400;
+                --dash-green: #45a85a;
+                --dash-teal: #2db5b7;
+                --dash-slate: #89a2ba;
+                --dash-empty: #243446;
+                --dash-danger-border: #8a3b44;
+                --dash-danger-bg: #321820;
+                --dash-danger-text: #ffb7c0;
+                color-scheme: dark;
+            }
 
-                html,
-                body {
-                    background: var(--dash-bg) !important;
-                }
+            html,
+            body {
+                background: var(--dash-bg) !important;
+            }
+
+            html.dark .dashboard-desempenho-page,
+            html.dark .dashboard-desempenho-page * {
+                scrollbar-color: var(--dash-border-light) var(--dash-bg);
             }
         `}</style>
     );
@@ -1854,7 +1858,7 @@ export default function Page() {
 
     return (
         <main
-            className={`${nunito.className} min-h-screen overflow-x-hidden px-3 py-3 sm:px-4 lg:px-5`}
+            className={`${nunito.className} dashboard-desempenho-page min-h-screen overflow-x-hidden px-3 py-3 sm:px-4 lg:px-5`}
             style={{ backgroundColor: COLORS.bg }}
         >
             <DashboardThemeStyles />
