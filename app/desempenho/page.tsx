@@ -1695,7 +1695,7 @@ function SummaryDesktop({
 ========================================================= */
 
 export default function Page() {
-    const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("hoje"));
+    const [periodo, setPeriodo] = useState<PeriodRange>(() => makeRange("mes"));
     const [modalAberto, setModalAberto] = useState(false);
 
     const [registros, setRegistros] = useState<Registro[]>([]);
@@ -1766,24 +1766,34 @@ export default function Page() {
 
     const registrosComLogs = useMemo(() => {
         // Para produção por colaborador, a data válida é a data do comando no log.
-        // Por isso carregamos logs dos registros disponíveis e aplicamos o filtro pelo horário do log.
+        // Mantemos todos os registros disponíveis, mas priorizamos os do período atual
+        // para a página abrir já mostrando os dados de hoje sem esperar todos os históricos.
         return dedupeRegistros(registros || []);
     }, [registros]);
 
     const logEntities = useMemo(() => {
+        const { start, end } = rangeToDates(periodo);
+
         const list = registrosComLogs
-            .map((r) => {
+            .map((r, originalIndex) => {
                 const key = getEntityKey(r);
                 const idsToTry = getIdsParaTentar(r);
-                return { key, idsToTry, registro: r };
+                const inPeriodo = registroDentroDoPeriodo(r, start, end);
+                return { key, idsToTry, registro: r, inPeriodo, originalIndex };
             })
-            .filter((x) => x.key && x.idsToTry.length);
+            .filter((x) => x.key && x.idsToTry.length)
+            .sort((a, b) => {
+                // Primeiro busca logs dos atendimentos que aparecem no período selecionado.
+                // Isso corrige a abertura inicial: o dia atual é preenchido primeiro.
+                if (a.inPeriodo !== b.inPeriodo) return a.inPeriodo ? -1 : 1;
+                return a.originalIndex - b.originalIndex;
+            });
 
         return {
             list,
             keySet: new Set(list.map((x) => x.key)),
         };
-    }, [registrosComLogs]);
+    }, [registrosComLogs, periodo]);
 
     useEffect(() => {
         const targets = logEntities.list.filter(
@@ -1796,9 +1806,10 @@ export default function Page() {
         }
 
         let cancel = false;
+        let finished = 0;
         setLoadingActionLogs(true);
 
-        async function run(maxConc = 5) {
+        async function run(maxConc = 6) {
             let index = 0;
 
             for (const target of targets) actionLogInFlightRef.current.add(target.key);
@@ -1826,6 +1837,15 @@ export default function Page() {
                             logs: [...logs].sort((a, b) => logTs(a) - logTs(b)),
                             fetched: true,
                         };
+
+                        // Atualiza a tela de forma progressiva. Antes, o painel só recalculava
+                        // depois de buscar todos os logs, por isso abria zerado até aplicar filtro.
+                        if (!cancel) {
+                            finished += 1;
+                            if (item.inPeriodo || finished <= 12 || finished % 5 === 0) {
+                                setActionLogCacheVersion((v) => v + 1);
+                            }
+                        }
                     } finally {
                         actionLogInFlightRef.current.delete(item.key);
                     }
@@ -2018,7 +2038,7 @@ export default function Page() {
                         className="text-[15px] font-black uppercase leading-none tracking-[0.08em] sm:text-[17px] lg:text-[19px]"
                         style={{ color: COLORS.text }}
                     >
-                        Análise de Desempenho
+                        ANÁLISE DE ATENDIMENTOS FUNERÁRIOS
                     </h1>
 
                     {loading ? (
@@ -2041,18 +2061,7 @@ export default function Page() {
                     </div>
                 ) : null}
 
-                {loadingActionLogs ? (
-                    <div
-                        className="mb-4 rounded-2xl border px-4 py-3 text-sm font-extrabold"
-                        style={{
-                            borderColor: COLORS.borderLight,
-                            backgroundColor: COLORS.card,
-                            color: COLORS.textSoft,
-                        }}
-                    >
-                        Buscando logs dos comandos...
-                    </div>
-                ) : null}
+                {/* Os logs são carregados em segundo plano e a tela atualiza progressivamente. */}
 
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(470px,0.82fr)] 2xl:grid-cols-[minmax(0,1fr)_minmax(560px,0.78fr)]">
                     <div className="min-w-0">

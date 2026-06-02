@@ -10,6 +10,7 @@ import {
     IconUsersGroup,
     IconBook,
     IconCar,
+    IconChartBar,
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular (padrão global do app) ========= */
@@ -53,6 +54,11 @@ const items = [
         icon: IconReportAnalytics,
     },
     {
+        title: "Dashboard",
+        href: "/desempenho",
+        icon: IconChartBar,
+    },
+    {
         title: "Leads",
         href: "/leads",
         icon: IconUsersGroup,
@@ -68,7 +74,6 @@ export default function AdministrativoPage() {
     return (
         <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
             <div className="mx-auto max-w-6xl px-5 py-5">
-
                 {/* HEADER */}
                 <header className="mb-5 flex items-center gap-3">
                     <div className="flex size-10 items-center justify-center rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
@@ -124,7 +129,6 @@ export default function AdministrativoPage() {
                         ))}
                     </div>
                 </section>
-
             </div>
         </div>
     );
