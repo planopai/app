@@ -16,19 +16,24 @@ const INFORMATICO_URL = "/api/php/informativo.php?listar=1";
 const TELEMETRIA_URL = "/api/php/telemetria.php";
 
 const COLORS = {
-    bg: "#F5FAFE",
-    card: "#FFFFFF",
-    text: "#1F3552",
-    textSoft: "#5C7492",
-    borderLight: "#CFE4F3",
-    borderStrong: "#2F6F91",
-    blue: "#4D8FD5",
-    blueDark: "#226385",
-    yellow: "#F2BC00",
-    green: "#1F7A2D",
-    teal: "#0F8B8D",
-    slate: "#5A6F86",
-    empty: "#E6EEF5",
+    bg: "var(--dash-bg)",
+    card: "var(--dash-card)",
+    cardSoft: "var(--dash-card-soft)",
+    cell: "var(--dash-cell)",
+    text: "var(--dash-text)",
+    textSoft: "var(--dash-text-soft)",
+    borderLight: "var(--dash-border-light)",
+    borderStrong: "var(--dash-border-strong)",
+    blue: "var(--dash-blue)",
+    blueDark: "var(--dash-blue-dark)",
+    yellow: "var(--dash-yellow)",
+    green: "var(--dash-green)",
+    teal: "var(--dash-teal)",
+    slate: "var(--dash-slate)",
+    empty: "var(--dash-empty)",
+    dangerBorder: "var(--dash-danger-border)",
+    dangerBg: "var(--dash-danger-bg)",
+    dangerText: "var(--dash-danger-text)",
 };
 
 type PeriodPreset = "hoje" | "ontem" | "7d" | "mes" | "30d" | "custom";
@@ -802,6 +807,63 @@ const METRICAS = [
    COMPONENTES BASE
 ========================================================= */
 
+function DashboardThemeStyles() {
+    return (
+        <style jsx global>{`
+            :root {
+                --dash-bg: #f5fafe;
+                --dash-card: #ffffff;
+                --dash-card-soft: #f8fcff;
+                --dash-cell: #ffffff;
+                --dash-text: #1f3552;
+                --dash-text-soft: #5c7492;
+                --dash-border-light: #cfe4f3;
+                --dash-border-strong: #2f6f91;
+                --dash-blue: #4d8fd5;
+                --dash-blue-dark: #226385;
+                --dash-yellow: #f2bc00;
+                --dash-green: #1f7a2d;
+                --dash-teal: #0f8b8d;
+                --dash-slate: #5a6f86;
+                --dash-empty: #e6eef5;
+                --dash-danger-border: #f2b0b0;
+                --dash-danger-bg: #fff5f5;
+                --dash-danger-text: #b53b3b;
+                color-scheme: light;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --dash-bg: #07111f;
+                    --dash-card: #101c2b;
+                    --dash-card-soft: #0c1725;
+                    --dash-cell: #f7fbff;
+                    --dash-text: #eaf4ff;
+                    --dash-text-soft: #9fb8d3;
+                    --dash-border-light: #213952;
+                    --dash-border-strong: #62b48f;
+                    --dash-blue: #6aa9ee;
+                    --dash-blue-dark: #2f7ea5;
+                    --dash-yellow: #f4c400;
+                    --dash-green: #45a85a;
+                    --dash-teal: #2db5b7;
+                    --dash-slate: #89a2ba;
+                    --dash-empty: #243446;
+                    --dash-danger-border: #8a3b44;
+                    --dash-danger-bg: #321820;
+                    --dash-danger-text: #ffb7c0;
+                    color-scheme: dark;
+                }
+
+                html,
+                body {
+                    background: var(--dash-bg) !important;
+                }
+            }
+        `}</style>
+    );
+}
+
 function Surface({
     children,
     className = "",
@@ -811,7 +873,7 @@ function Surface({
 }) {
     return (
         <div
-            className={`rounded-[24px] border bg-white shadow-[0_6px_18px_rgba(34,99,133,0.05)] ${className}`}
+            className={`rounded-[22px] border shadow-[0_6px_18px_rgba(34,99,133,0.05)] ${className}`}
             style={{
                 borderColor: COLORS.borderLight,
                 backgroundColor: COLORS.card,
@@ -890,8 +952,8 @@ function PieChart({
             </div>
 
             <div
-                className="min-w-0 space-y-1 rounded-2xl border bg-[#F8FCFF] p-2"
-                style={{ borderColor: COLORS.borderLight }}
+                className="min-w-0 space-y-1 rounded-2xl border p-2"
+                style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.cardSoft }}
             >
                 {data.length === 0 ? (
                     <div className="py-4 text-center text-xs font-semibold" style={{ color: COLORS.textSoft }}>
@@ -933,7 +995,7 @@ function BarChart({
     const max = Math.max(1, ...data.map((d) => d.value));
 
     return (
-        <div className="rounded-2xl border bg-[#F8FCFF] p-3" style={{ borderColor: COLORS.borderLight }}>
+        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.cardSoft }}>
             {data.length === 0 ? (
                 <div className="grid h-[160px] w-full place-items-center text-xs font-semibold" style={{ color: COLORS.textSoft }}>
                     Sem dados
@@ -1011,8 +1073,8 @@ function ModalPeriodo({
     return (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
             <div
-                className="w-full max-w-xl overflow-hidden rounded-[24px] border bg-white shadow-2xl"
-                style={{ borderColor: COLORS.borderLight }}
+                className="w-full max-w-xl overflow-hidden rounded-[24px] border shadow-2xl"
+                style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.card, color: COLORS.text }}
             >
                 <div className="border-b px-5 py-4" style={{ borderColor: COLORS.borderLight }}>
                     <div className="flex items-start justify-between gap-3">
@@ -1052,7 +1114,7 @@ function ModalPeriodo({
                                 className="rounded-2xl border px-3 py-2 text-sm font-extrabold transition"
                                 style={{
                                     borderColor: preset === o.key ? COLORS.borderStrong : COLORS.borderLight,
-                                    backgroundColor: preset === o.key ? "#ECF6FD" : "#FFFFFF",
+                                    backgroundColor: preset === o.key ? COLORS.cardSoft : COLORS.card,
                                     color: preset === o.key ? COLORS.blueDark : COLORS.text,
                                 }}
                             >
@@ -1077,7 +1139,7 @@ function ModalPeriodo({
                                     setPreset("custom");
                                 }}
                                 className="w-full rounded-2xl border px-3 py-2 outline-none"
-                                style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
+                                style={{ borderColor: COLORS.borderLight, color: COLORS.text, backgroundColor: COLORS.cardSoft }}
                             />
                         </label>
 
@@ -1096,16 +1158,16 @@ function ModalPeriodo({
                                     setPreset("custom");
                                 }}
                                 className="w-full rounded-2xl border px-3 py-2 outline-none"
-                                style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
+                                style={{ borderColor: COLORS.borderLight, color: COLORS.text, backgroundColor: COLORS.cardSoft }}
                             />
                         </label>
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-2 border-t bg-[#F8FCFF] p-4" style={{ borderColor: COLORS.borderLight }}>
+                <div className="flex justify-end gap-2 border-t p-4" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.cardSoft }}>
                     <button
                         onClick={onFechar}
-                        className="rounded-2xl border bg-white px-4 py-2 text-sm font-extrabold"
+                        className="rounded-2xl border px-4 py-2 text-sm font-extrabold"
                         style={{ borderColor: COLORS.borderLight, color: COLORS.text }}
                     >
                         Cancelar
@@ -1245,7 +1307,7 @@ function ColaboradoresResumoTable({
                                     <td
                                         key={`${row.nome}-${h.key}`}
                                         className={`${isLast ? "rounded-r-xl border-r" : ""} border-y px-1 py-1.5 text-center`}
-                                        style={{ borderColor: COLORS.borderLight, backgroundColor: "#FFFFFF" }}
+                                        style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.cell }}
                                     >
                                         <div className="text-[13px] font-black leading-none sm:text-[14px] lg:text-[15px]" style={{ color: COLORS.text }}>
                                             {fmt0(item?.qtd || 0)}
@@ -1290,19 +1352,36 @@ function PeriodoResumoCompacto({
     periodo,
     totalAtendimentos,
     tempoMedioGeral,
+    onFiltro,
 }: {
     periodo: PeriodRange;
     totalAtendimentos: number;
     tempoMedioGeral: number | null;
+    onFiltro: () => void;
 }) {
     return (
         <Surface className="p-3">
-            <div className="grid h-full gap-3 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center xl:grid-cols-1 xl:items-stretch">
+            <div className="grid h-full gap-2">
                 <div className="min-w-0">
-                    <div className="text-[11px] font-black uppercase tracking-wide sm:text-xs" style={{ color: COLORS.text }}>
-                        Período
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-black uppercase tracking-wide sm:text-xs" style={{ color: COLORS.text }}>
+                            Período
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onFiltro}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-xl border px-2.5 py-1 text-[10px] font-black uppercase leading-none transition hover:opacity-90"
+                            style={{
+                                borderColor: COLORS.blue,
+                                color: COLORS.blueDark,
+                                backgroundColor: COLORS.card,
+                            }}
+                        >
+                            <IconCalendar />
+                            Filtro
+                        </button>
                     </div>
-                    <div className="mt-1 whitespace-nowrap text-[12px] font-semibold sm:text-sm" style={{ color: COLORS.textSoft }}>
+                    <div className="mt-1 truncate text-[12px] font-semibold sm:text-sm" style={{ color: COLORS.textSoft }}>
                         {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
                     </div>
                 </div>
@@ -1338,12 +1417,14 @@ function SummaryMobile({
     tempoMedioGeral,
     metricasGerais,
     matrizColaboradores,
+    onFiltro,
 }: {
     periodo: PeriodRange;
     totalAtendimentos: number;
     tempoMedioGeral: number | null;
     metricasGerais: MetricaResumo[];
     matrizColaboradores: LinhaColaborador[];
+    onFiltro: () => void;
 }) {
     return (
         <div className="space-y-3 xl:hidden">
@@ -1351,6 +1432,7 @@ function SummaryMobile({
                 periodo={periodo}
                 totalAtendimentos={totalAtendimentos}
                 tempoMedioGeral={tempoMedioGeral}
+                onFiltro={onFiltro}
             />
 
             <MetricasResumoCompacto metricasGerais={metricasGerais} />
@@ -1374,12 +1456,14 @@ function SummaryDesktop({
     tempoMedioGeral,
     metricasGerais,
     matrizColaboradores,
+    onFiltro,
 }: {
     periodo: PeriodRange;
     totalAtendimentos: number;
     tempoMedioGeral: number | null;
     metricasGerais: MetricaResumo[];
     matrizColaboradores: LinhaColaborador[];
+    onFiltro: () => void;
 }) {
     return (
         <div className="hidden space-y-3 xl:block">
@@ -1388,6 +1472,7 @@ function SummaryDesktop({
                     periodo={periodo}
                     totalAtendimentos={totalAtendimentos}
                     tempoMedioGeral={tempoMedioGeral}
+                    onFiltro={onFiltro}
                 />
 
                 <MetricasResumoCompacto metricasGerais={metricasGerais} />
@@ -1434,13 +1519,7 @@ export default function Page() {
         try {
             const r14 = rangeTo14(periodo);
 
-            const urlInformativo =
-                `${INFORMATICO_URL}` +
-                `&inicio=${encodeURIComponent(periodo.inicio)}` +
-                `&fim=${encodeURIComponent(periodo.fim)}` +
-                `&inicio14=${encodeURIComponent(r14.inicio)}` +
-                `&fim14=${encodeURIComponent(r14.fim)}` +
-                `&_ts=${Date.now()}`;
+            const urlInformativo = `${INFORMATICO_URL}&_ts=${Date.now()}`;
             const urlMotoristas =
                 `${TELEMETRIA_URL}?itrack=motoristas` +
                 `&inicio=${encodeURIComponent(r14.inicio)}` +
@@ -1455,7 +1534,7 @@ export default function Page() {
 
             const [infoJson, motJson, veiJson] = await Promise.all([
                 fetchJson<ApiResp<Registro>>(urlInformativo, {
-                    cacheKey: `informativo-${periodo.inicio}-${periodo.fim}`,
+                    cacheKey: `informativo-geral`,
                 }),
                 fetchJson<ApiResp<MotoristaRow>>(urlMotoristas, {
                     cacheKey: `motoristas-${periodo.inicio}-${periodo.fim}`,
@@ -1487,8 +1566,11 @@ export default function Page() {
     const dadosPeriodoUnicos = useMemo(() => dedupeRegistros(dadosPeriodo), [dadosPeriodo]);
 
     const tanatoBase = useMemo(() => {
-        return dedupeRegistros(dadosPeriodoUnicos.filter((r) => isSim(r.tanato)));
-    }, [dadosPeriodoUnicos]);
+        // A Tanato precisa ser filtrada pelo horário do log de início da conservação.
+        // Por isso a base considera todos os registros carregados com tanato = sim;
+        // o período é aplicado depois em findPrimeiroInicioPuroNoPeriodo.
+        return dedupeRegistros((registros || []).filter((r) => isSim(r.tanato)));
+    }, [registros]);
 
     const tanatoEntities = useMemo(() => {
         const list = tanatoBase
@@ -1772,55 +1854,33 @@ export default function Page() {
 
     return (
         <main
-            className={`${nunito.className} min-h-screen overflow-x-hidden px-3 py-4 sm:px-4 lg:px-6`}
+            className={`${nunito.className} min-h-screen overflow-x-hidden px-3 py-3 sm:px-4 lg:px-5`}
             style={{ backgroundColor: COLORS.bg }}
         >
+            <DashboardThemeStyles />
             <div className="mx-auto w-full max-w-[1480px]">
-                <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h1
-                            className="text-[23px] font-black uppercase leading-tight tracking-[0.11em] sm:text-[29px] lg:text-[32px]"
-                            style={{ color: COLORS.text }}
-                        >
-                            Análise de Desempenho
-                        </h1>
-                        <p className="mt-2 text-[15px] font-semibold" style={{ color: COLORS.textSoft }}>
-                            Período: {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
-                        </p>
-                    </div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                    <h1
+                        className="text-[15px] font-black uppercase leading-none tracking-[0.08em] sm:text-[17px] lg:text-[19px]"
+                        style={{ color: COLORS.text }}
+                    >
+                        Análise de Desempenho
+                    </h1>
 
-                    <div className="flex flex-wrap gap-3">
-                        <button
-                            onClick={() => setModalAberto(true)}
-                            className="inline-flex items-center gap-2 rounded-[18px] border px-4 py-3 text-[15px] font-extrabold transition hover:opacity-95"
-                            style={{
-                                borderColor: COLORS.blue,
-                                color: COLORS.blueDark,
-                                backgroundColor: "#FFFFFF",
-                            }}
-                        >
-                            <IconCalendar />
-                            Filtrar período
-                        </button>
-
-                        <button
-                            onClick={carregar}
-                            disabled={loading}
-                            className="rounded-[18px] px-5 py-3 text-[15px] font-extrabold text-white transition hover:opacity-95 disabled:opacity-60"
-                            style={{ backgroundColor: COLORS.blueDark }}
-                        >
-                            {loading ? "Atualizando..." : "Atualizar"}
-                        </button>
-                    </div>
+                    {loading ? (
+                        <div className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: COLORS.textSoft }}>
+                            Atualizando...
+                        </div>
+                    ) : null}
                 </div>
 
                 {erro ? (
                     <div
                         className="mb-4 rounded-2xl border px-4 py-3 text-sm font-bold"
                         style={{
-                            borderColor: "#F2B0B0",
-                            backgroundColor: "#FFF5F5",
-                            color: "#B53B3B",
+                            borderColor: COLORS.dangerBorder,
+                            backgroundColor: COLORS.dangerBg,
+                            color: COLORS.dangerText,
                         }}
                     >
                         {erro}
@@ -1832,7 +1892,7 @@ export default function Page() {
                         className="mb-4 rounded-2xl border px-4 py-3 text-sm font-extrabold"
                         style={{
                             borderColor: COLORS.borderLight,
-                            backgroundColor: "#FFFFFF",
+                            backgroundColor: COLORS.card,
                             color: COLORS.textSoft,
                         }}
                     >
@@ -1848,6 +1908,7 @@ export default function Page() {
                             tempoMedioGeral={tempoMedioGeral}
                             metricasGerais={metricasGerais}
                             matrizColaboradores={matrizColaboradores}
+                            onFiltro={() => setModalAberto(true)}
                         />
 
                         <SummaryDesktop
@@ -1856,6 +1917,7 @@ export default function Page() {
                             tempoMedioGeral={tempoMedioGeral}
                             metricasGerais={metricasGerais}
                             matrizColaboradores={matrizColaboradores}
+                            onFiltro={() => setModalAberto(true)}
                         />
                     </div>
 
