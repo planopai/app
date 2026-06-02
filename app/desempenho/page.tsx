@@ -1147,23 +1147,23 @@ type LinhaColaborador = {
 function MetricCard({ item }: { item: MetricaResumo }) {
     return (
         <div
-            className="min-w-0 rounded-2xl border px-2 py-2 text-center"
+            className="flex min-w-0 flex-col items-center justify-center rounded-2xl border px-2 py-2 text-center"
             style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
         >
-            <div className="mx-auto flex h-6 w-6 items-center justify-center sm:h-7 sm:w-7" style={{ color: COLORS.blue }}>
+            <div className="mx-auto flex h-5 w-5 items-center justify-center sm:h-6 sm:w-6" style={{ color: COLORS.blue }}>
                 {item.icon}
             </div>
-            <div className="mt-1 text-[17px] font-black leading-none sm:text-[19px]" style={{ color: COLORS.text }}>
+            <div className="mt-1 text-[15px] font-black leading-none sm:text-[17px]" style={{ color: COLORS.text }}>
                 {fmt0(item.qtd)}
             </div>
             <div
-                className="mt-1 truncate text-[8px] font-extrabold uppercase leading-none tracking-tight sm:text-[8.5px]"
+                className="mt-1 w-full truncate text-[7.5px] font-extrabold uppercase leading-none tracking-tight sm:text-[8px]"
                 style={{ color: COLORS.textSoft }}
                 title={item.label}
             >
                 {item.label}
             </div>
-            <div className="mt-1 text-[9px] font-bold leading-none sm:text-[10px]" style={{ color: COLORS.textSoft }}>
+            <div className="mt-1 text-[8px] font-bold leading-none sm:text-[9px]" style={{ color: COLORS.textSoft }}>
                 {fmtHm(item.tempoMedio)}
             </div>
         </div>
@@ -1264,6 +1264,74 @@ function ColaboradoresResumoTable({
     );
 }
 
+function IndicadorResumoCompacto({
+    label,
+    value,
+}: {
+    label: string;
+    value: string;
+}) {
+    return (
+        <div
+            className="min-w-0 rounded-2xl border px-3 py-2"
+            style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
+        >
+            <div className="truncate text-[8.5px] font-extrabold uppercase leading-none tracking-wide sm:text-[9.5px]" style={{ color: COLORS.textSoft }}>
+                {label}
+            </div>
+            <div className="mt-1 text-[19px] font-black leading-none sm:text-[22px]" style={{ color: COLORS.text }}>
+                {value}
+            </div>
+        </div>
+    );
+}
+
+function PeriodoResumoCompacto({
+    periodo,
+    totalAtendimentos,
+    tempoMedioGeral,
+}: {
+    periodo: PeriodRange;
+    totalAtendimentos: number;
+    tempoMedioGeral: number | null;
+}) {
+    return (
+        <Surface className="p-3">
+            <div className="grid h-full gap-3 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center xl:grid-cols-1 xl:items-stretch">
+                <div className="min-w-0">
+                    <div className="text-[11px] font-black uppercase tracking-wide sm:text-xs" style={{ color: COLORS.text }}>
+                        Período
+                    </div>
+                    <div className="mt-1 whitespace-nowrap text-[12px] font-semibold sm:text-sm" style={{ color: COLORS.textSoft }}>
+                        {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
+                    </div>
+                </div>
+
+                <div className="grid min-w-0 grid-cols-2 gap-2">
+                    <IndicadorResumoCompacto label="Qntd. de atendimentos" value={fmt0(totalAtendimentos)} />
+                    <IndicadorResumoCompacto label="Tempo médio" value={fmtHm(tempoMedioGeral)} />
+                </div>
+            </div>
+        </Surface>
+    );
+}
+
+function MetricasResumoCompacto({
+    metricasGerais,
+}: {
+    metricasGerais: MetricaResumo[];
+}) {
+    return (
+        <Surface className="p-3">
+            <div className="grid h-full grid-cols-3 gap-2 sm:grid-cols-6">
+                {metricasGerais.map((m) => (
+                    <MetricCard key={m.key} item={m} />
+                ))}
+            </div>
+        </Surface>
+    );
+}
+
 function SummaryMobile({
     periodo,
     totalAtendimentos,
@@ -1278,46 +1346,17 @@ function SummaryMobile({
     matrizColaboradores: LinhaColaborador[];
 }) {
     return (
-        <div className="space-y-4 xl:hidden">
-            <Surface className="p-4">
-                <div>
-                    <div className="text-xs font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
-                        Período
-                    </div>
-                    <div className="mt-1 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
-                        {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
-                    </div>
-                </div>
+        <div className="space-y-3 xl:hidden">
+            <PeriodoResumoCompacto
+                periodo={periodo}
+                totalAtendimentos={totalAtendimentos}
+                tempoMedioGeral={tempoMedioGeral}
+            />
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                        <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
-                            Qntd. de atendimentos
-                        </div>
-                        <div className="mt-1 text-2xl font-black" style={{ color: COLORS.text }}>
-                            {fmt0(totalAtendimentos)}
-                        </div>
-                    </div>
-
-                    <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                        <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
-                            Tempo médio
-                        </div>
-                        <div className="mt-1 text-2xl font-black" style={{ color: COLORS.text }}>
-                            {fmtHm(tempoMedioGeral)}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
-                    {metricasGerais.map((m) => (
-                        <MetricCard key={m.key} item={m} />
-                    ))}
-                </div>
-            </Surface>
+            <MetricasResumoCompacto metricasGerais={metricasGerais} />
 
             <Surface className="overflow-hidden">
-                <div className="border-b px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
+                <div className="border-b px-3 py-2 text-[11px] font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
                     Colaboradores
                 </div>
 
@@ -1343,48 +1382,19 @@ function SummaryDesktop({
     matrizColaboradores: LinhaColaborador[];
 }) {
     return (
-        <div className="hidden space-y-4 xl:block">
-            <div className="grid gap-4 2xl:grid-cols-[260px_1fr]">
-                <Surface className="p-4">
-                    <div className="text-[13px] font-black uppercase tracking-wide" style={{ color: COLORS.text }}>
-                        Período
-                    </div>
-                    <div className="mt-2 text-sm font-semibold" style={{ color: COLORS.textSoft }}>
-                        {formatDateBR(periodo.inicio)} até {formatDateBR(periodo.fim)}
-                    </div>
+        <div className="hidden space-y-3 xl:block">
+            <div className="grid items-stretch gap-3 xl:grid-cols-[340px_minmax(0,1fr)]">
+                <PeriodoResumoCompacto
+                    periodo={periodo}
+                    totalAtendimentos={totalAtendimentos}
+                    tempoMedioGeral={tempoMedioGeral}
+                />
 
-                    <div className="mt-4 grid grid-cols-2 gap-3 2xl:grid-cols-1">
-                        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                            <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
-                                Qntd. de atendimentos
-                            </div>
-                            <div className="mt-1 text-[26px] font-black" style={{ color: COLORS.text }}>
-                                {fmt0(totalAtendimentos)}
-                            </div>
-                        </div>
-
-                        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}>
-                            <div className="text-[10px] font-extrabold uppercase leading-tight" style={{ color: COLORS.textSoft }}>
-                                Tempo médio
-                            </div>
-                            <div className="mt-1 text-[26px] font-black" style={{ color: COLORS.text }}>
-                                {fmtHm(tempoMedioGeral)}
-                            </div>
-                        </div>
-                    </div>
-                </Surface>
-
-                <Surface className="p-3">
-                    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                        {metricasGerais.map((m) => (
-                            <MetricCard key={m.key} item={m} />
-                        ))}
-                    </div>
-                </Surface>
+                <MetricasResumoCompacto metricasGerais={metricasGerais} />
             </div>
 
             <Surface className="overflow-hidden">
-                <div className="border-b px-4 py-3 text-xs font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
+                <div className="border-b px-3 py-2 text-[11px] font-black uppercase tracking-wide" style={{ borderColor: COLORS.borderLight, color: COLORS.text }}>
                     Colaboradores
                 </div>
 
