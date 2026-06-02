@@ -130,6 +130,7 @@ type ApiResp<T> =
     };
 
 type TanatoAgent = "SANDRO" | "JOSEILDO";
+type MetricKey = "remocao" | "tanato" | "ornamentacao" | "velorio" | "sepultamento" | "material";
 
 /* =========================================================
    CACHE / FETCH
@@ -620,6 +621,233 @@ function findPrimeiroInicioPuroNoPeriodo(logs: any[], start: Date, end: Date): a
     return best;
 }
 
+function getLogTexto(log: any): string {
+    const parts: string[] = [
+        log?.acao,
+        log?.titulo,
+        log?.status,
+        log?.status_novo,
+        log?.status_anterior,
+        log?.descricao,
+        log?.mensagem,
+        log?.observacao,
+    ]
+        .map((x) => String(x ?? ""))
+        .filter(Boolean);
+
+    try {
+        const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
+        if (det && typeof det === "object") {
+            for (const v of Object.values(det)) {
+                if (typeof v === "string" || typeof v === "number") parts.push(String(v));
+            }
+        } else if (det != null) {
+            parts.push(String(det));
+        }
+    } catch {
+        if (log?.detalhes) parts.push(String(log.detalhes));
+    }
+
+    return norm(parts.join(" "));
+}
+
+function getLogStatusNovo(log: any): string {
+    let raw = String(log?.status_novo || log?.status || "");
+
+    try {
+        const det = typeof log?.detalhes === "string" ? JSON.parse(log.detalhes) : log?.detalhes;
+        raw =
+            raw ||
+            String(
+                det?.status_novo ||
+                det?.novo_status ||
+                det?.status ||
+                ""
+            );
+    } catch {
+        // ignora
+    }
+
+    const s = norm(raw);
+    if (s.startsWith("fase")) {
+        const digits = s.replace(/[^0-9]/g, "");
+        return digits ? `fase${digits.padStart(2, "0")}` : s;
+    }
+    if (s.includes("removendo") || s.includes("indo retirar")) return "fase01";
+    if (s.includes("aguardando procedimento")) return "fase02";
+    if (s.includes("preparando") || s.includes("conservacao")) return "fase03";
+    if (s.includes("aguardando ornamentacao")) return "fase04";
+    if (s.includes("ornamentando") || s.includes("inicio da ornamentacao")) return "fase05";
+    if (s.includes("corpo pronto")) return "fase06";
+    if (s.includes("transportando") && s.includes("velorio")) return "fase07";
+    if (s.includes("velando")) return "fase08";
+    if (s.includes("transportando") && s.includes("sepultamento")) return "fase09";
+    if (s.includes("sepultamento concluido")) return "fase10";
+    if (s.includes("material recolhido")) return "fase11";
+    return "";
+}
+
+function isLogEditLike(log: any): boolean {
+    const texto = getLogTexto(log);
+    const acao = norm(log?.acao || "");
+    return acao.includes("edit") || texto.includes("edicao") || texto.includes("editou");
+}
+
+function isLogIndoRetirarObito(log: any): boolean {
+    if (isLogEditLike(log)) return false;
+    const texto = getLogTexto(log);
+    const st = getLogStatusNovo(log);
+    return (
+        texto.includes("indo retirar o obito") ||
+        texto.includes("indo retirar obito") ||
+        texto.includes("retirar o obito") ||
+        st === "fase01"
+    );
+}
+
+function isLogInicioOrnamentacao(log: any): boolean {
+    if (isLogEditLike(log)) return false;
+    const texto = getLogTexto(log);
+    const st = getLogStatusNovo(log);
+    return (
+        texto.includes("inicio da ornamentacao") ||
+        texto.includes("inicio de ornamentacao") ||
+        texto.includes("iniciou ornamentacao") ||
+        texto.includes("ornamentacao iniciada") ||
+        st === "fase05"
+    );
+}
+
+function isLogTransportandoVelorio(log: any): boolean {
+    if (isLogEditLike(log)) return false;
+    const texto = getLogTexto(log);
+    const st = getLogStatusNovo(log);
+    return (
+        (texto.includes("transportando") && texto.includes("velorio")) ||
+        texto.includes("transportando obito p/velorio") ||
+        texto.includes("transportando obito p velorio") ||
+        st === "fase07"
+    );
+}
+
+function isLogTransportandoSepultamento(log: any): boolean {
+    if (isLogEditLike(log)) return false;
+    const texto = getLogTexto(log);
+    const st = getLogStatusNovo(log);
+    return (
+        (texto.includes("transportando") && texto.includes("sepultamento")) ||
+        texto.includes("transportando p/ sepultamento") ||
+        texto.includes("transportando p sepultamento") ||
+        st === "fase09"
+    );
+}
+
+function isLogSepultamentoConcluido(log: any): boolean {
+    if (isLogEditLike(log)) return false;
+    const texto = getLogTexto(log);
+    const st = getLogStatusNovo(log);
+    return texto.includes("sepultamento concluido") || st === "fase10";
+}
+
+function isLogMaterialRecolhido(log: any): boolean {
+    if (isLogEditLike(log)) return false;
+    const texto = getLogTexto(log);
+    const st = getLogStatusNovo(log);
+    return texto.includes("material recolhido") || st === "fase11";
+}
+
+function isLogMetrica(log: any, key: MetricKey): boolean {
+    if (key === "remocao") return isLogIndoRetirarObito(log);
+    if (key === "tanato") return isInicioConservacaoPuro(log);
+    if (key === "ornamentacao") return isLogInicioOrnamentacao(log);
+    if (key === "velorio") return isLogTransportandoVelorio(log);
+    if (key === "sepultamento") return isLogTransportandoSepultamento(log);
+    if (key === "material") return isLogMaterialRecolhido(log);
+    return false;
+}
+
+function getMetricOrder(key: MetricKey): number {
+    const order: Record<MetricKey, number> = {
+        remocao: 1,
+        tanato: 2,
+        ornamentacao: 3,
+        velorio: 4,
+        sepultamento: 5,
+        material: 6,
+    };
+    return order[key] || 99;
+}
+
+function getPrimeiroLogMetricaNoPeriodo(logs: any[], key: MetricKey, start: Date, end: Date): any | null {
+    let best: any | null = null;
+
+    for (const log of logs || []) {
+        if (!isLogMetrica(log, key)) continue;
+        const t = logTs(log);
+        if (Number.isNaN(t)) continue;
+        if (t < start.getTime() || t > end.getTime()) continue;
+        if (!best || t < logTs(best)) best = log;
+    }
+
+    return best;
+}
+
+function getNextMetricOrStatusTs(logs: any[], current: any, currentKey: MetricKey): number | null {
+    const currentTs = logTs(current);
+    if (Number.isNaN(currentTs)) return null;
+
+    let best: number | null = null;
+
+    for (const log of logs || []) {
+        const t = logTs(log);
+        if (Number.isNaN(t) || t <= currentTs) continue;
+
+        const isNextMetric =
+            isLogIndoRetirarObito(log) ||
+            isInicioConservacaoPuro(log) ||
+            isLogInicioOrnamentacao(log) ||
+            isLogTransportandoVelorio(log) ||
+            isLogTransportandoSepultamento(log) ||
+            isLogSepultamentoConcluido(log) ||
+            isLogMaterialRecolhido(log);
+
+        if (!isNextMetric) continue;
+
+        // Evita encerrar a etapa com outro log idêntico duplicado do mesmo comando.
+        if (isLogMetrica(log, currentKey)) continue;
+
+        if (best == null || t < best) best = t;
+    }
+
+    return best;
+}
+
+function getStageDurationMinutesFromLogs(logs: any[], metricKey: MetricKey, metricLog: any): number | null {
+    const currentTs = logTs(metricLog);
+    if (Number.isNaN(currentTs)) return null;
+
+    if (metricKey === "material") {
+        let prev: number | null = null;
+
+        for (const log of logs || []) {
+            const t = logTs(log);
+            if (Number.isNaN(t) || t >= currentTs) continue;
+            if (!isLogSepultamentoConcluido(log) && !isLogTransportandoSepultamento(log)) continue;
+            if (prev == null || t > prev) prev = t;
+        }
+
+        if (prev == null) return null;
+        const diff = (currentTs - prev) / 60000;
+        return Number.isFinite(diff) && diff >= 0 ? diff : null;
+    }
+
+    const nextTs = getNextMetricOrStatusTs(logs, metricLog, metricKey);
+    if (nextTs == null) return null;
+
+    const diff = (nextTs - currentTs) / 60000;
+    return Number.isFinite(diff) && diff >= 0 ? diff : null;
+}
+
 function hasMateriais(r: Registro) {
     if (r.materiais_json) {
         try {
@@ -761,47 +989,20 @@ function IconMaterial() {
     );
 }
 
-const METRICAS = [
-    {
-        key: "remocao",
-        label: "Remoção",
-        icon: <IconRemocao />,
-        match: (_r: Registro) => true,
-    },
-    {
-        key: "tanato",
-        label: "Tanato",
-        icon: <IconTanato />,
-        match: (_r: Registro) => false,
-    },
-    {
-        key: "ornamentacao",
-        label: "Ornamentação",
-        icon: <IconOrnamentacao />,
-        match: (r: Registro) => {
-            const s = norm(`${r.ornamentacao || ""} ${r.ornamentacao_tipo || ""}`);
-            return !!s && s !== "nao" && s !== "não";
-        },
-    },
-    {
-        key: "velorio",
-        label: "Velório",
-        icon: <IconVelorio />,
-        match: (r: Registro) => !!String(r.local_velorio || r.data_inicio_velorio || "").trim(),
-    },
-    {
-        key: "sepultamento",
-        label: "Sepultamento",
-        icon: <IconSepultamento />,
-        match: (_r: Registro) => true,
-    },
-    {
-        key: "material",
-        label: "Material",
-        icon: <IconMaterial />,
-        match: (r: Registro) => hasMateriais(r),
-    },
-] as const;
+const LOG_METRICAS: Array<{
+    key: MetricKey;
+    label: string;
+    icon: React.ReactNode;
+}> = [
+        { key: "remocao", label: "Remoção", icon: <IconRemocao /> },
+        { key: "tanato", label: "Tanato", icon: <IconTanato /> },
+        { key: "ornamentacao", label: "Ornamentação", icon: <IconOrnamentacao /> },
+        { key: "velorio", label: "Velório", icon: <IconVelorio /> },
+        { key: "sepultamento", label: "Sepultamento", icon: <IconSepultamento /> },
+        { key: "material", label: "Material", icon: <IconMaterial /> },
+    ];
+
+const COLABORADOR_METRICAS = LOG_METRICAS;
 
 /* =========================================================
    COMPONENTES BASE
@@ -1252,21 +1453,15 @@ function ColaboradoresResumoTable({
         );
     }
 
-    const headers = [
-        { key: "remocao", label: "Remoção" },
-        { key: "ornamentacao", label: "Ornamentação" },
-        { key: "velorio", label: "Velório" },
-        { key: "sepultamento", label: "Sepultamento" },
-        { key: "material", label: "Material" },
-    ];
+    const headers = COLABORADOR_METRICAS;
 
     return (
         <div className="w-full">
             <table className="w-full table-fixed border-separate border-spacing-y-1">
                 <colgroup>
-                    <col className="w-[22%]" />
+                    <col className="w-[19%]" />
                     {headers.map((h) => (
-                        <col key={h.key} className="w-[15.6%]" />
+                        <col key={h.key} className="w-[13.5%]" />
                     ))}
                 </colgroup>
 
@@ -1391,7 +1586,7 @@ function PeriodoResumoCompacto({
                 </div>
 
                 <div className="grid min-w-0 grid-cols-2 gap-2">
-                    <IndicadorResumoCompacto label="Qntd. de atendimentos" value={fmt0(totalAtendimentos)} />
+                    <IndicadorResumoCompacto label="Atendimentos" value={fmt0(totalAtendimentos)} />
                     <IndicadorResumoCompacto label="Tempo médio" value={fmtHm(tempoMedioGeral)} />
                 </div>
             </div>
@@ -1508,13 +1703,13 @@ export default function Page() {
     const [veiculos, setVeiculos] = useState<VeiculoRow[]>([]);
 
     const [loading, setLoading] = useState(false);
-    const [loadingTanatoLogs, setLoadingTanatoLogs] = useState(false);
+    const [loadingActionLogs, setLoadingActionLogs] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
 
-    type TanatoLogCacheEntry = { logs: any[]; fetched: boolean };
-    const tanatoLogCacheRef = useRef<Record<string, TanatoLogCacheEntry>>({});
-    const tanatoLogInFlightRef = useRef<Set<string>>(new Set());
-    const [tanatoLogCacheVersion, setTanatoLogCacheVersion] = useState(0);
+    type ActionLogCacheEntry = { logs: any[]; fetched: boolean };
+    const actionLogCacheRef = useRef<Record<string, ActionLogCacheEntry>>({});
+    const actionLogInFlightRef = useRef<Set<string>>(new Set());
+    const [actionLogCacheVersion, setActionLogCacheVersion] = useState(0);
 
     const carregar = useCallback(async () => {
         setLoading(true);
@@ -1569,15 +1764,14 @@ export default function Page() {
 
     const dadosPeriodoUnicos = useMemo(() => dedupeRegistros(dadosPeriodo), [dadosPeriodo]);
 
-    const tanatoBase = useMemo(() => {
-        // A Tanato precisa ser filtrada pelo horário do log de início da conservação.
-        // Por isso a base considera todos os registros carregados com tanato = sim;
-        // o período é aplicado depois em findPrimeiroInicioPuroNoPeriodo.
-        return dedupeRegistros((registros || []).filter((r) => isSim(r.tanato)));
+    const registrosComLogs = useMemo(() => {
+        // Para produção por colaborador, a data válida é a data do comando no log.
+        // Por isso carregamos logs dos registros disponíveis e aplicamos o filtro pelo horário do log.
+        return dedupeRegistros(registros || []);
     }, [registros]);
 
-    const tanatoEntities = useMemo(() => {
-        const list = tanatoBase
+    const logEntities = useMemo(() => {
+        const list = registrosComLogs
             .map((r) => {
                 const key = getEntityKey(r);
                 const idsToTry = getIdsParaTentar(r);
@@ -1589,25 +1783,25 @@ export default function Page() {
             list,
             keySet: new Set(list.map((x) => x.key)),
         };
-    }, [tanatoBase]);
+    }, [registrosComLogs]);
 
     useEffect(() => {
-        const targets = tanatoEntities.list.filter(
-            (e) => !tanatoLogCacheRef.current[e.key]?.fetched && !tanatoLogInFlightRef.current.has(e.key)
+        const targets = logEntities.list.filter(
+            (e) => !actionLogCacheRef.current[e.key]?.fetched && !actionLogInFlightRef.current.has(e.key)
         );
 
         if (!targets.length) {
-            setLoadingTanatoLogs(false);
+            setLoadingActionLogs(false);
             return;
         }
 
         let cancel = false;
-        setLoadingTanatoLogs(true);
+        setLoadingActionLogs(true);
 
-        async function run(maxConc = 4) {
+        async function run(maxConc = 5) {
             let index = 0;
 
-            for (const target of targets) tanatoLogInFlightRef.current.add(target.key);
+            for (const target of targets) actionLogInFlightRef.current.add(target.key);
 
             async function worker() {
                 while (index < targets.length && !cancel) {
@@ -1628,9 +1822,12 @@ export default function Page() {
                             }
                         }
 
-                        tanatoLogCacheRef.current[item.key] = { logs, fetched: true };
+                        actionLogCacheRef.current[item.key] = {
+                            logs: [...logs].sort((a, b) => logTs(a) - logTs(b)),
+                            fetched: true,
+                        };
                     } finally {
-                        tanatoLogInFlightRef.current.delete(item.key);
+                        actionLogInFlightRef.current.delete(item.key);
                     }
                 }
             }
@@ -1638,8 +1835,8 @@ export default function Page() {
             await Promise.all(Array.from({ length: Math.min(maxConc, targets.length) }, worker));
 
             if (!cancel) {
-                setTanatoLogCacheVersion((v) => v + 1);
-                setLoadingTanatoLogs(false);
+                setActionLogCacheVersion((v) => v + 1);
+                setLoadingActionLogs(false);
             }
         }
 
@@ -1648,155 +1845,107 @@ export default function Page() {
         return () => {
             cancel = true;
         };
-    }, [tanatoEntities]);
+    }, [logEntities]);
 
-    const tanatoStats = useMemo(() => {
+    const actionStats = useMemo(() => {
         const { start, end } = rangeToDates(periodo);
 
-        const byAgent: Record<TanatoAgent, { qtd: number; duracoes: number[] }> = {
-            SANDRO: { qtd: 0, duracoes: [] },
-            JOSEILDO: { qtd: 0, duracoes: [] },
+        const makeMetricMap = () => {
+            const obj = {} as Record<MetricKey, { qtd: number; duracoes: number[] }>;
+            for (const m of LOG_METRICAS) obj[m.key] = { qtd: 0, duracoes: [] };
+            return obj;
         };
 
-        const vistosPorAgente: Record<TanatoAgent, Set<string>> = {
-            SANDRO: new Set<string>(),
-            JOSEILDO: new Set<string>(),
+        const totalByMetric = makeMetricMap();
+        const byAgent = new Map<string, Record<MetricKey, { qtd: number; duracoes: number[] }>>();
+        const seen = new Set<string>();
+
+        const ensureAgent = (nome: string) => {
+            const key = String(nome || "SEM NOME").trim().toUpperCase();
+            if (!byAgent.has(key)) byAgent.set(key, makeMetricMap());
+            return byAgent.get(key)!;
         };
 
-        for (const r of tanatoBase) {
+        for (const r of registrosComLogs) {
             const entityKey =
                 getEntityKey(r) ||
                 `${String(r.falecido || "sem-chave")}-${String(r.data || r.created_at || "")}`;
 
-            const cache = tanatoLogCacheRef.current[entityKey];
+            const cache = actionLogCacheRef.current[entityKey];
+            if (!cache?.fetched || !Array.isArray(cache.logs) || !cache.logs.length) continue;
 
-            // Mesma regra do outro painel:
-            // só conta se houver log válido de início da conservação no período
-            // e se o usuário do log for Sandro ou Joseildo.
-            if (!cache?.fetched || !Array.isArray(cache.logs) || !cache.logs.length) {
-                continue;
-            }
+            for (const metrica of LOG_METRICAS) {
+                const metricLog = getPrimeiroLogMetricaNoPeriodo(cache.logs, metrica.key, start, end);
+                if (!metricLog) continue;
 
-            const inicio = findPrimeiroInicioPuroNoPeriodo(cache.logs, start, end);
-            if (!inicio) {
-                continue;
-            }
+                const dupKey = `${entityKey}:${metrica.key}`;
+                if (seen.has(dupKey)) continue;
+                seen.add(dupKey);
 
-            const agenteLog = normalizeTanatoAgentName(agenteDoLog(inicio));
-            if (!agenteLog) {
-                continue;
-            }
+                let agente = agenteDoLog(metricLog).trim().toUpperCase();
 
-            if (vistosPorAgente[agenteLog].has(entityKey)) {
-                continue;
-            }
+                // Tanato continua restrita aos dois técnicos.
+                if (metrica.key === "tanato") {
+                    const tanatoAgent = normalizeTanatoAgentName(agente);
+                    if (!tanatoAgent) continue;
+                    agente = tanatoAgent;
+                }
 
-            vistosPorAgente[agenteLog].add(entityKey);
-            byAgent[agenteLog].qtd += 1;
+                if (!agente) agente = "SEM NOME";
 
-            const duracao = getDurationMinutes(r);
-            if (duracao != null && Number.isFinite(duracao)) {
-                byAgent[agenteLog].duracoes.push(duracao);
+                const duracaoEtapa = getStageDurationMinutesFromLogs(cache.logs, metrica.key, metricLog);
+
+                totalByMetric[metrica.key].qtd += 1;
+                if (duracaoEtapa != null && Number.isFinite(duracaoEtapa)) {
+                    totalByMetric[metrica.key].duracoes.push(duracaoEtapa);
+                }
+
+                const agentMap = ensureAgent(agente);
+                agentMap[metrica.key].qtd += 1;
+                if (duracaoEtapa != null && Number.isFinite(duracaoEtapa)) {
+                    agentMap[metrica.key].duracoes.push(duracaoEtapa);
+                }
             }
         }
 
-        const total = byAgent.SANDRO.qtd + byAgent.JOSEILDO.qtd;
-        const tempoMedio = average([
-            ...byAgent.SANDRO.duracoes,
-            ...byAgent.JOSEILDO.duracoes,
-        ]);
+        const rows = Array.from(byAgent.entries())
+            .map(([nome, metricas]) => {
+                const total = LOG_METRICAS.reduce((sum, m) => sum + (metricas[m.key]?.qtd || 0), 0);
+                return { nome, metricas, total };
+            })
+            .filter((r) => r.total > 0)
+            .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
 
-        return { byAgent, total, tempoMedio };
-    }, [periodo, tanatoBase, tanatoLogCacheVersion]);
+        return { totalByMetric, rows };
+    }, [periodo, registrosComLogs, actionLogCacheVersion]);
 
     const metricasGerais = useMemo<MetricaResumo[]>(() => {
-        return METRICAS.map((m) => {
-            if (m.key === "tanato") {
-                return {
-                    key: m.key,
-                    label: m.label,
-                    icon: m.icon,
-                    qtd: tanatoStats.total,
-                    tempoMedio: tanatoStats.tempoMedio,
-                };
-            }
-
-            const subset = dadosPeriodoUnicos.filter(m.match);
+        return LOG_METRICAS.map((m) => {
+            const bucket = actionStats.totalByMetric[m.key];
             return {
                 key: m.key,
                 label: m.label,
                 icon: m.icon,
-                qtd: subset.length,
-                tempoMedio: average(subset.map(getDurationMinutes)),
+                qtd: bucket?.qtd || 0,
+                tempoMedio: average(bucket?.duracoes || []),
             };
         });
-    }, [dadosPeriodoUnicos, tanatoStats]);
-
-    const colaboradores = useMemo(() => {
-        const map = new Map<string, number>();
-
-        for (const r of dadosPeriodoUnicos) {
-            const nome = getAgenteNome(r);
-            map.set(nome, (map.get(nome) || 0) + 1);
-        }
-
-        for (const nome of ["SANDRO", "JOSEILDO"] as const) {
-            const qtdTanato = tanatoStats.byAgent[nome].qtd;
-            if (qtdTanato > 0) map.set(nome, Math.max(map.get(nome) || 0, qtdTanato));
-        }
-
-        return Array.from(map.entries())
-            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-            .slice(0, 8)
-            .map(([nome]) => nome);
-    }, [dadosPeriodoUnicos, tanatoStats]);
+    }, [actionStats]);
 
     const matrizColaboradores = useMemo<LinhaColaborador[]>(() => {
-        return colaboradores.map((nome) => {
-            const doAgente = dadosPeriodoUnicos.filter((r) => getAgenteNome(r) === nome);
-
-            const remocao = doAgente;
-
-            const ornamentacao = doAgente.filter((r) => {
-                const s = norm(`${r.ornamentacao || ""} ${r.ornamentacao_tipo || ""}`);
-                return !!s && s !== "nao" && s !== "não";
+        return actionStats.rows.slice(0, 8).map((row) => {
+            const colunas = COLABORADOR_METRICAS.map((m) => {
+                const bucket = row.metricas[m.key];
+                return {
+                    key: m.key,
+                    qtd: bucket?.qtd || 0,
+                    tempoMedio: average(bucket?.duracoes || []),
+                };
             });
 
-            const velorio = doAgente.filter((r) => !!String(r.local_velorio || r.data_inicio_velorio || "").trim());
-            const sepultamento = doAgente;
-            const material = doAgente.filter(hasMateriais);
-
-            const colunas = [
-                {
-                    key: "remocao",
-                    qtd: remocao.length,
-                    tempoMedio: average(remocao.map(getDurationMinutes)),
-                },
-                {
-                    key: "ornamentacao",
-                    qtd: ornamentacao.length,
-                    tempoMedio: average(ornamentacao.map(getDurationMinutes)),
-                },
-                {
-                    key: "velorio",
-                    qtd: velorio.length,
-                    tempoMedio: average(velorio.map(getDurationMinutes)),
-                },
-                {
-                    key: "sepultamento",
-                    qtd: sepultamento.length,
-                    tempoMedio: average(sepultamento.map(getDurationMinutes)),
-                },
-                {
-                    key: "material",
-                    qtd: material.length,
-                    tempoMedio: average(material.map(getDurationMinutes)),
-                },
-            ];
-
-            return { nome, colunas };
+            return { nome: row.nome, colunas };
         });
-    }, [colaboradores, dadosPeriodoUnicos]);
+    }, [actionStats]);
 
     const pieAtendimentos = useMemo(() => {
         const map = new Map<string, number>();
@@ -1813,11 +1962,12 @@ export default function Page() {
     }, [dadosPeriodoUnicos]);
 
     const pieTanato = useMemo(() => {
-        return (["SANDRO", "JOSEILDO"] as const)
-            .map((label) => ({ label, value: tanatoStats.byAgent[label].qtd }))
+        return actionStats.rows
+            .map((row) => ({ label: row.nome, value: row.metricas.tanato.qtd }))
             .filter((x) => x.value > 0)
-            .sort((a, b) => b.value - a.value);
-    }, [tanatoStats]);
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 5);
+    }, [actionStats]);
 
     const barVeiculos = useMemo(() => {
         return (veiculos || [])
@@ -1891,7 +2041,7 @@ export default function Page() {
                     </div>
                 ) : null}
 
-                {loadingTanatoLogs ? (
+                {loadingActionLogs ? (
                     <div
                         className="mb-4 rounded-2xl border px-4 py-3 text-sm font-extrabold"
                         style={{
@@ -1900,7 +2050,7 @@ export default function Page() {
                             color: COLORS.textSoft,
                         }}
                     >
-                        Buscando logs da Tanatopraxia...
+                        Buscando logs dos comandos...
                     </div>
                 ) : null}
 
