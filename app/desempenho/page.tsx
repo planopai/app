@@ -124,7 +124,7 @@ type ApiResp<T> =
         msg?: string;
     };
 
-type TanatoAgent = "SANDRO" | "JOSEILDO" | "SEM IDENTIFICAÇÃO";
+type TanatoAgent = "SANDRO" | "JOSEILDO";
 
 /* =========================================================
    CACHE / FETCH
@@ -453,18 +453,16 @@ function normalizeTanatoAgentName(v: any): TanatoAgent | "" {
     return "";
 }
 
-function getTanatoNome(r: Registro): TanatoAgent {
-    return (
-        normalizeTanatoAgentName(
-            r.agente_tanato ||
-            r.tanatopraxista ||
-            r.usuario_tanato ||
-            r.agente_conservacao ||
-            r.usuario_conservacao ||
-            r.nome_tanato ||
-            r.tanato_por ||
-            ""
-        ) || "SEM IDENTIFICAÇÃO"
+function getTanatoNome(r: Registro): TanatoAgent | "" {
+    return normalizeTanatoAgentName(
+        r.agente_tanato ||
+        r.tanatopraxista ||
+        r.usuario_tanato ||
+        r.agente_conservacao ||
+        r.usuario_conservacao ||
+        r.nome_tanato ||
+        r.tanato_por ||
+        ""
     );
 }
 
@@ -1520,39 +1518,56 @@ export default function Page() {
         const byAgent: Record<TanatoAgent, { qtd: number; duracoes: number[] }> = {
             SANDRO: { qtd: 0, duracoes: [] },
             JOSEILDO: { qtd: 0, duracoes: [] },
-            "SEM IDENTIFICAÇÃO": { qtd: 0, duracoes: [] },
         };
 
-        const seen = new Set<string>();
+        const vistosPorAgente: Record<TanatoAgent, Set<string>> = {
+            SANDRO: new Set<string>(),
+            JOSEILDO: new Set<string>(),
+        };
 
         for (const r of tanatoBase) {
-            const entityKey = getEntityKey(r) || `${String(r.falecido || "sem-chave")}-${String(r.data || r.created_at || "")}`;
-            if (seen.has(entityKey)) continue;
-            seen.add(entityKey);
+            const entityKey =
+                getEntityKey(r) ||
+                `${String(r.falecido || "sem-chave")}-${String(r.data || r.created_at || "")}`;
 
             const cache = tanatoLogCacheRef.current[entityKey];
-            let agenteFinal: TanatoAgent = getTanatoNome(r);
-            let duracaoFinal = getDurationMinutes(r);
 
-            if (cache?.fetched && Array.isArray(cache.logs) && cache.logs.length) {
-                const inicio = findPrimeiroInicioPuroNoPeriodo(cache.logs, start, end);
-                if (inicio) {
-                    const agenteLog = normalizeTanatoAgentName(agenteDoLog(inicio));
-                    if (agenteLog) agenteFinal = agenteLog;
-                }
+            // Mesma regra do outro painel:
+            // só conta se houver log válido de início da conservação no período
+            // e se o usuário do log for Sandro ou Joseildo.
+            if (!cache?.fetched || !Array.isArray(cache.logs) || !cache.logs.length) {
+                continue;
             }
 
-            byAgent[agenteFinal].qtd += 1;
-            if (duracaoFinal != null && Number.isFinite(duracaoFinal)) {
-                byAgent[agenteFinal].duracoes.push(duracaoFinal);
+            const inicio = findPrimeiroInicioPuroNoPeriodo(cache.logs, start, end);
+            if (!inicio) {
+                continue;
+            }
+
+            const agenteLog = normalizeTanatoAgentName(agenteDoLog(inicio));
+            if (!agenteLog) {
+                continue;
+            }
+
+            // Proteção contra duplicidade do mesmo sepultamento para o mesmo técnico.
+            if (vistosPorAgente[agenteLog].has(entityKey)) {
+                continue;
+            }
+
+            vistosPorAgente[agenteLog].add(entityKey);
+
+            byAgent[agenteLog].qtd += 1;
+
+            const duracao = getDurationMinutes(r);
+            if (duracao != null && Number.isFinite(duracao)) {
+                byAgent[agenteLog].duracoes.push(duracao);
             }
         }
 
-        const total = byAgent.SANDRO.qtd + byAgent.JOSEILDO.qtd + byAgent["SEM IDENTIFICAÇÃO"].qtd;
+        const total = byAgent.SANDRO.qtd + byAgent.JOSEILDO.qtd;
         const tempoMedio = average([
             ...byAgent.SANDRO.duracoes,
             ...byAgent.JOSEILDO.duracoes,
-            ...byAgent["SEM IDENTIFICAÇÃO"].duracoes,
         ]);
 
         return { byAgent, total, tempoMedio };
@@ -1589,7 +1604,7 @@ export default function Page() {
             map.set(nome, (map.get(nome) || 0) + 1);
         }
 
-        for (const nome of ["SANDRO", "JOSEILDO", "SEM IDENTIFICAÇÃO"] as const) {
+        for (const nome of ["SANDRO", "JOSEILDO"] as const) {
             const qtdTanato = tanatoStats.byAgent[nome].qtd;
             if (qtdTanato > 0) map.set(nome, Math.max(map.get(nome) || 0, qtdTanato));
         }
@@ -1641,7 +1656,7 @@ export default function Page() {
     }, [dadosPeriodoUnicos]);
 
     const pieTanato = useMemo(() => {
-        return (["SANDRO", "JOSEILDO", "SEM IDENTIFICAÇÃO"] as const)
+        return (["SANDRO", "JOSEILDO"] as const)
             .map((label) => ({ label, value: tanatoStats.byAgent[label].qtd }))
             .filter((x) => x.value > 0)
             .sort((a, b) => b.value - a.value);
