@@ -386,7 +386,7 @@ function rangeTo14(range: PeriodRange) {
     };
 }
 
-function getRegistroDate(r: Registro): Date | null {
+function getRegistroDates(r: Registro): Date[] {
     const candidates = [
         r.data,
         r.created_at,
@@ -396,11 +396,31 @@ function getRegistroDate(r: Registro): Date | null {
         r.data_fim_velorio,
     ];
 
+    const dates: Date[] = [];
+    const seen = new Set<number>();
+
     for (const c of candidates) {
         const d = parseDateFlex(String(c || ""));
-        if (d) return d;
+        if (!d) continue;
+
+        const t = d.getTime();
+        if (Number.isNaN(t) || seen.has(t)) continue;
+
+        seen.add(t);
+        dates.push(d);
     }
-    return null;
+
+    return dates;
+}
+
+function getRegistroDate(r: Registro): Date | null {
+    return getRegistroDates(r)[0] || null;
+}
+
+function registroDentroDoPeriodo(r: Registro, start: Date, end: Date): boolean {
+    const dates = getRegistroDates(r);
+    if (!dates.length) return false;
+    return dates.some((d) => d >= start && d <= end);
 }
 
 function getStartDate(r: Registro): Date | null {
@@ -664,6 +684,30 @@ function IconCalendar() {
     );
 }
 
+
+function IconRemocao() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-6 w-6 sm:h-7 sm:w-7" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 16h13l4-5" />
+            <path d="M5 16l2 4M15 16l2 4" />
+            <path d="M7 12h8l2-3H9z" />
+            <circle cx="8" cy="20" r="1.5" />
+            <circle cx="17" cy="20" r="1.5" />
+        </svg>
+    );
+}
+
+function IconSepultamento() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-6 w-6 sm:h-7 sm:w-7" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 20h12" />
+            <path d="M8 20V8a4 4 0 018 0v12" />
+            <path d="M10 11h4" />
+            <path d="M12 9v6" />
+        </svg>
+    );
+}
+
 function IconTanato() {
     return (
         <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="2.1">
@@ -714,6 +758,12 @@ function IconMaterial() {
 
 const METRICAS = [
     {
+        key: "remocao",
+        label: "Remoção",
+        icon: <IconRemocao />,
+        match: (_r: Registro) => true,
+    },
+    {
         key: "tanato",
         label: "Tanato",
         icon: <IconTanato />,
@@ -729,16 +779,16 @@ const METRICAS = [
         },
     },
     {
-        key: "invol",
-        label: "Invol",
-        icon: <IconInvol />,
-        match: (r: Registro) => isSim(r.invol),
-    },
-    {
         key: "velorio",
         label: "Velório",
         icon: <IconVelorio />,
         match: (r: Registro) => !!String(r.local_velorio || r.data_inicio_velorio || "").trim(),
+    },
+    {
+        key: "sepultamento",
+        label: "Sepultamento",
+        icon: <IconSepultamento />,
+        match: (_r: Registro) => true,
     },
     {
         key: "material",
@@ -1097,23 +1147,23 @@ type LinhaColaborador = {
 function MetricCard({ item }: { item: MetricaResumo }) {
     return (
         <div
-            className="min-w-0 rounded-2xl border p-2 text-center"
+            className="min-w-0 rounded-2xl border px-2 py-2 text-center"
             style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
         >
-            <div className="mx-auto flex h-7 w-7 items-center justify-center sm:h-8 sm:w-8" style={{ color: COLORS.blue }}>
+            <div className="mx-auto flex h-6 w-6 items-center justify-center sm:h-7 sm:w-7" style={{ color: COLORS.blue }}>
                 {item.icon}
             </div>
-            <div className="mt-1 text-[19px] font-black leading-none" style={{ color: COLORS.text }}>
+            <div className="mt-1 text-[17px] font-black leading-none sm:text-[19px]" style={{ color: COLORS.text }}>
                 {fmt0(item.qtd)}
             </div>
             <div
-                className="mt-1 whitespace-nowrap text-[8.5px] font-extrabold uppercase leading-none tracking-tight sm:text-[9.5px]"
+                className="mt-1 truncate text-[8px] font-extrabold uppercase leading-none tracking-tight sm:text-[8.5px]"
                 style={{ color: COLORS.textSoft }}
                 title={item.label}
             >
                 {item.label}
             </div>
-            <div className="mt-1 text-[10px] font-bold leading-none" style={{ color: COLORS.textSoft }}>
+            <div className="mt-1 text-[9px] font-bold leading-none sm:text-[10px]" style={{ color: COLORS.textSoft }}>
                 {fmtHm(item.tempoMedio)}
             </div>
         </div>
@@ -1128,7 +1178,7 @@ function ColaboradoresResumoTable({
     if (matrizColaboradores.length === 0) {
         return (
             <div
-                className="rounded-2xl border p-8 text-center text-sm font-semibold"
+                className="rounded-2xl border p-6 text-center text-xs font-semibold"
                 style={{ borderColor: COLORS.borderLight, color: COLORS.textSoft }}
             >
                 Sem dados para o período.
@@ -1137,6 +1187,7 @@ function ColaboradoresResumoTable({
     }
 
     const headers = [
+        { key: "remocao", label: "Remoção" },
         { key: "ornamentacao", label: "Ornamentação" },
         { key: "velorio", label: "Velório" },
         { key: "sepultamento", label: "Sepultamento" },
@@ -1144,12 +1195,19 @@ function ColaboradoresResumoTable({
     ];
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-separate border-spacing-y-1">
+        <div className="w-full">
+            <table className="w-full table-fixed border-separate border-spacing-y-1">
+                <colgroup>
+                    <col className="w-[22%]" />
+                    {headers.map((h) => (
+                        <col key={h.key} className="w-[15.6%]" />
+                    ))}
+                </colgroup>
+
                 <thead>
                     <tr>
                         <th
-                            className="px-3 pb-1 text-left text-[10px] font-black uppercase tracking-[0.08em]"
+                            className="px-1 pb-1 text-left text-[8px] font-black uppercase leading-none tracking-[0.08em] sm:text-[9px] lg:text-[10px]"
                             style={{ color: COLORS.textSoft }}
                         >
                             Colaborador
@@ -1158,8 +1216,9 @@ function ColaboradoresResumoTable({
                         {headers.map((h) => (
                             <th
                                 key={h.key}
-                                className="px-3 pb-1 text-center text-[10px] font-black uppercase tracking-[0.08em]"
+                                className="px-1 pb-1 text-center text-[8px] font-black uppercase leading-none tracking-[0.06em] sm:text-[9px] lg:text-[10px]"
                                 style={{ color: COLORS.textSoft }}
+                                title={h.label}
                             >
                                 {h.label}
                             </th>
@@ -1171,10 +1230,11 @@ function ColaboradoresResumoTable({
                     {matrizColaboradores.map((row) => (
                         <tr key={row.nome}>
                             <td
-                                className="rounded-l-2xl border-y border-l px-4 py-2 text-[12px] font-black uppercase leading-tight"
+                                className="rounded-l-xl border-y border-l px-2 py-1.5 text-[9px] font-black uppercase leading-tight sm:text-[10px] lg:text-[11px]"
                                 style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg, color: COLORS.text }}
+                                title={row.nome}
                             >
-                                {row.nome}
+                                <span className="block truncate">{row.nome}</span>
                             </td>
 
                             {headers.map((h, idx) => {
@@ -1184,13 +1244,13 @@ function ColaboradoresResumoTable({
                                 return (
                                     <td
                                         key={`${row.nome}-${h.key}`}
-                                        className={`${isLast ? "rounded-r-2xl border-r" : ""} border-y px-3 py-2 text-center`}
+                                        className={`${isLast ? "rounded-r-xl border-r" : ""} border-y px-1 py-1.5 text-center`}
                                         style={{ borderColor: COLORS.borderLight, backgroundColor: "#FFFFFF" }}
                                     >
-                                        <div className="text-[17px] font-black leading-none" style={{ color: COLORS.text }}>
+                                        <div className="text-[13px] font-black leading-none sm:text-[14px] lg:text-[15px]" style={{ color: COLORS.text }}>
                                             {fmt0(item?.qtd || 0)}
                                         </div>
-                                        <div className="mt-0.5 text-[10px] font-semibold leading-none" style={{ color: COLORS.textSoft }}>
+                                        <div className="mt-0.5 text-[8px] font-semibold leading-none sm:text-[9px]" style={{ color: COLORS.textSoft }}>
                                             {fmtHm(item?.tempoMedio ?? null)}
                                         </div>
                                     </td>
@@ -1249,7 +1309,7 @@ function SummaryMobile({
                     </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
                     {metricasGerais.map((m) => (
                         <MetricCard key={m.key} item={m} />
                     ))}
@@ -1261,7 +1321,7 @@ function SummaryMobile({
                     Colaboradores
                 </div>
 
-                <div className="p-3 sm:p-4">
+                <div className="px-2 py-2 sm:px-3 sm:py-2">
                     <ColaboradoresResumoTable matrizColaboradores={matrizColaboradores} />
                 </div>
             </Surface>
@@ -1315,7 +1375,7 @@ function SummaryDesktop({
                 </Surface>
 
                 <Surface className="p-3">
-                    <div className="grid gap-2 sm:grid-cols-3 2xl:grid-cols-5">
+                    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
                         {metricasGerais.map((m) => (
                             <MetricCard key={m.key} item={m} />
                         ))}
@@ -1328,7 +1388,7 @@ function SummaryDesktop({
                     Colaboradores
                 </div>
 
-                <div className="p-3 sm:p-4">
+                <div className="px-2 py-2 sm:px-3 sm:py-2">
                     <ColaboradoresResumoTable matrizColaboradores={matrizColaboradores} />
                 </div>
             </Surface>
@@ -1364,7 +1424,13 @@ export default function Page() {
         try {
             const r14 = rangeTo14(periodo);
 
-            const urlInformativo = `${INFORMATICO_URL}&_ts=${Date.now()}`;
+            const urlInformativo =
+                `${INFORMATICO_URL}` +
+                `&inicio=${encodeURIComponent(periodo.inicio)}` +
+                `&fim=${encodeURIComponent(periodo.fim)}` +
+                `&inicio14=${encodeURIComponent(r14.inicio)}` +
+                `&fim14=${encodeURIComponent(r14.fim)}` +
+                `&_ts=${Date.now()}`;
             const urlMotoristas =
                 `${TELEMETRIA_URL}?itrack=motoristas` +
                 `&inicio=${encodeURIComponent(r14.inicio)}` +
@@ -1405,11 +1471,7 @@ export default function Page() {
 
     const dadosPeriodo = useMemo(() => {
         const { start, end } = rangeToDates(periodo);
-        return (registros || []).filter((r) => {
-            const d = getRegistroDate(r);
-            if (!d) return false;
-            return d >= start && d <= end;
-        });
+        return (registros || []).filter((r) => registroDentroDoPeriodo(r, start, end));
     }, [registros, periodo]);
 
     const dadosPeriodoUnicos = useMemo(() => dedupeRegistros(dadosPeriodo), [dadosPeriodo]);
@@ -1597,15 +1659,23 @@ export default function Page() {
         return colaboradores.map((nome) => {
             const doAgente = dadosPeriodoUnicos.filter((r) => getAgenteNome(r) === nome);
 
+            const remocao = doAgente;
+
             const ornamentacao = doAgente.filter((r) => {
                 const s = norm(`${r.ornamentacao || ""} ${r.ornamentacao_tipo || ""}`);
                 return !!s && s !== "nao" && s !== "não";
             });
 
             const velorio = doAgente.filter((r) => !!String(r.local_velorio || r.data_inicio_velorio || "").trim());
+            const sepultamento = doAgente;
             const material = doAgente.filter(hasMateriais);
 
             const colunas = [
+                {
+                    key: "remocao",
+                    qtd: remocao.length,
+                    tempoMedio: average(remocao.map(getDurationMinutes)),
+                },
                 {
                     key: "ornamentacao",
                     qtd: ornamentacao.length,
@@ -1618,8 +1688,8 @@ export default function Page() {
                 },
                 {
                     key: "sepultamento",
-                    qtd: doAgente.length,
-                    tempoMedio: average(doAgente.map(getDurationMinutes)),
+                    qtd: sepultamento.length,
+                    tempoMedio: average(sepultamento.map(getDurationMinutes)),
                 },
                 {
                     key: "material",
