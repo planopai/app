@@ -1120,30 +1120,86 @@ function MetricCard({ item }: { item: MetricaResumo }) {
     );
 }
 
-function ColaboradorMetricBox({
-    label,
-    qtd,
-    tempoMedio,
+function ColaboradoresResumoTable({
+    matrizColaboradores,
 }: {
-    label: string;
-    qtd: number;
-    tempoMedio: number | null;
+    matrizColaboradores: LinhaColaborador[];
 }) {
-    return (
-        <div className="min-w-0 rounded-xl bg-white px-2 py-2 text-center shadow-sm">
+    if (matrizColaboradores.length === 0) {
+        return (
             <div
-                className="whitespace-nowrap text-[8.5px] font-extrabold uppercase leading-none tracking-tight sm:text-[9px]"
-                style={{ color: COLORS.textSoft }}
-                title={label}
+                className="rounded-2xl border p-8 text-center text-sm font-semibold"
+                style={{ borderColor: COLORS.borderLight, color: COLORS.textSoft }}
             >
-                {label}
+                Sem dados para o período.
             </div>
-            <div className="mt-1 text-[16px] font-black leading-none" style={{ color: COLORS.text }}>
-                {fmt0(qtd)}
-            </div>
-            <div className="mt-1 text-[10px] font-semibold leading-none" style={{ color: COLORS.textSoft }}>
-                {fmtHm(tempoMedio)}
-            </div>
+        );
+    }
+
+    const headers = [
+        { key: "ornamentacao", label: "Ornamentação" },
+        { key: "velorio", label: "Velório" },
+        { key: "sepultamento", label: "Sepultamento" },
+        { key: "material", label: "Material" },
+    ];
+
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-separate border-spacing-y-1">
+                <thead>
+                    <tr>
+                        <th
+                            className="px-3 pb-1 text-left text-[10px] font-black uppercase tracking-[0.08em]"
+                            style={{ color: COLORS.textSoft }}
+                        >
+                            Colaborador
+                        </th>
+
+                        {headers.map((h) => (
+                            <th
+                                key={h.key}
+                                className="px-3 pb-1 text-center text-[10px] font-black uppercase tracking-[0.08em]"
+                                style={{ color: COLORS.textSoft }}
+                            >
+                                {h.label}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {matrizColaboradores.map((row) => (
+                        <tr key={row.nome}>
+                            <td
+                                className="rounded-l-2xl border-y border-l px-4 py-2 text-[12px] font-black uppercase leading-tight"
+                                style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg, color: COLORS.text }}
+                            >
+                                {row.nome}
+                            </td>
+
+                            {headers.map((h, idx) => {
+                                const item = row.colunas.find((c) => c.key === h.key);
+                                const isLast = idx === headers.length - 1;
+
+                                return (
+                                    <td
+                                        key={`${row.nome}-${h.key}`}
+                                        className={`${isLast ? "rounded-r-2xl border-r" : ""} border-y px-3 py-2 text-center`}
+                                        style={{ borderColor: COLORS.borderLight, backgroundColor: "#FFFFFF" }}
+                                    >
+                                        <div className="text-[17px] font-black leading-none" style={{ color: COLORS.text }}>
+                                            {fmt0(item?.qtd || 0)}
+                                        </div>
+                                        <div className="mt-0.5 text-[10px] font-semibold leading-none" style={{ color: COLORS.textSoft }}>
+                                            {fmtHm(item?.tempoMedio ?? null)}
+                                        </div>
+                                    </td>
+                                );
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
         </div>
     );
 }
@@ -1205,46 +1261,8 @@ function SummaryMobile({
                     Colaboradores
                 </div>
 
-                <div className="p-4">
-                    {matrizColaboradores.length === 0 ? (
-                        <div
-                            className="rounded-2xl border p-8 text-center text-sm font-semibold"
-                            style={{ borderColor: COLORS.borderLight, color: COLORS.textSoft }}
-                        >
-                            Sem dados para o período.
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {matrizColaboradores.map((row) => (
-                                <div
-                                    key={row.nome}
-                                    className="rounded-2xl border p-3"
-                                    style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
-                                >
-                                    <div
-                                        className="mb-3 whitespace-nowrap text-[12px] font-black uppercase leading-none tracking-tight"
-                                        style={{ color: COLORS.text }}
-                                    >
-                                        {row.nome}
-                                    </div>
-
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                        {row.colunas.map((c) => {
-                                            const meta = metricasGerais.find((m) => m.key === c.key);
-                                            return (
-                                                <ColaboradorMetricBox
-                                                    key={`${row.nome}-${c.key}`}
-                                                    label={meta?.label || c.key}
-                                                    qtd={c.qtd}
-                                                    tempoMedio={c.tempoMedio}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                <div className="p-3 sm:p-4">
+                    <ColaboradoresResumoTable matrizColaboradores={matrizColaboradores} />
                 </div>
             </Surface>
         </div>
@@ -1310,46 +1328,8 @@ function SummaryDesktop({
                     Colaboradores
                 </div>
 
-                <div className="p-4">
-                    {matrizColaboradores.length === 0 ? (
-                        <div
-                            className="rounded-2xl border p-8 text-center text-sm font-semibold"
-                            style={{ borderColor: COLORS.borderLight, color: COLORS.textSoft }}
-                        >
-                            Sem dados para o período.
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {matrizColaboradores.map((row) => (
-                                <div
-                                    key={row.nome}
-                                    className="grid gap-3 rounded-2xl border p-3 2xl:grid-cols-[155px_1fr]"
-                                    style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.bg }}
-                                >
-                                    <div
-                                        className="flex items-center whitespace-normal break-words text-[12px] font-black uppercase leading-tight"
-                                        style={{ color: COLORS.text }}
-                                    >
-                                        {row.nome}
-                                    </div>
-
-                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-                                        {row.colunas.map((c) => {
-                                            const meta = metricasGerais.find((m) => m.key === c.key);
-                                            return (
-                                                <ColaboradorMetricBox
-                                                    key={`${row.nome}-${c.key}`}
-                                                    label={meta?.label || c.key}
-                                                    qtd={c.qtd}
-                                                    tempoMedio={c.tempoMedio}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                <div className="p-3 sm:p-4">
+                    <ColaboradoresResumoTable matrizColaboradores={matrizColaboradores} />
                 </div>
             </Surface>
         </div>
@@ -1549,13 +1529,11 @@ export default function Page() {
                 continue;
             }
 
-            // Proteção contra duplicidade do mesmo sepultamento para o mesmo técnico.
             if (vistosPorAgente[agenteLog].has(entityKey)) {
                 continue;
             }
 
             vistosPorAgente[agenteLog].add(entityKey);
-
             byAgent[agenteLog].qtd += 1;
 
             const duracao = getDurationMinutes(r);
@@ -1619,27 +1597,40 @@ export default function Page() {
         return colaboradores.map((nome) => {
             const doAgente = dadosPeriodoUnicos.filter((r) => getAgenteNome(r) === nome);
 
-            const colunas = METRICAS.map((m) => {
-                if (m.key === "tanato") {
-                    const item = (tanatoStats.byAgent as any)[nome] as { qtd: number; duracoes: number[] } | undefined;
-                    return {
-                        key: m.key,
-                        qtd: item?.qtd || 0,
-                        tempoMedio: average(item?.duracoes || []),
-                    };
-                }
-
-                const subset = doAgente.filter(m.match);
-                return {
-                    key: m.key,
-                    qtd: subset.length,
-                    tempoMedio: average(subset.map(getDurationMinutes)),
-                };
+            const ornamentacao = doAgente.filter((r) => {
+                const s = norm(`${r.ornamentacao || ""} ${r.ornamentacao_tipo || ""}`);
+                return !!s && s !== "nao" && s !== "não";
             });
+
+            const velorio = doAgente.filter((r) => !!String(r.local_velorio || r.data_inicio_velorio || "").trim());
+            const material = doAgente.filter(hasMateriais);
+
+            const colunas = [
+                {
+                    key: "ornamentacao",
+                    qtd: ornamentacao.length,
+                    tempoMedio: average(ornamentacao.map(getDurationMinutes)),
+                },
+                {
+                    key: "velorio",
+                    qtd: velorio.length,
+                    tempoMedio: average(velorio.map(getDurationMinutes)),
+                },
+                {
+                    key: "sepultamento",
+                    qtd: doAgente.length,
+                    tempoMedio: average(doAgente.map(getDurationMinutes)),
+                },
+                {
+                    key: "material",
+                    qtd: material.length,
+                    tempoMedio: average(material.map(getDurationMinutes)),
+                },
+            ];
 
             return { nome, colunas };
         });
-    }, [colaboradores, dadosPeriodoUnicos, tanatoStats]);
+    }, [colaboradores, dadosPeriodoUnicos]);
 
     const pieAtendimentos = useMemo(() => {
         const map = new Map<string, number>();
