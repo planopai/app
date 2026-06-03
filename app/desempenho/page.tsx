@@ -1194,44 +1194,80 @@ function PieChart({
 
 function BarChart({
     data,
+    maxItems,
 }: {
     data: Array<{ label: string; value: number }>;
+    /**
+     * Opcional: limite a quantidade de itens apenas quando desejar.
+     * Se não informar, o gráfico exibe todos os registros com scroll vertical.
+     */
+    maxItems?: number;
 }) {
-    const max = Math.max(1, ...data.map((d) => d.value));
+    const items = maxItems ? data.slice(0, maxItems) : data;
+    const max = Math.max(1, ...items.map((d) => d.value));
 
     return (
-        <div className="rounded-2xl border p-3" style={{ borderColor: COLORS.borderLight, backgroundColor: COLORS.cardSoft }}>
-            {data.length === 0 ? (
-                <div className="grid h-[160px] w-full place-items-center text-xs font-semibold" style={{ color: COLORS.textSoft }}>
+        <div
+            className="rounded-2xl border p-3"
+            style={{
+                borderColor: COLORS.borderLight,
+                backgroundColor: COLORS.cardSoft,
+            }}
+        >
+            {items.length === 0 ? (
+                <div
+                    className="grid h-[160px] w-full place-items-center text-xs font-semibold"
+                    style={{ color: COLORS.textSoft }}
+                >
                     Sem dados
                 </div>
             ) : (
-                <div className="flex h-[170px] items-end gap-2 border-b-2 px-1 pb-2" style={{ borderColor: COLORS.slate }}>
-                    {data.slice(0, 4).map((d, idx) => {
-                        const height = Math.max(22, (d.value / max) * 108);
-                        return (
-                            <div key={d.label} className="flex min-w-0 flex-1 flex-col items-center">
-                                <div
-                                    className="mb-2 flex w-full max-w-[74px] items-center justify-center rounded-t-xl px-1 text-center text-[9px] font-black leading-none text-white sm:text-[10px]"
-                                    style={{
-                                        height,
-                                        backgroundColor: idx % 2 === 0 ? COLORS.blueDark : COLORS.blue,
-                                    }}
-                                    title={fmt1(d.value)}
-                                >
-                                    {fmt1(d.value)}
-                                </div>
+                <div className="max-h-[260px] overflow-y-auto pr-1">
+                    <div className="space-y-2">
+                        {items.map((d, idx) => {
+                            const width = Math.max(8, (d.value / max) * 100);
 
+                            return (
                                 <div
-                                    className="max-w-[112px] whitespace-nowrap text-center text-[8px] font-extrabold uppercase leading-none tracking-tight sm:text-[8.5px]"
-                                    style={{ color: COLORS.text }}
-                                    title={d.label}
+                                    key={`${d.label}-${idx}`}
+                                    className="grid grid-cols-[minmax(82px,34%)_minmax(0,1fr)_46px] items-center gap-2 sm:grid-cols-[minmax(110px,36%)_minmax(0,1fr)_54px]"
                                 >
-                                    {d.label}
+                                    <div
+                                        className="min-w-0 truncate text-[9px] font-extrabold uppercase leading-tight tracking-tight sm:text-[10px] lg:text-[10.5px]"
+                                        style={{ color: COLORS.text }}
+                                        title={d.label}
+                                    >
+                                        {d.label}
+                                    </div>
+
+                                    <div
+                                        className="h-7 min-w-0 overflow-hidden rounded-full"
+                                        style={{ backgroundColor: COLORS.empty }}
+                                    >
+                                        <div
+                                            className="flex h-full items-center justify-end rounded-full px-2 text-[9px] font-black leading-none text-white sm:text-[10px]"
+                                            style={{
+                                                width: `${width}%`,
+                                                minWidth: "38px",
+                                                backgroundColor: idx % 2 === 0 ? COLORS.blueDark : COLORS.blue,
+                                            }}
+                                            title={`${d.label}: ${fmt1(d.value)}`}
+                                        >
+                                            {fmt1(d.value)}
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        className="text-right text-[9px] font-black leading-none sm:text-[10px]"
+                                        style={{ color: COLORS.text }}
+                                        title={fmt1(d.value)}
+                                    >
+                                        {fmt1(d.value)}
+                                    </div>
                                 </div>
-                            </div>
-                        );
-                    })}
+                            );
+                        })}
+                    </div>
                 </div>
             )}
         </div>
