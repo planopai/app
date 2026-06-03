@@ -1225,12 +1225,12 @@ function BarChart({
                 <div className="max-h-[260px] overflow-y-auto pr-1">
                     <div className="space-y-2">
                         {items.map((d, idx) => {
-                            const width = Math.max(8, (d.value / max) * 100);
+                            const width = Math.max(10, (d.value / max) * 100);
 
                             return (
                                 <div
                                     key={`${d.label}-${idx}`}
-                                    className="grid grid-cols-[minmax(82px,34%)_minmax(0,1fr)_46px] items-center gap-2 sm:grid-cols-[minmax(110px,36%)_minmax(0,1fr)_54px]"
+                                    className="grid grid-cols-[minmax(118px,42%)_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(150px,42%)_minmax(0,1fr)]"
                                 >
                                     <div
                                         className="min-w-0 truncate text-[9px] font-extrabold uppercase leading-tight tracking-tight sm:text-[10px] lg:text-[10.5px]"
@@ -1243,26 +1243,18 @@ function BarChart({
                                     <div
                                         className="h-7 min-w-0 overflow-hidden rounded-full"
                                         style={{ backgroundColor: COLORS.empty }}
+                                        title={`${d.label}: ${fmt1(d.value)}`}
                                     >
                                         <div
                                             className="flex h-full items-center justify-end rounded-full px-2 text-[9px] font-black leading-none text-white sm:text-[10px]"
                                             style={{
                                                 width: `${width}%`,
-                                                minWidth: "38px",
+                                                minWidth: "46px",
                                                 backgroundColor: idx % 2 === 0 ? COLORS.blueDark : COLORS.blue,
                                             }}
-                                            title={`${d.label}: ${fmt1(d.value)}`}
                                         >
                                             {fmt1(d.value)}
                                         </div>
-                                    </div>
-
-                                    <div
-                                        className="text-right text-[9px] font-black leading-none sm:text-[10px]"
-                                        style={{ color: COLORS.text }}
-                                        title={fmt1(d.value)}
-                                    >
-                                        {fmt1(d.value)}
                                     </div>
                                 </div>
                             );
