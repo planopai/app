@@ -423,6 +423,13 @@ export default function LinhaDoTempoLogs({
                             ? `<div class="text-sm font-bold">${sanitize(titulo)}</div>`
                             : "";
 
+                        const usuarioHtml =
+                            usuarioVisivel && ent.usuario
+                                ? `<div class="text-xs font-bold text-muted-foreground">${sanitize(
+                                    ent.usuario || ""
+                                )}</div>`
+                                : "";
+
                         return (
                             <div
                                 key={i}
@@ -434,12 +441,7 @@ export default function LinhaDoTempoLogs({
                                             <div class="flex-1">
                                                 <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
                                                 ${tituloHtml}
-                                                ${usuarioVisivel
-                                            ? `<div class="text-xs text-muted-foreground">Usuário: ${sanitize(
-                                                ent.usuario || ""
-                                            )}</div>`
-                                            : ""
-                                        }
+                                                ${usuarioHtml}
                                                 ${detalhesHtml}
                                             </div>
                                         </div>
