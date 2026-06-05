@@ -17,10 +17,31 @@ function getTitulo(tipo?: FotoAcaoTipo | null) {
     return "ANEXE A FOTO";
 }
 
-function getSubtitulo(tipo?: FotoAcaoTipo | null) {
-    if (tipo === "fim_ornamentacao") return "Foto obrigatória para confirmar o Fim da Ornamentação.";
-    if (tipo === "entrega_corpo") return "Foto obrigatória para confirmar a Entrega de Corpo.";
-    return "Foto obrigatória para confirmar esta ação.";
+function SubtituloFoto({ tipo }: { tipo?: FotoAcaoTipo | null }) {
+    if (tipo === "fim_ornamentacao") {
+        return (
+            <div className="mt-1 text-sm text-muted-foreground">
+                <div>ANEXE A FOTO DA ORNAMENTAÇÃO</div>
+                <div className="mt-1 font-bold uppercase text-red-600">
+                    SEM MOSTRAR O ROSTO DO FALECIDO
+                </div>
+            </div>
+        );
+    }
+
+    if (tipo === "entrega_corpo") {
+        return (
+            <div className="mt-1 text-sm text-muted-foreground">
+                ANEXE UMA FOTO DA PARAMENTAÇÃO
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-1 text-sm text-muted-foreground">
+            Foto obrigatória para confirmar esta ação.
+        </div>
+    );
 }
 
 function fileToDataURL(file: File): Promise<string> {
@@ -121,19 +142,10 @@ export default function FotoAcaoModal({
         setMsg(null);
 
         /**
-         * ✅ Obrigatório abrir a câmera direto.
-         * Em celulares, input file com capture="environment" abre a câmera traseira.
-         * O setTimeout ajuda iOS/Android a abrir depois que o modal renderiza.
+         * ✅ Alterado:
+         * Agora o modal abre primeiro e NÃO abre a câmera automaticamente.
+         * A câmera só abre quando o usuário clicar em "Abrir câmera".
          */
-        const t = setTimeout(() => {
-            try {
-                inputRef.current?.click();
-            } catch {
-                // noop
-            }
-        }, 250);
-
-        return () => clearTimeout(t);
     }, [open, registroId, registro?.id, fase, tipo]);
 
     async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -219,7 +231,7 @@ export default function FotoAcaoModal({
         <Modal open={open} onClose={saving ? () => { } : onClose} ariaLabel="Anexar foto da ação" maxWidth={520}>
             <div>
                 <h2 className="text-xl font-semibold">{getTitulo(tipo)}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{getSubtitulo(tipo)}</p>
+                <SubtituloFoto tipo={tipo} />
 
                 <input
                     ref={inputRef}
