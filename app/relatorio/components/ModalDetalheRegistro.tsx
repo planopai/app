@@ -231,11 +231,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                             <button
                                 type="button"
                                 className="inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                                title={
-                                    fotos.length > 0
-                                        ? "Ver fotos anexadas"
-                                        : "Nenhuma foto anexada"
-                                }
+                                title={fotos.length > 0 ? "Ver fotos anexadas" : "Nenhuma foto anexada"}
                                 aria-label="Ver fotos anexadas"
                                 disabled={loading || fotos.length === 0}
                                 onClick={() => setFotosOpen(true)}
@@ -244,7 +240,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                             </button>
 
                             <div
-                                className="relative inline-flex h-10 w-10 items-center justify-center"
+                                className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                                 title="Baixar PDF"
                                 aria-label="Baixar PDF"
                             >
@@ -252,7 +248,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                     <IconFileTypePdf className="size-5" />
                                 </span>
 
-                                <div className="[&_button]:!h-10 [&_button]:!w-10 [&_button]:!overflow-hidden [&_button]:!px-0 [&_button]:!text-transparent">
+                                <div className="[&_button]:!h-10 [&_button]:!w-10 [&_button]:!overflow-hidden [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-0 [&_button]:!text-transparent [&_button]:hover:!bg-transparent">
                                     <BotaoExportarPdf
                                         desabilitado={loading || logs.length === 0}
                                         selecionadoNome={registro.falecido}
