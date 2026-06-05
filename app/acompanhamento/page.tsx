@@ -1,7 +1,18 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrumacaoState, MateriaisState, Registro, Aviso } from "./components/types";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrumacaoState,
+  MateriaisState,
+  Registro,
+  Aviso,
+} from "./components/types";
 import {
   API,
   obrigatorios as obrigatoriosPadrao,
@@ -28,7 +39,11 @@ import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import Modal from "./components/Modal";
-import TelemetriaModal, { TipoTele, TelemetriaHandle } from "./components/TelemetriaModal";
+import TelemetriaModal, {
+  TipoTele,
+  TelemetriaHandle,
+} from "./components/TelemetriaModal";
+import FotoAcaoModal, { FotoAcaoTipo } from "./components/FotoAcaoModal";
 
 // ✅ modal de conferência antes do fase11
 import MateriaisConferenciaModal, {
@@ -47,14 +62,17 @@ const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 // ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
 type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "INSUMOS";
 
-
 function isSim(v: any): boolean {
-  const s = String(v ?? "").trim().toLowerCase();
+  const s = String(v ?? "")
+    .trim()
+    .toLowerCase();
   return s === "sim" || s === "s" || s === "1" || s === "true";
 }
 
 function isNao(v: any): boolean {
-  const s = String(v ?? "").trim().toLowerCase();
+  const s = String(v ?? "")
+    .trim()
+    .toLowerCase();
   return s === "não" || s === "nao" || s === "n" || s === "0" || s === "false";
 }
 
@@ -70,16 +88,19 @@ function isRoupaPropria(v: any): boolean {
   return normNoAccLower(v) === "roupa propria";
 }
 
-
 type InsumoItem = { produto_id: number; qtd: number };
 
-function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens: InsumoItem[] } | null {
+function parseInsumosFromArrumacaoJson(
+  raw: any,
+): { deposito_nome: string; itens: InsumoItem[] } | null {
   try {
     if (!raw) return null;
     const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!obj || typeof obj !== "object") return null;
 
-    const deposito_nome = String(obj.deposito_nome ?? obj.deposito ?? "").trim();
+    const deposito_nome = String(
+      obj.deposito_nome ?? obj.deposito ?? "",
+    ).trim();
     const itensRaw = obj.itens ?? obj.items ?? null;
     if (!itensRaw) return null;
 
@@ -99,10 +120,19 @@ function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens
     if (!Array.isArray(itensRaw) && typeof itensRaw === "object") {
       itens = Object.entries(itensRaw)
         .map(([k, v]: any) => {
-          const pid = Number(v?.produto_id ?? 0) || Number(String(k).match(/\d+/)?.[0] ?? 0) || 0;
+          const pid =
+            Number(v?.produto_id ?? 0) ||
+            Number(String(k).match(/\d+/)?.[0] ?? 0) ||
+            0;
           const qtd = Math.max(1, Math.floor(Number(v?.qtd ?? 0) || 0));
           const checked = v?.checked;
-          if (checked === false || checked === 0 || checked === "0" || checked === "false") return null;
+          if (
+            checked === false ||
+            checked === 0 ||
+            checked === "0" ||
+            checked === "false"
+          )
+            return null;
           return pid > 0 ? { produto_id: pid, qtd } : null;
         })
         .filter(Boolean) as InsumoItem[];
@@ -114,8 +144,6 @@ function parseInsumosFromArrumacaoJson(raw: any): { deposito_nome: string; itens
     return null;
   }
 }
-
-
 
 /* -------------------- utils sessão (IDs de terceiros) -------------------- */
 function addTerceiroIdToSession(id: string | number | undefined | null) {
@@ -158,7 +186,12 @@ function getWizardConfig(tipo: TipoAtendimento) {
 
     const wizardStepTitles = ["Atendimento", "Velório", "Sepultamento"];
     const obrigatorios: string[] = [];
-    return { wizardStepIndexes, wizardStepTitles, obrigatorios, steps: stepsPadrao };
+    return {
+      wizardStepIndexes,
+      wizardStepTitles,
+      obrigatorios,
+      steps: stepsPadrao,
+    };
   }
 
   return {
@@ -246,7 +279,7 @@ function resolveFalecidoNome(r: any): string {
     r?.falecido_nome ??
     r?.nome_do_falecido ??
     r?.nome ??
-    ""
+    "",
   ).trim();
 }
 
@@ -282,17 +315,17 @@ function normalizeStatusCode(v: any): string {
   const key = noAcc.trim();
 
   const map: Record<string, string> = {
-    "removendo": "fase01",
+    removendo: "fase01",
     "aguardando procedimento": "fase02",
-    "preparando": "fase03",
+    preparando: "fase03",
     "aguardando ornamentacao": "fase04",
-    "ornamentando": "fase05",
+    ornamentando: "fase05",
     "corpo pronto": "fase06",
-    "transportando": "fase07",
+    transportando: "fase07",
     "transportando obito p/velorio": "fase07",
     "transportando obito para velorio": "fase07",
-    "velando": "fase08",
-    "sepultando": "fase09",
+    velando: "fase08",
+    sepultando: "fase09",
     "sepultamento concluido": "fase10",
     "material recolhido": "fase11",
   };
@@ -364,14 +397,17 @@ function scrubRoupaNoEditar(payload: any, original: RoupaSnapshot | null) {
     const pid = Number(payload.roupa_produto_id ?? 0) || 0;
     const dep = String(payload.roupa_deposito_nome ?? "").trim();
     if (pid <= 0) {
-      throw new Error('Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".');
+      throw new Error(
+        'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".',
+      );
     }
     if (!dep) {
-      throw new Error("Roupa: selecione o local de saída (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
+      throw new Error(
+        "Roupa: selecione o local de saída (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+      );
     }
   }
 }
-
 
 export default function AcompanhamentoPage() {
   // Tabela
@@ -379,25 +415,33 @@ export default function AcompanhamentoPage() {
 
   // Avisos
   const [avisos, setAvisos] = useState<Aviso[]>([]);
-  const [avisoMsg, setAvisoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [avisoMsg, setAvisoMsg] = useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
   const avisoInputRef = useRef<HTMLInputElement>(null);
 
   // Tipo do cadastro atual
-  const [tipoAtendimento, setTipoAtendimento] = useState<TipoAtendimento>("funerario");
+  const [tipoAtendimento, setTipoAtendimento] =
+    useState<TipoAtendimento>("funerario");
 
   // Wizard
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardTitle, setWizardTitle] = useState("Novo Registro");
   const [wizardEditing, setWizardEditing] = useState(false);
   const [wizardIdx, setWizardIdx] = useState<number | null>(null);
-  const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(null);
+  const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(
+    null,
+  );
   const [wizardStep, setWizardStep] = useState(0);
   const [wizardData, setWizardData] = useState<Registro>({});
-  const [wizardMsg, setWizardMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [wizardMsg, setWizardMsg] = useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
   // ✅ snapshot do registro original (para não revalidar / não reenviar roupa no EDITAR)
   const wizardOriginalRoupaRef = useRef<RoupaSnapshot | null>(null);
-
 
   // selects
   const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -405,17 +449,27 @@ export default function AcompanhamentoPage() {
 
   // Materiais
   const [materiaisOpen, setMateriaisOpen] = useState(false);
-  const [materiais, setMateriais] = useState<MateriaisState>(defaultMateriais());
+  const [materiais, setMateriais] =
+    useState<MateriaisState>(defaultMateriais());
 
   // Arrumação
   const [arrumacaoOpen, setArrumacaoOpen] = useState(false);
-  const [arrumacao, setArrumacao] = useState<ArrumacaoState>(defaultArrumacao());
+  const [arrumacao, setArrumacao] =
+    useState<ArrumacaoState>(defaultArrumacao());
 
   // Ações (por ID)
   const [acaoOpen, setAcaoOpen] = useState(false);
   const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
-  const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  );
   const [acaoSubmitting, setAcaoSubmitting] = useState(false);
+
+  // Foto obrigatória antes de confirmar fase06/fase08
+  const [fotoAcaoOpen, setFotoAcaoOpen] = useState(false);
+  const [fotoAcaoId, setFotoAcaoId] = useState<Registro["id"] | null>(null);
+  const [fotoAcaoFase, setFotoAcaoFase] = useState<string>("fase06");
+  const [fotoAcaoTipo, setFotoAcaoTipo] = useState<FotoAcaoTipo | null>(null);
 
   // Conferência de materiais antes do fase11
   const [matCheckOpen, setMatCheckOpen] = useState(false);
@@ -423,7 +477,9 @@ export default function AcompanhamentoPage() {
   const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
 
   // contexto da conferência
-  const [matCheckRegistroId, setMatCheckRegistroId] = useState<Registro["id"] | null>(null);
+  const [matCheckRegistroId, setMatCheckRegistroId] = useState<
+    Registro["id"] | null
+  >(null);
   const [matCheckFalecidoNome, setMatCheckFalecidoNome] = useState<string>("");
 
   const [matCheckSaving, setMatCheckSaving] = useState(false);
@@ -434,7 +490,9 @@ export default function AcompanhamentoPage() {
 
   // Assinatura
   const [signOpen, setSignOpen] = useState(false);
-  const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">("recebimento");
+  const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">(
+    "recebimento",
+  );
   const [signIdx, setSignIdx] = useState<number | null>(null);
 
   // Modal: escolher tipo no novo registro
@@ -445,7 +503,9 @@ export default function AcompanhamentoPage() {
   const [teleOpen, setTeleOpen] = useState(false);
   const [teleFase, setTeleFase] = useState<string>("fase01");
   const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
-  const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(null);
+  const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(
+    null,
+  );
 
   const [teleActive, setTeleActive] = useState(false);
   const [teleStartFase, setTeleStartFase] = useState<string | null>(null);
@@ -455,11 +515,14 @@ export default function AcompanhamentoPage() {
   const teleStartFaseRef = useRef<string | null>(null);
   const teleRegistroIdRef = useRef<Registro["id"] | null>(null);
 
-  const definirTeleRegistroId = useCallback((id: Registro["id"] | null | undefined) => {
-    const normalized = id != null ? String(id) : null;
-    teleRegistroIdRef.current = normalized;
-    setTeleRegistroId(normalized);
-  }, []);
+  const definirTeleRegistroId = useCallback(
+    (id: Registro["id"] | null | undefined) => {
+      const normalized = id != null ? String(id) : null;
+      teleRegistroIdRef.current = normalized;
+      setTeleRegistroId(normalized);
+    },
+    [],
+  );
 
   const marcarTeleAtiva = useCallback((fase: string) => {
     teleActiveRef.current = true;
@@ -490,10 +553,13 @@ export default function AcompanhamentoPage() {
 
   const fetchRegistros = useCallback(async () => {
     try {
-      const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`, {
-        cache: "no-store",
-        credentials: "include",
-      });
+      const r = await fetch(
+        `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
+        {
+          cache: "no-store",
+          credentials: "include",
+        },
+      );
 
       if (r.status === 401) return;
 
@@ -537,10 +603,28 @@ export default function AcompanhamentoPage() {
 
           // ✅ INSUMOS (novo formato dentro do arrumacao_json)
           arrumacao_json: String(it?.arrumacao_json ?? ""),
+
+          // ✅ FOTOS OBRIGATÓRIAS DAS AÇÕES
+          foto_fim_ornamentacao_url: String(
+            it?.foto_fim_ornamentacao_url ?? "",
+          ),
+          foto_fim_ornamentacao_path: String(
+            it?.foto_fim_ornamentacao_path ?? "",
+          ),
+          foto_fim_ornamentacao_em: String(
+            it?.foto_fim_ornamentacao_em ?? "",
+          ),
+          foto_fim_ornamentacao_usuario: String(
+            it?.foto_fim_ornamentacao_usuario ?? "",
+          ),
+          foto_entrega_corpo_url: String(it?.foto_entrega_corpo_url ?? ""),
+          foto_entrega_corpo_path: String(it?.foto_entrega_corpo_path ?? ""),
+          foto_entrega_corpo_em: String(it?.foto_entrega_corpo_em ?? ""),
+          foto_entrega_corpo_usuario: String(
+            it?.foto_entrega_corpo_usuario ?? "",
+          ),
         }))
         : [];
-
-
 
       setRegistros(sane);
     } catch {
@@ -573,7 +657,8 @@ export default function AcompanhamentoPage() {
               const acao = String(item.payload?.acao ?? "");
               const tipoAt = String(item.payload?.tipo_atendimento ?? "");
               if (acao === "novo" && tipoAt === "terceiro") {
-                const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? null;
+                const novoId =
+                  json?.id ?? json?.novo_id ?? json?.last_id ?? null;
                 addTerceiroIdToSession(novoId);
               }
             } catch { }
@@ -604,7 +689,11 @@ export default function AcompanhamentoPage() {
               safeWriteQueue(after);
 
               // opcional: log pra você ver o que foi descartado
-              console.warn("Removido da fila offline (validação):", item.payload, msg);
+              console.warn(
+                "Removido da fila offline (validação):",
+                item.payload,
+                msg,
+              );
 
               // ✅ segue para o próximo item da fila (não trava tudo)
               continue;
@@ -613,18 +702,25 @@ export default function AcompanhamentoPage() {
             // ❗ Erro "temporário" -> mantém na fila e para (pra não martelar o servidor)
             const after = safeReadQueue().map((x) =>
               x.qid === item.qid
-                ? { ...x, tries: (x.tries ?? 0) + 1, lastError: msg || "Erro ao enviar (offline queue)." }
-                : x
+                ? {
+                  ...x,
+                  tries: (x.tries ?? 0) + 1,
+                  lastError: msg || "Erro ao enviar (offline queue).",
+                }
+                : x,
             );
             safeWriteQueue(after);
             break;
           }
-
         } catch (e: any) {
           const after = safeReadQueue().map((x) =>
             x.qid === item.qid
-              ? { ...x, tries: (x.tries ?? 0) + 1, lastError: e?.message || "Falha ao enviar (offline queue)." }
-              : x
+              ? {
+                ...x,
+                tries: (x.tries ?? 0) + 1,
+                lastError: e?.message || "Falha ao enviar (offline queue).",
+              }
+              : x,
           );
           safeWriteQueue(after);
           break;
@@ -640,9 +736,12 @@ export default function AcompanhamentoPage() {
   /* -------------------- Avisos -------------------- */
   const fetchAvisos = useCallback(async () => {
     try {
-      const r = await fetch(`${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`, {
-        credentials: "include",
-      });
+      const r = await fetch(
+        `${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`,
+        {
+          credentials: "include",
+        },
+      );
       if (r.status === 401) return;
       const data = await r.json().catch(() => null);
       if (data?.need_login) return;
@@ -670,70 +769,91 @@ export default function AcompanhamentoPage() {
         if (avisoInputRef.current) avisoInputRef.current.value = "";
         fetchAvisos();
       } else {
-        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao adicionar!", ok: false });
+        setAvisoMsg({
+          text: res?.erro || res?.msg || "Erro ao adicionar!",
+          ok: false,
+        });
       }
     } catch (e: any) {
       setAvisoMsg({ text: e?.message || "Erro ao adicionar!", ok: false });
     }
   }, [fetchAvisos]);
 
-  const editarAviso = useCallback(async (id: number | string, mensagem: string) => {
-    try {
-      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ id, mensagem }),
-      });
-      if (res?.sucesso) {
-        setAvisoMsg({ text: "Aviso atualizado!", ok: true });
-        fetchAvisos();
-      } else {
-        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao editar!", ok: false });
+  const editarAviso = useCallback(
+    async (id: number | string, mensagem: string) => {
+      try {
+        const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id, mensagem }),
+        });
+        if (res?.sucesso) {
+          setAvisoMsg({ text: "Aviso atualizado!", ok: true });
+          fetchAvisos();
+        } else {
+          setAvisoMsg({
+            text: res?.erro || res?.msg || "Erro ao editar!",
+            ok: false,
+          });
+        }
+      } catch (e: any) {
+        setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
       }
-    } catch (e: any) {
-      setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
-    }
-  }, [fetchAvisos]);
+    },
+    [fetchAvisos],
+  );
 
-  const excluirAviso = useCallback(async (id: number | string) => {
-    if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
-    try {
-      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ id, excluir: true }),
-      });
-      if (res?.sucesso) {
-        setAvisoMsg({ text: "Aviso excluído!", ok: true });
-        fetchAvisos();
-      } else {
-        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao excluir!", ok: false });
+  const excluirAviso = useCallback(
+    async (id: number | string) => {
+      if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
+      try {
+        const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id, excluir: true }),
+        });
+        if (res?.sucesso) {
+          setAvisoMsg({ text: "Aviso excluído!", ok: true });
+          fetchAvisos();
+        } else {
+          setAvisoMsg({
+            text: res?.erro || res?.msg || "Erro ao excluir!",
+            ok: false,
+          });
+        }
+      } catch (e: any) {
+        setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
       }
-    } catch (e: any) {
-      setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
-    }
-  }, [fetchAvisos]);
+    },
+    [fetchAvisos],
+  );
 
-  const finalizarAviso = useCallback(async (id: number | string) => {
-    try {
-      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ id, finalizar: true }),
-      });
-      if (res?.sucesso) {
-        setAvisoMsg({ text: "Aviso finalizado!", ok: true });
-        fetchAvisos();
-      } else {
-        setAvisoMsg({ text: res?.erro || res?.msg || "Erro ao finalizar!", ok: false });
+  const finalizarAviso = useCallback(
+    async (id: number | string) => {
+      try {
+        const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id, finalizar: true }),
+        });
+        if (res?.sucesso) {
+          setAvisoMsg({ text: "Aviso finalizado!", ok: true });
+          fetchAvisos();
+        } else {
+          setAvisoMsg({
+            text: res?.erro || res?.msg || "Erro ao finalizar!",
+            ok: false,
+          });
+        }
+      } catch (e: any) {
+        setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
       }
-    } catch (e: any) {
-      setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
-    }
-  }, [fetchAvisos]);
+    },
+    [fetchAvisos],
+  );
 
   /* -------------------- Ciclos -------------------- */
   useEffect(() => {
@@ -779,6 +899,7 @@ export default function AcompanhamentoPage() {
         setChooseTipoOpen(false);
         setTeleOpen(false);
         setMatCheckOpen(false);
+        setFotoAcaoOpen(false);
       }
     };
     window.addEventListener("keydown", onEsc);
@@ -802,7 +923,11 @@ export default function AcompanhamentoPage() {
         if (qtd <= 0) continue;
 
         const nomeBase = k.replace(/^materiais_/, "").replace(/_qtd$/, "");
-        out[nomeBase] = { checked: true, qtd, nome: nomeBase.replace(/_/g, " ") } as any;
+        out[nomeBase] = {
+          checked: true,
+          qtd,
+          nome: nomeBase.replace(/_/g, " "),
+        } as any;
       }
     } catch { }
 
@@ -835,41 +960,65 @@ export default function AcompanhamentoPage() {
   };
 
   /* -------------------- salvar conferência no backend -------------------- */
-  const salvarConferenciaNoPHP = useCallback(async (data: {
-    registro_id: string | number | null | undefined;
-    falecido_nome: string;
-    observacao: string;
-    itens: Array<{ key: string; nome: string; qtd: number; ok: 0 | 1; nao_conforme: 0 | 1; }>;
-  }) => {
-    const registro_id = data.registro_id != null ? String(data.registro_id) : "";
-    if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+  const salvarConferenciaNoPHP = useCallback(
+    async (data: {
+      registro_id: string | number | null | undefined;
+      falecido_nome: string;
+      observacao: string;
+      itens: Array<{
+        key: string;
+        nome: string;
+        qtd: number;
+        ok: 0 | 1;
+        nao_conforme: 0 | 1;
+      }>;
+    }) => {
+      const registro_id =
+        data.registro_id != null ? String(data.registro_id) : "";
+      if (!registro_id)
+        throw new Error(
+          "Não foi possível identificar o atendimento (registro_id).",
+        );
 
-    const r = await fetch(`${ENDPOINT}/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        registro_id,
-        falecido_nome: String(data.falecido_nome || "").trim(),
-        observacao: String(data.observacao || "").trim(),
-        itens: Array.isArray(data.itens) ? data.itens : [],
-      }),
-    });
+      const r = await fetch(
+        `${ENDPOINT}/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            registro_id,
+            falecido_nome: String(data.falecido_nome || "").trim(),
+            observacao: String(data.observacao || "").trim(),
+            itens: Array.isArray(data.itens) ? data.itens : [],
+          }),
+        },
+      );
 
-    if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
-    const json = await r.json().catch(() => null);
-    if (!json) throw new Error("Resposta inválida do servidor.");
-    if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-    if (!r.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
+      if (r.status === 401)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      const json = await r.json().catch(() => null);
+      if (!json) throw new Error("Resposta inválida do servidor.");
+      if (json?.need_login)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      if (!r.ok || json?.erro)
+        throw new Error(json?.msg || "Erro ao salvar conferência.");
 
-    return json;
-  }, []);
+      return json;
+    },
+    [],
+  );
 
   /* --------------------
      ✅ baixa automática da urna (fase05)
      -------------------- */
   const baixarItensFase05 = useCallback(
-    async (payload: { registro_id: string; tipo: BaixaTipo; deposito_nome?: string; itens?: Array<{ produto_id: number; qtd: number }> }) => {
+    async (payload: {
+      registro_id: string;
+      tipo: BaixaTipo;
+      deposito_nome?: string;
+      itens?: Array<{ produto_id: number; qtd: number }>;
+    }) => {
       const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -878,16 +1027,24 @@ export default function AcompanhamentoPage() {
         cache: "no-store",
       });
 
-      if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+      if (r.status === 401)
+        throw new Error("Sessão expirada. Faça login novamente.");
       const j = await r.json().catch(() => null);
-      if (!j) throw new Error(`Resposta inválida do servidor (baixa ${payload.tipo}).`);
-      if (j?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
-      if (!r.ok || j?.ok === false) throw new Error(j?.msg || `Falha ao dar baixa automática (${payload.tipo}) na fase05.`);
+      if (!j)
+        throw new Error(
+          `Resposta inválida do servidor (baixa ${payload.tipo}).`,
+        );
+      if (j?.need_login)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      if (!r.ok || j?.ok === false)
+        throw new Error(
+          j?.msg ||
+          `Falha ao dar baixa automática (${payload.tipo}) na fase05.`,
+        );
       return j;
     },
-    []
+    [],
   );
-
 
   /* -------------------- Aberturas -------------------- */
   const abrirNovoRegistro = useCallback(() => setChooseTipoOpen(true), []);
@@ -929,7 +1086,6 @@ export default function AcompanhamentoPage() {
     (empty as any).roupa_codigo_barras = "";
     (empty as any).roupa_propria = 0;
 
-
     // ✅ defaults de meta invol
     (empty as any).invol_deposito_nome = "";
     (empty as any).invol_produto_id = 0;
@@ -950,8 +1106,6 @@ export default function AcompanhamentoPage() {
     // ✅ insumos tanato (novo formato) - começa vazio
     (empty as any).arrumacao_json = "";
 
-
-
     setWizardData(empty);
     setMateriais(defaultMateriais());
     setArrumacao(defaultArrumacao());
@@ -960,89 +1114,118 @@ export default function AcompanhamentoPage() {
     setWizardOpen(true);
   }, []);
 
-  const abrirWizard = useCallback((tipo: "novo" | "editar", idx: number | null = null, grupoStep: number | null = null) => {
-    setWizardSubmitting(false);
-    const editing = tipo === "editar";
-    setWizardEditing(editing);
-    setWizardIdx(idx);
-    setWizardRestrictGroup(grupoStep);
-    setWizardStep(grupoStep ?? 0);
-    setWizardMsg(null);
-    setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
+  const abrirWizard = useCallback(
+    (
+      tipo: "novo" | "editar",
+      idx: number | null = null,
+      grupoStep: number | null = null,
+    ) => {
+      setWizardSubmitting(false);
+      const editing = tipo === "editar";
+      setWizardEditing(editing);
+      setWizardIdx(idx);
+      setWizardRestrictGroup(grupoStep);
+      setWizardStep(grupoStep ?? 0);
+      setWizardMsg(null);
+      setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
 
-    if (editing && idx !== null && registros[idx]) {
-      const r = registros[idx];
-      setTipoAtendimento(resolveTipoFromRegistro(r));
+      if (editing && idx !== null && registros[idx]) {
+        const r = registros[idx];
+        setTipoAtendimento(resolveTipoFromRegistro(r));
 
-      const data: Registro = {};
-      (stepsPadrao as any).forEach((s: any) => {
-        (data as any)[s.id] = (r as any)[s.id] ?? "";
-      });
-      (data as any).id = (r as any).id;
+        const data: Registro = {};
+        (stepsPadrao as any).forEach((s: any) => {
+          (data as any)[s.id] = (r as any)[s.id] ?? "";
+        });
+        (data as any).id = (r as any).id;
 
-      // ✅ metas da urna no wizardData
-      (data as any).urna_deposito_nome = String((r as any).urna_deposito_nome ?? "");
-      (data as any).urna_produto_id = Number((r as any).urna_produto_id ?? 0) || 0;
-      (data as any).urna_codigo_barras = String((r as any).urna_codigo_barras ?? "");
+        // ✅ metas da urna no wizardData
+        (data as any).urna_deposito_nome = String(
+          (r as any).urna_deposito_nome ?? "",
+        );
+        (data as any).urna_produto_id =
+          Number((r as any).urna_produto_id ?? 0) || 0;
+        (data as any).urna_codigo_barras = String(
+          (r as any).urna_codigo_barras ?? "",
+        );
 
-      // ✅ metas da ROUPA no wizardData
-      (data as any).roupa_deposito_nome = String((r as any).roupa_deposito_nome ?? "");
-      (data as any).roupa_produto_id = Number((r as any).roupa_produto_id ?? 0) || 0;
-      (data as any).roupa_codigo_barras = String((r as any).roupa_codigo_barras ?? "");
-      (data as any).roupa_propria = Number((r as any).roupa_propria ?? 0) || 0;
+        // ✅ metas da ROUPA no wizardData
+        (data as any).roupa_deposito_nome = String(
+          (r as any).roupa_deposito_nome ?? "",
+        );
+        (data as any).roupa_produto_id =
+          Number((r as any).roupa_produto_id ?? 0) || 0;
+        (data as any).roupa_codigo_barras = String(
+          (r as any).roupa_codigo_barras ?? "",
+        );
+        (data as any).roupa_propria =
+          Number((r as any).roupa_propria ?? 0) || 0;
 
+        // ✅ snapshot original de ROUPA (para comparar no salvar do EDITAR)
+        wizardOriginalRoupaRef.current = {
+          roupa: String((r as any).roupa ?? ""),
+          roupa_produto_id: Number((r as any).roupa_produto_id ?? 0) || 0,
+          roupa_deposito_nome: String((r as any).roupa_deposito_nome ?? ""),
+          roupa_codigo_barras: String((r as any).roupa_codigo_barras ?? ""),
+          roupa_propria: Number((r as any).roupa_propria ?? 0) || 0,
+        };
 
-      // ✅ snapshot original de ROUPA (para comparar no salvar do EDITAR)
-      wizardOriginalRoupaRef.current = {
-        roupa: String((r as any).roupa ?? ""),
-        roupa_produto_id: Number((r as any).roupa_produto_id ?? 0) || 0,
-        roupa_deposito_nome: String((r as any).roupa_deposito_nome ?? ""),
-        roupa_codigo_barras: String((r as any).roupa_codigo_barras ?? ""),
-        roupa_propria: Number((r as any).roupa_propria ?? 0) || 0,
-      };
+        // ✅ metas do INVOL no wizardData
+        (data as any).invol_deposito_nome = String(
+          (r as any).invol_deposito_nome ?? "",
+        );
+        (data as any).invol_produto_id =
+          Number((r as any).invol_produto_id ?? 0) || 0;
+        (data as any).invol_codigo_barras = String(
+          (r as any).invol_codigo_barras ?? "",
+        );
+        // ✅ texto do INVOL (para aparecer no combobox ao reabrir)
+        (data as any).invol_item = String((r as any).invol_item ?? "");
 
+        // ✅ metas do VÉU no wizardData
+        (data as any).veu_deposito_nome = String(
+          (r as any).veu_deposito_nome ?? "",
+        );
+        (data as any).veu_produto_id =
+          Number((r as any).veu_produto_id ?? 0) || 0;
+        (data as any).veu_codigo_barras = String(
+          (r as any).veu_codigo_barras ?? "",
+        );
+        (data as any).veu_item = String((r as any).veu_item ?? "");
 
-      // ✅ metas do INVOL no wizardData
-      (data as any).invol_deposito_nome = String((r as any).invol_deposito_nome ?? "");
-      (data as any).invol_produto_id = Number((r as any).invol_produto_id ?? 0) || 0;
-      (data as any).invol_codigo_barras = String((r as any).invol_codigo_barras ?? "");
-      // ✅ texto do INVOL (para aparecer no combobox ao reabrir)
-      (data as any).invol_item = String((r as any).invol_item ?? "");
+        // ✅ metas do CORDÃO no wizardData
+        (data as any).cordao_deposito_nome = String(
+          (r as any).cordao_deposito_nome ?? "",
+        );
+        (data as any).cordao_produto_id =
+          Number((r as any).cordao_produto_id ?? 0) || 0;
+        (data as any).cordao_codigo_barras = String(
+          (r as any).cordao_codigo_barras ?? "",
+        );
+        (data as any).cordao_item = String((r as any).cordao_item ?? "");
 
-      // ✅ metas do VÉU no wizardData
-      (data as any).veu_deposito_nome = String((r as any).veu_deposito_nome ?? "");
-      (data as any).veu_produto_id = Number((r as any).veu_produto_id ?? 0) || 0;
-      (data as any).veu_codigo_barras = String((r as any).veu_codigo_barras ?? "");
-      (data as any).veu_item = String((r as any).veu_item ?? "");
+        // ✅ insumos tanato (novo formato dentro do arrumacao_json)
+        (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
 
-      // ✅ metas do CORDÃO no wizardData
-      (data as any).cordao_deposito_nome = String((r as any).cordao_deposito_nome ?? "");
-      (data as any).cordao_produto_id = Number((r as any).cordao_produto_id ?? 0) || 0;
-      (data as any).cordao_codigo_barras = String((r as any).cordao_codigo_barras ?? "");
-      (data as any).cordao_item = String((r as any).cordao_item ?? "");
+        const mats = parseMateriaisFromRegistro(r);
+        setMateriais(mats);
+        (data as any).materiais = mats;
 
-      // ✅ insumos tanato (novo formato dentro do arrumacao_json)
-      (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
+        const arr = parseArrumacaoFromRegistro(r);
+        setArrumacao(arr);
+        (data as any).arrumacao = arr;
 
+        setWizardData(data);
+        setAssistenciaVal(String((r as any).assistencia ?? ""));
+        setTanatoVal(String((r as any).tanato ?? ""));
+        setWizardOpen(true);
+        return;
+      }
 
-
-      const mats = parseMateriaisFromRegistro(r);
-      setMateriais(mats);
-      (data as any).materiais = mats;
-
-      const arr = parseArrumacaoFromRegistro(r);
-      setArrumacao(arr);
-      (data as any).arrumacao = arr;
-
-      setWizardData(data);
-      setAssistenciaVal(String((r as any).assistencia ?? ""));
-      setTanatoVal(String((r as any).tanato ?? ""));
-      setWizardOpen(true);
-      return;
-    }
-
-    iniciarNovoRegistro(tipoAtendimento);
-  }, [registros, iniciarNovoRegistro, tipoAtendimento]);
+      iniciarNovoRegistro(tipoAtendimento);
+    },
+    [registros, iniciarNovoRegistro, tipoAtendimento],
+  );
 
   const salvarGrupoWizard = useCallback((): Registro | null => {
     const grupo = wizardStepIndexesForTipo[wizardStep];
@@ -1074,20 +1257,25 @@ export default function AcompanhamentoPage() {
 
         if (obrigatoriosForTipo.includes(s.id) && !v) {
           el?.focus?.();
-          setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
+          setWizardMsg({
+            text: "Preencha todos campos obrigatórios.",
+            ok: false,
+          });
           return null;
         }
       }
 
       // valida obrigatórios também para async
       if (obrigatoriosForTipo.includes(s.id) && !v) {
-        setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
+        setWizardMsg({
+          text: "Preencha todos campos obrigatórios.",
+          ok: false,
+        });
         return null;
       }
 
       next[s.id] = v;
     }
-
 
     if ((wizardData as any).id != null) next.id = (wizardData as any).id;
 
@@ -1099,14 +1287,21 @@ export default function AcompanhamentoPage() {
     // (Wizard.tsx atualiza wizardData no momento da seleção da urna.)
     const pid = Number(next?.urna_produto_id ?? 0) || 0;
     if (pid > 0) {
-      const dep = String(next?.urna_deposito_nome ?? "MEMORIAL").trim().toUpperCase();
+      const dep = String(next?.urna_deposito_nome ?? "MEMORIAL")
+        .trim()
+        .toUpperCase();
       next.urna_deposito_nome = dep === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
       next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
     } else {
       // se digitou urna mas não selecionou produto => mantém pid 0 (wizard valida e PHP também)
       next.urna_produto_id = 0;
       next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
-      next.urna_deposito_nome = String(next?.urna_deposito_nome ?? "MEMORIAL").trim().toUpperCase() === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+      next.urna_deposito_nome =
+        String(next?.urna_deposito_nome ?? "MEMORIAL")
+          .trim()
+          .toUpperCase() === "FUNERARIA"
+          ? "FUNERARIA"
+          : "MEMORIAL";
     }
 
     // ✅ ROUPA META: mesma lógica da URNA (não depende do DOM)
@@ -1133,9 +1328,13 @@ export default function AcompanhamentoPage() {
       const roupaPid = Number(next?.roupa_produto_id ?? 0) || 0;
 
       // normaliza depósito permitido
-      const depRaw = String(next?.roupa_deposito_nome ?? "").trim().toUpperCase();
+      const depRaw = String(next?.roupa_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
       const depOk =
-        depRaw === "ARMARIO SANDRO" || depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
+        depRaw === "ARMARIO SANDRO" ||
+          depRaw === "ARMARIO ILDO" ||
+          depRaw === "FUNERARIA"
           ? depRaw
           : "ARMARIO SANDRO";
 
@@ -1149,7 +1348,6 @@ export default function AcompanhamentoPage() {
       (next as any).roupa_propria = 0;
     }
 
-
     // ✅ INVOL META: só vale quando invol === "Sim"
     const involFlag = String(next?.invol ?? "").trim();
     if (!isSim(involFlag)) {
@@ -1162,8 +1360,11 @@ export default function AcompanhamentoPage() {
       const involPid = Number(next?.invol_produto_id ?? 0) || 0;
 
       // normaliza depósito permitido
-      const depRaw = String(next?.invol_deposito_nome ?? "").trim().toUpperCase();
-      const depOk = depRaw === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
+      const depRaw = String(next?.invol_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
 
       next.invol_deposito_nome = depOk;
       next.invol_codigo_barras = String(next?.invol_codigo_barras ?? "").trim();
@@ -1180,7 +1381,9 @@ export default function AcompanhamentoPage() {
     } else {
       const veuPid = Number(next?.veu_produto_id ?? 0) || 0;
 
-      const depRaw = String(next?.veu_deposito_nome ?? "").trim().toUpperCase();
+      const depRaw = String(next?.veu_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
       const depOk =
         depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
           ? depRaw
@@ -1201,17 +1404,20 @@ export default function AcompanhamentoPage() {
     } else {
       const cordaoPid = Number(next?.cordao_produto_id ?? 0) || 0;
 
-      const depRaw = String(next?.cordao_deposito_nome ?? "").trim().toUpperCase();
+      const depRaw = String(next?.cordao_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
       const depOk =
         depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
           ? depRaw
           : "ARMARIO SANDRO";
 
       next.cordao_deposito_nome = depOk;
-      next.cordao_codigo_barras = String(next?.cordao_codigo_barras ?? "").trim();
+      next.cordao_codigo_barras = String(
+        next?.cordao_codigo_barras ?? "",
+      ).trim();
       next.cordao_produto_id = cordaoPid > 0 ? cordaoPid : 0;
     }
-
 
     // ✅ preservar INSUMOS dentro do arrumacao_json (merge booleans + insumos)
     try {
@@ -1235,8 +1441,6 @@ export default function AcompanhamentoPage() {
     } catch {
       next.arrumacao_json = "";
     }
-
-
 
     setWizardData(next);
     return next as Registro;
@@ -1268,7 +1472,10 @@ export default function AcompanhamentoPage() {
 
     for (const id of grupoObrigatorios) {
       if (!dataAtualizada[id] || String(dataAtualizada[id]).trim() === "") {
-        setWizardMsg({ text: "Preencha todos campos obrigatórios.", ok: false });
+        setWizardMsg({
+          text: "Preencha todos campos obrigatórios.",
+          ok: false,
+        });
         return;
       }
     }
@@ -1284,26 +1491,33 @@ export default function AcompanhamentoPage() {
     const origRoupa = wizardOriginalRoupaRef.current;
 
     const roupaMudou = wizardEditing
-      ? (
-        String(roupaTxt).trim() !== String(origRoupa?.roupa ?? "").trim() ||
-        (Number(roupaPid) || 0) !== (Number(origRoupa?.roupa_produto_id ?? 0) || 0) ||
-        String(roupaDep).trim() !== String(origRoupa?.roupa_deposito_nome ?? "").trim() ||
-        String((dataAtualizada as any)?.roupa_codigo_barras ?? "").trim() !== String(origRoupa?.roupa_codigo_barras ?? "").trim() ||
-        (Number((dataAtualizada as any)?.roupa_propria ?? 0) ? 1 : 0) !== (Number(origRoupa?.roupa_propria ?? 0) ? 1 : 0)
-      )
+      ? String(roupaTxt).trim() !== String(origRoupa?.roupa ?? "").trim() ||
+      (Number(roupaPid) || 0) !==
+      (Number(origRoupa?.roupa_produto_id ?? 0) || 0) ||
+      String(roupaDep).trim() !==
+      String(origRoupa?.roupa_deposito_nome ?? "").trim() ||
+      String((dataAtualizada as any)?.roupa_codigo_barras ?? "").trim() !==
+      String(origRoupa?.roupa_codigo_barras ?? "").trim() ||
+      (Number((dataAtualizada as any)?.roupa_propria ?? 0) ? 1 : 0) !==
+      (Number(origRoupa?.roupa_propria ?? 0) ? 1 : 0)
       : true;
 
     if (roupaMudou && roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
       if (roupaPid <= 0) {
-        setWizardMsg({ text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".', ok: false });
+        setWizardMsg({
+          text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".',
+          ok: false,
+        });
         return;
       }
       if (!roupaDep) {
-        setWizardMsg({ text: "Selecione o local de saída da roupa (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).", ok: false });
+        setWizardMsg({
+          text: "Selecione o local de saída da roupa (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          ok: false,
+        });
         return;
       }
     }
-
 
     // ✅ validação extra (front):
     const involVal = dataAtualizada?.invol ?? "";
@@ -1311,11 +1525,17 @@ export default function AcompanhamentoPage() {
       const involPid = Number(dataAtualizada?.invol_produto_id ?? 0) || 0;
       const involDep = String(dataAtualizada?.invol_deposito_nome ?? "").trim();
       if (involPid <= 0) {
-        setWizardMsg({ text: "Selecione um INVOL da lista (produto do estoque).", ok: false });
+        setWizardMsg({
+          text: "Selecione um INVOL da lista (produto do estoque).",
+          ok: false,
+        });
         return;
       }
       if (!involDep) {
-        setWizardMsg({ text: "Selecione o local do INVOL (ARMARIO SANDRO ou ARMARIO ILDO).", ok: false });
+        setWizardMsg({
+          text: "Selecione o local do INVOL (ARMARIO SANDRO ou ARMARIO ILDO).",
+          ok: false,
+        });
         return;
       }
     }
@@ -1326,11 +1546,17 @@ export default function AcompanhamentoPage() {
       const veuPid = Number(dataAtualizada?.veu_produto_id ?? 0) || 0;
       const veuDep = String(dataAtualizada?.veu_deposito_nome ?? "").trim();
       if (veuPid <= 0) {
-        setWizardMsg({ text: "Selecione um VÉU da lista (produto do estoque).", ok: false });
+        setWizardMsg({
+          text: "Selecione um VÉU da lista (produto do estoque).",
+          ok: false,
+        });
         return;
       }
       if (!veuDep) {
-        setWizardMsg({ text: "Selecione o local do VÉU (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).", ok: false });
+        setWizardMsg({
+          text: "Selecione o local do VÉU (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          ok: false,
+        });
         return;
       }
     }
@@ -1339,35 +1565,51 @@ export default function AcompanhamentoPage() {
     const cordaoVal = dataAtualizada?.cordao ?? "";
     if (isSim(cordaoVal)) {
       const cordaoPid = Number(dataAtualizada?.cordao_produto_id ?? 0) || 0;
-      const cordaoDep = String(dataAtualizada?.cordao_deposito_nome ?? "").trim();
+      const cordaoDep = String(
+        dataAtualizada?.cordao_deposito_nome ?? "",
+      ).trim();
       if (cordaoPid <= 0) {
-        setWizardMsg({ text: "Selecione um CORDÃO da lista (produto do estoque).", ok: false });
+        setWizardMsg({
+          text: "Selecione um CORDÃO da lista (produto do estoque).",
+          ok: false,
+        });
         return;
       }
       if (!cordaoDep) {
-        setWizardMsg({ text: "Selecione o local do CORDÃO (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).", ok: false });
+        setWizardMsg({
+          text: "Selecione o local do CORDÃO (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          ok: false,
+        });
         return;
       }
     }
 
-
     // ✅ validação extra (front): INSUMOS TANATO (arrumacao_json novo)
     const ins = parseInsumosFromArrumacaoJson(dataAtualizada?.arrumacao_json);
     if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
-      setWizardMsg({ text: "Insumos Tanatopraxia: selecione o depósito e informe itens com quantidade (>=1).", ok: false });
+      setWizardMsg({
+        text: "Insumos Tanatopraxia: selecione o depósito e informe itens com quantidade (>=1).",
+        ok: false,
+      });
       return;
     }
 
     const urnaPid = Number(dataAtualizada?.urna_produto_id ?? 0) || 0;
     if (urnaTxt !== "" && urnaPid <= 0) {
-      setWizardMsg({ text: "Selecione uma urna da lista (produto do estoque).", ok: false });
+      setWizardMsg({
+        text: "Selecione uma urna da lista (produto do estoque).",
+        ok: false,
+      });
       return;
     }
 
     if (!isOnlineNow()) {
       try {
         setWizardSubmitting(true);
-        const payload: any = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+        const payload: any = {
+          ...dataAtualizada,
+          acao: wizardEditing ? "editar" : "novo",
+        };
 
         if (payload.acao === "editar") {
           // ✅ remove roupa do payload se não mudou
@@ -1382,7 +1624,10 @@ export default function AcompanhamentoPage() {
         });
         setTimeout(() => setWizardOpen(false), 950);
       } catch (e: any) {
-        setWizardMsg({ text: e?.message || "Não foi possível salvar offline.", ok: false });
+        setWizardMsg({
+          text: e?.message || "Não foi possível salvar offline.",
+          ok: false,
+        });
       } finally {
         setWizardSubmitting(false);
       }
@@ -1391,7 +1636,10 @@ export default function AcompanhamentoPage() {
 
     try {
       setWizardSubmitting(true);
-      const payload: any = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+      const payload: any = {
+        ...dataAtualizada,
+        acao: wizardEditing ? "editar" : "novo",
+      };
 
       if (payload.acao === "editar") {
         // ✅ remove roupa do payload se não mudou
@@ -1417,14 +1665,22 @@ export default function AcompanhamentoPage() {
         setWizardMsg({ text: "Registro salvo!", ok: true });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
-          const novoId = json?.id ?? json?.novo_id ?? json?.last_id ?? (dataAtualizada as any).id ?? null;
+          const novoId =
+            json?.id ??
+            json?.novo_id ??
+            json?.last_id ??
+            (dataAtualizada as any).id ??
+            null;
           addTerceiroIdToSession(novoId);
         }
 
         fetchRegistros();
         setTimeout(() => setWizardOpen(false), 950);
       } else {
-        setWizardMsg({ text: json?.erro || json?.msg || "Erro ao salvar!", ok: false });
+        setWizardMsg({
+          text: json?.erro || json?.msg || "Erro ao salvar!",
+          ok: false,
+        });
       }
     } catch (e: any) {
       const msg = String(e?.message || "");
@@ -1435,10 +1691,13 @@ export default function AcompanhamentoPage() {
         msg.includes("NetworkError") ||
         msg.includes("ERR_NETWORK") ||
         msg.includes("Load failed") ||
-        msg.includes("fetch") && msg.includes("failed");
+        (msg.includes("fetch") && msg.includes("failed"));
 
       if (isNetwork) {
-        const payload: any = { ...dataAtualizada, acao: wizardEditing ? "editar" : "novo" };
+        const payload: any = {
+          ...dataAtualizada,
+          acao: wizardEditing ? "editar" : "novo",
+        };
         if (payload.acao === "editar") {
           try {
             scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
@@ -1459,8 +1718,7 @@ export default function AcompanhamentoPage() {
           ok: false,
         });
       }
-    }
- finally {
+    } finally {
       setWizardSubmitting(false);
       flushOfflineQueue();
     }
@@ -1484,340 +1742,413 @@ export default function AcompanhamentoPage() {
     setAcaoOpen(true);
   }, []);
 
-  const registrarAcao = useCallback(async (acao: string, opts?: { skipMaterialCheck?: boolean; skipConfirm?: boolean }): Promise<boolean> => {
-    if (acaoSubmitting) return false;
-    if (acaoId == null) return false;
+  const registrarAcao = useCallback(
+    async (
+      acao: string,
+      opts?: {
+        skipMaterialCheck?: boolean;
+        skipConfirm?: boolean;
+        extra?: Record<string, any>;
+      },
+    ): Promise<boolean> => {
+      if (acaoSubmitting) return false;
+      if (acaoId == null) return false;
 
-    const statusCode = normalizeStatusCode(acao);
-    const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
+      const statusCode = normalizeStatusCode(acao);
+      const needsBackendConfirm =
+        statusCode === "fase03" || statusCode === "fase04";
+      const extraPayload =
+        opts?.extra && typeof opts.extra === "object" ? opts.extra : {};
 
-    // ✅ trava fase05 sem metas necessárias (urna/roupa/invol/insumos) + exige online
-    if (statusCode === "fase05") {
-      const reg = registros.find((x) => String(x.id) === String(acaoId)) as any;
+      // ✅ trava fase05 sem metas necessárias (urna/roupa/invol/insumos) + exige online
+      if (statusCode === "fase05") {
+        const reg = registros.find(
+          (x) => String(x.id) === String(acaoId),
+        ) as any;
 
-      // URNA (sempre exige)
-      const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
-      if (urnaPid <= 0) {
+        // URNA (sempre exige)
+        const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
+        if (urnaPid <= 0) {
+          setAcaoMsg({
+            ok: false,
+            text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
+          });
+          return false;
+        }
+
+        // ✅ ROUPA (se não for própria)
+        const roupaTxt = String(reg?.roupa ?? "").trim();
+        const roupaPropria = Number(reg?.roupa_propria ?? 0) ? 1 : 0;
+
+        // Só valida como "roupa de estoque" quando:
+        // - tem texto de roupa
+        // - e NÃO é roupa própria (nem pelo texto, nem pela flag)
+        const precisaValidarRoupaEstoque =
+          roupaTxt !== "" && !isRoupaPropria(roupaTxt) && roupaPropria !== 1;
+
+        if (precisaValidarRoupaEstoque) {
+          const roupaPid = Number(reg?.roupa_produto_id ?? 0) || 0;
+          const roupaDep = String(reg?.roupa_deposito_nome ?? "").trim();
+
+          if (roupaPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: 'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".',
+            });
+            return false;
+          }
+
+          if (!roupaDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+            });
+            return false;
+          }
+        }
+
+        // 3) INVOL (se invol = Sim)
+        if (isSim(reg?.invol)) {
+          const involPid = Number(reg?.invol_produto_id ?? 0) || 0;
+          const involDep = String(reg?.invol_deposito_nome ?? "").trim();
+          if (involPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Invol: selecione um INVOL da lista (estoque).",
+            });
+            return false;
+          }
+          if (!involDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Invol: selecione o local (ARMARIO SANDRO ou ARMARIO ILDO).",
+            });
+            return false;
+          }
+        }
+
+        // ✅ VÉU (se veu = Sim)
+        if (isSim(reg?.veu)) {
+          const veuPid = Number(reg?.veu_produto_id ?? 0) || 0;
+          const veuDep = String(reg?.veu_deposito_nome ?? "").trim();
+          if (veuPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Véu: selecione um VÉU da lista (estoque).",
+            });
+            return false;
+          }
+          if (!veuDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Véu: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+            });
+            return false;
+          }
+        }
+
+        // ✅ CORDÃO (se cordao = Sim)
+        if (isSim(reg?.cordao)) {
+          const cordaoPid = Number(reg?.cordao_produto_id ?? 0) || 0;
+          const cordaoDep = String(reg?.cordao_deposito_nome ?? "").trim();
+          if (cordaoPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Cordão: selecione um CORDÃO da lista (estoque).",
+            });
+            return false;
+          }
+          if (!cordaoDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+            });
+            return false;
+          }
+        }
+
+        // INSUMOS TANATO (se arrumacao_json tiver itens)
+        const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
+        if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
+          setAcaoMsg({
+            ok: false,
+            text: "Insumos Tanatopraxia: selecione depósito e itens com quantidade (>=1).",
+          });
+          return false;
+        }
+      }
+
+      // conferência antes do fase11
+      if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
+        const reg = registros.find((x) => String(x.id) === String(acaoId));
+        const mats = reg ? parseMateriaisFromRegistro(reg) : {};
+
+        const itens: MatCheckItem[] = Object.entries(mats || {})
+          .map(([k, it]: any) => ({
+            key: String(k),
+            nome: String(it?.nome || k),
+            qtd: Number(it?.qtd ?? 0),
+            checked: !!it?.checked,
+          }))
+          .filter((x) => x.checked && x.qtd > 0)
+          .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
+
+        setMatCheckItens(itens);
+        setMatCheckRegistroId(
+          reg?.id != null ? String(reg.id) : String(acaoId),
+        );
+        setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
+
+        setMatCheckReturnToAcao(true);
+        setAcaoOpen(false);
+        setMatCheckOpen(true);
+        return false;
+      }
+
+      if (!opts?.skipConfirm) {
+        const ok = window.confirm("Deseja confirmar essa ação?");
+        if (!ok) return false;
+      }
+
+      // Offline (exceto fase05)
+      if (!isOnlineNow()) {
+        try {
+          setAcaoSubmitting(true);
+          enqueueOffline(
+            {
+              acao: "atualizar_status",
+              id: acaoId,
+              status: statusCode || acao,
+              ...extraPayload,
+              ...(needsBackendConfirm ? { confirmar: true } : {}),
+            },
+            "offline",
+          );
+          setAcaoMsg({
+            text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+            ok: true,
+          });
+          setAcaoOpen(false);
+          return true;
+        } finally {
+          setAcaoSubmitting(false);
+        }
+      }
+
+      // ✅ fase05: dar baixa automática (URNA + ROUPA + INVOL + INSUMOS) antes de mudar status
+      if (statusCode === "fase05") {
+        try {
+          setAcaoSubmitting(true);
+
+          const reg = registros.find(
+            (x) => String(x.id) === String(acaoId),
+          ) as any;
+          const registro_id = String(acaoId);
+
+          // 1) URNA
+          await baixarItensFase05({ registro_id, tipo: "URNA" });
+
+          // 2) ROUPA (se não for própria)
+          const roupaTxt = String(reg?.roupa ?? "").trim();
+          if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+            await baixarItensFase05({ registro_id, tipo: "ROUPA" });
+          }
+
+          // 3) INVOL
+          if (isSim(reg?.invol)) {
+            await baixarItensFase05({ registro_id, tipo: "INVOL" });
+          }
+
+          // 4) VÉU
+          if (isSim(reg?.veu)) {
+            await baixarItensFase05({ registro_id, tipo: "VEU" });
+          }
+
+          // 5) CORDÃO
+          if (isSim(reg?.cordao)) {
+            await baixarItensFase05({ registro_id, tipo: "CORDAO" });
+          }
+
+          // 6) INSUMOS
+          const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
+          if (ins && ins.itens.length > 0) {
+            await baixarItensFase05({
+              registro_id,
+              tipo: "INSUMOS",
+              deposito_nome: ins.deposito_nome,
+              itens: ins.itens,
+            });
+          }
+        } catch (e: any) {
+          setAcaoSubmitting(false);
+          setAcaoMsg({
+            ok: false,
+            text: e?.message || "Falha ao dar baixa automática (fase05).",
+          });
+          return false;
+        }
+      }
+
+      setAcaoSubmitting(true);
+      try {
+        const json = await enviarRegistroPHP({
+          acao: "atualizar_status",
+          id: acaoId,
+          status: statusCode || acao,
+          ...extraPayload,
+          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        });
+
+        if (json?.sucesso) {
+          setAcaoMsg({
+            text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`,
+            ok: true,
+          });
+
+          const faseAtual = statusCode || acao;
+          const faseInicioTele = teleStartFaseRef.current ?? teleStartFase;
+          const teleEstaAtiva = teleActiveRef.current || teleActive;
+
+          const faseEncerraTelemetria =
+            faseAtual === "fase02" ||
+            faseAtual === "fase08" ||
+            faseAtual === "fase10";
+
+          const deveEncerrarPorFluxo =
+            teleEstaAtiva &&
+            faseInicioTele &&
+            STOP_BY_START[faseInicioTele] &&
+            STOP_BY_START[faseInicioTele] === faseAtual;
+
+          if (deveEncerrarPorFluxo || faseEncerraTelemetria) {
+            console.log("[TELEMETRIA] tentando encerrar", {
+              faseAtual,
+              faseInicioTele,
+              teleEstaAtiva,
+              deveEncerrarPorFluxo,
+            });
+
+            const salvo = await teleRef.current?.stopAndSave();
+
+            console.log("[TELEMETRIA] retorno stopAndSave", salvo);
+
+            limparTeleAtiva();
+          }
+
+          await fetchRegistros();
+          setAcaoOpen(false);
+          return true;
+        }
+
         setAcaoMsg({
+          text: String(json?.msg || json?.erro || "Erro ao atualizar status."),
           ok: false,
-          text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
         });
         return false;
-      }
+      } catch (e: any) {
+        const msg = String(e?.message || "");
 
-      // ✅ ROUPA (se não for própria)
-      const roupaTxt = String(reg?.roupa ?? "").trim();
-      const roupaPropria = Number(reg?.roupa_propria ?? 0) ? 1 : 0;
+        const isNetwork =
+          msg.includes("Failed to fetch") ||
+          msg.includes("NetworkError") ||
+          msg.includes("ERR_NETWORK") ||
+          msg.includes("Load failed") ||
+          (msg.includes("fetch") && msg.includes("failed"));
 
-      // Só valida como "roupa de estoque" quando:
-      // - tem texto de roupa
-      // - e NÃO é roupa própria (nem pelo texto, nem pela flag)
-      const precisaValidarRoupaEstoque =
-        roupaTxt !== "" && !isRoupaPropria(roupaTxt) && roupaPropria !== 1;
-
-      if (precisaValidarRoupaEstoque) {
-        const roupaPid = Number(reg?.roupa_produto_id ?? 0) || 0;
-        const roupaDep = String(reg?.roupa_deposito_nome ?? "").trim();
-
-        if (roupaPid <= 0) {
+        if (isNetwork) {
+          enqueueOffline(
+            {
+              acao: "atualizar_status",
+              id: acaoId,
+              status: statusCode || acao,
+              ...extraPayload,
+              ...(needsBackendConfirm ? { confirmar: true } : {}),
+            },
+            msg,
+          );
           setAcaoMsg({
-            ok: false,
-            text: 'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".',
+            text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+            ok: true,
           });
-          return false;
+          setAcaoOpen(false);
+          return true;
         }
 
-        if (!roupaDep) {
-          setAcaoMsg({
-            ok: false,
-            text: "Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
-          });
-          return false;
-        }
-      }
-
-
-      
-      // 3) INVOL (se invol = Sim)
-      if (isSim(reg?.invol)) {
-        const involPid = Number(reg?.invol_produto_id ?? 0) || 0;
-        const involDep = String(reg?.invol_deposito_nome ?? "").trim();
-        if (involPid <= 0) {
-          setAcaoMsg({ ok: false, text: "Invol: selecione um INVOL da lista (estoque)." });
-          return false;
-        }
-        if (!involDep) {
-          setAcaoMsg({ ok: false, text: "Invol: selecione o local (ARMARIO SANDRO ou ARMARIO ILDO)." });
-          return false;
-        }
-      }
-
-      // ✅ VÉU (se veu = Sim)
-      if (isSim(reg?.veu)) {
-        const veuPid = Number(reg?.veu_produto_id ?? 0) || 0;
-        const veuDep = String(reg?.veu_deposito_nome ?? "").trim();
-        if (veuPid <= 0) {
-          setAcaoMsg({ ok: false, text: "Véu: selecione um VÉU da lista (estoque)." });
-          return false;
-        }
-        if (!veuDep) {
-          setAcaoMsg({ ok: false, text: "Véu: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA)." });
-          return false;
-        }
-      }
-
-      // ✅ CORDÃO (se cordao = Sim)
-      if (isSim(reg?.cordao)) {
-        const cordaoPid = Number(reg?.cordao_produto_id ?? 0) || 0;
-        const cordaoDep = String(reg?.cordao_deposito_nome ?? "").trim();
-        if (cordaoPid <= 0) {
-          setAcaoMsg({ ok: false, text: "Cordão: selecione um CORDÃO da lista (estoque)." });
-          return false;
-        }
-        if (!cordaoDep) {
-          setAcaoMsg({ ok: false, text: "Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA)." });
-          return false;
-        }
-      }
-
-      // INSUMOS TANATO (se arrumacao_json tiver itens)
-      const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
-      if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
-        setAcaoMsg({ ok: false, text: "Insumos Tanatopraxia: selecione depósito e itens com quantidade (>=1)." });
+        setAcaoMsg({ text: msg || "Erro ao atualizar status.", ok: false });
         return false;
-      }
-
-    }
-
-
-    // conferência antes do fase11
-    if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
-      const reg = registros.find((x) => String(x.id) === String(acaoId));
-      const mats = reg ? parseMateriaisFromRegistro(reg) : {};
-
-      const itens: MatCheckItem[] = Object.entries(mats || {})
-        .map(([k, it]: any) => ({ key: String(k), nome: String(it?.nome || k), qtd: Number(it?.qtd ?? 0), checked: !!it?.checked }))
-        .filter((x) => x.checked && x.qtd > 0)
-        .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
-
-      setMatCheckItens(itens);
-      setMatCheckRegistroId(reg?.id != null ? String(reg.id) : String(acaoId));
-      setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
-
-      setMatCheckReturnToAcao(true);
-      setAcaoOpen(false);
-      setMatCheckOpen(true);
-      return false;
-    }
-
-    if (!opts?.skipConfirm) {
-      const ok = window.confirm("Deseja confirmar essa ação?");
-      if (!ok) return false;
-    }
-
-    // Offline (exceto fase05)
-    if (!isOnlineNow()) {
-      try {
-        setAcaoSubmitting(true);
-        enqueueOffline(
-          { acao: "atualizar_status", id: acaoId, status: statusCode || acao, ...(needsBackendConfirm ? { confirmar: true } : {}) },
-          "offline"
-        );
-        setAcaoMsg({ text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.", ok: true });
-        setAcaoOpen(false);
-        return true;
       } finally {
         setAcaoSubmitting(false);
+        flushOfflineQueue();
       }
-    }
+    },
+    [
+      acaoSubmitting,
+      acaoId,
+      registros,
+      teleActive,
+      teleStartFase,
+      fetchRegistros,
+      flushOfflineQueue,
+      baixarItensFase05,
+      limparTeleAtiva,
+    ],
+  );
 
-    // ✅ fase05: dar baixa automática (URNA + ROUPA + INVOL + INSUMOS) antes de mudar status
-    if (statusCode === "fase05") {
+  const confirmarAcaoSilenciosa = useCallback(
+    async (fase: string) => {
+      const id = teleRegistroIdRef.current ?? teleRegistroId ?? acaoId;
+      if (id == null) return;
+
+      const statusCode = normalizeStatusCode(fase);
+      const needsBackendConfirm =
+        statusCode === "fase03" || statusCode === "fase04";
+
+      if (!isOnlineNow()) {
+        enqueueOffline(
+          {
+            acao: "atualizar_status",
+            id,
+            status: statusCode || fase,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          },
+          "offline",
+        );
+        return;
+      }
+
       try {
-        setAcaoSubmitting(true);
-
-        const reg = registros.find((x) => String(x.id) === String(acaoId)) as any;
-        const registro_id = String(acaoId);
-
-        // 1) URNA
-        await baixarItensFase05({ registro_id, tipo: "URNA" });
-
-        // 2) ROUPA (se não for própria)
-        const roupaTxt = String(reg?.roupa ?? "").trim();
-        if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
-          await baixarItensFase05({ registro_id, tipo: "ROUPA" });
-        }
-
-        // 3) INVOL
-        if (isSim(reg?.invol)) {
-          await baixarItensFase05({ registro_id, tipo: "INVOL" });
-        }
-
-        // 4) VÉU
-        if (isSim(reg?.veu)) {
-          await baixarItensFase05({ registro_id, tipo: "VEU" });
-        }
-
-        // 5) CORDÃO
-        if (isSim(reg?.cordao)) {
-          await baixarItensFase05({ registro_id, tipo: "CORDAO" });
-        }
-
-        // 6) INSUMOS
-        const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
-        if (ins && ins.itens.length > 0) {
-          await baixarItensFase05({
-            registro_id,
-            tipo: "INSUMOS",
-            deposito_nome: ins.deposito_nome,
-            itens: ins.itens,
-          });
-        }
-
-      } catch (e: any) {
-        setAcaoSubmitting(false);
-        setAcaoMsg({ ok: false, text: e?.message || "Falha ao dar baixa automática (fase05)." });
-        return false;
-      }
-    }
-
-
-    setAcaoSubmitting(true);
-    try {
-      const json = await enviarRegistroPHP({
-        acao: "atualizar_status",
-        id: acaoId,
-        status: statusCode || acao,
-        ...(needsBackendConfirm ? { confirmar: true } : {}),
-      });
-
-      if (json?.sucesso) {
-        setAcaoMsg({ text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`, ok: true });
-
-        const faseAtual = statusCode || acao;
-        const faseInicioTele = teleStartFaseRef.current ?? teleStartFase;
-        const teleEstaAtiva = teleActiveRef.current || teleActive;
-
-        const faseEncerraTelemetria =
-          faseAtual === "fase02" ||
-          faseAtual === "fase08" ||
-          faseAtual === "fase10";
-
-        const deveEncerrarPorFluxo =
-          teleEstaAtiva &&
-          faseInicioTele &&
-          STOP_BY_START[faseInicioTele] &&
-          STOP_BY_START[faseInicioTele] === faseAtual;
-
-        if (deveEncerrarPorFluxo || faseEncerraTelemetria) {
-          console.log("[TELEMETRIA] tentando encerrar", {
-            faseAtual,
-            faseInicioTele,
-            teleEstaAtiva,
-            deveEncerrarPorFluxo,
-          });
-
-          const salvo = await teleRef.current?.stopAndSave();
-
-          console.log("[TELEMETRIA] retorno stopAndSave", salvo);
-
-          limparTeleAtiva();
-        }
+        await enviarRegistroPHP({
+          acao: "atualizar_status",
+          id,
+          status: statusCode || fase,
+          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        });
 
         await fetchRegistros();
-        setAcaoOpen(false);
-        return true;
-      }
-
-      setAcaoMsg({ text: String(json?.msg || json?.erro || "Erro ao atualizar status."), ok: false });
-      return false;
-    } catch (e: any) {
-      const msg = String(e?.message || "");
-
-      const isNetwork =
-        msg.includes("Failed to fetch") ||
-        msg.includes("NetworkError") ||
-        msg.includes("ERR_NETWORK") ||
-        msg.includes("Load failed") ||
-        msg.includes("fetch") && msg.includes("failed");
-
-      if (isNetwork) {
+      } catch (e: any) {
         enqueueOffline(
-          { acao: "atualizar_status", id: acaoId, status: statusCode || acao, ...(needsBackendConfirm ? { confirmar: true } : {}) },
-          msg
+          {
+            acao: "atualizar_status",
+            id,
+            status: statusCode || fase,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          },
+          e?.message,
         );
-        setAcaoMsg({ text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.", ok: true });
-        setAcaoOpen(false);
-        return true;
+      } finally {
+        flushOfflineQueue();
       }
-
-      setAcaoMsg({ text: msg || "Erro ao atualizar status.", ok: false });
-      return false;
-    } finally {
-      setAcaoSubmitting(false);
-      flushOfflineQueue();
-    }
-  }, [
-  acaoSubmitting,
-  acaoId,
-  registros,
-  teleActive,
-  teleStartFase,
-  fetchRegistros,
-  flushOfflineQueue,
-  baixarItensFase05,
-  limparTeleAtiva,
-]);
-
-
-  const confirmarAcaoSilenciosa = useCallback(async (fase: string) => {
-    const id = teleRegistroIdRef.current ?? teleRegistroId ?? acaoId;
-    if (id == null) return;
-
-    const statusCode = normalizeStatusCode(fase);
-    const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
-
-    if (!isOnlineNow()) {
-      enqueueOffline(
-        {
-          acao: "atualizar_status",
-          id,
-          status: statusCode || fase,
-          ...(needsBackendConfirm ? { confirmar: true } : {}),
-        },
-        "offline"
-      );
-      return;
-    }
-
-    try {
-      await enviarRegistroPHP({
-        acao: "atualizar_status",
-        id,
-        status: statusCode || fase,
-        ...(needsBackendConfirm ? { confirmar: true } : {}),
-      });
-
-      await fetchRegistros();
-    } catch (e: any) {
-      enqueueOffline(
-        {
-          acao: "atualizar_status",
-          id,
-          status: statusCode || fase,
-          ...(needsBackendConfirm ? { confirmar: true } : {}),
-        },
-        e?.message
-      );
-    } finally {
-      flushOfflineQueue();
-    }
-  }, [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue]);
+    },
+    [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue],
+  );
 
   /* -------------------- Info por ID -------------------- */
   const registroInfo = useMemo(
-    () => (infoId != null ? registros.find((x) => String(x.id) === String(infoId)) ?? null : null),
-    [registros, infoId]
+    () =>
+      infoId != null
+        ? (registros.find((x) => String(x.id) === String(infoId)) ?? null)
+        : null,
+    [registros, infoId],
   );
 
   const infoIdxResolved = useMemo(() => {
@@ -1831,51 +2162,92 @@ export default function AcompanhamentoPage() {
     setInfoOpen(true);
   }, []);
 
-  const abrirWizardFromInfo = useCallback((tipo: "novo" | "editar", _idx: number | null = null, grupoStep: number | null = null) => {
-    const idx = infoIdxResolved;
-    if (idx != null) {
-      setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
-      abrirWizard(tipo, idx, grupoStep);
-    }
-  }, [infoIdxResolved, abrirWizard, registros]);
+  const abrirWizardFromInfo = useCallback(
+    (
+      tipo: "novo" | "editar",
+      _idx: number | null = null,
+      grupoStep: number | null = null,
+    ) => {
+      const idx = infoIdxResolved;
+      if (idx != null) {
+        setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
+        abrirWizard(tipo, idx, grupoStep);
+      }
+    },
+    [infoIdxResolved, abrirWizard, registros],
+  );
 
-  const abrirAssinaturaFromInfo = useCallback((_idx: number, tipo: "recebimento" | "requisicao") => {
-    const idx = infoIdxResolved;
-    if (idx != null) {
-      setSignIdx(idx);
-      setSignTipo(tipo);
-      setSignOpen(true);
-    }
-  }, [infoIdxResolved]);
+  const abrirAssinaturaFromInfo = useCallback(
+    (_idx: number, tipo: "recebimento" | "requisicao") => {
+      const idx = infoIdxResolved;
+      if (idx != null) {
+        setSignIdx(idx);
+        setSignTipo(tipo);
+        setSignOpen(true);
+      }
+    },
+    [infoIdxResolved],
+  );
+
+  /* -------------------- Foto obrigatória fase06/fase08 -------------------- */
+  const handleFotoAcaoRequired = useCallback(
+    (
+      id: Registro["id"] | null | undefined,
+      fase: string,
+      tipo: FotoAcaoTipo,
+    ) => {
+      const normalizedId = id != null ? String(id) : null;
+
+      setAcaoMsg(null);
+      setAcaoId(normalizedId);
+      setFotoAcaoId(normalizedId);
+      setFotoAcaoFase(fase);
+      setFotoAcaoTipo(tipo);
+
+      // fecha o modal de ações e abre o modal da câmera
+      setAcaoOpen(false);
+      setFotoAcaoOpen(true);
+    },
+    [],
+  );
 
   /* -------------------- Telemetria -------------------- */
-  const handleVeiculoRequired = useCallback((id: Registro["id"] | null | undefined, fase: string) => {
-    const normalizedId = id != null ? String(id) : null;
-    const tipo = mapFaseToTipo(fase);
+  const handleVeiculoRequired = useCallback(
+    (id: Registro["id"] | null | undefined, fase: string) => {
+      const normalizedId = id != null ? String(id) : null;
+      const tipo = mapFaseToTipo(fase);
 
-    if (!tipo) {
+      if (!tipo) {
+        setAcaoId(normalizedId);
+        registrarAcao(fase);
+        return;
+      }
+
       setAcaoId(normalizedId);
-      registrarAcao(fase);
-      return;
-    }
-
-    setAcaoId(normalizedId);
-    definirTeleRegistroId(normalizedId);
-    setTeleFase(fase);
-    setTeleTipo(tipo);
-    setTeleOpen(true);
-    setAcaoOpen(false);
-  }, [registrarAcao, definirTeleRegistroId]);
+      definirTeleRegistroId(normalizedId);
+      setTeleFase(fase);
+      setTeleTipo(tipo);
+      setTeleOpen(true);
+      setAcaoOpen(false);
+    },
+    [registrarAcao, definirTeleRegistroId],
+  );
 
   /* -------------------- Resumos -------------------- */
   const materiaisSelecionadosResumo = useMemo(() => {
     const matsPrefer = (wizardData as any)?.materiais;
     const mats: any =
-      matsPrefer && typeof matsPrefer === "object" && Object.keys(matsPrefer).length > 0 ? matsPrefer : materiais;
+      matsPrefer &&
+        typeof matsPrefer === "object" &&
+        Object.keys(matsPrefer).length > 0
+        ? matsPrefer
+        : materiais;
 
     const list = Object.values(mats || {})
       .filter((it: any) => it?.checked && Number(it?.qtd ?? 0) > 0)
-      .map((it: any) => `${String(it?.nome || "Item")} (${Number(it?.qtd ?? 1)})`);
+      .map(
+        (it: any) => `${String(it?.nome || "Item")} (${Number(it?.qtd ?? 1)})`,
+      );
 
     return list.length ? list.join(" • ") : "Nenhum material selecionado";
   }, [wizardData, materiais]);
@@ -1895,11 +2267,19 @@ export default function AcompanhamentoPage() {
       { key: "mascara", label: "Máscara" },
     ];
     const arr = (wizardData as any).arrumacao || arrumacao;
-    return mapa.filter((o) => !!(arr as any)?.[o.key]).map((o) => o.label).join(" • ");
+    return mapa
+      .filter((o) => !!(arr as any)?.[o.key])
+      .map((o) => o.label)
+      .join(" • ");
   }, [wizardData, arrumacao]);
 
-  const findRegistroById = useCallback((id: Registro["id"] | null): Registro | undefined =>
-    id == null ? undefined : registros.find((x) => String(x.id) === String(id)), [registros]);
+  const findRegistroById = useCallback(
+    (id: Registro["id"] | null): Registro | undefined =>
+      id == null
+        ? undefined
+        : registros.find((x) => String(x.id) === String(id)),
+    [registros],
+  );
 
   /* -------------------- Render -------------------- */
   return (
@@ -1907,7 +2287,6 @@ export default function AcompanhamentoPage() {
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Atendimentos</h1>
-          
         </div>
         <button
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -1917,17 +2296,30 @@ export default function AcompanhamentoPage() {
         </button>
       </header>
 
-      <TabelaAtendimentos registros={registros} onAcao={(id) => abrirPopupAcaoPorId(id)} onInfo={(id) => abrirInfoPorId(id)} />
+      <TabelaAtendimentos
+        registros={registros}
+        onAcao={(id) => abrirPopupAcaoPorId(id)}
+        onInfo={(id) => abrirInfoPorId(id)}
+      />
 
-      
-
-      <Modal open={chooseTipoOpen} onClose={() => setChooseTipoOpen(false)} ariaLabel="Escolher tipo" maxWidth={420}>
+      <Modal
+        open={chooseTipoOpen}
+        onClose={() => setChooseTipoOpen(false)}
+        ariaLabel="Escolher tipo"
+        maxWidth={420}
+      >
         <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
         <div className="mt-4 grid gap-2">
-          <button className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted" onClick={() => iniciarNovoRegistro("funerario")}>
+          <button
+            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+            onClick={() => iniciarNovoRegistro("funerario")}
+          >
             Atendimento Funerário
           </button>
-          <button className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted" onClick={() => iniciarNovoRegistro("terceiro")}>
+          <button
+            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+            onClick={() => iniciarNovoRegistro("terceiro")}
+          >
             Serviço de Outra Empresa
           </button>
         </div>
@@ -1959,7 +2351,13 @@ export default function AcompanhamentoPage() {
         wizardSubmitting={wizardSubmitting}
       />
 
-      <MateriaisModal open={materiaisOpen} setOpen={setMateriaisOpen} materiais={materiais} setMateriais={setMateriais} setWizardData={setWizardData} />
+      <MateriaisModal
+        open={materiaisOpen}
+        setOpen={setMateriaisOpen}
+        materiais={materiais}
+        setMateriais={setMateriais}
+        setWizardData={setWizardData}
+      />
       <ArrumacaoModal
         open={arrumacaoOpen}
         setOpen={setArrumacaoOpen}
@@ -1978,6 +2376,24 @@ export default function AcompanhamentoPage() {
         acaoMsg={acaoMsg}
         acaoSubmitting={acaoSubmitting}
         onVeiculoRequired={handleVeiculoRequired}
+        onFotoAcaoRequired={handleFotoAcaoRequired}
+      />
+
+      <FotoAcaoModal
+        open={fotoAcaoOpen}
+        onClose={() => setFotoAcaoOpen(false)}
+        registro={findRegistroById(fotoAcaoId)}
+        registroId={fotoAcaoId}
+        fase={fotoAcaoFase}
+        tipo={fotoAcaoTipo}
+        onSaved={async ({ id, fase }) => {
+          setAcaoId(id != null ? String(id) : null);
+          setFotoAcaoOpen(false);
+
+          // A foto já foi salva; agora confirma a etapa sem perguntar de novo.
+          await registrarAcao(fase, { skipConfirm: true });
+          await fetchRegistros();
+        }}
       />
 
       <MateriaisConferenciaModal
@@ -1995,11 +2411,16 @@ export default function AcompanhamentoPage() {
             setMatCheckSaving(true);
 
             const registro_id = matCheckRegistroId ?? acaoId;
-            if (!registro_id) throw new Error("Não foi possível identificar o atendimento (registro_id).");
+            if (!registro_id)
+              throw new Error(
+                "Não foi possível identificar o atendimento (registro_id).",
+              );
 
             let nomeFinal = (matCheckFalecidoNome || "").trim();
             if (!nomeFinal) {
-              const reg = registros.find((x) => String(x.id) === String(registro_id));
+              const reg = registros.find(
+                (x) => String(x.id) === String(registro_id),
+              );
               nomeFinal = reg ? resolveFalecidoNome(reg) : "";
             }
 
@@ -2020,7 +2441,10 @@ export default function AcompanhamentoPage() {
             setMatCheckReturnToAcao(false);
             setMatCheckSaving(false);
 
-            await registrarAcao("fase11", { skipMaterialCheck: true, skipConfirm: true });
+            await registrarAcao("fase11", {
+              skipMaterialCheck: true,
+              skipConfirm: true,
+            });
           } catch (e: any) {
             setMatCheckSaving(false);
             alert(e?.message || "Erro ao salvar conferência de materiais.");
@@ -2070,7 +2494,9 @@ export default function AcompanhamentoPage() {
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4">
           <div className="rounded-xl bg-background p-4 shadow-xl border">
             <div className="text-sm font-medium">Salvando conferência...</div>
-            <div className="mt-1 text-xs text-muted-foreground">Aguarde um instante.</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Aguarde um instante.
+            </div>
           </div>
         </div>
       ) : null}
@@ -2079,8 +2505,8 @@ export default function AcompanhamentoPage() {
         <div className="mt-4">
           <div
             className={`rounded-lg border p-3 text-sm ${wizardMsg.ok
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-red-800"
               }`}
           >
             {wizardMsg.text}

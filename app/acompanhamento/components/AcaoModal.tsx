@@ -16,6 +16,8 @@ import {
 type Fase = (typeof fases)[number];
 const FASE_FINAL = "fase11" as Fase;
 
+type FotoAcaoTipo = "fim_ornamentacao" | "entrega_corpo";
+
 function isTerceiroBySession(id?: string | number | null | undefined) {
     try {
         if (id == null) return false;
@@ -35,6 +37,16 @@ function isNao(v?: string) {
 
 const FASES_COM_VEICULO: Fase[] = ["fase01", "fase07", "fase09"];
 const FASES_CONSERVACAO: Fase[] = ["fase03", "fase04"];
+
+// ✅ NOVO:
+// fases que precisam abrir câmera/foto antes de confirmar a ação
+const FASES_COM_FOTO: Fase[] = ["fase06", "fase08"];
+
+function getFotoAcaoTipo(fase: Fase): FotoAcaoTipo | null {
+    if (fase === "fase06") return "fim_ornamentacao";
+    if (fase === "fase08") return "entrega_corpo";
+    return null;
+}
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -57,7 +69,6 @@ async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
     };
 }
 
-
 export default function AcaoModal({
     open,
     setOpen,
@@ -67,6 +78,11 @@ export default function AcaoModal({
     acaoMsg,
     acaoSubmitting,
     onVeiculoRequired,
+
+    // ✅ NOVO:
+    // Callback opcional para o page.tsx abrir o modal de foto.
+    // Por ser opcional, não quebra o funcionamento atual caso o page.tsx ainda não tenha sido alterado.
+    onFotoAcaoRequired,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
@@ -88,6 +104,14 @@ export default function AcaoModal({
     acaoSubmitting: boolean;
 
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
+
+    // ✅ NOVO:
+    // usado apenas para fase06 e fase08
+    onFotoAcaoRequired?: (
+        id: string | number | null | undefined,
+        fase: Fase,
+        tipo: FotoAcaoTipo
+    ) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -293,6 +317,16 @@ export default function AcaoModal({
             return;
         }
 
+        // ✅ NOVO:
+        // fase06 = Fim da Ornamentação
+        // fase08 = Entrega de Corpo
+        // Antes de confirmar a ação, chama o page.tsx para abrir o modal da câmera/foto.
+        const fotoTipo = FASES_COM_FOTO.includes(f) ? getFotoAcaoTipo(f) : null;
+        if (fotoTipo && onFotoAcaoRequired) {
+            onFotoAcaoRequired(acaoId ?? null, f, fotoTipo);
+            return;
+        }
+
         if (requiresVehicle && onVeiculoRequired) {
             onVeiculoRequired(acaoId ?? null, f);
             return;
@@ -342,6 +376,8 @@ export default function AcaoModal({
 
                             const disabled = !habilitar || bloqueadoPorCargo;
 
+                            const exigeFoto = FASES_COM_FOTO.includes(f);
+
                             return (
                                 <button
                                     key={f}
@@ -353,9 +389,11 @@ export default function AcaoModal({
                                     title={
                                         bloqueadoPorCargo
                                             ? "Apenas Tanatopraxista"
-                                            : habilitar
-                                                ? "Confirmar próxima etapa"
-                                                : "Aguardando etapas anteriores"
+                                            : habilitar && exigeFoto
+                                                ? "Anexar foto para confirmar esta etapa"
+                                                : habilitar
+                                                    ? "Confirmar próxima etapa"
+                                                    : "Aguardando etapas anteriores"
                                     }
                                 >
                                     {acaoToStatus(f)}
