@@ -141,18 +141,23 @@ function normalizarFotoAcaoUrl(v: any): string {
     url = url.trim();
 
     if (/^https?:\/\//i.test(url)) {
-        return url.replace(
-            "https://pai.planoassistencialintegrado.com.br",
-            "https://planoassistencialintegrado.com.br"
-        );
+        return url
+            .replace(
+                "https://pai.planoassistencialintegrado.com.br",
+                "https://api.planoassistencialintegrado.com.br"
+            )
+            .replace(
+                "https://planoassistencialintegrado.com.br",
+                "https://api.planoassistencialintegrado.com.br"
+            );
     }
 
     if (url.startsWith("/uploads/")) {
-        return `https://planoassistencialintegrado.com.br${url}`;
+        return `https://api.planoassistencialintegrado.com.br${url}`;
     }
 
     if (url.startsWith("uploads/")) {
-        return `https://planoassistencialintegrado.com.br/${url}`;
+        return `https://api.planoassistencialintegrado.com.br/${url}`;
     }
 
     return url;
