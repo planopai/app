@@ -211,6 +211,14 @@ function fotoButtonHtml(url: string, titulo = "Foto da ação") {
     `;
 }
 
+function tituloDoLog(ent: LogItem) {
+    if (ent.status_novo) {
+        return traduzirFase(ent.status_novo);
+    }
+
+    return ent.acao ? capitalize(ent.acao) : "";
+}
+
 export default function LinhaDoTempoLogs({
     logs,
     usuarioVisivel = true,
@@ -410,11 +418,9 @@ export default function LinhaDoTempoLogs({
                             }
                         }
 
-                        const acao = ent.acao ? sanitize(capitalize(ent.acao)) : "";
-                        const statusBadg = ent.status_novo
-                            ? `<span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">${sanitize(
-                                traduzirFase(ent.status_novo)
-                            )}</span>`
+                        const titulo = tituloDoLog(ent);
+                        const tituloHtml = titulo
+                            ? `<div class="text-sm font-bold">${sanitize(titulo)}</div>`
                             : "";
 
                         return (
@@ -427,7 +433,7 @@ export default function LinhaDoTempoLogs({
                                             <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
                                             <div class="flex-1">
                                                 <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
-                                                <div class="text-sm">${acao} ${statusBadg}</div>
+                                                ${tituloHtml}
                                                 ${usuarioVisivel
                                             ? `<div class="text-xs text-muted-foreground">Usuário: ${sanitize(
                                                 ent.usuario || ""
