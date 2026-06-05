@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { IconX } from "@tabler/icons-react";
 import { LogItem } from "./TiposHistorico";
 import { traduzirFase, iconeAcao } from "./ConstantesFases";
 import { formataDataHora, formataSeDataIso } from "./UtilDatas";
@@ -93,6 +94,7 @@ function extrairMateriaisDoMateriaisJson(
 
 function agruparMateriais(mats: MatLinha[]) {
     const map = new Map<string, MatLinha[]>();
+
     for (const it of mats) {
         const cat = (it.categoria || "").trim() || "Material";
         if (!map.has(cat)) map.set(cat, []);
@@ -116,10 +118,7 @@ function agruparMateriais(mats: MatLinha[]) {
 
 function isFotoAcaoUrl(v: any): boolean {
     const s = String(v ?? "").trim();
-    return (
-        s.includes("/uploads/acoes_fotos/") ||
-        s.includes("uploads/acoes_fotos/")
-    );
+    return s.includes("/uploads/acoes_fotos/") || s.includes("uploads/acoes_fotos/");
 }
 
 function extrairFotoAcaoUrl(v: any): string {
@@ -186,9 +185,28 @@ function fotoButtonHtml(url: string, titulo = "Foto da ação") {
             type="button"
             data-foto-url="${safeUrl}"
             data-foto-title="${safeTitle}"
-            class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            title="Ver foto"
+            aria-label="Ver foto"
         >
-            VER FOTO
+            <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M15 8h.01" />
+                <path d="M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" />
+                <path d="m3 16 5-5c.928-.893 2.072-.893 3 0l5 5" />
+                <path d="m14 14 1-1c.928-.893 2.072-.893 3 0l3 3" />
+            </svg>
         </button>
     `;
 }
@@ -251,8 +269,8 @@ export default function LinhaDoTempoLogs({
                                 const chips: string[] = [];
                                 const arrSet = new Set<string>();
 
-                                // ✅ Materiais (novo): exibe titulo por categoria + chips sem repetir categoria
                                 const mats = extrairMateriaisDoMateriaisJson(obj.materiais_json, materiaisMap);
+
                                 if (mats.length) {
                                     const grupos = agruparMateriais(mats);
 
@@ -268,8 +286,8 @@ export default function LinhaDoTempoLogs({
                                                     .map(
                                                         (it) =>
                                                             `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
-                                 <b>${sanitize(it.nome)}:</b> ${sanitize(String(it.qtd))}
-                               </span>`
+                                                                <b>${sanitize(it.nome)}:</b> ${sanitize(String(it.qtd))}
+                                                            </span>`
                                                     )
                                                     .join("");
 
@@ -282,36 +300,39 @@ export default function LinhaDoTempoLogs({
                                 for (const key of Object.keys(obj)) {
                                     if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
 
-                                    // Arrumação
                                     if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
                                         let aobj: any = obj[key] || {};
                                         if (typeof aobj === "string") aobj = safeJsonParse(aobj) || {};
+
                                         if (aobj && typeof aobj === "object") {
                                             for (const [k, v] of Object.entries(aobj)) {
                                                 if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
                                             }
                                         }
+
                                         continue;
                                     }
 
-                                    // Materiais_*_qtd (legado)
                                     const m = key.match(/^materiais_(.+?)_qtd$/i);
+
                                     if (m) {
                                         const valRaw = obj[key];
+
                                         if (valRaw != null && String(valRaw).trim() !== "") {
                                             const nomeBase = titleCaseFromSnake(m[1]);
                                             const nome = overrideCampoNome(m[1], nomeBase);
                                             const valFmt = formataSeDataIso(String(valRaw));
+
                                             chips.push(
                                                 `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
                                                     nome
                                                 )}:</b> ${sanitize(String(valFmt))}</span>`
                                             );
                                         }
+
                                         continue;
                                     }
 
-                                    // Campos simples
                                     if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
 
                                     let val = obj[key];
@@ -320,11 +341,12 @@ export default function LinhaDoTempoLogs({
                                     let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
                                     nome = overrideCampoNome(key, nome);
 
-                                    // ✅ Foto salva em /uploads/acoes_fotos/
                                     if (isFotoAcaoUrl(val)) {
                                         const fotoUrl = normalizarFotoAcaoUrl(val);
+
                                         if (fotoUrl) {
                                             const tituloFoto = nomeFotoAcaoPorTexto(val);
+
                                             chips.push(
                                                 `<div class="mt-2 flex flex-wrap items-center gap-2">
                                                     <span class="text-xs text-muted-foreground">${sanitize(tituloFoto)}:</span>
@@ -332,6 +354,7 @@ export default function LinhaDoTempoLogs({
                                                 </div>`
                                             );
                                         }
+
                                         continue;
                                     }
 
@@ -351,6 +374,7 @@ export default function LinhaDoTempoLogs({
 
                                 if (arrSet.size) {
                                     const items = Array.from(arrSet);
+
                                     chips.unshift(
                                         `<div class="mt-2"><b>Arrumação:</b> ${items
                                             .map(
@@ -369,7 +393,6 @@ export default function LinhaDoTempoLogs({
                             let detalhesRaw = String(raw || "");
                             detalhesRaw = substituirRotuloVisual(detalhesRaw);
 
-                            // ✅ Quando o detalhe inteiro for apenas o caminho da foto
                             if (isFotoAcaoUrl(detalhesRaw)) {
                                 const fotoUrl = normalizarFotoAcaoUrl(detalhesRaw);
                                 const tituloFoto = nomeFotoAcaoPorTexto(detalhesRaw);
@@ -400,21 +423,21 @@ export default function LinhaDoTempoLogs({
                                 className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm"
                                 dangerouslySetInnerHTML={{
                                     __html: `
-                  <div class="flex gap-3">
-                    <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
-                    <div class="flex-1">
-                      <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
-                      <div class="text-sm">${acao} ${statusBadg}</div>
-                      ${usuarioVisivel
+                                        <div class="flex gap-3">
+                                            <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
+                                            <div class="flex-1">
+                                                <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
+                                                <div class="text-sm">${acao} ${statusBadg}</div>
+                                                ${usuarioVisivel
                                             ? `<div class="text-xs text-muted-foreground">Usuário: ${sanitize(
                                                 ent.usuario || ""
                                             )}</div>`
                                             : ""
                                         }
-                      ${detalhesHtml}
-                    </div>
-                  </div>
-                `,
+                                                ${detalhesHtml}
+                                            </div>
+                                        </div>
+                                    `,
                                 }}
                             />
                         );
@@ -446,10 +469,12 @@ export default function LinhaDoTempoLogs({
 
                             <button
                                 type="button"
-                                className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border hover:bg-muted"
                                 onClick={() => setFotoModal({ open: false, url: "", title: "" })}
+                                title="Fechar"
+                                aria-label="Fechar"
                             >
-                                Fechar
+                                <IconX className="size-5" />
                             </button>
                         </div>
 
