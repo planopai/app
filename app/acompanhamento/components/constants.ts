@@ -132,9 +132,9 @@ export const steps = [
     { label: "Observações do Velório e Sepultamento", id: "observacao_velorio02", type: "textarea", placeholder: "Digite Aqui As Observações (opcional)" },
 
     // ✅ Novos campos da etapa Atendimento
-    { label: "Data de Nascimento do Falecido", id: "data_nascimento", type: "date" },
-    { label: "Data de Falecimento do Falecido", id: "data_falecimento", type: "date" },
-    { label: "Foto do Falecido", id: "foto_falecido", type: "file", accept: "image/*" },
+    { label: "Data de Nascimento", id: "data_nascimento", type: "date" },
+    { label: "Data de Falecimento", id: "data_falecimento", type: "date" },
+    { label: "Foto do Falecido(a)", id: "foto_falecido", type: "file", accept: "image/*" },
     { label: "Nome do Responsável", id: "nome_responsavel", type: "input", placeholder: "Nome do responsável" },
     { label: "CPF do Responsável", id: "cpf_responsavel", type: "input", placeholder: "Apenas números" },
 ] as const;

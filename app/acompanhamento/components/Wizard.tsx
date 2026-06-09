@@ -2125,7 +2125,7 @@ export default function Wizard({
                                         )}
 
                                         <p className="mt-2 text-[11px] text-slate-400">
-                                            A imagem será enviada junto com o atendimento. O backend deve salvar o arquivo e gravar o caminho em <b>foto_falecido</b>.
+                                            ATENÇÃO: Essa foto será usada no obituário, painel e página de homenagens.
                                         </p>
                                     </div>
                                 </div>
