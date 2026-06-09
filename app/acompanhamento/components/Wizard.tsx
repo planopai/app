@@ -17,6 +17,7 @@ type Step = {
     | "time"
     | "datalist"
     | "custom"
+    | "file"
     | "async_urna"
     | "async_roupa"
     | "async_invol"
@@ -25,7 +26,7 @@ type Step = {
     options?: string[];
     placeholder?: string;
     datalist?: string[];
-    
+    accept?: string;
 };
 
 type EstoqueRow = {
@@ -87,6 +88,26 @@ function isMobileCoarsePointer() {
         return false;
     }
 }
+
+function fileToDataURL(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Não foi possível ler a imagem selecionada."));
+        reader.readAsDataURL(file);
+    });
+}
+
+function normalizarFotoSrc(src: any): string {
+    const s = String(src ?? "").trim();
+    if (!s) return "";
+    if (s.startsWith("data:")) return s;
+    if (/^https?:\/\//i.test(s)) return s;
+    if (s.startsWith("/")) return `${ENDPOINT}${s}`;
+    return `${ENDPOINT}/${s.replace(/^\/+/, "")}`;
+}
+
 
 /* =========================================================================
    Combobox genérico (estoque)
@@ -1981,6 +2002,133 @@ export default function Wizard({
                                 </select>
 
                                 {ornamentacaoTipoErro && <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>}
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+                       FOTO DO FALECIDO (upload real)
+                       - mantém foto_falecido como caminho/URL salvo
+                       - envia a nova imagem em foto_falecido_base64 para o backend salvar fisicamente
+                       =========================== */
+                    if (step.id === "foto_falecido" || step.type === "file") {
+                        const fotoAtual = String((wizardData as any).foto_falecido ?? "");
+                        const fotoBase64 = String((wizardData as any).foto_falecido_base64 ?? "");
+                        const fotoNome = String((wizardData as any).foto_falecido_nome ?? "");
+                        const previewSrc = normalizarFotoSrc(fotoBase64 || fotoAtual);
+
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
+                                    <div className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-xl border bg-slate-50">
+                                        {previewSrc ? (
+                                            <img
+                                                src={previewSrc}
+                                                alt="Prévia da foto do falecido"
+                                                className="h-full w-full object-cover"
+                                            />
+                                        ) : (
+                                            <span className="px-2 text-center text-xs text-slate-500">Sem foto</span>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        {/* valor persistido no banco; o FileReader envia a nova imagem em foto_falecido_base64 */}
+                                        <input
+                                            id={`wizard-${step.id}`}
+                                            type="hidden"
+                                            value={fotoAtual}
+                                            readOnly
+                                        />
+
+                                        <input
+                                            id={`wizard-${step.id}_file`}
+                                            type="file"
+                                            accept={step.accept || "image/*"}
+                                            className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                            disabled={wizardSubmitting}
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+
+                                                if (!file) return;
+
+                                                if (!file.type.startsWith("image/")) {
+                                                    alert("Selecione um arquivo de imagem válido.");
+                                                    e.currentTarget.value = "";
+                                                    return;
+                                                }
+
+                                                const maxBytes = 5 * 1024 * 1024;
+                                                if (file.size > maxBytes) {
+                                                    alert("A imagem deve ter no máximo 5MB.");
+                                                    e.currentTarget.value = "";
+                                                    return;
+                                                }
+
+                                                try {
+                                                    const dataUrl = await fileToDataURL(file);
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        foto_falecido_base64: dataUrl,
+                                                        foto_falecido_nome: file.name,
+                                                        foto_falecido_tipo: file.type,
+                                                        foto_falecido_tamanho: file.size,
+                                                    }));
+                                                } catch (err: any) {
+                                                    alert(err?.message || "Erro ao carregar a imagem.");
+                                                    e.currentTarget.value = "";
+                                                }
+                                            }}
+                                        />
+
+                                        <div className="mt-2 text-xs text-slate-500">
+                                            {fotoNome ? (
+                                                <>
+                                                    Nova foto selecionada: <b>{fotoNome}</b>
+                                                </>
+                                            ) : fotoAtual ? (
+                                                <>
+                                                    Foto atual: <b>{fotoAtual}</b>
+                                                </>
+                                            ) : (
+                                                <>Selecione uma imagem JPG, PNG ou WEBP.</>
+                                            )}
+                                        </div>
+
+                                        {(fotoAtual || fotoBase64) && (
+                                            <button
+                                                type="button"
+                                                className="mt-2 rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                                                disabled={wizardSubmitting}
+                                                onClick={() => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        foto_falecido: "",
+                                                        foto_falecido_base64: "",
+                                                        foto_falecido_nome: "",
+                                                        foto_falecido_tipo: "",
+                                                        foto_falecido_tamanho: 0,
+                                                    }));
+
+                                                    const fileEl = document.getElementById(`wizard-${step.id}_file`) as HTMLInputElement | null;
+                                                    if (fileEl) fileEl.value = "";
+                                                }}
+                                            >
+                                                Remover foto
+                                            </button>
+                                        )}
+
+                                        <p className="mt-2 text-[11px] text-slate-400">
+                                            A imagem será enviada junto com o atendimento. O backend deve salvar o arquivo e gravar o caminho em <b>foto_falecido</b>.
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         );
                     }

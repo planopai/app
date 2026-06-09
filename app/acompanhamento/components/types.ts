@@ -80,6 +80,8 @@ export type DepositoNomeCordao = DepositoNomeArmario | "FUNERARIA";
 /**
  * Registro (sepultamentos)
  * - inclui novas colunas: urna_* / roupa_* / invol_* / cordao_*
+ * - inclui novos dados do falecido/responsável:
+ *   data_nascimento / data_falecimento / foto_falecido / nome_responsavel / cpf_responsavel
  * - mantém [k:string]: any para compatibilidade com colunas antigas
  */
 export type Registro = {
@@ -92,6 +94,15 @@ export type Registro = {
     contato?: string;
     religiao?: string;
     convenio?: string;
+
+    // =========================
+    // ✅ NOVOS DADOS DO FALECIDO / RESPONSÁVEL
+    // =========================
+    data_nascimento?: string;
+    data_falecimento?: string;
+    foto_falecido?: string;
+    nome_responsavel?: string;
+    cpf_responsavel?: string;
 
     // textos (mostrados no wizard)
     urna?: string;
@@ -167,7 +178,6 @@ export type Registro = {
     cordao_deposito_nome?: DepositoNomeCordao | string;
     cordao_produto_id?: number;
     cordao_codigo_barras?: string;
-
 
     [k: string]: any;
 };

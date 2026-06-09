@@ -174,8 +174,8 @@ function resolveTipoFromRegistro(r?: Registro | null): TipoAtendimento {
 function getWizardConfig(tipo: TipoAtendimento) {
   if (tipo === "terceiro") {
     const wizardStepIndexes = [
-      // Atendimento (nome + contato)
-      [0, 1],
+      // Atendimento (nome + contato + dados do falecido/responsável)
+      [0, 1, 27, 28, 29, 30, 31],
 
       // Velório (local + datas + horários)
       [18, 19, 20, 21, 22],
@@ -571,6 +571,13 @@ export default function AcompanhamentoPage() {
           ...it,
           id: it?.id != null ? String(it.id) : it.id,
           status: normalizarStatus(it?.status) ?? it?.status,
+
+          // ✅ NOVOS DADOS DO FALECIDO / RESPONSÁVEL
+          data_nascimento: String(it?.data_nascimento ?? ""),
+          data_falecimento: String(it?.data_falecimento ?? ""),
+          foto_falecido: String(it?.foto_falecido ?? ""),
+          nome_responsavel: String(it?.nome_responsavel ?? ""),
+          cpf_responsavel: String(it?.cpf_responsavel ?? ""),
 
           // ✅ URNA
           urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
@@ -2505,8 +2512,8 @@ export default function AcompanhamentoPage() {
         <div className="mt-4">
           <div
             className={`rounded-lg border p-3 text-sm ${wizardMsg.ok
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-red-200 bg-red-50 text-red-800"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
               }`}
           >
             {wizardMsg.text}

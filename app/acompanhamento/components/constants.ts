@@ -8,11 +8,20 @@ export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamen
  * - "roupa" (async_roupa) para selecionar do estoque (ou ROUPA PRÓPRIA no próprio componente)
  * - "invol_item" (async_invol) para selecionar do estoque quando invol = "Sim"
  *
- * Com isso, os índices a partir de "arrumacao" foram deslocados.
+ * ✅ NOVO:
+ * Foram adicionados os campos do falecido/responsável na etapa Atendimento:
+ * - data_nascimento
+ * - data_falecimento
+ * - foto_falecido
+ * - nome_responsavel
+ * - cpf_responsavel
+ *
+ * Os novos campos foram adicionados no final do array `steps`
+ * para não deslocar os índices existentes.
  */
 export const wizardStepIndexes = [
     // Atendimento
-    [0, 1, 2, 3, 23],
+    [0, 1, 2, 3, 23, 27, 28, 29, 30, 31],
 
     // Itens: urna, roupa, veu, veu_item, cordao, cordao_item, assistencia, tanato, ornamentacao, tipo, invol, invol_item, arrumacao, obs itens
     [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24],
@@ -23,7 +32,6 @@ export const wizardStepIndexes = [
     // Sepultamento
     [20, 21, 22, 26],
 ];
-
 
 export const steps = [
     { label: "Nome do Falecido(a)", id: "falecido", type: "input", placeholder: "Digite o nome" },
@@ -118,11 +126,21 @@ export const steps = [
     { label: "Observações de Itens", id: "observacao_itens", type: "textarea", placeholder: "Digite observações de itens (opcional)" },
     { label: "Observações do Velório e Sepultamento", id: "observacao_velorio01", type: "textarea", placeholder: "Digite Aqui As Observações (opcional)" },
     { label: "Observações do Velório e Sepultamento", id: "observacao_velorio02", type: "textarea", placeholder: "Digite Aqui As Observações (opcional)" },
+
+    // ✅ Novos campos da etapa Atendimento
+    { label: "Data de Nascimento do Falecido", id: "data_nascimento", type: "date" },
+    { label: "Data de Falecimento do Falecido", id: "data_falecimento", type: "date" },
+    { label: "Foto do Falecido", id: "foto_falecido", type: "file", accept: "image/*" },
+    { label: "Nome do Responsável", id: "nome_responsavel", type: "input", placeholder: "Nome do responsável" },
+    { label: "CPF do Responsável", id: "cpf_responsavel", type: "input", placeholder: "Apenas números" },
 ] as const;
 
 /**
- * ✅ Mantém: Urna Obrigatoria 
+ * ✅ Mantém: Urna Obrigatoria
  * (ROUPA e INVOL não são obrigatórios, mas quando preenchidos precisam do vínculo no estoque — regra do PHP)
+ *
+ * ✅ Os novos campos NÃO foram colocados como obrigatórios.
+ * Caso queira obrigar algum deles, adicione o id aqui.
  */
 export const obrigatorios = [
     "falecido",
@@ -142,9 +160,6 @@ export const obrigatorios = [
     "urna",
     "roupa",
 ];
-
-
-
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
 
