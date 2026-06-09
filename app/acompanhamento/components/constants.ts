@@ -16,12 +16,16 @@ export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamen
  * - nome_responsavel
  * - cpf_responsavel
  *
+ * ✅ ORDEM DO ATENDIMENTO:
+ * Nome do Falecido, Foto, Nascimento, Falecimento,
+ * Religião, Convênio, Responsável, CPF, Contato e Observações por último.
+ *
  * Os novos campos foram adicionados no final do array `steps`
  * para não deslocar os índices existentes.
  */
 export const wizardStepIndexes = [
     // Atendimento
-    [0, 1, 2, 3, 23, 27, 28, 29, 30, 31],
+    [0, 29, 27, 28, 2, 3, 30, 31, 1, 23],
 
     // Itens: urna, roupa, veu, veu_item, cordao, cordao_item, assistencia, tanato, ornamentacao, tipo, invol, invol_item, arrumacao, obs itens
     [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24],

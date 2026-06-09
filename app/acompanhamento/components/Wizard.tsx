@@ -2137,6 +2137,8 @@ export default function Wizard({
                        defaults
                        =========================== */
                     if (step.type === "input") {
+                        const isCpfResponsavel = step.id === "cpf_responsavel";
+
                         return (
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">
@@ -2147,8 +2149,26 @@ export default function Wizard({
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step (defaultValue confiável)
                                     id={`wizard-${step.id}`}
                                     type="text"
+                                    inputMode={isCpfResponsavel ? "numeric" : undefined}
+                                    maxLength={isCpfResponsavel ? 11 : undefined}
+                                    pattern={isCpfResponsavel ? "\\d{11}" : undefined}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                    onInput={(e) => {
+                                        if (!isCpfResponsavel) return;
+
+                                        const el = e.currentTarget;
+                                        const somenteNumeros = el.value.replace(/\D/g, "").slice(0, 11);
+
+                                        if (el.value !== somenteNumeros) {
+                                            el.value = somenteNumeros;
+                                        }
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            cpf_responsavel: somenteNumeros,
+                                        }));
+                                    }}
                                     className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
                                     disabled={wizardSubmitting}
                                 />
