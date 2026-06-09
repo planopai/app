@@ -64,7 +64,7 @@ export type ArrumacaoState = {
 };
 
 /**
- * Metas de estoque por item (URNA / ROUPA / INVOL / CORDAO)
+ * Metas de estoque por item (URNA / ROUPA / INVOL / VÉU / CORDAO)
  */
 export type DepositoNomeUrna = "MEMORIAL" | "FUNERARIA";
 export type DepositoNomeArmario = "ARMARIO SANDRO" | "ARMARIO ILDO";
@@ -77,10 +77,15 @@ export type DepositoNomeVeu = DepositoNomeArmario | "FUNERARIA";
 // ✅ Cordão sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
 export type DepositoNomeCordao = DepositoNomeArmario | "FUNERARIA";
 
+// ✅ Sala do Velório
+export type SalaVelorio = "Sala 01" | "Sala 02" | "Sala 03";
+export type VelorioOnline = "Sim" | "Não";
+
 /**
  * Registro (sepultamentos)
- * - inclui novas colunas: urna_* / roupa_* / invol_* / cordao_*
- * - inclui novos dados do falecido/responsável:
+ * - inclui colunas de velório: sala_velorio / velorio_online
+ * - inclui colunas: urna_* / roupa_* / invol_* / veu_* / cordao_*
+ * - inclui dados do falecido/responsável:
  *   data_nascimento / data_falecimento / foto_falecido / nome_responsavel / cpf_responsavel
  * - mantém [k:string]: any para compatibilidade com colunas antigas
  */
@@ -96,7 +101,7 @@ export type Registro = {
     convenio?: string;
 
     // =========================
-    // ✅ NOVOS DADOS DO FALECIDO / RESPONSÁVEL
+    // ✅ DADOS DO FALECIDO / RESPONSÁVEL
     // =========================
     data_nascimento?: string;
     data_falecimento?: string;
@@ -117,8 +122,13 @@ export type Registro = {
 
     tipo_atendimento?: "funerario" | "terceiro";
 
+    // =========================
+    // ✅ VELÓRIO / SEPULTAMENTO
+    // =========================
     local?: string;
     local_velorio?: string;
+    sala_velorio?: SalaVelorio | string;
+    velorio_online?: VelorioOnline | string;
     data_inicio_velorio?: string;
     data_fim_velorio?: string;
     hora_inicio_velorio?: string;
@@ -150,6 +160,7 @@ export type Registro = {
     roupa_deposito_nome?: DepositoNomeRoupa | string;
     roupa_produto_id?: number;
     roupa_codigo_barras?: string;
+    roupa_propria?: number | boolean | string;
 
     // =========================
     // ✅ META INVOL (estoque)
@@ -178,6 +189,30 @@ export type Registro = {
     cordao_deposito_nome?: DepositoNomeCordao | string;
     cordao_produto_id?: number;
     cordao_codigo_barras?: string;
+
+    // =========================
+    // ✅ FOTOS OBRIGATÓRIAS DAS AÇÕES
+    // =========================
+    foto_fim_ornamentacao_url?: string;
+    foto_fim_ornamentacao_path?: string;
+    foto_fim_ornamentacao_em?: string;
+    foto_fim_ornamentacao_usuario?: string;
+    foto_entrega_corpo_url?: string;
+    foto_entrega_corpo_path?: string;
+    foto_entrega_corpo_em?: string;
+    foto_entrega_corpo_usuario?: string;
+
+    // =========================
+    // ✅ ASSINATURAS / TERMOS
+    // =========================
+    assinatura_responsavel?: string;
+    assinatura_requerente?: string;
+    assinatura_responsavel_nome?: string;
+    assinatura_responsavel_cpf?: string;
+    assinatura_requerente_nome?: string;
+    assinatura_requerente_cpf?: string;
+    assinatura_recebimento_url?: string;
+    assinatura_requisicao_url?: string;
 
     [k: string]: any;
 };

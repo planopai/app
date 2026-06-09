@@ -40,6 +40,9 @@ type EstoqueRow = {
 
 const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
 
+const SALAS_VELORIO = ["Sala 01", "Sala 02", "Sala 03"] as const;
+const VELORIO_ONLINE_OPCOES = ["Sim", "Não"] as const;
+
 /* -------------------- helpers -------------------- */
 function normUpper(v: any) {
     return String(v ?? "")
@@ -600,6 +603,10 @@ export default function Wizard({
     const [veuVal, setVeuVal] = useState<string>("");
     const [cordaoVal, setCordaoVal] = useState<string>("");
 
+    // ✅ Velório: sala + velório online (condicional)
+    const [salaVelorioVal, setSalaVelorioVal] = useState<string>("");
+    const [velorioOnlineVal, setVelorioOnlineVal] = useState<string>("");
+
     const [assistenciaErro, setAssistenciaErro] = useState<string>("");
     const [urnaErro, setUrnaErro] = useState<string>("");
     const [roupaErro, setRoupaErro] = useState<string>("");
@@ -613,6 +620,7 @@ export default function Wizard({
     const [involSelectErro, setInvolSelectErro] = useState<string>("");
     const [veuSelectErro, setVeuSelectErro] = useState<string>("");
     const [cordaoSelectErro, setCordaoSelectErro] = useState<string>("");
+    const [velorioOnlineErro, setVelorioOnlineErro] = useState<string>("");
 
     // ✅ erro do tipo (Natural/Artificial) quando ornamentacao = Sim
     const [ornamentacaoTipoErro, setOrnamentacaoTipoErro] = useState<string>("");
@@ -629,7 +637,17 @@ export default function Wizard({
         setInvolVal(String((wizardData as any).invol ?? ""));
         setVeuVal(String((wizardData as any).veu ?? ""));
         setCordaoVal(String((wizardData as any).cordao ?? ""));
-    }, [open, (wizardData as any).ornamentacao, (wizardData as any).invol, (wizardData as any).veu, (wizardData as any).cordao]);
+        setSalaVelorioVal(String((wizardData as any).sala_velorio ?? ""));
+        setVelorioOnlineVal(String((wizardData as any).velorio_online ?? ""));
+    }, [
+        open,
+        (wizardData as any).ornamentacao,
+        (wizardData as any).invol,
+        (wizardData as any).veu,
+        (wizardData as any).cordao,
+        (wizardData as any).sala_velorio,
+        (wizardData as any).velorio_online,
+    ]);
 
     useEffect(() => {
         if (!open) return;
@@ -647,6 +665,7 @@ export default function Wizard({
         setInvolSelectErro("");
         setVeuSelectErro("");
         setCordaoSelectErro("");
+        setVelorioOnlineErro("");
 
         // ✅ limpa erro do Natural/Artificial
         setOrnamentacaoTipoErro("");
@@ -762,6 +781,10 @@ export default function Wizard({
     const involSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol"), [grupoSteps]);
     const veuSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu"), [grupoSteps]);
     const cordaoSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
+    const velorioOnlineNoGrupoAtual = useMemo(
+        () => grupoSteps.some((s) => s.id === "local_velorio" || s.id === "sala_velorio" || s.id === "velorio_online"),
+        [grupoSteps]
+    );
 
     const isRequired = (id: string) => obrigatorios.includes(id);
 
@@ -835,6 +858,26 @@ export default function Wizard({
             return true;
         }
         setCordaoSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    // ✅ Velório Online é obrigatório somente quando uma sala for marcada.
+    const validarVelorioOnlineSeNecessario = () => {
+        if (!velorioOnlineNoGrupoAtual) return true;
+
+        const sala = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
+        if (!sala) {
+            setVelorioOnlineErro("");
+            return true;
+        }
+
+        const online = String(velorioOnlineVal || (wizardData as any).velorio_online || "").trim();
+        if (online === "Sim" || online === "Não") {
+            setVelorioOnlineErro("");
+            return true;
+        }
+
+        setVelorioOnlineErro('Selecione "Sim" ou "Não" em Velório Online.');
         return false;
     };
 
@@ -1082,6 +1125,10 @@ export default function Wizard({
             scrollToFirstError();
             return;
         }
+        if (!validarVelorioOnlineSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
 
         if (!validarUrnaSeNecessario()) {
             scrollToFirstError();
@@ -1139,6 +1186,10 @@ export default function Wizard({
             return;
         }
         if (!validarCordaoSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarVelorioOnlineSeNecessario()) {
             scrollToFirstError();
             return;
         }
@@ -1622,10 +1673,30 @@ export default function Wizard({
 
                     /* ===========================
                        local_velorio com GPS (datalist)
+                       + Sala 01 / Sala 02 / Sala 03
+                       + Velório Online obrigatório quando escolher sala
                        =========================== */
                     if (step.id === "local_velorio" && step.type === "datalist") {
                         const listId = `dl-${step.id}`;
                         const currentText = String((wizardData as any)[step.id] ?? "");
+                        const salaAtual = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
+                        const onlineAtual = String(velorioOnlineVal || (wizardData as any).velorio_online || "").trim();
+                        const mostraVelorioOnline = !!salaAtual;
+
+                        const selecionarSala = (sala: string) => {
+                            const nextSala = salaAtual === sala ? "" : sala;
+                            const nextOnline = nextSala ? onlineAtual : "";
+
+                            setSalaVelorioVal(nextSala);
+                            setVelorioOnlineVal(nextOnline);
+                            setVelorioOnlineErro("");
+
+                            setWizardData((prev: any) => ({
+                                ...prev,
+                                sala_velorio: nextSala,
+                                velorio_online: nextOnline,
+                            }));
+                        };
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
@@ -1682,8 +1753,89 @@ export default function Wizard({
                                         {gpsMsg}
                                     </div>
                                 )}
+
+                                {/* ✅ Campos reais/ocultos para o salvarGrupoWizard ler pelo DOM */}
+                                <input id="wizard-sala_velorio" type="hidden" value={salaAtual} readOnly />
+                                <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />
+
+                                <div className="mt-4 rounded-xl border bg-slate-50 p-3">
+                                    <label className="block text-sm font-medium">
+                                        Sala do Velório <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                                    </label>
+
+                                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                        {SALAS_VELORIO.map((sala) => {
+                                            const checked = salaAtual === sala;
+                                            return (
+                                                <button
+                                                    key={sala}
+                                                    type="button"
+                                                    data-wizard-error={velorioOnlineErro ? "1" : "0"}
+                                                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition disabled:opacity-60 ${checked
+                                                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                                                        : "bg-white text-slate-700 hover:bg-slate-100"
+                                                        }`}
+                                                    disabled={wizardSubmitting}
+                                                    aria-pressed={checked}
+                                                    onClick={() => selecionarSala(sala)}
+                                                >
+                                                    {sala}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {mostraVelorioOnline && (
+                                        <div className="mt-4">
+                                            <label className="mb-1 block text-sm font-medium">
+                                                Velório Online <span className="text-red-600">*</span>
+                                            </label>
+
+                                            <select
+                                                className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${velorioOnlineErro ? "border-red-500" : ""
+                                                    }`}
+                                                value={onlineAtual}
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
+                                                    setVelorioOnlineVal(v);
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        sala_velorio: salaAtual,
+                                                        velorio_online: v,
+                                                    }));
+                                                    if (v === "Sim" || v === "Não") setVelorioOnlineErro("");
+                                                }}
+                                                onBlur={() => validarVelorioOnlineSeNecessario()}
+                                                disabled={wizardSubmitting}
+                                            >
+                                                <option value="" disabled>
+                                                    Selecione…
+                                                </option>
+                                                {VELORIO_ONLINE_OPCOES.map((op) => (
+                                                    <option key={op} value={op}>
+                                                        {op}
+                                                    </option>
+                                                ))}
+                                            </select>
+
+                                            {velorioOnlineErro && <div className="mt-1 text-xs text-red-600">{velorioOnlineErro}</div>}
+                                        </div>
+                                    )}
+
+                                    {!mostraVelorioOnline && (
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Ao marcar uma sala, será obrigatório informar se terá Velório Online.
+                                        </p>
+                                    )}
+                                </div>
                             </div>
                         );
+                    }
+
+                    // ✅ Estes campos são renderizados dentro do bloco Local do Velório acima.
+                    // Mantemos os IDs ocultos para o salvarGrupoWizard ler e salvar corretamente.
+                    if (step.id === "sala_velorio" || step.id === "velorio_online") {
+                        return null;
                     }
 
                     /* ===========================

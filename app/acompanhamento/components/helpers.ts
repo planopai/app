@@ -393,6 +393,27 @@ export async function enviarRegistroPHP(data: any) {
         throw new Error("Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
     }
 
+    // ---------- VELÓRIO / SALA ----------
+    const salaVelorioRaw = String(data?.sala_velorio ?? "").trim();
+    const salaVelorio =
+        salaVelorioRaw === "Sala 01" ||
+            salaVelorioRaw === "Sala 02" ||
+            salaVelorioRaw === "Sala 03"
+            ? salaVelorioRaw
+            : "";
+
+    const velorioOnlineRaw = String(data?.velorio_online ?? "").trim();
+    const velorioOnline =
+        salaVelorio !== ""
+            ? velorioOnlineRaw === "Sim" || velorioOnlineRaw === "Não"
+                ? velorioOnlineRaw
+                : ""
+            : "";
+
+    if (salaVelorio !== "" && velorioOnline === "") {
+        throw new Error('Selecione "Sim" ou "Não" em Velório Online.');
+    }
+
     const body = {
         ...data,
 
@@ -402,6 +423,10 @@ export async function enviarRegistroPHP(data: any) {
         // jsons sempre string
         materiais_json,
         arrumacao_json,
+
+        // velório / sala
+        sala_velorio: salaVelorio,
+        velorio_online: velorioOnline,
 
         // urna
         urna_deposito_nome: urnaDep,

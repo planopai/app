@@ -177,8 +177,9 @@ function getWizardConfig(tipo: TipoAtendimento) {
       // Atendimento (nome + contato + dados do falecido/responsável)
       [0, 1, 27, 28, 29, 30, 31],
 
-      // Velório (local + datas + horários)
-      [18, 19, 20, 21, 22],
+      // Velório (local + sala + velório online + datas + horários)
+      // 18 local_velorio | 32 sala_velorio | 33 velorio_online | 19/20 datas | 21/22 horários
+      [18, 32, 33, 19, 20, 21, 22],
 
       // Sepultamento (local)
       [17],
@@ -578,6 +579,10 @@ export default function AcompanhamentoPage() {
           foto_falecido: String(it?.foto_falecido ?? ""),
           nome_responsavel: String(it?.nome_responsavel ?? ""),
           cpf_responsavel: String(it?.cpf_responsavel ?? ""),
+
+          // ✅ VELÓRIO (sala + online)
+          sala_velorio: String(it?.sala_velorio ?? ""),
+          velorio_online: String(it?.velorio_online ?? ""),
 
           // ✅ URNA
           urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
@@ -1110,6 +1115,10 @@ export default function AcompanhamentoPage() {
     (empty as any).cordao_codigo_barras = "";
     (empty as any).cordao_item = "";
 
+    // ✅ Velório (sala + online)
+    (empty as any).sala_velorio = "";
+    (empty as any).velorio_online = "";
+
     // ✅ insumos tanato (novo formato) - começa vazio
     (empty as any).arrumacao_json = "";
 
@@ -1145,6 +1154,10 @@ export default function AcompanhamentoPage() {
           (data as any)[s.id] = (r as any)[s.id] ?? "";
         });
         (data as any).id = (r as any).id;
+
+        // ✅ Velório (sala + online) no wizardData
+        (data as any).sala_velorio = String((r as any).sala_velorio ?? "");
+        (data as any).velorio_online = String((r as any).velorio_online ?? "");
 
         // ✅ metas da urna no wizardData
         (data as any).urna_deposito_nome = String(
@@ -1289,6 +1302,21 @@ export default function AcompanhamentoPage() {
     next.materiais = materiais;
     next.arrumacao = arrumacao;
     next.tipo_atendimento = tipoAtendimento;
+
+    // ✅ VELÓRIO: sala selecionada e velório online
+    // - Se não houver sala marcada, limpa velorio_online para não mandar informação solta.
+    // - Se houver sala, mantém somente valores válidos ("Sim" ou "Não"); o Wizard também valida visualmente.
+    const salaVelorio = String(next?.sala_velorio ?? "").trim();
+    const velorioOnline = String(next?.velorio_online ?? "").trim();
+
+    if (!salaVelorio) {
+      next.sala_velorio = "";
+      next.velorio_online = "";
+    } else {
+      next.sala_velorio = salaVelorio;
+      next.velorio_online =
+        velorioOnline === "Sim" || velorioOnline === "Não" ? velorioOnline : "";
+    }
 
     // ✅ URNA META: NÃO usa DOM. Mantém o que está no wizardData.
     // (Wizard.tsx atualiza wizardData no momento da seleção da urna.)
@@ -1485,6 +1513,17 @@ export default function AcompanhamentoPage() {
         });
         return;
       }
+    }
+
+    // ✅ validação extra (front): se escolheu sala do velório, Velório Online é obrigatório.
+    const salaVelorio = String(dataAtualizada?.sala_velorio ?? "").trim();
+    const velorioOnline = String(dataAtualizada?.velorio_online ?? "").trim();
+    if (salaVelorio && velorioOnline !== "Sim" && velorioOnline !== "Não") {
+      setWizardMsg({
+        text: 'Selecione "Sim" ou "Não" em Velório Online.',
+        ok: false,
+      });
+      return;
     }
 
     // ✅ validação extra (front): se urna tem texto, precisa ter produto_id

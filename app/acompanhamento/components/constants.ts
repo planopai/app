@@ -16,6 +16,11 @@ export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamen
  * - nome_responsavel
  * - cpf_responsavel
  *
+ * ✅ NOVO VELÓRIO:
+ * Foram adicionados os campos:
+ * - sala_velorio: Sala 01 / Sala 02 / Sala 03
+ * - velorio_online: Sim / Não
+ *
  * ✅ ORDEM DO ATENDIMENTO:
  * Nome do Falecido, Foto, Nascimento, Falecimento,
  * Religião, Convênio, Responsável, CPF, Contato e Observações por último.
@@ -31,7 +36,9 @@ export const wizardStepIndexes = [
     [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24],
 
     // Velório
-    [17, 18, 19, 25],
+    // local sepultamento, local velório, sala velório, velório online, data início, observações velório/sepultamento
+    // Obs.: sala_velorio e velorio_online foram adicionados no final do array steps como índices 32 e 33.
+    [17, 18, 32, 33, 19, 25],
 
     // Sepultamento
     [20, 21, 22, 26],
@@ -137,6 +144,14 @@ export const steps = [
     { label: "Foto do Falecido(a)", id: "foto_falecido", type: "file", accept: "image/*" },
     { label: "Nome do Responsável", id: "nome_responsavel", type: "input", placeholder: "Nome do responsável" },
     { label: "CPF do Responsável", id: "cpf_responsavel", type: "input", placeholder: "Apenas números" },
+
+    // ✅ Novos campos da etapa Velório
+    // No Wizard.tsx, sala_velorio deve ser renderizado como 3 caixinhas/botões: Sala 01, Sala 02 e Sala 03.
+    { label: "Sala do Velório", id: "sala_velorio", type: "select", options: ["", "Sala 01", "Sala 02", "Sala 03"] },
+
+    // No Wizard.tsx, este campo deve aparecer somente quando sala_velorio estiver preenchido.
+    // A obrigatoriedade é condicional e deve ser validada no Wizard.tsx, não no array `obrigatorios`.
+    { label: "Velório Online", id: "velorio_online", type: "select", options: ["", "Sim", "Não"] },
 ] as const;
 
 /**
@@ -144,7 +159,8 @@ export const steps = [
  * (ROUPA e INVOL não são obrigatórios, mas quando preenchidos precisam do vínculo no estoque — regra do PHP)
  *
  * ✅ Os novos campos NÃO foram colocados como obrigatórios.
- * Caso queira obrigar algum deles, adicione o id aqui.
+ * `velorio_online` é obrigatório somente quando `sala_velorio` estiver preenchido;
+ * essa regra condicional deve ficar no Wizard.tsx e também no informativo.php.
  */
 export const obrigatorios = [
     "falecido",
@@ -166,6 +182,10 @@ export const obrigatorios = [
 ];
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
+
+export const salasVelorio = ["Sala 01", "Sala 02", "Sala 03"] as const;
+
+export const opcoesVelorioOnline = ["", "Sim", "Não"] as const;
 
 export const fases = ["fase01", "fase02", "fase03", "fase04", "fase05", "fase06", "fase07", "fase08", "fase09", "fase10", "fase11"] as const;
 
