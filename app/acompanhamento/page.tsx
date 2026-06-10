@@ -38,6 +38,7 @@ import ArrumacaoModal from "./components/ArrumacaoModal";
 import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
+import CompartilharModal from "./components/CompartilharModal";
 import Modal from "./components/Modal";
 import TelemetriaModal, {
   TipoTele,
@@ -489,6 +490,10 @@ export default function AcompanhamentoPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
 
+  // Compartilhar
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareId, setShareId] = useState<Registro["id"] | null>(null);
+
   // Assinatura
   const [signOpen, setSignOpen] = useState(false);
   const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">(
@@ -905,6 +910,7 @@ export default function AcompanhamentoPage() {
         setWizardOpen(false);
         setAcaoOpen(false);
         setInfoOpen(false);
+        setShareOpen(false);
         setMateriaisOpen(false);
         setArrumacaoOpen(false);
         setSignOpen(false);
@@ -2197,6 +2203,14 @@ export default function AcompanhamentoPage() {
     [registros, infoId],
   );
 
+  const registroCompartilhar = useMemo(
+    () =>
+      shareId != null
+        ? (registros.find((x) => String(x.id) === String(shareId)) ?? null)
+        : null,
+    [registros, shareId],
+  );
+
   const infoIdxResolved = useMemo(() => {
     if (infoId == null) return null;
     const idx = registros.findIndex((x) => String(x.id) === String(infoId));
@@ -2206,6 +2220,11 @@ export default function AcompanhamentoPage() {
   const abrirInfoPorId = useCallback((id: Registro["id"]) => {
     setInfoId(id != null ? String(id) : null);
     setInfoOpen(true);
+  }, []);
+
+  const abrirCompartilharPorId = useCallback((id: Registro["id"]) => {
+    setShareId(id != null ? String(id) : null);
+    setShareOpen(true);
   }, []);
 
   const abrirWizardFromInfo = useCallback(
@@ -2346,6 +2365,7 @@ export default function AcompanhamentoPage() {
         registros={registros}
         onAcao={(id) => abrirPopupAcaoPorId(id)}
         onInfo={(id) => abrirInfoPorId(id)}
+        onCompartilhar={(id) => abrirCompartilharPorId(id)}
       />
 
       <Modal
@@ -2506,6 +2526,12 @@ export default function AcompanhamentoPage() {
         abrirAssinatura={(idx, tipo) => abrirAssinaturaFromInfo(idx, tipo)}
         registro={registroInfo}
         wizardStepTitles={wizardStepTitlesForTipo}
+      />
+
+      <CompartilharModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        registro={registroCompartilhar}
       />
 
       <SignatureModal

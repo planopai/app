@@ -1,5 +1,7 @@
 "use client";
+
 import React from "react";
+import { IconShare3 } from "@tabler/icons-react";
 import { Registro } from "./types";
 import { capitalizeStatus } from "./helpers";
 
@@ -7,6 +9,7 @@ interface Props {
     registros: Registro[];
     onAcao: (id: Registro["id"]) => void;
     onInfo: (id: Registro["id"]) => void;
+    onCompartilhar: (id: Registro["id"]) => void;
 }
 
 const statusClasses: Record<string, string> = {
@@ -35,16 +38,24 @@ function isNao(v?: string) {
     const s = (v || "").toString().trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
+
 function isSim(v?: string) {
     return (v || "").toString().trim().toLowerCase() === "sim";
 }
+
 function isTerceiro(r: Registro) {
     if ((r as any).tipo_atendimento === "terceiro") return true;
+
     // heurística p/ registros antigos
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
-export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props) {
+export default function TabelaAtendimentos({
+    registros,
+    onAcao,
+    onInfo,
+    onCompartilhar,
+}: Props) {
     /**
      * Regras de visibilidade:
      * - SEMPRE esconder fase11 (Material Recolhido).
@@ -53,18 +64,17 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
      * - FUNERÁRIO + Assistência=Sim: manter na fase10 e esconder só na fase11.
      */
     const visiveis = registros.filter((r) => {
-        if (r.status === "fase11") return false; // sempre sai após Material Recolhido
+        if (r.status === "fase11") return false;
 
         if (isTerceiro(r)) {
-            return r.status !== "fase10"; // termina em Sepultamento Concluído
+            return r.status !== "fase10";
         }
 
-        // funerário
         if (!isSim(r.assistencia)) {
-            return r.status !== "fase10"; // sem assistência: termina em fase10
+            return r.status !== "fase10";
         }
 
-        return true; // assistência=Sim → permanece mesmo em fase10
+        return true;
     });
 
     return (
@@ -75,14 +85,16 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                         <th className="w-40 px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Falecido(a)</th>
                         <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
-                        <th className="w-36 px-3 py-2 text-left font-semibold">Ações</th>
+                        <th className="w-40 px-3 py-2 text-left font-semibold">Ações</th>
                         <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">Info</th>
+                        <th className="hidden w-20 px-3 py-2 text-left font-semibold sm:table-cell">Compart.</th>
                     </tr>
                 </thead>
+
                 <tbody id="tb-registros">
                     {visiveis.length === 0 ? (
                         <tr>
-                            <td className="px-3 py-6 text-center opacity-70" colSpan={5}>
+                            <td className="px-3 py-6 text-center opacity-70" colSpan={6}>
                                 Nenhum registro cadastrado.
                             </td>
                         </tr>
@@ -103,7 +115,9 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                     </div>
                                 </td>
 
-                                <td className="hidden px-3 py-2 sm:table-cell">{r.agente || ""}</td>
+                                <td className="hidden px-3 py-2 sm:table-cell">
+                                    {r.agente || ""}
+                                </td>
 
                                 <td className="px-3 py-2">
                                     <div className="flex flex-col gap-2">
@@ -113,11 +127,22 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                         >
                                             Ações
                                         </button>
+
+                                        {/* Mobile: Info e Compartilhar aparecem dentro da coluna Ações */}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
                                             onClick={() => r.id != null && onInfo(r.id)}
                                         >
                                             Info
+                                        </button>
+
+                                        <button
+                                            className="inline-flex items-center justify-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 sm:hidden"
+                                            onClick={() => r.id != null && onCompartilhar(r.id)}
+                                            title="Compartilhar"
+                                        >
+                                            <IconShare3 className="size-4" />
+                                            Compartilhar
                                         </button>
                                     </div>
                                 </td>
@@ -128,6 +153,17 @@ export default function TabelaAtendimentos({ registros, onAcao, onInfo }: Props)
                                         onClick={() => r.id != null && onInfo(r.id)}
                                     >
                                         Info
+                                    </button>
+                                </td>
+
+                                <td className="hidden px-3 py-2 sm:table-cell">
+                                    <button
+                                        className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                                        onClick={() => r.id != null && onCompartilhar(r.id)}
+                                        title="Compartilhar"
+                                        aria-label="Compartilhar"
+                                    >
+                                        <IconShare3 className="size-4" />
                                     </button>
                                 </td>
                             </tr>
