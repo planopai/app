@@ -25,18 +25,27 @@ export function titleCaseFromSnake(s: string) {
 
 /** Override VISUAL de rótulos (para chaves/colunas) */
 export function overrideCampoNome(originalKey: string, nomeAtual: string) {
-    // normaliza chave vinda do BD ou do texto ("Observacao Velorio01", "observacao_velorio01", etc.)
     const k = (originalKey || "")
         .toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos para comparar
-        .replace(/[^\p{L}\d]+/gu, "_")                    // espaços, traços, etc. -> _
-        .replace(/^_+|_+$/g, "");                         // trim
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\p{L}\d]+/gu, "_")
+        .replace(/^_+|_+$/g, "");
 
     const MAP: Record<string, string> = {
         assinatura_requerente: "o Termo de Requisição de Veículo",
         assinatura_responsavel: "o Termo de Recebimento de Material",
+
+        // Dados do falecido/responsável
+        data_nascimento: "Data de Nascimento",
+        data_falecimento: "Data de Falecimento",
+        foto_falecido: "Foto do Falecido(a)",
+        nome_responsavel: "Nome do Responsável",
+        cpf_responsavel: "CPF do Responsável",
+
         assistencia: "Assistência",
         ornamentaca: "Ornamentação",
+        ornamentacao: "Ornamentação",
         ornamentacao_tipo: "Tipo de Ornamentação",
         religiao: "Religião",
         convenio: "Convênio",
@@ -53,8 +62,7 @@ export function overrideCampoNome(originalKey: string, nomeAtual: string) {
         observacao_atendimento: "Observação do Atendimento",
         observacao_itens: "Observação dos Itens",
 
-        // (opcional) se quiser padronizar “tanato”:
-        // tanato: "Tanatopraxia",
+        tanato: "Tanatopraxia",
     };
 
     return MAP[k] ?? nomeAtual;
@@ -66,6 +74,13 @@ export function substituirRotuloVisual(texto: string) {
 
     const repl = (src: string | RegExp, dst: string) =>
         (texto = texto.replace(src as any, dst));
+
+    // Dados do falecido/responsável
+    repl(/\bdata[_\s]*nascimento\b/gi, "Data de Nascimento");
+    repl(/\bdata[_\s]*falecimento\b/gi, "Data de Falecimento");
+    repl(/\bfoto[_\s]*falecido\b/gi, "Foto do Falecido(a)");
+    repl(/\bnome[_\s]*responsavel\b/gi, "Nome do Responsável");
+    repl(/\bcpf[_\s]*responsavel\b/gi, "CPF do Responsável");
 
     // tolera variações com/sem acento, com espaço/underscore, maiúsculas/minúsculas
     repl(/\brelig[ií]ao\b/gi, "Religião");
@@ -82,8 +97,7 @@ export function substituirRotuloVisual(texto: string) {
     repl(/\bobservacao[_\s]*atendimento\b/gi, "Observação do Atendimento");
     repl(/\bobservacao[_\s]*itens?\b/gi, "Observação dos Itens");
 
-    // (opcional) padronizar “Tanato”
-    // repl(/\btanato\b/gi, "Tanatopraxia");
+    repl(/\btanato\b/gi, "Tanatopraxia");
 
     return texto;
 }

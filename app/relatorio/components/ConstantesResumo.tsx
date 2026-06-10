@@ -4,6 +4,13 @@ import React from "react";
 /* ======================== Ordem dos Campos do Resumo ======================== */
 
 export const RESUMO_ORDER: string[] = [
+    // Dados do falecido/responsável
+    "data_nascimento",
+    "data_falecimento",
+    "nome_responsavel",
+    "cpf_responsavel",
+
+    // Dados gerais
     "assistencia",
     "convenio",
     "religiao",

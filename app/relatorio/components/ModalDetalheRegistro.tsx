@@ -22,7 +22,7 @@ type FotoHistorico = {
 
 function getRegistroId(item: FalecidoItem): string {
     const anyItem = item as any;
-    return String(item?.sepultamento_id ?? anyItem?.id ?? "").trim();
+    return String(item?.sepultamento_id || anyItem?.id || "").trim();
 }
 
 /* ========================
@@ -33,6 +33,7 @@ function safeJsonParse(v: any) {
     if (v == null) return null;
     if (typeof v === "object") return v;
     if (typeof v !== "string") return null;
+
     try {
         return JSON.parse(v);
     } catch {
@@ -132,12 +133,71 @@ function extrairFotosDosLogs(logs: LogItem[]): FotoHistorico[] {
 
     const ordem = (f: FotoHistorico) => {
         const t = f.titulo.toLowerCase();
+
+        if (t.includes("falecido")) return 0;
         if (t.includes("ornamentação") || t.includes("ornamentacao")) return 1;
         if (t.includes("paramentação") || t.includes("paramentacao")) return 2;
+
         return 3;
     };
 
     return out.sort((a, b) => ordem(a) - ordem(b));
+}
+
+/* ========================
+   Foto do falecido
+   ======================== */
+
+function isFotoFalecidoUrl(v: any): boolean {
+    const s = String(v ?? "").trim();
+    return s.includes("/uploads/falecidos/") || s.includes("uploads/falecidos/");
+}
+
+function normalizarFotoFalecidoUrl(v: any): string {
+    let url = String(v ?? "").trim();
+    if (!url) return "";
+
+    url = url.replace(/\\/g, "/");
+
+    if (/^https?:\/\//i.test(url)) {
+        return url
+            .replace(
+                "https://pai.planoassistencialintegrado.com.br",
+                "https://api.planoassistencialintegrado.com.br"
+            )
+            .replace(
+                "https://planoassistencialintegrado.com.br",
+                "https://api.planoassistencialintegrado.com.br"
+            );
+    }
+
+    if (url.startsWith("/uploads/")) {
+        return `https://api.planoassistencialintegrado.com.br${url}`;
+    }
+
+    if (url.startsWith("uploads/")) {
+        return `https://api.planoassistencialintegrado.com.br/${url}`;
+    }
+
+    return url;
+}
+
+/* ========================
+   Resumo dos novos dados
+   ======================== */
+
+function montarResumoDadosAtendimento(registro: FalecidoItem | null): Record<string, string> {
+    if (!registro) return {};
+
+    const r = registro as any;
+    const out: Record<string, string> = {};
+
+    if (r.data_nascimento) out.data_nascimento = String(r.data_nascimento);
+    if (r.data_falecimento) out.data_falecimento = String(r.data_falecimento);
+    if (r.nome_responsavel) out.nome_responsavel = String(r.nome_responsavel);
+    if (r.cpf_responsavel) out.cpf_responsavel = String(r.cpf_responsavel);
+
+    return out;
 }
 
 export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Props) {
@@ -152,6 +212,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
         if (!aberto || !registro) return;
 
         const id = getRegistroId(registro);
+
         if (!id) {
             setLogs([]);
             return;
@@ -161,6 +222,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
         (async () => {
             setLoading(true);
+
             try {
                 const l = await listarLogPorId(id);
                 if (!cancel) setLogs(l);
@@ -197,12 +259,38 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
     const finalizado = useMemo(() => estaFinalizado(logs), [logs]);
 
-    const resumoFinal = useMemo(
-        () => (finalizado ? montarResumoFinalDoLog(logs, materiaisMap) : undefined),
-        [finalizado, logs, materiaisMap]
+    const dadosAtendimentoResumo = useMemo(
+        () => montarResumoDadosAtendimento(registro),
+        [registro]
     );
 
-    const fotos = useMemo(() => extrairFotosDosLogs(logs), [logs]);
+    const resumoFinal = useMemo(() => {
+        if (!finalizado) return undefined;
+
+        return {
+            ...dadosAtendimentoResumo,
+            ...montarResumoFinalDoLog(logs, materiaisMap),
+        };
+    }, [finalizado, dadosAtendimentoResumo, logs, materiaisMap]);
+
+    const fotos = useMemo(() => {
+        const lista = extrairFotosDosLogs(logs);
+
+        const fotoFalecido = normalizarFotoFalecidoUrl((registro as any)?.foto_falecido);
+
+        if (fotoFalecido && isFotoFalecidoUrl(fotoFalecido)) {
+            const jaExiste = lista.some((f) => f.url === fotoFalecido);
+
+            if (!jaExiste) {
+                lista.unshift({
+                    url: fotoFalecido,
+                    titulo: "Foto do Falecido(a)",
+                });
+            }
+        }
+
+        return lista;
+    }, [logs, registro]);
 
     if (!aberto || !registro) return null;
 
@@ -223,7 +311,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                 {registro.falecido}
                             </h3>
                             <p className="text-xs text-muted-foreground">
-                                Histórico completo e relatório final (quando concluído).
+                                Histórico completo e relatório final quando concluído.
                             </p>
                         </div>
 
@@ -255,6 +343,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                         logVisiveis={logs}
                                         resumoFinal={resumoFinal}
                                         materiaisMap={materiaisMap}
+                                        sepultamentoId={getRegistroId(registro)}
                                     />
                                 </div>
                             </div>
@@ -305,7 +394,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                             <div>
                                 <h3 className="text-base font-semibold">Fotos anexadas</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    Fotos da ornamentação e da paramentação anexadas ao atendimento.
+                                    Foto do falecido(a), ornamentação e paramentação anexadas ao atendimento.
                                 </p>
                             </div>
 
