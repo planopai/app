@@ -83,6 +83,10 @@ async function fetchJsonFast<T = any>(
    ========================= */
 type Registro = {
     data?: string;
+    foto_falecido?: string;
+    foto_url?: string;
+    foto?: string;
+    imagem?: string;
     falecido?: string;
     local_velorio?: string;
     data_inicio_velorio?: string;
@@ -1215,6 +1219,130 @@ function parseLogTs(value?: string): number {
     return Number.isNaN(ts) ? 0 : ts;
 }
 
+function getSepultamentoIdFromRegistro(r: Registro): string {
+    const sepId =
+        (r as any).sepultamento_id ??
+        (r as any).sepultamentoId ??
+        (r as any).id ??
+        (r as any).id_atendimento ??
+        (r as any).codigo;
+
+    return String(sepId ?? "").trim();
+}
+
+async function buscarLogsDoRegistro(r: Registro): Promise<LogItem[]> {
+    const sepId = getSepultamentoIdFromRegistro(r);
+
+    if (!sepId) {
+        console.warn("Registro sem sepultamento_id para histórico:", r);
+        return [];
+    }
+
+    const BASE = `https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
+        String(sepId)
+    )}`;
+    const url = `${BASE}&_ts=${Date.now()}`;
+    const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
+
+    let logs: LogItem[] = [];
+    if (Array.isArray(json)) logs = json as LogItem[];
+    else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
+
+    return [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+}
+
+function getFotoFalecidoTimeline(r?: Registro | null): TimelineFoto | null {
+    if (!r) return null;
+
+    const candidatos = [
+        (r as any).foto_falecido,
+        (r as any).foto_url,
+        (r as any).foto,
+        (r as any).imagem,
+    ];
+
+    for (const c of candidatos) {
+        const raw = decodeHtmlEntitiesDeep(String(c ?? "")).trim();
+        if (!raw) continue;
+        if (!pareceUrlImagem(raw)) continue;
+
+        return {
+            label: "Foto do Falecido(a)",
+            url: normalizarUrlImagemTimeline(raw),
+        };
+    }
+
+    return null;
+}
+
+function extrairFotosDeQualquerValorTimeline(raw: unknown, labelBase = "Foto"): TimelineFoto[] {
+    const fotos: TimelineFoto[] = [];
+
+    const walk = (value: unknown, key = labelBase) => {
+        if (value === null || value === undefined || value === "") return;
+
+        if (typeof value === "string") {
+            const val = decodeHtmlEntitiesDeep(value).trim();
+            if (!val) return;
+
+            if (pareceUrlImagem(val)) {
+                fotos.push({
+                    label: labelImagemTimeline(key),
+                    url: normalizarUrlImagemTimeline(val),
+                });
+                return;
+            }
+
+            const parsed = tryParseJsonFromStringMaybeEmbedded(val);
+            if (parsed != null) walk(parsed, key);
+            return;
+        }
+
+        if (Array.isArray(value)) {
+            value.forEach((item, idx) => walk(item, `${key}_${idx + 1}`));
+            return;
+        }
+
+        if (isPlainObject(value)) {
+            for (const [k, v] of Object.entries(value)) {
+                walk(v, k);
+            }
+        }
+    };
+
+    walk(raw, labelBase);
+    return fotos;
+}
+
+function montarFotosAnexadasDetalhe(registro: Registro | null, logs: LogItem[]): TimelineFoto[] {
+    const fotos: TimelineFoto[] = [];
+    const seen = new Set<string>();
+
+    const add = (foto: TimelineFoto | null | undefined) => {
+        if (!foto?.url) return;
+        if (seen.has(foto.url)) return;
+        seen.add(foto.url);
+        fotos.push(foto);
+    };
+
+    add(getFotoFalecidoTimeline(registro));
+
+    if (registro) {
+        extrairFotosDeQualquerValorTimeline(registro, "Foto do Atendimento").forEach(add);
+    }
+
+    for (const log of logs || []) {
+        const { fotos: fotosDoLog } = extrairDetalhesTimeline(log?.detalhes);
+        fotosDoLog.forEach(add);
+
+        if ((log as any)?.detalhes_array) {
+            extrairFotosDeQualquerValorTimeline((log as any).detalhes_array, tituloLogTimeline(log)).forEach(add);
+        }
+    }
+
+    return fotos;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -1291,6 +1419,11 @@ export default function QuadroAtendimentoPage() {
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
+
+    const [detailFotoAberta, setDetailFotoAberta] = useState<TimelineFoto | null>(null);
+    const [detailGaleriaAberta, setDetailGaleriaAberta] = useState(false);
+    const [detailGaleriaIndex, setDetailGaleriaIndex] = useState(0);
+    const [detailGaleriaFotos, setDetailGaleriaFotos] = useState<TimelineFoto[]>([]);
 
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
 
@@ -1408,6 +1541,10 @@ export default function QuadroAtendimentoPage() {
         setDetailLogs([]);
         setDetailLogsLoading(false);
         setDetailLogsError(null);
+        setDetailFotoAberta(null);
+        setDetailGaleriaAberta(false);
+        setDetailGaleriaIndex(0);
+        setDetailGaleriaFotos([]);
     }, []);
 
     const showDetail = useCallback(
@@ -1521,41 +1658,19 @@ export default function QuadroAtendimentoPage() {
         }
     }, [detail, matLookup]);
 
-    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
+    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro): Promise<LogItem[]> => {
         setDetailLogs([]);
         setDetailLogsError(null);
         setDetailLogsLoading(true);
 
         try {
-            const sepId =
-                (r as any).sepultamento_id ??
-                (r as any).sepultamentoId ??
-                (r as any).id ??
-                (r as any).id_atendimento ??
-                (r as any).codigo;
-
-            if (!sepId) {
-                console.warn("Registro sem sepultamento_id para histórico:", r);
-                setDetailLogs([]);
-                return;
-            }
-
-            // ✅ DEPOIS (direto no PHP)
-            const BASE = `https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
-                String(sepId)
-            )}`;
-            const url = `${BASE}&_ts=${Date.now()}`;
-            const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
-
-            let logs: LogItem[] = [];
-            if (Array.isArray(json)) logs = json as LogItem[];
-            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
-
-            logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+            const logs = await buscarLogsDoRegistro(r);
             setDetailLogs(logs);
+            return logs;
         } catch (e) {
             console.error(e);
             setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
+            return [];
         } finally {
             setDetailLogsLoading(false);
         }
@@ -1570,6 +1685,28 @@ export default function QuadroAtendimentoPage() {
             await carregarHistoricoDoDetalhe(detail);
         }
     }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
+
+    const fotoFalecidoDetalhe = useMemo(() => getFotoFalecidoTimeline(detail), [detail]);
+
+    const fotosAnexadasDetalhe = useMemo(() => {
+        return montarFotosAnexadasDetalhe(detail, detailLogs);
+    }, [detail, detailLogs]);
+
+    const abrirGaleriaFotosDetalhe = useCallback(async (initialIndex = 0) => {
+        if (!detail) return;
+
+        let logs = detailLogs;
+        if (logs.length === 0 && !detailLogsLoading && !detailLogsError) {
+            logs = await carregarHistoricoDoDetalhe(detail);
+        }
+
+        const fotos = montarFotosAnexadasDetalhe(detail, logs);
+        if (fotos.length === 0) return;
+
+        setDetailGaleriaFotos(fotos);
+        setDetailGaleriaIndex(Math.max(0, Math.min(initialIndex, fotos.length - 1)));
+        setDetailGaleriaAberta(true);
+    }, [detail, detailLogs, detailLogsLoading, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const obsList = useCallback(
         (missing: string[]) =>
@@ -1661,6 +1798,28 @@ export default function QuadroAtendimentoPage() {
                                 </button>
 
                                 <button
+                                    onClick={() => abrirGaleriaFotosDetalhe(0)}
+                                    className="inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                                    aria-label="Ver fotos anexadas"
+                                    title="Ver todas as fotos anexadas"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        className="h-5 w-5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        aria-hidden="true"
+                                    >
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                        <circle cx="8.5" cy="8.5" r="1.5" />
+                                        <path d="M21 15l-5-5L5 21" />
+                                    </svg>
+                                </button>
+
+                                <button
                                     onClick={handleCopy}
                                     className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
                                     aria-label="Copiar"
@@ -1737,6 +1896,73 @@ export default function QuadroAtendimentoPage() {
                         </div>
 
                         <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
+                            <Topic title="FOTO DO FALECIDO" note={fotoFalecidoDetalhe ? "Clique para visualizar." : "Nenhuma foto cadastrada."}>
+                                {fotoFalecidoDetalhe ? (
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDetailFotoAberta(fotoFalecidoDetalhe)}
+                                            className="group relative h-36 w-36 overflow-hidden rounded-2xl border bg-muted shadow-sm"
+                                            title="Visualizar Foto do Falecido(a)"
+                                        >
+                                            <img
+                                                src={fotoFalecidoDetalhe.url}
+                                                alt={fotoFalecidoDetalhe.label}
+                                                className="h-full w-full object-cover transition group-hover:scale-105"
+                                            />
+                                            <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100">
+                                                <svg
+                                                    viewBox="0 0 24 24"
+                                                    className="h-7 w-7"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                                    <path d="M21 15l-5-5L5 21" />
+                                                </svg>
+                                            </span>
+                                        </button>
+
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-800">Foto do Falecido(a)</div>
+                                            <div className="mt-1 text-xs text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                                {shown(detail.falecido)}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => abrirGaleriaFotosDetalhe(0)}
+                                                className="mt-3 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                                            >
+                                                <svg
+                                                    viewBox="0 0 24 24"
+                                                    className="h-5 w-5"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                                    <path d="M21 15l-5-5L5 21" />
+                                                </svg>
+                                                Ver fotos anexadas
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-dashed bg-background p-4 text-sm text-muted-foreground">
+                                        Nenhuma foto do falecido cadastrada neste atendimento.
+                                    </div>
+                                )}
+                            </Topic>
+
                             <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Falecido" value={shown(detail.falecido)} />
@@ -1811,6 +2037,19 @@ export default function QuadroAtendimentoPage() {
                     </div>
                 </div>
             )}
+
+            <ModalFotoTimeline
+                foto={detailFotoAberta}
+                onClose={() => setDetailFotoAberta(null)}
+            />
+
+            <ModalGaleriaFotosTimeline
+                open={detailGaleriaAberta}
+                fotos={detailGaleriaFotos}
+                index={detailGaleriaIndex}
+                onIndexChange={setDetailGaleriaIndex}
+                onClose={() => setDetailGaleriaAberta(false)}
+            />
         </div>
     );
 }
@@ -2620,6 +2859,98 @@ function ModalFotoTimeline({
                         className="max-h-[78vh] w-full rounded-xl object-contain"
                     />
                 </div>
+            </div>
+        </div>
+    );
+}
+
+function ModalGaleriaFotosTimeline({
+    open,
+    fotos,
+    index,
+    onIndexChange,
+    onClose,
+}: {
+    open: boolean;
+    fotos: TimelineFoto[];
+    index: number;
+    onIndexChange: (index: number) => void;
+    onClose: () => void;
+}) {
+    if (!open || fotos.length === 0) return null;
+
+    const safeIndex = Math.max(0, Math.min(index, fotos.length - 1));
+    const foto = fotos[safeIndex];
+
+    const prev = () => onIndexChange(safeIndex <= 0 ? fotos.length - 1 : safeIndex - 1);
+    const next = () => onIndexChange(safeIndex >= fotos.length - 1 ? 0 : safeIndex + 1);
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-3 sm:p-6">
+            <div className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+                    <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-800">{foto.label}</div>
+                        <div className="text-xs text-slate-500">
+                            {safeIndex + 1} de {fotos.length}
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border hover:bg-slate-100"
+                        aria-label="Fechar galeria"
+                        title="Fechar"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div className="relative bg-slate-950 p-3">
+                    <img
+                        src={foto.url}
+                        alt={foto.label}
+                        className="max-h-[72vh] w-full rounded-xl object-contain"
+                    />
+
+                    {fotos.length > 1 && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={prev}
+                                className="absolute left-5 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75"
+                                aria-label="Foto anterior"
+                            >
+                                ‹
+                            </button>
+                            <button
+                                type="button"
+                                onClick={next}
+                                className="absolute right-5 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75"
+                                aria-label="Próxima foto"
+                            >
+                                ›
+                            </button>
+                        </>
+                    )}
+                </div>
+
+                {fotos.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto border-t bg-white p-3">
+                        {fotos.map((f, i) => (
+                            <button
+                                key={`${f.url}-${i}`}
+                                type="button"
+                                onClick={() => onIndexChange(i)}
+                                className={`h-16 w-16 shrink-0 overflow-hidden rounded-lg border ${i === safeIndex ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"}`}
+                                title={f.label}
+                            >
+                                <img src={f.url} alt={f.label} className="h-full w-full object-cover" />
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
