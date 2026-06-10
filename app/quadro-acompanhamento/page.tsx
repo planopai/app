@@ -1618,28 +1618,28 @@ export default function QuadroAtendimentoPage() {
                     {avisosParaExibir.length === 0 ? (
                         <p className="text-muted-foreground">Nenhum aviso no momento.</p>
                     ) : (
-                            avisosParaExibir.map((a, i) => (
-                                <div
-                                    key={i}
-                                    className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
-                                >
-                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="text-sm font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
-                                            {shown(a.usuario, "Sistema")}
+                        avisosParaExibir.map((a, i) => (
+                            <div
+                                key={i}
+                                className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
+                            >
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="text-sm font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
+                                        {shown(a.usuario, "Sistema")}
+                                    </div>
+
+                                    {a.criado_em ? (
+                                        <div className="text-xs text-slate-500">
+                                            {avisoDateTimeOr(a.criado_em)}
                                         </div>
-
-                                        {a.criado_em ? (
-                                            <div className="text-xs text-slate-500">
-                                                {avisoDateTimeOr(a.criado_em)}
-                                            </div>
-                                        ) : null}
-                                    </div>
-
-                                    <div className="mt-1 text-sm leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
-                                        {shown(a.mensagem, "")}
-                                    </div>
+                                    ) : null}
                                 </div>
-                            ))
+
+                                <div className="mt-1 text-sm leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
+                                    {shown(a.mensagem, "")}
+                                </div>
+                            </div>
+                        ))
                     )}
                 </div>
             </div>
@@ -2309,8 +2309,28 @@ function labelImagemTimeline(key: string) {
     if (k.includes("velorio")) return "Foto do Velório";
     if (k.includes("sepult")) return "Foto do Sepultamento";
     if (k.includes("acao")) return "Foto da Ação";
+    if (k.includes("foto")) return "Foto";
 
     return overrideCampoNome(key, titleCaseFromSnake(key));
+}
+
+function isLogSemAlteracoes(log: LogItem) {
+    const raw = log?.detalhes;
+
+    if (raw == null || raw === "") return false;
+
+    let obj: any = raw;
+
+    if (typeof raw === "string") {
+        const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
+        if (parsed == null || !isPlainObject(parsed)) return false;
+        obj = parsed;
+    }
+
+    if (!isPlainObject(obj)) return false;
+
+    const semAlteracoes = obj.sem_alteracoes ?? obj.semAlteracoes ?? obj["Sem Alteracoes"] ?? obj["Sem Alterações"];
+    return asBool(semAlteracoes);
 }
 
 function deveIgnorarCampoTimeline(key: string, value: unknown) {
@@ -2327,6 +2347,8 @@ function deveIgnorarCampoTimeline(key: string, value: unknown) {
     if (k === "status_novo") return true;
     if (k === "datahora") return true;
     if (k === "data_hora") return true;
+    if (k === "sem_alteracoes" || k === "semalteracoes") return true;
+    if (k === "sem alteracoes" || k === "sem alterações") return true;
     if (k.includes("assinatura")) return true;
     if (k.includes("pdf")) return true;
 
@@ -2381,9 +2403,31 @@ function extrairDetalhesTimeline(raw: unknown): {
         if (parsed != null) {
             obj = parsed;
         } else {
-            textoLivre = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
+            const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
+
+            if (pareceUrlImagem(text)) {
+                fotos.push({
+                    label: "Foto",
+                    url: normalizarUrlImagemTimeline(text),
+                });
+                return { rows, fotos, arrumacao, textoLivre };
+            }
+
+            textoLivre = text;
             return { rows, fotos, arrumacao, textoLivre };
         }
+    }
+
+    function pushFoto(key: string, value: unknown) {
+        const val = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
+        if (!val || !pareceUrlImagem(val)) return false;
+
+        fotos.push({
+            label: labelImagemTimeline(key),
+            url: normalizarUrlImagemTimeline(val),
+        });
+
+        return true;
     }
 
     function pushRow(key: string, value: unknown) {
@@ -2393,10 +2437,7 @@ function extrairDetalhesTimeline(raw: unknown): {
         if (!val) return;
 
         if ((chaveEhImagem(key) || pareceUrlImagem(val)) && pareceUrlImagem(val)) {
-            fotos.push({
-                label: labelImagemTimeline(key),
-                url: normalizarUrlImagemTimeline(val),
-            });
+            pushFoto(key, val);
             return;
         }
 
@@ -2452,6 +2493,7 @@ function extrairDetalhesTimeline(raw: unknown): {
     if (isPlainObject(obj)) {
         for (const [key, value] of Object.entries(obj)) {
             if (["materiais_json", "material_json"].includes(key)) continue;
+            if (deveIgnorarCampoTimeline(key, value)) continue;
 
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (m) {
@@ -2467,10 +2509,37 @@ function extrairDetalhesTimeline(raw: unknown): {
                 continue;
             }
 
+            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
+                if (typeof value === "string") {
+                    const parsedArrumacao = tryParseJsonFromStringMaybeEmbedded(value);
+                    if (isPlainObject(parsedArrumacao)) {
+                        for (const [k, v] of Object.entries(parsedArrumacao)) {
+                            if (asBool(v)) arrumacao.push(titleCaseFromSnake(k));
+                        }
+                    }
+                    continue;
+                }
+
+                if (isPlainObject(value)) {
+                    for (const [k, v] of Object.entries(value)) {
+                        if (asBool(v)) arrumacao.push(titleCaseFromSnake(k));
+                    }
+                    continue;
+                }
+            }
+
             walk(key, value);
         }
     } else {
-        textoLivre = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
+        const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
+        if (pareceUrlImagem(text)) {
+            fotos.push({
+                label: "Foto",
+                url: normalizarUrlImagemTimeline(text),
+            });
+        } else {
+            textoLivre = text;
+        }
     }
 
     return {
@@ -2565,7 +2634,12 @@ function LinhaDoTempoLogs({
 }) {
     const [fotoAberta, setFotoAberta] = useState<TimelineFoto | null>(null);
 
-    if (!logs || logs.length === 0) {
+    const logsFiltrados = useMemo(
+        () => (logs || []).filter((log) => !isLogSemAlteracoes(log)),
+        [logs]
+    );
+
+    if (!logsFiltrados || logsFiltrados.length === 0) {
         return (
             <div className="p-4 text-center text-muted-foreground">
                 Nenhum log encontrado.
@@ -2576,7 +2650,7 @@ function LinhaDoTempoLogs({
     return (
         <>
             <div className="space-y-3 w-full min-w-0 overflow-x-hidden">
-                {logs.map((ent, i) => {
+                {logsFiltrados.map((ent, i) => {
                     const titulo = tituloLogTimeline(ent);
                     const emoji = iconeAcaoTimeline(ent.acao, ent.status_novo);
                     const { rows, fotos, arrumacao, textoLivre } = extrairDetalhesTimeline(ent.detalhes);
