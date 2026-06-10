@@ -2006,11 +2006,19 @@ function EtapasRow({ registro }: { registro: Registro }) {
 function isLikelyBooleanMap(obj: Record<string, unknown>) {
     const entries = Object.entries(obj);
     if (entries.length === 0) return false;
+
     let boolish = 0;
+
     for (const [, v] of entries) {
         const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
-        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
+        if (
+            typeof v === "boolean" ||
+            ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)
+        ) {
+            boolish++;
+        }
     }
+
     return boolish / entries.length >= 0.8;
 }
 
@@ -2027,14 +2035,15 @@ function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: stri
         .replace(/[‘’]/g, "'");
 
     const out: Array<{ nome: string; qtd?: string }> = [];
-
     const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
+
     let m: RegExpExecArray | null;
 
     while ((m = reNome.exec(s))) {
         const nome = (m[1] || "").trim();
         const near = s.slice(m.index, m.index + 260);
         const qtd = near.match(/"?qtd"?\s*:\s*["']?([0-9]+(?:[.,][0-9]+)?)["']?/i)?.[1];
+
         if (nome) out.push({ nome, qtd });
     }
 
@@ -2045,79 +2054,404 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
     const decoded = decodeHtmlEntitiesDeep(raw);
     const trimmed = decoded.trim().replace(/^\s*json\s*:\s*/i, "").trim();
 
-    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    if (
+        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
         try {
             return JSON.parse(trimmed);
         } catch {
-            /* ignore */
+            // ignore
         }
     }
 
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
+
     if (start >= 0 && end > start) {
         const slice = trimmed.slice(start, end + 1);
         try {
             return JSON.parse(slice);
         } catch {
-            /* ignorar */
+            // ignore
         }
     }
+
     return null;
 }
 
-function buildDetalhesNodes(raw: unknown): React.ReactNode {
-    if (raw == null || raw === "") return null;
+/* =========================
+   Linha do tempo — padrão relatório
+   ========================= */
+
+const FASES_NOMES_QA: Record<string, string> = {
+    fase01: "Indo Retirar o Óbito",
+    fase02: "Corpo na Clínica",
+    fase03: "Início de Conservação",
+    fase04: "Fim da Conservação",
+    fase05: "Início da Ornamentação",
+    fase06: "Fim da Ornamentação",
+    fase07: "Transportando Óbito P/ Velório",
+    fase08: "Entrega de Corpo",
+    fase09: "Transportando P/ Sepultamento",
+    fase10: "Sepultamento Concluído",
+    fase11: "Material Recolhido",
+};
+
+const FASES_ICONES_QA: Record<string, string> = {
+    fase01: "🚑",
+    fase02: "🏥",
+    fase03: "🧪",
+    fase04: "✅",
+    fase05: "🌸",
+    fase06: "🌸",
+    fase07: "🚐",
+    fase08: "⚰️",
+    fase09: "🚐",
+    fase10: "✅",
+    fase11: "📦",
+};
+
+function normalizarFaseTimeline(fase?: string) {
+    const raw = String(fase || "").trim();
+    if (!raw) return "";
+
+    const low = raw.toLowerCase();
+
+    if (low.startsWith("fase")) {
+        const n = low.replace(/\D+/g, "");
+        if (!n) return low;
+        return `fase${n.padStart(2, "0")}`;
+    }
+
+    const semAcento = low
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+
+    const map: Record<string, string> = {
+        removendo: "fase01",
+        "indo retirar o obito": "fase01",
+
+        "corpo na clinica": "fase02",
+        "aguardando procedimento": "fase02",
+
+        preparando: "fase03",
+        "inicio de conservacao": "fase03",
+
+        "fim da conservacao": "fase04",
+        "aguardando ornamentacao": "fase04",
+
+        ornamentando: "fase05",
+        "inicio da ornamentacao": "fase05",
+
+        "fim da ornamentacao": "fase06",
+        "corpo pronto": "fase06",
+
+        transportando: "fase07",
+        "transportando obito p/velorio": "fase07",
+        "transportando obito para velorio": "fase07",
+        "transportando p/ velorio": "fase07",
+        "transportando para velorio": "fase07",
+
+        velando: "fase08",
+        "entrega de corpo": "fase08",
+
+        sepultando: "fase09",
+        "transportando p/ sepultamento": "fase09",
+        "transportando para sepultamento": "fase09",
+
+        "sepultamento concluido": "fase10",
+        "material recolhido": "fase11",
+        concluido: "fase11",
+    };
+
+    return map[semAcento] || raw;
+}
+
+function traduzirFaseTimeline(fase?: string) {
+    const f = normalizarFaseTimeline(fase);
+    return f ? FASES_NOMES_QA[f] || fase || "" : "";
+}
+
+function iconeAcaoTimeline(acao?: string, statusNovo?: string) {
+    const fase = normalizarFaseTimeline(statusNovo);
+
+    if (fase && FASES_ICONES_QA[fase]) {
+        return FASES_ICONES_QA[fase];
+    }
+
+    const a = String(acao || "").toLowerCase();
+
+    if (a.includes("criou")) return "🟢";
+    if (a.includes("editou") || a.includes("atualizou") || a.includes("alterou")) return "✏️";
+    if (a.includes("assinou")) return "🖊️";
+    if (a.includes("foto")) return "🖼️";
+    if (a.includes("material")) return "📦";
+
+    return "📝";
+}
+
+function humanizarAcaoTimeline(acao?: string) {
+    const a = String(acao || "").trim();
+    const low = a.toLowerCase();
+
+    const map: Record<string, string> = {
+        criou: "Registro criado",
+        editou: "Registro editado",
+        "editou registro": "Registro editado",
+        "atualizou status": "Status alterado",
+        material_recolhido: "Material recolhido",
+    };
+
+    if (map[low]) return map[low];
+
+    if (low.includes("assinou") && low.includes("assinatura_responsavel")) {
+        return "Assinou o Termo de Recebimento de Material";
+    }
+
+    if (low.includes("assinou") && low.includes("assinatura_requerente")) {
+        return "Assinou o Termo de Requisição de Veículo";
+    }
+
+    if (low.includes("salvou foto")) {
+        return a
+            .replace(/_/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .replace(/^./, (c) => c.toUpperCase());
+    }
+
+    return a
+        .replace(/_/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/^./, (c) => c.toUpperCase());
+}
+
+function tituloLogTimeline(log: LogItem) {
+    const status = traduzirFaseTimeline(log.status_novo);
+
+    if (status) return status;
+
+    const acaoHumana = String((log as any)?.acao_humana || "").trim();
+    if (acaoHumana) return substituirRotuloVisual(acaoHumana);
+
+    return substituirRotuloVisual(humanizarAcaoTimeline(log.acao));
+}
+
+function pareceUrlImagem(valor: string) {
+    const v = String(valor || "").trim().toLowerCase();
+
+    if (!v) return false;
+    if (v.startsWith("data:image/")) return true;
+
+    return (
+        v.includes(".jpg") ||
+        v.includes(".jpeg") ||
+        v.includes(".png") ||
+        v.includes(".webp") ||
+        v.includes(".gif") ||
+        v.includes(".bmp") ||
+        v.includes(".svg") ||
+        v.includes("/uploads/falecidos/") ||
+        v.includes("/uploads/acoes_fotos/") ||
+        v.includes("/uploads/fotos/")
+    );
+}
+
+function chaveEhImagem(key: string) {
+    const k = String(key || "").toLowerCase();
+
+    return (
+        k.includes("foto") ||
+        k.includes("imagem") ||
+        k.includes("img") ||
+        k.includes("arquivo")
+    );
+}
+
+function normalizarUrlImagemTimeline(raw: string) {
+    const v = decodeHtmlEntitiesDeep(String(raw || "")).trim();
+
+    if (!v) return "";
+
+    if (
+        v.startsWith("http://") ||
+        v.startsWith("https://") ||
+        v.startsWith("data:image/")
+    ) {
+        return v;
+    }
+
+    if (v.startsWith("/uploads/")) {
+        return `https://api.planoassistencialintegrado.com.br${v}`;
+    }
+
+    if (v.startsWith("uploads/")) {
+        return `https://api.planoassistencialintegrado.com.br/${v}`;
+    }
+
+    if (v.startsWith("/")) {
+        return v;
+    }
+
+    return `/${v}`;
+}
+
+function labelImagemTimeline(key: string) {
+    const k = String(key || "").toLowerCase();
+
+    if (k.includes("falecido")) return "Foto do Falecido(a)";
+    if (k.includes("ornament")) return "Foto da Ornamentação";
+    if (k.includes("conserv")) return "Foto da Conservação";
+    if (k.includes("tanato")) return "Foto da Conservação";
+    if (k.includes("velorio")) return "Foto do Velório";
+    if (k.includes("sepult")) return "Foto do Sepultamento";
+    if (k.includes("acao")) return "Foto da Ação";
+
+    return overrideCampoNome(key, titleCaseFromSnake(key));
+}
+
+function deveIgnorarCampoTimeline(key: string, value: unknown) {
+    const k = String(key || "").toLowerCase();
+
+    if (value === null || value === undefined || value === "") return true;
+
+    if (k === "id") return true;
+    if (k === "sepultamento_id") return true;
+    if (k === "acao") return true;
+    if (k === "acao_humana") return true;
+    if (k === "usuario") return true;
+    if (k === "status_anterior") return true;
+    if (k === "status_novo") return true;
+    if (k === "datahora") return true;
+    if (k === "data_hora") return true;
+    if (k.includes("assinatura")) return true;
+    if (k.includes("pdf")) return true;
+
+    return false;
+}
+
+function formatarValorTimeline(key: string, value: unknown) {
+    if (value === null || value === undefined) return "";
+
+    if (typeof value === "boolean") return value ? "Sim" : "Não";
+
+    const txt = decodeHtmlEntitiesDeep(String(value)).trim();
+    if (!txt) return "";
+
+    if (txt.toLowerCase().startsWith("fase")) {
+        return traduzirFaseTimeline(txt);
+    }
+
+    return substituirRotuloVisual(formataSeDataIso(txt));
+}
+
+type TimelineFoto = {
+    label: string;
+    url: string;
+};
+
+type TimelineRow = {
+    label: string;
+    value: string;
+};
+
+function extrairDetalhesTimeline(raw: unknown): {
+    rows: TimelineRow[];
+    fotos: TimelineFoto[];
+    arrumacao: string[];
+    textoLivre: string;
+} {
+    const rows: TimelineRow[] = [];
+    const fotos: TimelineFoto[] = [];
+    const arrumacao: string[] = [];
+    let textoLivre = "";
+
+    if (raw == null || raw === "") {
+        return { rows, fotos, arrumacao, textoLivre };
+    }
 
     let obj: unknown = raw;
 
     if (typeof raw === "string") {
         const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
-        if (parsed != null) obj = parsed;
-        else {
-            const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
-            return text ? <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div> : null;
+
+        if (parsed != null) {
+            obj = parsed;
+        } else {
+            textoLivre = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
+            return { rows, fotos, arrumacao, textoLivre };
         }
     }
 
-    if (isPlainObject(obj)) {
-        const plainObj = obj as Record<string, unknown>;
+    function pushRow(key: string, value: unknown) {
+        if (deveIgnorarCampoTimeline(key, value)) return;
 
-        if (isLikelyBooleanMap(plainObj)) {
-            const arrItems = Object.entries(plainObj)
-                .filter(([, v]) => asBool(v))
-                .map(([k]) => titleCaseFromSnake(k));
+        const val = formatarValorTimeline(key, value);
+        if (!val) return;
 
-            return arrItems.length ? (
-                <div className="mt-3 w-full min-w-0">
-                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
-                        <div className="font-semibold mb-1">Arrumação:</div>
-                        <ul className="list-disc pl-4 space-y-0.5">
-                            {arrItems.map((t, idx) => (
-                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                                    {t}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                </div>
-            ) : null;
+        if ((chaveEhImagem(key) || pareceUrlImagem(val)) && pareceUrlImagem(val)) {
+            fotos.push({
+                label: labelImagemTimeline(key),
+                url: normalizarUrlImagemTimeline(val),
+            });
+            return;
         }
 
-        const arrItems: string[] = [];
-        const rows: { id: string; label: string; value: string }[] = [];
+        const label = substituirRotuloVisual(
+            overrideCampoNome(key, titleCaseFromSnake(key.replace(/:/g, "_")))
+        );
 
-        for (const key of Object.keys(plainObj)) {
-            if (["materiais_json", "id", "acao"].includes(key)) continue;
+        rows.push({ label, value: val });
+    }
 
-            const value = plainObj[key];
+    function walk(prefix: string, value: unknown) {
+        if (value === null || value === undefined || value === "") return;
 
-            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
-                for (const [k, v] of Object.entries(value)) {
-                    if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
-                }
-                continue;
+        if (Array.isArray(value)) {
+            if (value.length === 0) return;
+
+            if (value.every((v) => typeof v !== "object")) {
+                pushRow(prefix, value.map((v) => formatarValorTimeline(prefix, v)).join(", "));
+                return;
             }
+
+            value.forEach((v, idx) => walk(`${prefix}_${idx + 1}`, v));
+            return;
+        }
+
+        if (isPlainObject(value)) {
+            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(prefix) || isLikelyBooleanMap(value)) {
+                for (const [k, v] of Object.entries(value)) {
+                    if (asBool(v)) arrumacao.push(titleCaseFromSnake(k));
+                }
+                return;
+            }
+
+            for (const [k, v] of Object.entries(value)) {
+                const nextKey = prefix ? `${prefix}_${k}` : k;
+
+                if (/^arrum[aã]cao(\s*json|_json)?$/i.test(k) && isPlainObject(v)) {
+                    for (const [ak, av] of Object.entries(v)) {
+                        if (asBool(av)) arrumacao.push(titleCaseFromSnake(ak));
+                    }
+                    continue;
+                }
+
+                walk(nextKey, v);
+            }
+
+            return;
+        }
+
+        pushRow(prefix, value);
+    }
+
+    if (isPlainObject(obj)) {
+        for (const [key, value] of Object.entries(obj)) {
+            if (["materiais_json", "material_json"].includes(key)) continue;
 
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (m) {
@@ -2125,111 +2459,213 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
                 if (valRaw != null && String(valRaw).trim() !== "") {
                     const nomeBase = titleCaseFromSnake(m[1]);
                     const nome = overrideCampoNome(m[1], nomeBase);
-                    const valFmt = formataSeDataIso(String(valRaw));
-                    rows.push({ id: key, label: nome, value: valFmt });
+                    rows.push({
+                        label: nome,
+                        value: formataSeDataIso(String(valRaw)),
+                    });
                 }
                 continue;
             }
 
-            if (value == null) continue;
-            if (typeof value === "object") continue;
-
-            const valStr = decodeHtmlEntitiesDeep(String(value)).trim();
-            if (!valStr) continue;
-
-            let nome = key.replace(/_/g, " ");
-            nome = overrideCampoNome(key, titleCaseFromSnake(nome));
-            let valFmt = valStr;
-
-            const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
-            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
-                const map = maybeEmbedded as Record<string, unknown>;
-                const items = Object.entries(map)
-                    .filter(([, v]) => asBool(v))
-                    .map(([k]) => titleCaseFromSnake(k));
-                if (items.length) arrItems.push(...items);
-                continue;
-            }
-
-            if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
-            valFmt = formataSeDataIso(valFmt);
-
-            nome = substituirRotuloVisual(nome);
-            valFmt = substituirRotuloVisual(valFmt);
-
-            rows.push({ id: key, label: nome, value: valFmt });
+            walk(key, value);
         }
+    } else {
+        textoLivre = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
+    }
 
-        if (rows.length === 0 && arrItems.length === 0) return null;
+    return {
+        rows,
+        fotos,
+        arrumacao: [...new Set(arrumacao)],
+        textoLivre,
+    };
+}
 
+function BotaoVerFotoTimeline({
+    foto,
+    onClick,
+}: {
+    foto: TimelineFoto;
+    onClick: (foto: TimelineFoto) => void;
+}) {
+    return (
+        <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground">{foto.label}:</span>
+
+            <button
+                type="button"
+                onClick={() => onClick(foto)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
+                title={`Visualizar ${foto.label}`}
+                aria-label={`Visualizar ${foto.label}`}
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                >
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <path d="M21 15l-5-5L5 21" />
+                </svg>
+            </button>
+        </div>
+    );
+}
+
+function ModalFotoTimeline({
+    foto,
+    onClose,
+}: {
+    foto: TimelineFoto | null;
+    onClose: () => void;
+}) {
+    if (!foto) return null;
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-3 sm:p-6">
+            <div className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                    <div className="font-semibold text-slate-800">{foto.label}</div>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border hover:bg-slate-100"
+                        aria-label="Fechar imagem"
+                        title="Fechar"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div className="bg-slate-950 p-3">
+                    <img
+                        src={foto.url}
+                        alt={foto.label}
+                        className="max-h-[78vh] w-full rounded-xl object-contain"
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function LinhaDoTempoLogs({
+    logs,
+    usuarioVisivel = true,
+}: {
+    logs: LogItem[];
+    usuarioVisivel?: boolean;
+}) {
+    const [fotoAberta, setFotoAberta] = useState<TimelineFoto | null>(null);
+
+    if (!logs || logs.length === 0) {
         return (
-            <div className="mt-3 space-y-2 w-full min-w-0">
-                {arrItems.length > 0 && (
-                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
-                        <div className="font-semibold mb-1">Arrumação:</div>
-                        <ul className="list-disc pl-4 space-y-0.5">
-                            {[...new Set(arrItems)].map((t, idx) => (
-                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                                    {t}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-
-                {rows.map((row) => (
-                    <div key={row.id} className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0">
-                        <span className="font-semibold">{row.label}: </span>
-                        <span className="break-words [overflow-wrap:anywhere]">{row.value}</span>
-                    </div>
-                ))}
+            <div className="p-4 text-center text-muted-foreground">
+                Nenhum log encontrado.
             </div>
         );
     }
 
-    const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
-    return text.trim() ? <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div> : null;
-}
-
-function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
-    if (!logs || logs.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
-    }
-
     return (
-        <div className="space-y-2 w-full min-w-0 overflow-x-hidden">
-            {logs.map((ent, i) => {
-                const acao = ent.acao ? capitalize(ent.acao) : "";
-                const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
-                const detalhes = buildDetalhesNodes(ent.detalhes);
+        <>
+            <div className="space-y-3 w-full min-w-0 overflow-x-hidden">
+                {logs.map((ent, i) => {
+                    const titulo = tituloLogTimeline(ent);
+                    const emoji = iconeAcaoTimeline(ent.acao, ent.status_novo);
+                    const { rows, fotos, arrumacao, textoLivre } = extrairDetalhesTimeline(ent.detalhes);
 
-                return (
-                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
-                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
-
-                            <div className="flex-1 min-w-0">
-                                <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
-
-                                <div className="text-sm flex flex-wrap items-center gap-1 min-w-0">
-                                    <span className="break-words [overflow-wrap:anywhere]">{acao}</span>
-                                    {statusLabel && (
-                                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary break-words [overflow-wrap:anywhere]">
-                                            {statusLabel}
-                                        </span>
-                                    )}
+                    return (
+                        <div
+                            key={`${ent.id ?? i}-${ent.datahora ?? "sem-data"}`}
+                            className="rounded-2xl border bg-background/70 p-3 sm:p-4 shadow-sm overflow-hidden min-w-0"
+                        >
+                            <div className="flex gap-3 min-w-0">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xl">
+                                    <span aria-hidden>{emoji}</span>
                                 </div>
 
-                                {usuarioVisivel && (
-                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">Usuário: {ent.usuario ?? ""}</div>
-                                )}
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs text-muted-foreground">
+                                        {formatLogDateTime(ent.datahora)}
+                                    </div>
 
-                                {detalhes}
+                                    <div className="mt-0.5 text-sm sm:text-base font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
+                                        {titulo}
+                                    </div>
+
+                                    {usuarioVisivel && ent.usuario && (
+                                        <div className="mt-0.5 text-xs font-medium text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                            {ent.usuario}
+                                        </div>
+                                    )}
+
+                                    {rows.length > 0 && (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {rows.map((row, idx) => (
+                                                <div
+                                                    key={`${row.label}-${idx}`}
+                                                    className="rounded-lg border bg-white/70 px-3 py-2 text-xs sm:text-sm text-slate-700 shadow-sm"
+                                                >
+                                                    <span className="font-semibold text-slate-800">
+                                                        {row.label}:
+                                                    </span>{" "}
+                                                    <span>{row.value}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {arrumacao.length > 0 && (
+                                        <div className="mt-3 rounded-xl border bg-white/70 px-3 py-2 text-xs sm:text-sm">
+                                            <div className="font-semibold mb-1">Arrumação:</div>
+                                            <ul className="list-disc pl-4 space-y-0.5">
+                                                {arrumacao.map((item, idx) => (
+                                                    <li
+                                                        key={`${item}-${idx}`}
+                                                        className="break-words [overflow-wrap:anywhere]"
+                                                    >
+                                                        {item}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {textoLivre && (
+                                        <div className="mt-3 rounded-xl border bg-white/70 p-3 text-xs sm:text-sm text-slate-700 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                                            {textoLivre}
+                                        </div>
+                                    )}
+
+                                    {fotos.length > 0 && (
+                                        <div className="mt-3 flex flex-col gap-2">
+                                            {fotos.map((foto, idx) => (
+                                                <BotaoVerFotoTimeline
+                                                    key={`${foto.url}-${idx}`}
+                                                    foto={foto}
+                                                    onClick={setFotoAberta}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                );
-            })}
-        </div>
+                    );
+                })}
+            </div>
+
+            <ModalFotoTimeline
+                foto={fotoAberta}
+                onClose={() => setFotoAberta(null)}
+            />
+        </>
     );
 }
