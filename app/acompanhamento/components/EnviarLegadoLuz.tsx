@@ -34,22 +34,6 @@ function getResponsavel(registro?: Registro | null) {
     ).trim();
 }
 
-function removerAcentos(texto: string) {
-    return texto
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
-}
-
-function slugify(texto: string) {
-    return removerAcentos(String(texto || ""))
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-+|-+$/g, "");
-}
-
 function limparCodigo(codigo?: string | number | null) {
     return String(codigo ?? "")
         .trim()
@@ -59,28 +43,14 @@ function limparCodigo(codigo?: string | number | null) {
 function getCodigoHomenagem(registro?: Registro | null) {
     const r = registro as any;
 
-    const codigoExistente = limparCodigo(
+    return limparCodigo(
         r?.codigo_homenagem ||
         r?.homenagem_codigo ||
         r?.homenagem_slug ||
         r?.slug_homenagem ||
         r?.legado_luz_codigo ||
-        r?.legado_luz_slug ||
-        r?.slug
+        r?.legado_luz_slug
     );
-
-    if (codigoExistente) {
-        return codigoExistente;
-    }
-
-    const nome = getNomeFalecido(registro);
-    const id = String(r?.id ?? "").trim();
-
-    if (!nome || !id) {
-        return "";
-    }
-
-    return `${slugify(nome)}-${id}`;
 }
 
 function getLinkPublicoHomenagem(registro?: Registro | null) {
@@ -111,7 +81,9 @@ function buildWhatsappUrl(registro: Registro) {
     const link = getLinkPublicoHomenagem(registro);
 
     if (!link) {
-        throw new Error("Não foi possível gerar o link da página de homenagem.");
+        throw new Error(
+            "Este atendimento ainda não possui link/slug do Legado de Luz. O informativo.php precisa retornar o slug da tabela homenagens."
+        );
     }
 
     const falecido = getNomeFalecido(registro);
