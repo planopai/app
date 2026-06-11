@@ -9,7 +9,7 @@ import {
 } from "@tabler/icons-react";
 import type { Registro } from "./types";
 
-const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/homenagem/";
+const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
 
 const btnClass =
     "w-full inline-flex items-center justify-center gap-2 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white " +
