@@ -24,9 +24,6 @@ type ModeloKey =
 
 const NOTA_PESAR_FIXA = "Eternas Saudades de Seus Familiares e Amigos.";
 
-/**
- * Imagens em /public/obituario-modelos/
- */
 const MODELOS: Record<ModeloKey, string> = {
     modelo01: "/obituario-modelos/MM1.png",
     modelo02: "/obituario-modelos/MM2.png",
@@ -112,15 +109,22 @@ function normalizeHHMM(v?: string) {
 }
 
 function normalizarFotoUrl(src?: string) {
-    const s = String(src || "").trim();
+    let s = String(src || "").trim();
 
     if (!s) return "";
+
+    s = s
+        .replace(/&amp;/g, "&")
+        .replace(/&#038;/g, "&")
+        .replace(/\\/g, "/");
 
     if (s.startsWith("data:")) return s;
 
     if (/^https?:\/\//i.test(s)) return s;
 
-    if (s.startsWith("/")) return `${API_BASE}${s}`;
+    if (s.startsWith("/")) {
+        return `${API_BASE}${s}`;
+    }
 
     return `${API_BASE}/${s.replace(/^\/+/, "")}`;
 }
@@ -188,7 +192,7 @@ async function ensureFontLoaded(font: string) {
 
         await document.fonts.ready;
     } catch {
-        // fallback automático do navegador
+        // usa fallback do navegador
     }
 }
 
@@ -196,7 +200,7 @@ async function urlToDataURL(url: string): Promise<string> {
     const res = await fetch(url, {
         method: "GET",
         cache: "no-store",
-        credentials: "include",
+        mode: "cors",
     });
 
     if (!res.ok) {
@@ -217,15 +221,33 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const img = new Image();
 
-        const isAbsolute = /^https?:\/\//i.test(src);
-        if (isAbsolute && typeof window !== "undefined" && !src.startsWith(window.location.origin)) {
+        if (!src.startsWith("data:")) {
             img.crossOrigin = "anonymous";
         }
 
         img.onload = () => resolve(img);
-        img.onerror = reject;
+        img.onerror = () => reject(new Error(`Não foi possível carregar a imagem: ${src}`));
         img.src = src;
     });
+}
+
+async function carregarImagemParaCanvas(src: string): Promise<HTMLImageElement> {
+    const normalizada = normalizarFotoUrl(src);
+
+    if (!normalizada) {
+        throw new Error("Foto vazia.");
+    }
+
+    if (normalizada.startsWith("data:")) {
+        return loadImage(normalizada);
+    }
+
+    try {
+        const dataUrl = await urlToDataURL(normalizada);
+        return loadImage(dataUrl);
+    } catch {
+        return loadImage(normalizada);
+    }
 }
 
 function drawWrapText(
@@ -264,21 +286,16 @@ type DadosObituario = {
     nome: string;
     data_nascimento: string;
     data_falecimento: string;
-
     foto_falecido: string;
-
     local_cerimonia: string;
     data_cerimonia: string;
     velorio_inicio: string;
     velorio_fim: string;
     fim_data_cerimonia: string;
-
     data_sepultamento: string;
     hora_sepultamento: string;
     local_sepultamento: string;
-
     nota_pesar: string;
-
     transmissao_inicio_data: string;
     transmissao_inicio_hora: string;
     transmissao_fim_data: string;
@@ -308,7 +325,8 @@ function montarDados(registro?: Registro | null): DadosObituario {
         (registro as any)?.horario_sepultamento
     );
 
-    const velorioOnline = String((registro as any)?.velorio_online ?? "").trim().toLowerCase() === "sim";
+    const velorioOnline =
+        String((registro as any)?.velorio_online ?? "").trim().toLowerCase() === "sim";
 
     return {
         nome: pickFirst(
@@ -397,6 +415,75 @@ export default function EnviarObituario({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, modelo, fotoPretoBranco, fontName, fontColor, registro?.id]);
 
+    async function desenharFotoCircular(
+        ctx: CanvasRenderingContext2D,
+        fotoSrc: string,
+        fotoPB: boolean
+    ) {
+        if (!fotoSrc) return;
+
+        const img = await carregarImagemParaCanvas(fotoSrc);
+
+        const radius = 270;
+        const x = 1080 / 2;
+        const y = 620;
+
+        const buffer = document.createElement("canvas");
+        buffer.width = radius * 2;
+        buffer.height = radius * 2;
+
+        const bctx = buffer.getContext("2d");
+        if (!bctx) throw new Error("Canvas auxiliar não suportado.");
+
+        bctx.save();
+        bctx.beginPath();
+        bctx.arc(radius, radius, radius, 0, Math.PI * 2);
+        bctx.clip();
+
+        const imgRatio = img.width / img.height;
+        const boxRatio = 1;
+
+        let drawW = radius * 2;
+        let drawH = radius * 2;
+        let drawX = 0;
+        let drawY = 0;
+
+        if (imgRatio > boxRatio) {
+            drawH = radius * 2;
+            drawW = drawH * imgRatio;
+            drawX = -(drawW - radius * 2) / 2;
+        } else {
+            drawW = radius * 2;
+            drawH = drawW / imgRatio;
+            drawY = -(drawH - radius * 2) / 2;
+        }
+
+        bctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+        if (fotoPB) {
+            const imageData = bctx.getImageData(0, 0, buffer.width, buffer.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i] = avg;
+                data[i + 1] = avg;
+                data[i + 2] = avg;
+            }
+
+            bctx.putImageData(imageData, 0, 0);
+        }
+
+        bctx.restore();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(buffer, x - radius, y - radius);
+        ctx.restore();
+    }
+
     async function gerarObituario() {
         if (!registro) {
             setErro("Nenhum atendimento selecionado.");
@@ -434,97 +521,24 @@ export default function EnviarObituario({
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
 
-            // Foto circular
             if (dados.foto_falecido) {
                 try {
-                    let fotoSrc = dados.foto_falecido;
-
-                    if (/^https?:\/\//i.test(fotoSrc) && !fotoSrc.startsWith(window.location.origin)) {
-                        try {
-                            fotoSrc = await urlToDataURL(fotoSrc);
-                        } catch {
-                            // tenta carregar direto caso o servidor permita CORS
-                        }
-                    }
-
-                    const img = await loadImage(fotoSrc);
-
-                    const radius = 270;
-                    const x = canvas.width / 2;
-                    const y = 620;
-
-                    const buffer = document.createElement("canvas");
-                    buffer.width = radius * 2;
-                    buffer.height = radius * 2;
-
-                    const bctx = buffer.getContext("2d");
-                    if (!bctx) throw new Error("Canvas auxiliar não suportado.");
-
-                    bctx.save();
-                    bctx.beginPath();
-                    bctx.arc(radius, radius, radius, 0, Math.PI * 2);
-                    bctx.clip();
-
-                    const imgRatio = img.width / img.height;
-                    const boxRatio = 1;
-
-                    let drawW = radius * 2;
-                    let drawH = radius * 2;
-                    let drawX = 0;
-                    let drawY = 0;
-
-                    if (imgRatio > boxRatio) {
-                        drawH = radius * 2;
-                        drawW = drawH * imgRatio;
-                        drawX = -(drawW - radius * 2) / 2;
-                    } else {
-                        drawW = radius * 2;
-                        drawH = drawW / imgRatio;
-                        drawY = -(drawH - radius * 2) / 2;
-                    }
-
-                    bctx.drawImage(img, drawX, drawY, drawW, drawH);
-
-                    if (fotoPretoBranco) {
-                        const imageData = bctx.getImageData(0, 0, buffer.width, buffer.height);
-                        const data = imageData.data;
-
-                        for (let i = 0; i < data.length; i += 4) {
-                            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                            data[i] = avg;
-                            data[i + 1] = avg;
-                            data[i + 2] = avg;
-                        }
-
-                        bctx.putImageData(imageData, 0, 0);
-                    }
-
-                    bctx.restore();
-
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.arc(x, y, radius, 0, Math.PI * 2);
-                    ctx.clip();
-                    ctx.drawImage(buffer, x - radius, y - radius);
-                    ctx.restore();
+                    await desenharFotoCircular(ctx, dados.foto_falecido, fotoPretoBranco);
                 } catch (e) {
                     console.warn("Não foi possível carregar a foto do falecido:", e);
                 }
             }
 
-            // Nota de pesar
             ctx.fillStyle = selectedColor;
             ctx.font = `30px "${selectedFont}"`;
             ctx.textAlign = "center";
             drawWrapText(ctx, dados.nota_pesar, canvas.width / 2, 200, 800, 34, "center");
 
-            // Nome
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "center";
             ctx.font = `48px "${selectedFont}"`;
             drawWrapText(ctx, dados.nome, canvas.width / 2, 1000, 900, 56, "center");
 
-            // Datas nascimento / falecimento
             ctx.font = `32px "${selectedFont}"`;
 
             if (dados.data_nascimento) {
@@ -535,17 +549,13 @@ export default function EnviarObituario({
                 ctx.fillText(dados.data_falecimento, canvas.width / 2 + 200, 1120);
             }
 
-            // Bloco velório
             ctx.font = `30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
 
-            const inicioVelorio = dados.velorio_inicio || "";
-            const fimVelorio = dados.velorio_fim || "";
-
-            ctx.fillText(`Horário de Início: ${inicioVelorio}`, 110, 1360);
+            ctx.fillText(`Horário de Início: ${dados.velorio_inicio || ""}`, 110, 1360);
             ctx.fillText(`Data: ${dados.data_cerimonia || ""}`, 110, 1390);
-            ctx.fillText(`Horário de Término: ${fimVelorio}`, 110, 1420);
+            ctx.fillText(`Horário de Término: ${dados.velorio_fim || ""}`, 110, 1420);
             ctx.fillText(`Data: ${dados.fim_data_cerimonia || ""}`, 110, 1450);
 
             drawWrapText(
@@ -558,7 +568,6 @@ export default function EnviarObituario({
                 "left"
             );
 
-            // Bloco sepultamento
             ctx.textAlign = "left";
             ctx.font = `30px "${selectedFont}"`;
 
@@ -575,7 +584,6 @@ export default function EnviarObituario({
                 "left"
             );
 
-            // Transmissão online
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
                 ctx.textAlign = "center";
                 ctx.font = `28px "${selectedFont}"`;
@@ -672,6 +680,7 @@ export default function EnviarObituario({
                                     <img
                                         src={dados.foto_falecido}
                                         alt="Foto do falecido"
+                                        crossOrigin="anonymous"
                                         className="h-16 w-16 rounded-lg border object-cover"
                                     />
                                     <div className="text-xs text-muted-foreground">
@@ -694,9 +703,7 @@ export default function EnviarObituario({
                                     <button
                                         key={m.value}
                                         type="button"
-                                        className={`rounded-lg border p-2 text-left text-xs transition hover:bg-muted ${modelo === m.value
-                                                ? "border-blue-600 ring-2 ring-blue-200"
-                                                : ""
+                                        className={`rounded-lg border p-2 text-left text-xs transition hover:bg-muted ${modelo === m.value ? "border-blue-600 ring-2 ring-blue-200" : ""
                                             }`}
                                         onClick={() => setModelo(m.value)}
                                     >
