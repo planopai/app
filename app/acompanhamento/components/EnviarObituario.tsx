@@ -680,8 +680,11 @@ export default function EnviarObituario({
                                     <img
                                         src={dados.foto_falecido}
                                         alt="Foto do falecido"
-                                        crossOrigin="anonymous"
                                         className="h-16 w-16 rounded-lg border object-cover"
+                                        onError={(e) => {
+                                            console.warn("Erro ao carregar miniatura:", dados.foto_falecido);
+                                            e.currentTarget.style.display = "none";
+                                        }}
                                     />
                                     <div className="text-xs text-muted-foreground">
                                         <IconPhoto className="mb-1 size-4" />
