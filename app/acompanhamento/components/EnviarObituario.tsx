@@ -8,7 +8,6 @@ import {
     IconPalette,
     IconX,
 } from "@tabler/icons-react";
-import * as QRCode from "qrcode";
 import Modal from "./Modal";
 import type { Registro } from "./types";
 
@@ -22,13 +21,6 @@ type ModeloKey =
     | "modelo07"
     | "modelo08"
     | "modelo09";
-
-type QrBox = {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-};
 
 const NOTA_PESAR_FIXA = "Eternas Saudades de Seus Familiares e Amigos.";
 
@@ -57,19 +49,6 @@ const MODELOS_OPTIONS: Array<{ value: ModeloKey; label: string }> = [
 ];
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
-const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
-
-const QR_POSITIONS: Record<ModeloKey, QrBox> = {
-    modelo01: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo02: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo03: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo04: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo05: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo06: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo07: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo08: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo09: { x: 720, y: 1550, w: 315, h: 315 },
-};
 
 function onlyDigits(s: string) {
     return String(s || "").replace(/\D+/g, "");
@@ -181,47 +160,6 @@ function nomeArquivoSeguro(nome?: string) {
         .replace(/^-+|-+$/g, "");
 
     return base || "obituario";
-}
-
-function limparCodigo(codigo?: string | number | null) {
-    return String(codigo ?? "")
-        .trim()
-        .replace(/^\/+|\/+$/g, "");
-}
-
-function getCodigoHomenagem(registro?: Registro | null) {
-    const r = registro as any;
-
-    return limparCodigo(
-        r?.codigo_homenagem ||
-        r?.homenagem_codigo ||
-        r?.homenagem_slug ||
-        r?.slug_homenagem ||
-        r?.legado_luz_codigo ||
-        r?.legado_luz_slug
-    );
-}
-
-function getLegadoLuzUrl(registro?: Registro | null) {
-    const r = registro as any;
-
-    const linkExistente = String(
-        r?.legado_luz_link ||
-        r?.homenagem_link_publico ||
-        r?.link_homenagem ||
-        r?.link_publico ||
-        ""
-    ).trim();
-
-    if (linkExistente && /^https?:\/\//i.test(linkExistente)) {
-        return linkExistente;
-    }
-
-    const codigo = getCodigoHomenagem(registro);
-
-    if (!codigo) return "";
-
-    return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
 }
 
 async function ensureFontLoaded(font: string) {
@@ -344,46 +282,6 @@ function drawWrapText(
     }
 }
 
-async function desenharQrLegadoLuz(
-    ctx: CanvasRenderingContext2D,
-    url: string,
-    selectedFont: string,
-    box: QrBox
-) {
-    if (!url) return;
-
-    const qrDataUrl = await QRCode.toDataURL(url, {
-        width: 360,
-        margin: 1,
-        errorCorrectionLevel: "M",
-        color: {
-            dark: "#001f5b",
-            light: "#ffffff",
-        },
-    });
-
-    const qrImg = await loadImage(qrDataUrl);
-
-    ctx.save();
-
-    ctx.fillStyle = "#001f5b";
-    ctx.textAlign = "center";
-
-    ctx.font = `700 23px "${selectedFont}"`;
-    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 50);
-
-    const qrSize = 210;
-    const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + 75;
-
-    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-
-    ctx.font = `600 16px "${selectedFont}"`;
-    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 38);
-
-    ctx.restore();
-}
-
 type DadosObituario = {
     nome: string;
     data_nascimento: string;
@@ -493,14 +391,12 @@ export default function EnviarObituario({
     const [fotoPretoBranco, setFotoPretoBranco] = useState(false);
     const [fontName, setFontName] = useState("Nunito");
     const [fontColor, setFontColor] = useState("#111827");
-    const [incluirQrLegado, setIncluirQrLegado] = useState(true);
 
     const [previewSrc, setPreviewSrc] = useState("");
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState("");
 
     const dados = useMemo(() => montarDados(registro), [registro]);
-    const legadoLuzUrl = useMemo(() => getLegadoLuzUrl(registro), [registro]);
 
     useEffect(() => {
         if (!open) return;
@@ -517,17 +413,9 @@ export default function EnviarObituario({
 
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-        open,
-        modelo,
-        fotoPretoBranco,
-        fontName,
-        fontColor,
-        incluirQrLegado,
-        registro?.id,
-    ]);
+    }, [open, modelo, fotoPretoBranco, fontName, fontColor, registro?.id]);
 
-    async function desenharFotoOval(
+    async function desenharFotoCircular(
         ctx: CanvasRenderingContext2D,
         fotoSrc: string,
         fotoPB: boolean
@@ -536,39 +424,38 @@ export default function EnviarObituario({
 
         const img = await carregarImagemParaCanvas(fotoSrc);
 
-        const centerX = 540;
-        const centerY = 505;
-        const ovalW = 430;
-        const ovalH = 640;
+        const radius = 270;
+        const x = 1080 / 2;
+        const y = 620;
 
         const buffer = document.createElement("canvas");
-        buffer.width = ovalW;
-        buffer.height = ovalH;
+        buffer.width = radius * 2;
+        buffer.height = radius * 2;
 
         const bctx = buffer.getContext("2d");
         if (!bctx) throw new Error("Canvas auxiliar não suportado.");
 
         bctx.save();
         bctx.beginPath();
-        bctx.ellipse(ovalW / 2, ovalH / 2, ovalW / 2, ovalH / 2, 0, 0, Math.PI * 2);
+        bctx.arc(radius, radius, radius, 0, Math.PI * 2);
         bctx.clip();
 
         const imgRatio = img.width / img.height;
-        const boxRatio = ovalW / ovalH;
+        const boxRatio = 1;
 
-        let drawW = ovalW;
-        let drawH = ovalH;
+        let drawW = radius * 2;
+        let drawH = radius * 2;
         let drawX = 0;
         let drawY = 0;
 
         if (imgRatio > boxRatio) {
-            drawH = ovalH;
+            drawH = radius * 2;
             drawW = drawH * imgRatio;
-            drawX = -(drawW - ovalW) / 2;
+            drawX = -(drawW - radius * 2) / 2;
         } else {
-            drawW = ovalW;
+            drawW = radius * 2;
             drawH = drawW / imgRatio;
-            drawY = -(drawH - ovalH) / 2;
+            drawY = -(drawH - radius * 2) / 2;
         }
 
         bctx.drawImage(img, drawX, drawY, drawW, drawH);
@@ -591,9 +478,9 @@ export default function EnviarObituario({
 
         ctx.save();
         ctx.beginPath();
-        ctx.ellipse(centerX, centerY, ovalW / 2, ovalH / 2, 0, 0, Math.PI * 2);
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.clip();
-        ctx.drawImage(buffer, centerX - ovalW / 2, centerY - ovalH / 2);
+        ctx.drawImage(buffer, x - radius, y - radius);
         ctx.restore();
     }
 
@@ -633,109 +520,83 @@ export default function EnviarObituario({
 
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
-            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
 
             if (dados.foto_falecido) {
                 try {
-                    await desenharFotoOval(ctx, dados.foto_falecido, fotoPretoBranco);
+                    await desenharFotoCircular(ctx, dados.foto_falecido, fotoPretoBranco);
                 } catch (e) {
                     console.warn("Não foi possível carregar a foto do falecido:", e);
                 }
             }
 
             ctx.fillStyle = selectedColor;
+            ctx.font = `30px "${selectedFont}"`;
             ctx.textAlign = "center";
-            ctx.font = `700 44px "${selectedFont}"`;
+            drawWrapText(ctx, dados.nota_pesar, canvas.width / 2, 200, 800, 34, "center");
 
-            drawWrapText(
-                ctx,
-                dados.nome,
-                canvas.width / 2,
-                900,
-                820,
-                52,
-                "center"
-            );
-
-            ctx.font = `600 30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
-            ctx.textAlign = "left";
+            ctx.textAlign = "center";
+            ctx.font = `48px "${selectedFont}"`;
+            drawWrapText(ctx, dados.nome, canvas.width / 2, 1000, 900, 56, "center");
+
+            ctx.font = `32px "${selectedFont}"`;
 
             if (dados.data_nascimento) {
-                ctx.fillText(dados.data_nascimento, 275, 990);
+                ctx.fillText(dados.data_nascimento, canvas.width / 2 - 180, 1120);
             }
 
             if (dados.data_falecimento) {
-                ctx.fillText(dados.data_falecimento, 650, 990);
+                ctx.fillText(dados.data_falecimento, canvas.width / 2 + 200, 1120);
             }
 
+            ctx.font = `30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
-            ctx.font = `600 28px "${selectedFont}"`;
             ctx.textAlign = "left";
 
-            if (dados.data_cerimonia) {
-                ctx.fillText(dados.data_cerimonia, 300, 1248);
-            }
+            ctx.fillText(`Horário de Início: ${dados.velorio_inicio || ""}`, 110, 1360);
+            ctx.fillText(`Data: ${dados.data_cerimonia || ""}`, 110, 1390);
+            ctx.fillText(`Horário de Término: ${dados.velorio_fim || ""}`, 110, 1420);
+            ctx.fillText(`Data: ${dados.fim_data_cerimonia || ""}`, 110, 1450);
 
-            const horarioCerimonia =
-                dados.velorio_inicio && dados.velorio_fim
-                    ? `${dados.velorio_inicio} às ${dados.velorio_fim}`
-                    : dados.velorio_inicio || dados.velorio_fim || "";
+            drawWrapText(
+                ctx,
+                `Local: ${dados.local_cerimonia || ""}`,
+                110,
+                1480,
+                850,
+                34,
+                "left"
+            );
 
-            if (horarioCerimonia) {
-                ctx.fillText(horarioCerimonia, 300, 1304);
-            }
-
-            if (dados.local_cerimonia) {
-                drawWrapText(
-                    ctx,
-                    dados.local_cerimonia,
-                    300,
-                    1360,
-                    650,
-                    32,
-                    "left"
-                );
-            }
-
-            ctx.fillStyle = selectedColor;
-            ctx.font = `600 28px "${selectedFont}"`;
             ctx.textAlign = "left";
+            ctx.font = `30px "${selectedFont}"`;
 
-            if (dados.data_sepultamento) {
-                ctx.fillText(dados.data_sepultamento, 300, 1530);
-            }
+            ctx.fillText(`Data: ${dados.data_sepultamento || ""}`, 110, 1610);
+            ctx.fillText(`Hora: ${dados.hora_sepultamento || ""}`, 110, 1640);
 
-            if (dados.hora_sepultamento) {
-                ctx.fillText(dados.hora_sepultamento, 300, 1586);
-            }
-
-            if (dados.local_sepultamento) {
-                drawWrapText(
-                    ctx,
-                    dados.local_sepultamento,
-                    300,
-                    1642,
-                    deveDesenharQrLegado ? 380 : 650,
-                    32,
-                    "left"
-                );
-            }
+            drawWrapText(
+                ctx,
+                `Local: ${dados.local_sepultamento || ""}`,
+                110,
+                1670,
+                850,
+                34,
+                "left"
+            );
 
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
-                ctx.fillStyle = selectedColor;
-                ctx.font = `500 23px "${selectedFont}"`;
-                ctx.textAlign = "left";
+                ctx.textAlign = "center";
+                ctx.font = `28px "${selectedFont}"`;
 
-                drawWrapText(
-                    ctx,
+                let baseY = 1750;
+
+                ctx.fillText(
                     "Transmissão Online: Informações e senha com familiares",
-                    110,
-                    1742,
-                    deveDesenharQrLegado ? 560 : 850,
-                    28,
-                    "left"
+                    canvas.width / 2,
+                    baseY
                 );
+
+                baseY += 34;
 
                 let linha = `Início: ${dados.transmissao_inicio_data} ${dados.transmissao_inicio_hora}`;
 
@@ -743,24 +604,7 @@ export default function EnviarObituario({
                     linha += ` | Fim: ${dados.transmissao_fim_data} ${dados.transmissao_fim_hora}`;
                 }
 
-                drawWrapText(
-                    ctx,
-                    linha,
-                    110,
-                    1802,
-                    deveDesenharQrLegado ? 560 : 850,
-                    28,
-                    "left"
-                );
-            }
-
-            if (deveDesenharQrLegado) {
-                await desenharQrLegadoLuz(
-                    ctx,
-                    legadoLuzUrl,
-                    selectedFont,
-                    QR_POSITIONS[modelo]
-                );
+                ctx.fillText(linha, canvas.width / 2, baseY);
             }
 
             setPreviewSrc(canvas.toDataURL("image/jpeg", 0.92));
@@ -829,10 +673,6 @@ export default function EnviarObituario({
                                 />
                                 <InfoLinha label="Local Sepultamento" value={dados.local_sepultamento} />
                                 <InfoLinha label="Nota de Pesar" value={dados.nota_pesar} />
-                                <InfoLinha
-                                    label="Legado de Luz"
-                                    value={legadoLuzUrl || "Sem link/slug retornado no atendimento"}
-                                />
                             </div>
 
                             {dados.foto_falecido ? (
@@ -893,23 +733,6 @@ export default function EnviarObituario({
                                 />
                                 Foto em preto e branco
                             </label>
-
-                            <label className="mt-3 flex items-center gap-2 text-sm">
-                                <input
-                                    type="checkbox"
-                                    className="h-4 w-4"
-                                    checked={incluirQrLegado}
-                                    onChange={(e) => setIncluirQrLegado(e.target.checked)}
-                                    disabled={!legadoLuzUrl}
-                                />
-                                Incluir QR Code do Legado de Luz
-                            </label>
-
-                            {!legadoLuzUrl && (
-                                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    O QR Code só aparece quando o atendimento retorna link ou slug do Legado de Luz.
-                                </div>
-                            )}
 
                             <label className="mt-3 block text-sm">
                                 Fonte
