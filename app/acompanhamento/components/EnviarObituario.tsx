@@ -58,6 +58,22 @@ const MODELOS_OPTIONS: Array<{ value: ModeloKey; label: string }> = [
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
+const MODELO_A4 = "/obituario-modelos/A4.png";
+
+const A4_QR_BOX: QrBox = { x: 260, y: 1092, w: 250, h: 250 };
+
+const FRASES_A4 = [
+    `"Combati o bom combate, acabei a carreira, guardei a fé." (2 Timóteo 4:7) — Mais do que uma despedida, celebramos uma vida vivida com propósito, coragem e integridade. Seu legado de amor e retidão permanecerá vivo em nossos corações para sempre.`,
+    `"Ainda que eu andasse pelo vale da sombra da morte, não temeria mal algum, porque tu estás comigo..." (Salmo 23:4) — Na hora da partida, encontramos consolo ao saber que o sofrimento deu lugar à paz eterna. Que a transição seja de luz e acolhimento nos braços do Criador.`,
+    `"Disse-lhe Jesus: Eu sou a ressurreição e a vida; quem crê em mim, ainda que esteja morto, viverá." (João 11:25) — A morte não é o fim, mas o início de uma jornada eterna. Guardamos a esperança do reencontro e a certeza de que o amor nunca morre.`,
+    `"Tudo tem o seu tempo determinado, e há tempo para todo o propósito debaixo do céu... tempo de nascer, e tempo de morrer." (Eclesiastes 3:1-2) — Aceitar a partida é compreender o mistério do tempo de Deus. Agradecemos profundamente pelos anos que pudemos compartilhar ao seu lado.`,
+    `"A morte não é apagar a luz; é apenas apagar a lâmpada porque o amanhecer chegou." — Quem tanto amou e foi amado nunca deixa de existir. A matéria se desfaz, mas a essência e as memórias tornam-se eternas dentro de nós.`,
+    `"Aqueles que amamos e perdemos não estão mais onde estavam, mas estão sempre onde quer que nós estejamos." — A dor da despedida é proporcional à beleza do convívio. Que a saudade que hoje aperta o peito se transforme, com o tempo, em uma doce e grata lembrança.`,
+    `"O valor de uma vida não se mede pelo tempo que ela durou, mas pelas pegadas de amor e bondade que deixou no caminho." — Nos despedimos de uma alma generosa, cuja passagem por este mundo o tornou um lugar mais caloroso e bonito. Seu exemplo continuará a nos guiar.`,
+    `"A vida dos mortos coloca-se na memória dos vivos." (Cícero) — Diante do mistério da partida, silenciamos em respeito e gratidão. Honraremos a sua história continuando a viver de acordo com os valores que nos foram ensinados.`,
+    `"Partir é apenas mudar de sala neste imenso palácio que é o universo." — Olhamos para a despedida não como um ponto final, mas como uma passagem silenciosa e serena para a grande paz que a todos nós aguarda.`,
+    `"Não há morte para aqueles que deixam o coração cheio de lembranças vivas na mente de quem fica." — Dizemos adeus ao corpo, mas nunca à história, ao sorriso e aos ensinamentos. Você permanece vivo em cada um de nós.`,
+];
 
 const QR_POSITIONS: Record<ModeloKey, QrBox> = {
     modelo01: { x: 720, y: 1548, w: 315, h: 315 },
@@ -421,6 +437,46 @@ async function desenharQrLegadoLuz(
     ctx.restore();
 }
 
+async function desenharQrLegadoLuzA4(
+    ctx: CanvasRenderingContext2D,
+    url: string,
+    box: QrBox
+) {
+    if (!url) return;
+
+    const qrDataUrl = await QRCode.toDataURL(url, {
+        width: 620,
+        margin: 1,
+        errorCorrectionLevel: "M",
+        color: {
+            dark: "#001f5b",
+            light: "#ffffff",
+        },
+    });
+
+    const qrImg = await loadImage(qrDataUrl);
+
+    ctx.save();
+
+    const qrSize = Math.min(box.w - 30, box.h - 30);
+    const qrX = box.x + (box.w - qrSize) / 2;
+    const qrY = box.y + (box.h - qrSize) / 2;
+
+    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+    ctx.restore();
+}
+
+function montarLinhaDataHora(data?: string, horaInicio?: string, horaFim?: string) {
+    const dataLimpa = String(data || "").trim();
+    const inicio = String(horaInicio || "").trim();
+    const fim = String(horaFim || "").trim();
+
+    const horario = inicio && fim ? `${inicio} às ${fim}` : inicio || fim;
+
+    return [dataLimpa, horario].filter(Boolean).join(" - ");
+}
+
 type DadosObituario = {
     nome: string;
     data_nascimento: string;
@@ -539,9 +595,23 @@ export default function EnviarObituario({
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState("");
 
+    const [openA4, setOpenA4] = useState(false);
+    const [fraseA4Selecionada, setFraseA4Selecionada] = useState("0");
+    const [fraseA4Personalizada, setFraseA4Personalizada] = useState("");
+    const [previewA4Src, setPreviewA4Src] = useState("");
+    const [loadingA4, setLoadingA4] = useState(false);
+    const [erroA4, setErroA4] = useState("");
+
     const registroUpdateKey = useMemo(() => getRegistroUpdateKey(registro), [registro]);
     const dados = useMemo(() => montarDados(registro), [registroUpdateKey]);
     const legadoLuzUrl = useMemo(() => getLegadoLuzUrl(registro), [registroUpdateKey]);
+    const fraseA4Final = useMemo(() => {
+        if (fraseA4Selecionada === "personalizada") {
+            return fraseA4Personalizada.trim();
+        }
+
+        return FRASES_A4[Number(fraseA4Selecionada)] || FRASES_A4[0];
+    }, [fraseA4Selecionada, fraseA4Personalizada]);
 
     useEffect(() => {
         if (!open) return;
@@ -568,6 +638,25 @@ export default function EnviarObituario({
         registroUpdateKey,
     ]);
 
+    useEffect(() => {
+        if (!openA4) return;
+
+        const t = setTimeout(() => {
+            gerarObituarioA4();
+        }, 250);
+
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        openA4,
+        fraseA4Final,
+        fotoPretoBranco,
+        fontName,
+        fontColor,
+        incluirQrLegado,
+        registroUpdateKey,
+    ]);
+
     async function desenharFotoOval(
         ctx: CanvasRenderingContext2D,
         fotoSrc: string,
@@ -581,6 +670,93 @@ export default function EnviarObituario({
         const centerY = 505;
         const ovalW = 430;
         const ovalH = 640;
+
+        const buffer = document.createElement("canvas");
+        buffer.width = ovalW;
+        buffer.height = ovalH;
+
+        const bctx = buffer.getContext("2d");
+        if (!bctx) throw new Error("Canvas auxiliar não suportado.");
+
+        bctx.save();
+        bctx.beginPath();
+        bctx.ellipse(
+            ovalW / 2,
+            ovalH / 2,
+            ovalW / 2,
+            ovalH / 2,
+            0,
+            0,
+            Math.PI * 2
+        );
+        bctx.clip();
+
+        const imgRatio = img.width / img.height;
+        const boxRatio = ovalW / ovalH;
+
+        let drawW = ovalW;
+        let drawH = ovalH;
+        let drawX = 0;
+        let drawY = 0;
+
+        if (imgRatio > boxRatio) {
+            drawH = ovalH;
+            drawW = drawH * imgRatio;
+            drawX = -(drawW - ovalW) / 2;
+        } else {
+            drawW = ovalW;
+            drawH = drawW / imgRatio;
+            drawY = -(drawH - ovalH) / 2;
+        }
+
+        bctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+        if (fotoPB) {
+            const imageData = bctx.getImageData(0, 0, buffer.width, buffer.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i] = avg;
+                data[i + 1] = avg;
+                data[i + 2] = avg;
+            }
+
+            bctx.putImageData(imageData, 0, 0);
+        }
+
+        bctx.restore();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(
+            centerX,
+            centerY,
+            ovalW / 2,
+            ovalH / 2,
+            0,
+            0,
+            Math.PI * 2
+        );
+        ctx.clip();
+        ctx.drawImage(buffer, centerX - ovalW / 2, centerY - ovalH / 2);
+        ctx.restore();
+    }
+
+
+    async function desenharFotoOvalA4(
+        ctx: CanvasRenderingContext2D,
+        fotoSrc: string,
+        fotoPB: boolean
+    ) {
+        if (!fotoSrc) return;
+
+        const img = await carregarImagemParaCanvas(fotoSrc);
+
+        const centerX = 300;
+        const centerY = 565;
+        const ovalW = 245;
+        const ovalH = 320;
 
         const buffer = document.createElement("canvas");
         buffer.width = ovalW;
@@ -839,6 +1015,150 @@ export default function EnviarObituario({
         }
     }
 
+
+    async function gerarObituarioA4(): Promise<string> {
+        if (!registro) {
+            setErroA4("Nenhum atendimento selecionado.");
+            return "";
+        }
+
+        if (!dados.nome) {
+            setErroA4("O atendimento não possui nome do falecido.");
+            return "";
+        }
+
+        if (!fraseA4Final) {
+            setErroA4("Selecione uma frase ou escreva uma mensagem personalizada.");
+            return "";
+        }
+
+        try {
+            setLoadingA4(true);
+            setErroA4("");
+            setPreviewA4Src("");
+
+            await ensureFontLoaded(fontName || "Nunito");
+
+            const bg = await loadImage(MODELO_A4);
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+
+            if (!ctx) {
+                throw new Error("Canvas não suportado neste navegador.");
+            }
+
+            canvas.width = bg.width || 1122;
+            canvas.height = bg.height || 1402;
+
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+
+            const selectedFont = fontName || "Nunito";
+            const selectedColor = fontColor || "#111827";
+            const azulPai = "#001f5b";
+            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
+
+            // Mensagem personalizada ou predefinida abaixo da linha da logo.
+            ctx.fillStyle = selectedColor;
+            ctx.textAlign = "center";
+            ctx.font = `600 24px "${selectedFont}"`;
+            drawWrapText(ctx, fraseA4Final, canvas.width / 2, 185, 870, 34, "center");
+
+            // Foto oval do falecido no bloco superior esquerdo.
+            if (dados.foto_falecido) {
+                try {
+                    await desenharFotoOvalA4(ctx, dados.foto_falecido, fotoPretoBranco);
+                } catch (e) {
+                    console.warn("Não foi possível carregar a foto do falecido no A4:", e);
+                }
+            }
+
+            // Nome do falecido à direita da foto.
+            ctx.fillStyle = selectedColor;
+            ctx.textAlign = "left";
+            ctx.font = `800 42px "${selectedFont}"`;
+            drawWrapText(ctx, dados.nome, 450, 515, 560, 50, "left");
+
+            // Datas de nascimento e falecimento próximas à estrela e à cruz do modelo A4.
+            ctx.fillStyle = selectedColor;
+            ctx.font = `700 28px "${selectedFont}"`;
+            ctx.textAlign = "left";
+
+            if (dados.data_nascimento) {
+                ctx.fillText(dados.data_nascimento, 610, 647);
+            }
+
+            if (dados.data_falecimento) {
+                ctx.fillText(dados.data_falecimento, 610, 702);
+            }
+
+            // Informações da cerimônia e sepultamento no quadro central.
+            const cerimoniaLinha = montarLinhaDataHora(
+                dados.data_cerimonia,
+                dados.velorio_inicio,
+                dados.velorio_fim
+            );
+
+            const sepultamentoLinha = montarLinhaDataHora(
+                dados.data_sepultamento,
+                dados.hora_sepultamento
+            );
+
+            ctx.fillStyle = azulPai;
+            ctx.font = `800 24px "${selectedFont}"`;
+            ctx.textAlign = "left";
+
+            if (cerimoniaLinha) {
+                drawWrapText(ctx, cerimoniaLinha, 260, 925, 215, 30, "left");
+            }
+
+            if (dados.local_cerimonia) {
+                drawWrapText(ctx, dados.local_cerimonia, 620, 925, 340, 30, "left");
+            }
+
+            if (sepultamentoLinha) {
+                drawWrapText(ctx, sepultamentoLinha, 260, 1035, 215, 30, "left");
+            }
+
+            if (dados.local_sepultamento) {
+                drawWrapText(ctx, dados.local_sepultamento, 620, 1035, 340, 30, "left");
+            }
+
+            // QR Code no quadro inferior esquerdo.
+            if (deveDesenharQrLegado) {
+                await desenharQrLegadoLuzA4(ctx, legadoLuzUrl, A4_QR_BOX);
+            }
+
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+            setPreviewA4Src(dataUrl);
+            return dataUrl;
+        } catch (e: any) {
+            console.error(e);
+            setErroA4(e?.message || "Não foi possível gerar o obituário A4.");
+            return "";
+        } finally {
+            setLoadingA4(false);
+        }
+    }
+
+    function abrirModalA4() {
+        setOpenA4(true);
+        setErroA4("");
+        setPreviewA4Src("");
+    }
+
+    async function baixarObituarioA4() {
+        const src = previewA4Src || (await gerarObituarioA4());
+
+        if (!src) return;
+
+        const a = document.createElement("a");
+        a.href = src;
+        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario-a4.jpg`;
+        a.click();
+    }
+
     function baixarObituario() {
         if (!previewSrc) return;
 
@@ -954,8 +1274,8 @@ export default function EnviarObituario({
                                         key={m.value}
                                         type="button"
                                         className={`rounded-lg border p-2 text-left text-xs transition hover:bg-muted ${modelo === m.value
-                                                ? "border-blue-600 ring-2 ring-blue-200"
-                                                : ""
+                                            ? "border-blue-600 ring-2 ring-blue-200"
+                                            : ""
                                             }`}
                                         onClick={() => setModelo(m.value)}
                                     >
@@ -1051,15 +1371,27 @@ export default function EnviarObituario({
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                             <h3 className="font-semibold">Pré-visualização</h3>
 
-                            <button
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
-                                onClick={baixarObituario}
-                                disabled={!previewSrc || loading}
-                            >
-                                <IconDownload className="size-4" />
-                                Baixar Obituário
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+                                    onClick={baixarObituario}
+                                    disabled={!previewSrc || loading}
+                                >
+                                    <IconDownload className="size-4" />
+                                    Baixar Obituário
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center gap-2 rounded-md bg-[#039adc] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                                    onClick={abrirModalA4}
+                                    disabled={!registro}
+                                >
+                                    <IconDownload className="size-4" />
+                                    Baixar A4
+                                </button>
+                            </div>
                         </div>
 
                         {erro ? (
@@ -1081,6 +1413,123 @@ export default function EnviarObituario({
                         ) : (
                             <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
                                 A pré-visualização será gerada automaticamente.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal
+                open={openA4}
+                onClose={() => setOpenA4(false)}
+                ariaLabel="Baixar Obituário A4"
+                maxWidth={1180}
+            >
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-xl font-semibold">Baixar A4</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            {dados.nome || "Atendimento selecionado"}
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        onClick={() => setOpenA4(false)}
+                    >
+                        <IconX className="size-4" />
+                    </button>
+                </div>
+
+                <div className="mt-5 grid gap-5 lg:grid-cols-[420px_1fr]">
+                    <div className="space-y-4">
+                        <div className="rounded-xl border bg-card/60 p-4">
+                            <h3 className="font-semibold">Mensagem do A4</h3>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Escolha uma frase predefinida ou use uma mensagem personalizada.
+                            </p>
+
+                            <label className="mt-4 block text-sm">
+                                Frase
+                                <select
+                                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                                    value={fraseA4Selecionada}
+                                    onChange={(e) => setFraseA4Selecionada(e.target.value)}
+                                >
+                                    {FRASES_A4.map((frase, index) => (
+                                        <option key={index} value={String(index)}>
+                                            {`Frase ${index + 1}`}
+                                        </option>
+                                    ))}
+                                    <option value="personalizada">Mensagem personalizada</option>
+                                </select>
+                            </label>
+
+                            {fraseA4Selecionada === "personalizada" ? (
+                                <label className="mt-4 block text-sm">
+                                    Escreva a mensagem personalizada
+                                    <textarea
+                                        className="mt-1 min-h-[170px] w-full rounded-md border px-3 py-2 text-sm"
+                                        value={fraseA4Personalizada}
+                                        onChange={(e) => setFraseA4Personalizada(e.target.value)}
+                                        placeholder="Digite a mensagem que aparecerá abaixo da logo."
+                                    />
+                                </label>
+                            ) : (
+                                <div className="mt-4 rounded-md border bg-background/60 px-3 py-2 text-sm leading-relaxed">
+                                    {fraseA4Final}
+                                </div>
+                            )}
+
+                            {erroA4 ? (
+                                <div className="mt-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                                    {erroA4}
+                                </div>
+                            ) : null}
+
+                            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                                    onClick={gerarObituarioA4}
+                                    disabled={loadingA4}
+                                >
+                                    <IconRefresh className={`size-4 ${loadingA4 ? "animate-spin" : ""}`} />
+                                    {loadingA4 ? "Gerando..." : "Atualizar A4"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-2 rounded-md bg-[#039adc] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                                    onClick={baixarObituarioA4}
+                                    disabled={loadingA4}
+                                >
+                                    <IconDownload className="size-4" />
+                                    Baixar A4
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border bg-card/60 p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                            <h3 className="font-semibold">Pré-visualização A4</h3>
+                        </div>
+
+                        {loadingA4 ? (
+                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
+                                Gerando A4...
+                            </div>
+                        ) : previewA4Src ? (
+                            <img
+                                src={previewA4Src}
+                                alt="Pré-visualização do obituário A4"
+                                className="mx-auto block w-full max-w-[520px] rounded-md border object-contain"
+                            />
+                        ) : (
+                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                                A pré-visualização A4 será gerada automaticamente.
                             </div>
                         )}
                     </div>
