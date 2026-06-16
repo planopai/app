@@ -64,27 +64,35 @@ const POSICOES_A4 = {
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 34 },
     foto: { centerX: 300, centerY: 565, ovalW: 245, ovalH: 320 },
     nome: { x: 450, y: 515, maxWidth: 560, lineHeight: 50 },
-    nascimento: { x: 590, y: 625 },
-    falecimento: { x: 590, y: 680 },
+
+    // A4: datas de nascimento e falecimento subiram mais.
+    nascimento: { x: 590, y: 600 },
+    falecimento: { x: 590, y: 655 },
+
+    // A4: bloco central foi separado dos obituários normais.
+    // Cerimônia, local da cerimônia, sepultamento e cemitério:
+    // todos um pouco mais para a direita e mais para cima.
     cerimonia: {
-        linhaDataHoraX: 245,
-        linhaDataHoraY: 820,
-        linhaDataHoraMaxWidth: 255,
-        localX: 600,
-        localY: 820,
-        localMaxWidth: 370,
+        linhaDataHoraX: 265,
+        linhaDataHoraY: 805,
+        linhaDataHoraMaxWidth: 245,
+        localX: 620,
+        localY: 805,
+        localMaxWidth: 350,
         lineHeight: 28,
     },
     sepultamento: {
-        linhaDataHoraX: 245,
-        linhaDataHoraY: 930,
-        linhaDataHoraMaxWidth: 255,
-        localX: 600,
-        localY: 930,
-        localMaxWidth: 370,
+        linhaDataHoraX: 265,
+        linhaDataHoraY: 915,
+        linhaDataHoraMaxWidth: 245,
+        localX: 620,
+        localY: 915,
+        localMaxWidth: 350,
         lineHeight: 28,
     },
-    qr: { x: 260, y: 960, w: 250, h: 250 } as QrBox,
+
+    // A4: QR Code desceu um pouco.
+    qr: { x: 260, y: 985, w: 250, h: 250 } as QrBox,
 };
 
 const FRASES_A4 = [
