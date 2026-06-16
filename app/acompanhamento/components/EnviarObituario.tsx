@@ -742,7 +742,7 @@ export default function EnviarObituario({
             ctx.textAlign = "left";
 
             if (dados.data_cerimonia) {
-                ctx.fillText(dados.data_cerimonia, INFO_X, 1236);
+                ctx.fillText(dados.data_cerimonia, INFO_X, 1244);
             }
 
             const horarioCerimonia =
@@ -751,7 +751,7 @@ export default function EnviarObituario({
                     : dados.velorio_inicio || dados.velorio_fim || "";
 
             if (horarioCerimonia) {
-                ctx.fillText(horarioCerimonia, INFO_X, 1290);
+                ctx.fillText(horarioCerimonia, INFO_X, 1298);
             }
 
             if (dados.local_cerimonia) {
@@ -759,7 +759,7 @@ export default function EnviarObituario({
                     ctx,
                     dados.local_cerimonia,
                     INFO_X,
-                    1344,
+                    1352,
                     560,
                     31,
                     "left"
@@ -771,11 +771,11 @@ export default function EnviarObituario({
             ctx.textAlign = "left";
 
             if (dados.data_sepultamento) {
-                ctx.fillText(dados.data_sepultamento, INFO_X, 1515);
+                ctx.fillText(dados.data_sepultamento, INFO_X, 1523);
             }
 
             if (dados.hora_sepultamento) {
-                ctx.fillText(dados.hora_sepultamento, INFO_X, 1569);
+                ctx.fillText(dados.hora_sepultamento, INFO_X, 1577);
             }
 
             if (dados.local_sepultamento) {
@@ -783,7 +783,7 @@ export default function EnviarObituario({
                     ctx,
                     dados.local_sepultamento,
                     INFO_X,
-                    1623,
+                    1631,
                     deveDesenharQrLegado ? 320 : 560,
                     31,
                     "left"
