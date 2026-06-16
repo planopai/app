@@ -296,7 +296,7 @@ async function ensureFontLoaded(font: string) {
 
         await document.fonts.ready;
     } catch {
-        // usa fallback do navegador
+        // fallback do navegador
     }
 }
 
@@ -330,7 +330,8 @@ function loadImage(src: string): Promise<HTMLImageElement> {
         }
 
         img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error(`Não foi possível carregar a imagem: ${src}`));
+        img.onerror = () =>
+            reject(new Error(`Não foi possível carregar a imagem: ${src}`));
         img.src = src;
     });
 }
@@ -363,7 +364,10 @@ function drawWrapText(
     lineHeight: number,
     align: "center" | "left" | "right" = "center"
 ) {
-    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const words = String(text || "")
+        .split(/\s+/)
+        .filter(Boolean);
+
     let line = "";
 
     ctx.textAlign = align;
@@ -411,17 +415,19 @@ async function desenharQrLegadoLuz(
     ctx.fillStyle = "#001f5b";
     ctx.textAlign = "center";
 
+    // Aproxima o texto do QR
     ctx.font = `700 21px "${selectedFont}"`;
-    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 48);
+    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 40);
 
-    const qrSize = 185;
+    // Aumenta um pouco o QR e aproxima do título
+    const qrSize = 195;
     const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + 78;
+    const qrY = box.y + 54;
 
     ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
     ctx.font = `600 13px "${selectedFont}"`;
-    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 32);
+    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 26);
 
     ctx.restore();
 }
@@ -470,7 +476,9 @@ function montarDados(registro?: Registro | null): DadosObituario {
     );
 
     const velorioOnline =
-        String((registro as any)?.velorio_online ?? "").trim().toLowerCase() === "sim";
+        String((registro as any)?.velorio_online ?? "")
+            .trim()
+            .toLowerCase() === "sim";
 
     return {
         nome: pickFirst(
@@ -483,10 +491,7 @@ function montarDados(registro?: Registro | null): DadosObituario {
         data_falecimento: normalizeDateToBR((registro as any)?.data_falecimento),
 
         foto_falecido: normalizarFotoUrl(
-            pickFirst(
-                (registro as any)?.foto_falecido,
-                (registro as any)?.foto_url
-            )
+            pickFirst((registro as any)?.foto_falecido, (registro as any)?.foto_url)
         ),
 
         local_cerimonia: montarLocalVelorio(registro),
@@ -518,8 +523,12 @@ function montarDados(registro?: Registro | null): DadosObituario {
 
         nota_pesar: NOTA_PESAR_FIXA,
 
-        transmissao_inicio_data: velorioOnline ? normalizeDateToBR(dataInicioVelorio) : "",
-        transmissao_inicio_hora: velorioOnline ? normalizeHHMM(horaInicioVelorio) : "",
+        transmissao_inicio_data: velorioOnline
+            ? normalizeDateToBR(dataInicioVelorio)
+            : "",
+        transmissao_inicio_hora: velorioOnline
+            ? normalizeHHMM(horaInicioVelorio)
+            : "",
         transmissao_fim_data: velorioOnline ? normalizeDateToBR(dataFimVelorio) : "",
         transmissao_fim_hora: velorioOnline ? normalizeHHMM(horaFimVelorio) : "",
     };
@@ -593,7 +602,15 @@ export default function EnviarObituario({
 
         bctx.save();
         bctx.beginPath();
-        bctx.ellipse(ovalW / 2, ovalH / 2, ovalW / 2, ovalH / 2, 0, 0, Math.PI * 2);
+        bctx.ellipse(
+            ovalW / 2,
+            ovalH / 2,
+            ovalW / 2,
+            ovalH / 2,
+            0,
+            0,
+            Math.PI * 2
+        );
         bctx.clip();
 
         const imgRatio = img.width / img.height;
@@ -634,7 +651,15 @@ export default function EnviarObituario({
 
         ctx.save();
         ctx.beginPath();
-        ctx.ellipse(centerX, centerY, ovalW / 2, ovalH / 2, 0, 0, Math.PI * 2);
+        ctx.ellipse(
+            centerX,
+            centerY,
+            ovalW / 2,
+            ovalH / 2,
+            0,
+            0,
+            Math.PI * 2
+        );
         ctx.clip();
         ctx.drawImage(buffer, centerX - ovalW / 2, centerY - ovalH / 2);
         ctx.restore();
@@ -686,40 +711,38 @@ export default function EnviarObituario({
                 }
             }
 
+            // Nome
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "center";
             ctx.font = `700 44px "${selectedFont}"`;
 
-            drawWrapText(
-                ctx,
-                dados.nome,
-                canvas.width / 2,
-                900,
-                820,
-                52,
-                "center"
-            );
+            drawWrapText(ctx, dados.nome, canvas.width / 2, 900, 820, 52, "center");
 
+            // Datas
             ctx.font = `600 30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
 
+            // Nascimento bem mais à esquerda
             if (dados.data_nascimento) {
-                ctx.fillText(dados.data_nascimento, 275, 990);
+                ctx.fillText(dados.data_nascimento, 210, 990);
             }
 
+            // Falecimento um pouco mais à direita
             if (dados.data_falecimento) {
-                ctx.fillText(dados.data_falecimento, 650, 990);
+                ctx.fillText(dados.data_falecimento, 685, 990);
             }
 
-            const INFO_X = 360;
+            // Informações principais: um pouco mais pra cima e mais pra esquerda
+            const INFO_X = 340;
 
+            // Cerimônia de Despedida
             ctx.fillStyle = selectedColor;
             ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
 
             if (dados.data_cerimonia) {
-                ctx.fillText(dados.data_cerimonia, INFO_X, 1248);
+                ctx.fillText(dados.data_cerimonia, INFO_X, 1236);
             }
 
             const horarioCerimonia =
@@ -728,7 +751,7 @@ export default function EnviarObituario({
                     : dados.velorio_inicio || dados.velorio_fim || "";
 
             if (horarioCerimonia) {
-                ctx.fillText(horarioCerimonia, INFO_X, 1304);
+                ctx.fillText(horarioCerimonia, INFO_X, 1290);
             }
 
             if (dados.local_cerimonia) {
@@ -736,23 +759,24 @@ export default function EnviarObituario({
                     ctx,
                     dados.local_cerimonia,
                     INFO_X,
-                    1360,
+                    1344,
                     560,
                     31,
                     "left"
                 );
             }
 
+            // Sepultamento
             ctx.fillStyle = selectedColor;
             ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
 
             if (dados.data_sepultamento) {
-                ctx.fillText(dados.data_sepultamento, INFO_X, 1530);
+                ctx.fillText(dados.data_sepultamento, INFO_X, 1515);
             }
 
             if (dados.hora_sepultamento) {
-                ctx.fillText(dados.hora_sepultamento, INFO_X, 1586);
+                ctx.fillText(dados.hora_sepultamento, INFO_X, 1569);
             }
 
             if (dados.local_sepultamento) {
@@ -760,13 +784,14 @@ export default function EnviarObituario({
                     ctx,
                     dados.local_sepultamento,
                     INFO_X,
-                    1642,
-                    deveDesenharQrLegado ? 330 : 560,
+                    1623,
+                    deveDesenharQrLegado ? 320 : 560,
                     31,
                     "left"
                 );
             }
 
+            // Transmissão online
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
                 ctx.fillStyle = selectedColor;
                 ctx.font = `500 22px "${selectedFont}"`;
@@ -836,7 +861,12 @@ export default function EnviarObituario({
                 Enviar Obituário
             </button>
 
-            <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Enviar Obituário" maxWidth={1180}>
+            <Modal
+                open={open}
+                onClose={() => setOpen(false)}
+                ariaLabel="Enviar Obituário"
+                maxWidth={1180}
+            >
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <h2 className="text-xl font-semibold">Enviar Obituário</h2>
@@ -863,20 +893,32 @@ export default function EnviarObituario({
                                 <InfoLinha label="Falecido(a)" value={dados.nome} />
                                 <InfoLinha label="Nascimento" value={dados.data_nascimento} />
                                 <InfoLinha label="Falecimento" value={dados.data_falecimento} />
-                                <InfoLinha label="Local do Velório" value={dados.local_cerimonia} />
+                                <InfoLinha
+                                    label="Local do Velório"
+                                    value={dados.local_cerimonia}
+                                />
                                 <InfoLinha
                                     label="Velório"
-                                    value={`${dados.data_cerimonia || "-"} ${dados.velorio_inicio || ""} até ${dados.fim_data_cerimonia || "-"} ${dados.velorio_fim || ""}`}
+                                    value={`${dados.data_cerimonia || "-"} ${dados.velorio_inicio || ""
+                                        } até ${dados.fim_data_cerimonia || "-"} ${dados.velorio_fim || ""
+                                        }`}
                                 />
                                 <InfoLinha
                                     label="Sepultamento"
-                                    value={`${dados.data_sepultamento || "-"} ${dados.hora_sepultamento || ""}`}
+                                    value={`${dados.data_sepultamento || "-"} ${dados.hora_sepultamento || ""
+                                        }`}
                                 />
-                                <InfoLinha label="Local Sepultamento" value={dados.local_sepultamento} />
+                                <InfoLinha
+                                    label="Local Sepultamento"
+                                    value={dados.local_sepultamento}
+                                />
                                 <InfoLinha label="Nota de Pesar" value={dados.nota_pesar} />
                                 <InfoLinha
                                     label="Legado de Luz"
-                                    value={legadoLuzUrl || "Sem link/slug retornado no atendimento"}
+                                    value={
+                                        legadoLuzUrl ||
+                                        "Sem link/slug retornado no atendimento"
+                                    }
                                 />
                             </div>
 
@@ -887,7 +929,10 @@ export default function EnviarObituario({
                                         alt="Foto do falecido"
                                         className="h-16 w-16 rounded-lg border object-cover"
                                         onError={(e) => {
-                                            console.warn("Erro ao carregar miniatura:", dados.foto_falecido);
+                                            console.warn(
+                                                "Erro ao carregar miniatura:",
+                                                dados.foto_falecido
+                                            );
                                             e.currentTarget.style.display = "none";
                                         }}
                                     />
@@ -911,7 +956,9 @@ export default function EnviarObituario({
                                     <button
                                         key={m.value}
                                         type="button"
-                                        className={`rounded-lg border p-2 text-left text-xs transition hover:bg-muted ${modelo === m.value ? "border-blue-600 ring-2 ring-blue-200" : ""
+                                        className={`rounded-lg border p-2 text-left text-xs transition hover:bg-muted ${modelo === m.value
+                                                ? "border-blue-600 ring-2 ring-blue-200"
+                                                : ""
                                             }`}
                                         onClick={() => setModelo(m.value)}
                                     >
@@ -952,7 +999,8 @@ export default function EnviarObituario({
 
                             {!legadoLuzUrl && (
                                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    O QR Code só aparece quando o atendimento retorna link ou slug do Legado de Luz.
+                                    O QR Code só aparece quando o atendimento retorna link ou
+                                    slug do Legado de Luz.
                                 </div>
                             )}
 
@@ -967,7 +1015,9 @@ export default function EnviarObituario({
                                     <option value="Roboto">Roboto</option>
                                     <option value="Arial">Arial</option>
                                     <option value="Georgia">Georgia</option>
-                                    <option value="Times New Roman">Times New Roman</option>
+                                    <option value="Times New Roman">
+                                        Times New Roman
+                                    </option>
                                 </select>
                             </label>
 
@@ -992,7 +1042,9 @@ export default function EnviarObituario({
                                 onClick={gerarObituario}
                                 disabled={loading}
                             >
-                                <IconRefresh className={`size-4 ${loading ? "animate-spin" : ""}`} />
+                                <IconRefresh
+                                    className={`size-4 ${loading ? "animate-spin" : ""}`}
+                                />
                                 {loading ? "Gerando..." : "Atualizar pré-visualização"}
                             </button>
                         </div>
