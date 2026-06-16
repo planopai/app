@@ -67,24 +67,24 @@ const POSICOES_A4 = {
     nascimento: { x: 590, y: 625 },
     falecimento: { x: 590, y: 680 },
     cerimonia: {
-        linhaDataHoraX: 260,
-        linhaDataHoraY: 862,
-        linhaDataHoraMaxWidth: 215,
-        localX: 612,
-        localY: 862,
-        localMaxWidth: 340,
-        lineHeight: 30,
+        linhaDataHoraX: 245,
+        linhaDataHoraY: 820,
+        linhaDataHoraMaxWidth: 255,
+        localX: 600,
+        localY: 820,
+        localMaxWidth: 370,
+        lineHeight: 28,
     },
     sepultamento: {
-        linhaDataHoraX: 260,
-        linhaDataHoraY: 972,
-        linhaDataHoraMaxWidth: 215,
-        localX: 612,
-        localY: 972,
-        localMaxWidth: 340,
-        lineHeight: 30,
+        linhaDataHoraX: 245,
+        linhaDataHoraY: 930,
+        linhaDataHoraMaxWidth: 255,
+        localX: 600,
+        localY: 930,
+        localMaxWidth: 370,
+        lineHeight: 28,
     },
-    qr: { x: 260, y: 1030, w: 250, h: 250 } as QrBox,
+    qr: { x: 260, y: 960, w: 250, h: 250 } as QrBox,
 };
 
 const FRASES_A4 = [
@@ -1153,7 +1153,7 @@ export default function EnviarObituario({
             );
 
             ctx.fillStyle = azulPai;
-            ctx.font = `800 24px "${selectedFont}"`;
+            ctx.font = `800 22px "${selectedFont}"`;
             ctx.textAlign = "left";
 
             if (cerimoniaLinha) {
