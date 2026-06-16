@@ -411,10 +411,10 @@ async function desenharQrLegadoLuz(
 
     ctx.save();
 
-    // Sem textos: apenas o QR Code, maior e centralizado no quadrado branco.
-    const qrSize = Math.min(box.w - 54, box.h - 54);
+    // Sem textos: apenas o QR Code, maior e mais abaixo no quadrado branco.
+    const qrSize = Math.min(box.w - 38, box.h - 38);
     const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + (box.h - qrSize) / 2;
+    const qrY = box.y + (box.h - qrSize) / 2 + 14;
 
     ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
@@ -722,15 +722,15 @@ export default function EnviarObituario({
             if (dados.nota_pesar) {
                 ctx.fillStyle = selectedColor;
                 ctx.textAlign = "center";
-                ctx.font = `600 25px "${selectedFont}"`;
+                ctx.font = `700 29px "${selectedFont}"`;
 
                 drawWrapText(
                     ctx,
                     dados.nota_pesar,
                     canvas.width / 2,
-                    1077,
-                    820,
-                    30,
+                    1098,
+                    860,
+                    34,
                     "center"
                 );
             }
