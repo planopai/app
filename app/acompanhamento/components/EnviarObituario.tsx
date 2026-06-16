@@ -63,9 +63,9 @@ const MODELO_A4 = "/obituario-modelos/A4.png";
 const POSICOES_A4 = {
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 34 },
 
-    // A4: foto um pouco maior e mais para cima.
-    foto: { centerX: 300, centerY: 540, ovalW: 260, ovalH: 340 },
-    nome: { x: 450, y: 515, maxWidth: 560, lineHeight: 50 },
+    // A4: foto maior e mais para cima.
+    foto: { centerX: 300, centerY: 505, ovalW: 285, ovalH: 375 },
+    nome: { x: 450, y: 485, maxWidth: 560, lineHeight: 50 },
 
     // A4: datas de nascimento e falecimento ainda mais para cima.
     nascimento: { x: 590, y: 578 },
