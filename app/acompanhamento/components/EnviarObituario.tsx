@@ -60,15 +60,15 @@ const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
 
 const QR_POSITIONS: Record<ModeloKey, QrBox> = {
-    modelo01: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo02: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo03: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo04: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo05: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo06: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo07: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo08: { x: 720, y: 1550, w: 315, h: 315 },
-    modelo09: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo01: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo02: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo03: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo04: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo05: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo06: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo07: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo08: { x: 720, y: 1548, w: 315, h: 315 },
+    modelo09: { x: 720, y: 1548, w: 315, h: 315 },
 };
 
 function onlyDigits(s: string) {
@@ -224,6 +224,48 @@ function getLegadoLuzUrl(registro?: Registro | null) {
     return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
 }
 
+function getRegistroUpdateKey(registro?: Registro | null) {
+    const r = registro as any;
+
+    return [
+        r?.id,
+        r?.falecido,
+        r?.nome_completo,
+        r?.nome_falecido,
+        r?.data_nascimento,
+        r?.data_falecimento,
+        r?.foto_falecido,
+        r?.foto_url,
+        r?.local_velorio,
+        r?.sala_velorio,
+        r?.data_inicio_velorio,
+        r?.data_velorio_online,
+        r?.hora_inicio_velorio,
+        r?.horario_inicio,
+        r?.data_fim_velorio,
+        r?.data_fim,
+        r?.hora_fim_velorio,
+        r?.horario_termino,
+        r?.data_sepultamento,
+        r?.horario_sepultamento,
+        r?.local_sepultamento,
+        r?.local,
+        r?.velorio_online,
+        r?.codigo_homenagem,
+        r?.homenagem_codigo,
+        r?.homenagem_slug,
+        r?.slug_homenagem,
+        r?.legado_luz_codigo,
+        r?.legado_luz_slug,
+        r?.legado_luz_link,
+        r?.homenagem_link_publico,
+        r?.link_homenagem,
+        r?.link_publico,
+    ]
+        .map((v) => String(v ?? "").trim())
+        .join("|");
+}
+
 async function ensureFontLoaded(font: string) {
     try {
         const webFonts: Record<string, string> = {
@@ -369,17 +411,17 @@ async function desenharQrLegadoLuz(
     ctx.fillStyle = "#001f5b";
     ctx.textAlign = "center";
 
-    ctx.font = `700 23px "${selectedFont}"`;
-    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 50);
+    ctx.font = `700 21px "${selectedFont}"`;
+    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 48);
 
-    const qrSize = 210;
+    const qrSize = 185;
     const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + 75;
+    const qrY = box.y + 78;
 
     ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
-    ctx.font = `600 16px "${selectedFont}"`;
-    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 38);
+    ctx.font = `600 13px "${selectedFont}"`;
+    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 32);
 
     ctx.restore();
 }
@@ -499,14 +541,15 @@ export default function EnviarObituario({
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState("");
 
-    const dados = useMemo(() => montarDados(registro), [registro]);
-    const legadoLuzUrl = useMemo(() => getLegadoLuzUrl(registro), [registro]);
+    const registroUpdateKey = useMemo(() => getRegistroUpdateKey(registro), [registro]);
+    const dados = useMemo(() => montarDados(registro), [registroUpdateKey]);
+    const legadoLuzUrl = useMemo(() => getLegadoLuzUrl(registro), [registroUpdateKey]);
 
     useEffect(() => {
         if (!open) return;
         setPreviewSrc("");
         setErro("");
-    }, [open, registro?.id]);
+    }, [open, registroUpdateKey]);
 
     useEffect(() => {
         if (!open) return;
@@ -524,7 +567,7 @@ export default function EnviarObituario({
         fontName,
         fontColor,
         incluirQrLegado,
-        registro?.id,
+        registroUpdateKey,
     ]);
 
     async function desenharFotoOval(
@@ -669,12 +712,14 @@ export default function EnviarObituario({
                 ctx.fillText(dados.data_falecimento, 650, 990);
             }
 
+            const INFO_X = 360;
+
             ctx.fillStyle = selectedColor;
-            ctx.font = `600 28px "${selectedFont}"`;
+            ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
 
             if (dados.data_cerimonia) {
-                ctx.fillText(dados.data_cerimonia, 300, 1248);
+                ctx.fillText(dados.data_cerimonia, INFO_X, 1248);
             }
 
             const horarioCerimonia =
@@ -683,48 +728,48 @@ export default function EnviarObituario({
                     : dados.velorio_inicio || dados.velorio_fim || "";
 
             if (horarioCerimonia) {
-                ctx.fillText(horarioCerimonia, 300, 1304);
+                ctx.fillText(horarioCerimonia, INFO_X, 1304);
             }
 
             if (dados.local_cerimonia) {
                 drawWrapText(
                     ctx,
                     dados.local_cerimonia,
-                    300,
+                    INFO_X,
                     1360,
-                    650,
-                    32,
+                    560,
+                    31,
                     "left"
                 );
             }
 
             ctx.fillStyle = selectedColor;
-            ctx.font = `600 28px "${selectedFont}"`;
+            ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
 
             if (dados.data_sepultamento) {
-                ctx.fillText(dados.data_sepultamento, 300, 1530);
+                ctx.fillText(dados.data_sepultamento, INFO_X, 1530);
             }
 
             if (dados.hora_sepultamento) {
-                ctx.fillText(dados.hora_sepultamento, 300, 1586);
+                ctx.fillText(dados.hora_sepultamento, INFO_X, 1586);
             }
 
             if (dados.local_sepultamento) {
                 drawWrapText(
                     ctx,
                     dados.local_sepultamento,
-                    300,
+                    INFO_X,
                     1642,
-                    deveDesenharQrLegado ? 380 : 650,
-                    32,
+                    deveDesenharQrLegado ? 330 : 560,
+                    31,
                     "left"
                 );
             }
 
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
                 ctx.fillStyle = selectedColor;
-                ctx.font = `500 23px "${selectedFont}"`;
+                ctx.font = `500 22px "${selectedFont}"`;
                 ctx.textAlign = "left";
 
                 drawWrapText(
@@ -733,7 +778,7 @@ export default function EnviarObituario({
                     110,
                     1742,
                     deveDesenharQrLegado ? 560 : 850,
-                    28,
+                    27,
                     "left"
                 );
 
@@ -747,9 +792,9 @@ export default function EnviarObituario({
                     ctx,
                     linha,
                     110,
-                    1802,
+                    1800,
                     deveDesenharQrLegado ? 560 : 850,
-                    28,
+                    27,
                     "left"
                 );
             }
