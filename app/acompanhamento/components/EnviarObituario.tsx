@@ -393,13 +393,12 @@ function drawWrapText(
 async function desenharQrLegadoLuz(
     ctx: CanvasRenderingContext2D,
     url: string,
-    selectedFont: string,
     box: QrBox
 ) {
     if (!url) return;
 
     const qrDataUrl = await QRCode.toDataURL(url, {
-        width: 360,
+        width: 520,
         margin: 1,
         errorCorrectionLevel: "M",
         color: {
@@ -412,22 +411,12 @@ async function desenharQrLegadoLuz(
 
     ctx.save();
 
-    ctx.fillStyle = "#001f5b";
-    ctx.textAlign = "center";
-
-    // Aproxima o texto do QR
-    ctx.font = `700 21px "${selectedFont}"`;
-    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 40);
-
-    // Aumenta um pouco o QR e aproxima do título
-    const qrSize = 195;
+    // Sem textos: apenas o QR Code, maior e centralizado no quadrado branco.
+    const qrSize = Math.min(box.w - 54, box.h - 54);
     const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + 54;
+    const qrY = box.y + (box.h - qrSize) / 2;
 
     ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-
-    ctx.font = `600 13px "${selectedFont}"`;
-    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 26);
 
     ctx.restore();
 }
@@ -711,32 +700,43 @@ export default function EnviarObituario({
                 }
             }
 
-            // Nome
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "center";
             ctx.font = `700 44px "${selectedFont}"`;
 
             drawWrapText(ctx, dados.nome, canvas.width / 2, 900, 820, 52, "center");
 
-            // Datas
             ctx.font = `600 30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
 
-            // Nascimento bem mais à esquerda
             if (dados.data_nascimento) {
                 ctx.fillText(dados.data_nascimento, 210, 990);
             }
 
-            // Falecimento um pouco mais à direita
             if (dados.data_falecimento) {
                 ctx.fillText(dados.data_falecimento, 685, 990);
             }
 
-            // Informações principais: um pouco mais pra cima e mais pra esquerda
+            // Nota de pesar no espaço vazio abaixo das datas
+            if (dados.nota_pesar) {
+                ctx.fillStyle = selectedColor;
+                ctx.textAlign = "center";
+                ctx.font = `600 25px "${selectedFont}"`;
+
+                drawWrapText(
+                    ctx,
+                    dados.nota_pesar,
+                    canvas.width / 2,
+                    1077,
+                    820,
+                    30,
+                    "center"
+                );
+            }
+
             const INFO_X = 340;
 
-            // Cerimônia de Despedida
             ctx.fillStyle = selectedColor;
             ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
@@ -766,7 +766,6 @@ export default function EnviarObituario({
                 );
             }
 
-            // Sepultamento
             ctx.fillStyle = selectedColor;
             ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
@@ -791,7 +790,6 @@ export default function EnviarObituario({
                 );
             }
 
-            // Transmissão online
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
                 ctx.fillStyle = selectedColor;
                 ctx.font = `500 22px "${selectedFont}"`;
@@ -828,7 +826,6 @@ export default function EnviarObituario({
                 await desenharQrLegadoLuz(
                     ctx,
                     legadoLuzUrl,
-                    selectedFont,
                     QR_POSITIONS[modelo]
                 );
             }
