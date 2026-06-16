@@ -771,11 +771,11 @@ export default function EnviarObituario({
             ctx.textAlign = "left";
 
             if (dados.data_sepultamento) {
-                ctx.fillText(dados.data_sepultamento, INFO_X, 1523);
+                ctx.fillText(dados.data_sepultamento, INFO_X, 1507);
             }
 
             if (dados.hora_sepultamento) {
-                ctx.fillText(dados.hora_sepultamento, INFO_X, 1577);
+                ctx.fillText(dados.hora_sepultamento, INFO_X, 1561);
             }
 
             if (dados.local_sepultamento) {
@@ -783,7 +783,7 @@ export default function EnviarObituario({
                     ctx,
                     dados.local_sepultamento,
                     INFO_X,
-                    1631,
+                    1615,
                     deveDesenharQrLegado ? 320 : 560,
                     31,
                     "left"
