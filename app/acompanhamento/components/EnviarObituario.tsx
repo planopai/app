@@ -60,7 +60,32 @@ const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
 const MODELO_A4 = "/obituario-modelos/A4.png";
 
-const A4_QR_BOX: QrBox = { x: 260, y: 1092, w: 250, h: 250 };
+const POSICOES_A4 = {
+    mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 34 },
+    foto: { centerX: 300, centerY: 565, ovalW: 245, ovalH: 320 },
+    nome: { x: 450, y: 515, maxWidth: 560, lineHeight: 50 },
+    nascimento: { x: 590, y: 625 },
+    falecimento: { x: 590, y: 680 },
+    cerimonia: {
+        linhaDataHoraX: 260,
+        linhaDataHoraY: 862,
+        linhaDataHoraMaxWidth: 215,
+        localX: 612,
+        localY: 862,
+        localMaxWidth: 340,
+        lineHeight: 30,
+    },
+    sepultamento: {
+        linhaDataHoraX: 260,
+        linhaDataHoraY: 972,
+        linhaDataHoraMaxWidth: 215,
+        localX: 612,
+        localY: 972,
+        localMaxWidth: 340,
+        lineHeight: 30,
+    },
+    qr: { x: 260, y: 1030, w: 250, h: 250 } as QrBox,
+};
 
 const FRASES_A4 = [
     `"Combati o bom combate, acabei a carreira, guardei a fé." (2 Timóteo 4:7) — Mais do que uma despedida, celebramos uma vida vivida com propósito, coragem e integridade. Seu legado de amor e retidão permanecerá vivo em nossos corações para sempre.`,
@@ -753,10 +778,7 @@ export default function EnviarObituario({
 
         const img = await carregarImagemParaCanvas(fotoSrc);
 
-        const centerX = 300;
-        const centerY = 565;
-        const ovalW = 245;
-        const ovalH = 320;
+        const { centerX, centerY, ovalW, ovalH } = POSICOES_A4.foto;
 
         const buffer = document.createElement("canvas");
         buffer.width = ovalW;
@@ -1063,7 +1085,15 @@ export default function EnviarObituario({
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "center";
             ctx.font = `600 24px "${selectedFont}"`;
-            drawWrapText(ctx, fraseA4Final, canvas.width / 2, 185, 870, 34, "center");
+            drawWrapText(
+                ctx,
+                fraseA4Final,
+                POSICOES_A4.mensagem.x,
+                POSICOES_A4.mensagem.y,
+                POSICOES_A4.mensagem.maxWidth,
+                POSICOES_A4.mensagem.lineHeight,
+                "center"
+            );
 
             // Foto oval do falecido no bloco superior esquerdo.
             if (dados.foto_falecido) {
@@ -1078,7 +1108,15 @@ export default function EnviarObituario({
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
             ctx.font = `800 42px "${selectedFont}"`;
-            drawWrapText(ctx, dados.nome, 450, 515, 560, 50, "left");
+            drawWrapText(
+                ctx,
+                dados.nome,
+                POSICOES_A4.nome.x,
+                POSICOES_A4.nome.y,
+                POSICOES_A4.nome.maxWidth,
+                POSICOES_A4.nome.lineHeight,
+                "left"
+            );
 
             // Datas de nascimento e falecimento próximas à estrela e à cruz do modelo A4.
             ctx.fillStyle = selectedColor;
@@ -1086,18 +1124,27 @@ export default function EnviarObituario({
             ctx.textAlign = "left";
 
             if (dados.data_nascimento) {
-                ctx.fillText(dados.data_nascimento, 610, 647);
+                ctx.fillText(
+                    dados.data_nascimento,
+                    POSICOES_A4.nascimento.x,
+                    POSICOES_A4.nascimento.y
+                );
             }
 
             if (dados.data_falecimento) {
-                ctx.fillText(dados.data_falecimento, 610, 702);
+                ctx.fillText(
+                    dados.data_falecimento,
+                    POSICOES_A4.falecimento.x,
+                    POSICOES_A4.falecimento.y
+                );
             }
 
-            // Informações da cerimônia e sepultamento no quadro central.
+            // Informações A4 da cerimônia e sepultamento no quadro central.
+            // Estas posições são exclusivas do A4 e não alteram os modelos comuns.
+            // A4: cerimônia usa somente data + horário de início, igual ao sepultamento.
             const cerimoniaLinha = montarLinhaDataHora(
                 dados.data_cerimonia,
-                dados.velorio_inicio,
-                dados.velorio_fim
+                dados.velorio_inicio
             );
 
             const sepultamentoLinha = montarLinhaDataHora(
@@ -1110,24 +1157,56 @@ export default function EnviarObituario({
             ctx.textAlign = "left";
 
             if (cerimoniaLinha) {
-                drawWrapText(ctx, cerimoniaLinha, 260, 925, 215, 30, "left");
+                drawWrapText(
+                    ctx,
+                    cerimoniaLinha,
+                    POSICOES_A4.cerimonia.linhaDataHoraX,
+                    POSICOES_A4.cerimonia.linhaDataHoraY,
+                    POSICOES_A4.cerimonia.linhaDataHoraMaxWidth,
+                    POSICOES_A4.cerimonia.lineHeight,
+                    "left"
+                );
             }
 
             if (dados.local_cerimonia) {
-                drawWrapText(ctx, dados.local_cerimonia, 620, 925, 340, 30, "left");
+                drawWrapText(
+                    ctx,
+                    dados.local_cerimonia,
+                    POSICOES_A4.cerimonia.localX,
+                    POSICOES_A4.cerimonia.localY,
+                    POSICOES_A4.cerimonia.localMaxWidth,
+                    POSICOES_A4.cerimonia.lineHeight,
+                    "left"
+                );
             }
 
             if (sepultamentoLinha) {
-                drawWrapText(ctx, sepultamentoLinha, 260, 1035, 215, 30, "left");
+                drawWrapText(
+                    ctx,
+                    sepultamentoLinha,
+                    POSICOES_A4.sepultamento.linhaDataHoraX,
+                    POSICOES_A4.sepultamento.linhaDataHoraY,
+                    POSICOES_A4.sepultamento.linhaDataHoraMaxWidth,
+                    POSICOES_A4.sepultamento.lineHeight,
+                    "left"
+                );
             }
 
             if (dados.local_sepultamento) {
-                drawWrapText(ctx, dados.local_sepultamento, 620, 1035, 340, 30, "left");
+                drawWrapText(
+                    ctx,
+                    dados.local_sepultamento,
+                    POSICOES_A4.sepultamento.localX,
+                    POSICOES_A4.sepultamento.localY,
+                    POSICOES_A4.sepultamento.localMaxWidth,
+                    POSICOES_A4.sepultamento.lineHeight,
+                    "left"
+                );
             }
 
             // QR Code no quadro inferior esquerdo.
             if (deveDesenharQrLegado) {
-                await desenharQrLegadoLuzA4(ctx, legadoLuzUrl, A4_QR_BOX);
+                await desenharQrLegadoLuzA4(ctx, legadoLuzUrl, POSICOES_A4.qr);
             }
 
             const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
