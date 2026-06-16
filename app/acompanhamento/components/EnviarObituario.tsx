@@ -60,15 +60,15 @@ const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
 
 const QR_POSITIONS: Record<ModeloKey, QrBox> = {
-    modelo01: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo02: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo03: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo04: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo05: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo06: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo07: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo08: { x: 755, y: 1545, w: 255, h: 300 },
-    modelo09: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo01: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo02: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo03: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo04: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo05: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo06: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo07: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo08: { x: 720, y: 1550, w: 315, h: 315 },
+    modelo09: { x: 720, y: 1550, w: 315, h: 315 },
 };
 
 function onlyDigits(s: string) {
@@ -312,29 +312,6 @@ async function carregarImagemParaCanvas(src: string): Promise<HTMLImageElement> 
     }
 }
 
-function drawRoundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    radius: number
-) {
-    const r = Math.min(radius, w / 2, h / 2);
-
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-}
-
 function drawWrapText(
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -376,7 +353,7 @@ async function desenharQrLegadoLuz(
     if (!url) return;
 
     const qrDataUrl = await QRCode.toDataURL(url, {
-        width: 320,
+        width: 360,
         margin: 1,
         errorCorrectionLevel: "M",
         color: {
@@ -389,27 +366,20 @@ async function desenharQrLegadoLuz(
 
     ctx.save();
 
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#039adc";
-    ctx.lineWidth = 5;
-
-    drawRoundedRect(ctx, box.x, box.y, box.w, box.h, 28);
-    ctx.fill();
-    ctx.stroke();
-
     ctx.fillStyle = "#001f5b";
     ctx.textAlign = "center";
-    ctx.font = `700 22px "${selectedFont}"`;
-    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 38);
 
-    const qrSize = Math.min(box.w - 58, 190);
+    ctx.font = `700 23px "${selectedFont}"`;
+    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 50);
+
+    const qrSize = 210;
     const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + 58;
+    const qrY = box.y + 75;
 
     ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
     ctx.font = `600 16px "${selectedFont}"`;
-    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 34);
+    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 38);
 
     ctx.restore();
 }
@@ -557,7 +527,7 @@ export default function EnviarObituario({
         registro?.id,
     ]);
 
-    async function desenharFotoCircular(
+    async function desenharFotoOval(
         ctx: CanvasRenderingContext2D,
         fotoSrc: string,
         fotoPB: boolean
@@ -566,38 +536,39 @@ export default function EnviarObituario({
 
         const img = await carregarImagemParaCanvas(fotoSrc);
 
-        const radius = 270;
-        const x = 1080 / 2;
-        const y = 620;
+        const centerX = 540;
+        const centerY = 505;
+        const ovalW = 430;
+        const ovalH = 640;
 
         const buffer = document.createElement("canvas");
-        buffer.width = radius * 2;
-        buffer.height = radius * 2;
+        buffer.width = ovalW;
+        buffer.height = ovalH;
 
         const bctx = buffer.getContext("2d");
         if (!bctx) throw new Error("Canvas auxiliar não suportado.");
 
         bctx.save();
         bctx.beginPath();
-        bctx.arc(radius, radius, radius, 0, Math.PI * 2);
+        bctx.ellipse(ovalW / 2, ovalH / 2, ovalW / 2, ovalH / 2, 0, 0, Math.PI * 2);
         bctx.clip();
 
         const imgRatio = img.width / img.height;
-        const boxRatio = 1;
+        const boxRatio = ovalW / ovalH;
 
-        let drawW = radius * 2;
-        let drawH = radius * 2;
+        let drawW = ovalW;
+        let drawH = ovalH;
         let drawX = 0;
         let drawY = 0;
 
         if (imgRatio > boxRatio) {
-            drawH = radius * 2;
+            drawH = ovalH;
             drawW = drawH * imgRatio;
-            drawX = -(drawW - radius * 2) / 2;
+            drawX = -(drawW - ovalW) / 2;
         } else {
-            drawW = radius * 2;
+            drawW = ovalW;
             drawH = drawW / imgRatio;
-            drawY = -(drawH - radius * 2) / 2;
+            drawY = -(drawH - ovalH) / 2;
         }
 
         bctx.drawImage(img, drawX, drawY, drawW, drawH);
@@ -620,9 +591,9 @@ export default function EnviarObituario({
 
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.ellipse(centerX, centerY, ovalW / 2, ovalH / 2, 0, 0, Math.PI * 2);
         ctx.clip();
-        ctx.drawImage(buffer, x - radius, y - radius);
+        ctx.drawImage(buffer, centerX - ovalW / 2, centerY - ovalH / 2);
         ctx.restore();
     }
 
@@ -666,69 +637,105 @@ export default function EnviarObituario({
 
             if (dados.foto_falecido) {
                 try {
-                    await desenharFotoCircular(ctx, dados.foto_falecido, fotoPretoBranco);
+                    await desenharFotoOval(ctx, dados.foto_falecido, fotoPretoBranco);
                 } catch (e) {
                     console.warn("Não foi possível carregar a foto do falecido:", e);
                 }
             }
 
             ctx.fillStyle = selectedColor;
-            ctx.font = `30px "${selectedFont}"`;
             ctx.textAlign = "center";
-            drawWrapText(ctx, dados.nota_pesar, canvas.width / 2, 200, 800, 34, "center");
+            ctx.font = `700 44px "${selectedFont}"`;
 
+            drawWrapText(
+                ctx,
+                dados.nome,
+                canvas.width / 2,
+                900,
+                820,
+                52,
+                "center"
+            );
+
+            ctx.font = `600 30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
-            ctx.textAlign = "center";
-            ctx.font = `48px "${selectedFont}"`;
-            drawWrapText(ctx, dados.nome, canvas.width / 2, 1000, 900, 56, "center");
-
-            ctx.font = `32px "${selectedFont}"`;
+            ctx.textAlign = "left";
 
             if (dados.data_nascimento) {
-                ctx.fillText(dados.data_nascimento, canvas.width / 2 - 180, 1120);
+                ctx.fillText(dados.data_nascimento, 275, 990);
             }
 
             if (dados.data_falecimento) {
-                ctx.fillText(dados.data_falecimento, canvas.width / 2 + 200, 1120);
+                ctx.fillText(dados.data_falecimento, 650, 990);
             }
 
-            ctx.font = `30px "${selectedFont}"`;
             ctx.fillStyle = selectedColor;
+            ctx.font = `600 28px "${selectedFont}"`;
             ctx.textAlign = "left";
 
-            ctx.fillText(`Horário de Início: ${dados.velorio_inicio || ""}`, 110, 1360);
-            ctx.fillText(`Data: ${dados.data_cerimonia || ""}`, 110, 1390);
-            ctx.fillText(`Horário de Término: ${dados.velorio_fim || ""}`, 110, 1420);
-            ctx.fillText(`Data: ${dados.fim_data_cerimonia || ""}`, 110, 1450);
+            if (dados.data_cerimonia) {
+                ctx.fillText(dados.data_cerimonia, 300, 1248);
+            }
 
-            drawWrapText(
-                ctx,
-                `Local: ${dados.local_cerimonia || ""}`,
-                110,
-                1480,
-                deveDesenharQrLegado ? 600 : 850,
-                34,
-                "left"
-            );
+            const horarioCerimonia =
+                dados.velorio_inicio && dados.velorio_fim
+                    ? `${dados.velorio_inicio} às ${dados.velorio_fim}`
+                    : dados.velorio_inicio || dados.velorio_fim || "";
 
+            if (horarioCerimonia) {
+                ctx.fillText(horarioCerimonia, 300, 1304);
+            }
+
+            if (dados.local_cerimonia) {
+                drawWrapText(
+                    ctx,
+                    dados.local_cerimonia,
+                    300,
+                    1360,
+                    650,
+                    32,
+                    "left"
+                );
+            }
+
+            ctx.fillStyle = selectedColor;
+            ctx.font = `600 28px "${selectedFont}"`;
             ctx.textAlign = "left";
-            ctx.font = `30px "${selectedFont}"`;
 
-            ctx.fillText(`Data: ${dados.data_sepultamento || ""}`, 110, 1610);
-            ctx.fillText(`Hora: ${dados.hora_sepultamento || ""}`, 110, 1640);
+            if (dados.data_sepultamento) {
+                ctx.fillText(dados.data_sepultamento, 300, 1530);
+            }
 
-            drawWrapText(
-                ctx,
-                `Local: ${dados.local_sepultamento || ""}`,
-                110,
-                1670,
-                deveDesenharQrLegado ? 600 : 850,
-                34,
-                "left"
-            );
+            if (dados.hora_sepultamento) {
+                ctx.fillText(dados.hora_sepultamento, 300, 1586);
+            }
+
+            if (dados.local_sepultamento) {
+                drawWrapText(
+                    ctx,
+                    dados.local_sepultamento,
+                    300,
+                    1642,
+                    deveDesenharQrLegado ? 380 : 650,
+                    32,
+                    "left"
+                );
+            }
 
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
-                ctx.font = `28px "${selectedFont}"`;
+                ctx.fillStyle = selectedColor;
+                ctx.font = `500 23px "${selectedFont}"`;
+                ctx.textAlign = "left";
+
+                drawWrapText(
+                    ctx,
+                    "Transmissão Online: Informações e senha com familiares",
+                    110,
+                    1742,
+                    deveDesenharQrLegado ? 560 : 850,
+                    28,
+                    "left"
+                );
 
                 let linha = `Início: ${dados.transmissao_inicio_data} ${dados.transmissao_inicio_hora}`;
 
@@ -736,35 +743,15 @@ export default function EnviarObituario({
                     linha += ` | Fim: ${dados.transmissao_fim_data} ${dados.transmissao_fim_hora}`;
                 }
 
-                if (deveDesenharQrLegado) {
-                    ctx.textAlign = "left";
-
-                    drawWrapText(
-                        ctx,
-                        "Transmissão Online: Informações e senha com familiares",
-                        110,
-                        1760,
-                        600,
-                        32,
-                        "left"
-                    );
-
-                    drawWrapText(ctx, linha, 110, 1825, 600, 32, "left");
-                } else {
-                    ctx.textAlign = "center";
-
-                    let baseY = 1750;
-
-                    ctx.fillText(
-                        "Transmissão Online: Informações e senha com familiares",
-                        canvas.width / 2,
-                        baseY
-                    );
-
-                    baseY += 34;
-
-                    ctx.fillText(linha, canvas.width / 2, baseY);
-                }
+                drawWrapText(
+                    ctx,
+                    linha,
+                    110,
+                    1802,
+                    deveDesenharQrLegado ? 560 : 850,
+                    28,
+                    "left"
+                );
             }
 
             if (deveDesenharQrLegado) {
