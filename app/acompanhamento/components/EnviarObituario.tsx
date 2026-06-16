@@ -8,6 +8,7 @@ import {
     IconPalette,
     IconX,
 } from "@tabler/icons-react";
+import * as QRCode from "qrcode";
 import Modal from "./Modal";
 import type { Registro } from "./types";
 
@@ -21,6 +22,13 @@ type ModeloKey =
     | "modelo07"
     | "modelo08"
     | "modelo09";
+
+type QrBox = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+};
 
 const NOTA_PESAR_FIXA = "Eternas Saudades de Seus Familiares e Amigos.";
 
@@ -49,6 +57,19 @@ const MODELOS_OPTIONS: Array<{ value: ModeloKey; label: string }> = [
 ];
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
+const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
+
+const QR_POSITIONS: Record<ModeloKey, QrBox> = {
+    modelo01: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo02: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo03: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo04: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo05: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo06: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo07: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo08: { x: 755, y: 1545, w: 255, h: 300 },
+    modelo09: { x: 755, y: 1545, w: 255, h: 300 },
+};
 
 function onlyDigits(s: string) {
     return String(s || "").replace(/\D+/g, "");
@@ -162,6 +183,47 @@ function nomeArquivoSeguro(nome?: string) {
     return base || "obituario";
 }
 
+function limparCodigo(codigo?: string | number | null) {
+    return String(codigo ?? "")
+        .trim()
+        .replace(/^\/+|\/+$/g, "");
+}
+
+function getCodigoHomenagem(registro?: Registro | null) {
+    const r = registro as any;
+
+    return limparCodigo(
+        r?.codigo_homenagem ||
+        r?.homenagem_codigo ||
+        r?.homenagem_slug ||
+        r?.slug_homenagem ||
+        r?.legado_luz_codigo ||
+        r?.legado_luz_slug
+    );
+}
+
+function getLegadoLuzUrl(registro?: Registro | null) {
+    const r = registro as any;
+
+    const linkExistente = String(
+        r?.legado_luz_link ||
+        r?.homenagem_link_publico ||
+        r?.link_homenagem ||
+        r?.link_publico ||
+        ""
+    ).trim();
+
+    if (linkExistente && /^https?:\/\//i.test(linkExistente)) {
+        return linkExistente;
+    }
+
+    const codigo = getCodigoHomenagem(registro);
+
+    if (!codigo) return "";
+
+    return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+}
+
 async function ensureFontLoaded(font: string) {
     try {
         const webFonts: Record<string, string> = {
@@ -250,6 +312,29 @@ async function carregarImagemParaCanvas(src: string): Promise<HTMLImageElement> 
     }
 }
 
+function drawRoundedRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    radius: number
+) {
+    const r = Math.min(radius, w / 2, h / 2);
+
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
 function drawWrapText(
     ctx: CanvasRenderingContext2D,
     text: string,
@@ -280,6 +365,53 @@ function drawWrapText(
     if (line.trim()) {
         ctx.fillText(line.trim(), x, y);
     }
+}
+
+async function desenharQrLegadoLuz(
+    ctx: CanvasRenderingContext2D,
+    url: string,
+    selectedFont: string,
+    box: QrBox
+) {
+    if (!url) return;
+
+    const qrDataUrl = await QRCode.toDataURL(url, {
+        width: 320,
+        margin: 1,
+        errorCorrectionLevel: "M",
+        color: {
+            dark: "#001f5b",
+            light: "#ffffff",
+        },
+    });
+
+    const qrImg = await loadImage(qrDataUrl);
+
+    ctx.save();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#039adc";
+    ctx.lineWidth = 5;
+
+    drawRoundedRect(ctx, box.x, box.y, box.w, box.h, 28);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#001f5b";
+    ctx.textAlign = "center";
+    ctx.font = `700 22px "${selectedFont}"`;
+    ctx.fillText("Legado de Luz", box.x + box.w / 2, box.y + 38);
+
+    const qrSize = Math.min(box.w - 58, 190);
+    const qrX = box.x + (box.w - qrSize) / 2;
+    const qrY = box.y + 58;
+
+    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+    ctx.font = `600 16px "${selectedFont}"`;
+    ctx.fillText("Acesse a homenagem", box.x + box.w / 2, box.y + box.h - 34);
+
+    ctx.restore();
 }
 
 type DadosObituario = {
@@ -391,12 +523,14 @@ export default function EnviarObituario({
     const [fotoPretoBranco, setFotoPretoBranco] = useState(false);
     const [fontName, setFontName] = useState("Nunito");
     const [fontColor, setFontColor] = useState("#111827");
+    const [incluirQrLegado, setIncluirQrLegado] = useState(true);
 
     const [previewSrc, setPreviewSrc] = useState("");
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState("");
 
     const dados = useMemo(() => montarDados(registro), [registro]);
+    const legadoLuzUrl = useMemo(() => getLegadoLuzUrl(registro), [registro]);
 
     useEffect(() => {
         if (!open) return;
@@ -413,7 +547,15 @@ export default function EnviarObituario({
 
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, modelo, fotoPretoBranco, fontName, fontColor, registro?.id]);
+    }, [
+        open,
+        modelo,
+        fotoPretoBranco,
+        fontName,
+        fontColor,
+        incluirQrLegado,
+        registro?.id,
+    ]);
 
     async function desenharFotoCircular(
         ctx: CanvasRenderingContext2D,
@@ -520,6 +662,7 @@ export default function EnviarObituario({
 
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
+            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
 
             if (dados.foto_falecido) {
                 try {
@@ -563,7 +706,7 @@ export default function EnviarObituario({
                 `Local: ${dados.local_cerimonia || ""}`,
                 110,
                 1480,
-                850,
+                deveDesenharQrLegado ? 600 : 850,
                 34,
                 "left"
             );
@@ -579,24 +722,13 @@ export default function EnviarObituario({
                 `Local: ${dados.local_sepultamento || ""}`,
                 110,
                 1670,
-                850,
+                deveDesenharQrLegado ? 600 : 850,
                 34,
                 "left"
             );
 
             if (dados.transmissao_inicio_data && dados.transmissao_inicio_hora) {
-                ctx.textAlign = "center";
                 ctx.font = `28px "${selectedFont}"`;
-
-                let baseY = 1750;
-
-                ctx.fillText(
-                    "Transmissão Online: Informações e senha com familiares",
-                    canvas.width / 2,
-                    baseY
-                );
-
-                baseY += 34;
 
                 let linha = `Início: ${dados.transmissao_inicio_data} ${dados.transmissao_inicio_hora}`;
 
@@ -604,7 +736,44 @@ export default function EnviarObituario({
                     linha += ` | Fim: ${dados.transmissao_fim_data} ${dados.transmissao_fim_hora}`;
                 }
 
-                ctx.fillText(linha, canvas.width / 2, baseY);
+                if (deveDesenharQrLegado) {
+                    ctx.textAlign = "left";
+
+                    drawWrapText(
+                        ctx,
+                        "Transmissão Online: Informações e senha com familiares",
+                        110,
+                        1760,
+                        600,
+                        32,
+                        "left"
+                    );
+
+                    drawWrapText(ctx, linha, 110, 1825, 600, 32, "left");
+                } else {
+                    ctx.textAlign = "center";
+
+                    let baseY = 1750;
+
+                    ctx.fillText(
+                        "Transmissão Online: Informações e senha com familiares",
+                        canvas.width / 2,
+                        baseY
+                    );
+
+                    baseY += 34;
+
+                    ctx.fillText(linha, canvas.width / 2, baseY);
+                }
+            }
+
+            if (deveDesenharQrLegado) {
+                await desenharQrLegadoLuz(
+                    ctx,
+                    legadoLuzUrl,
+                    selectedFont,
+                    QR_POSITIONS[modelo]
+                );
             }
 
             setPreviewSrc(canvas.toDataURL("image/jpeg", 0.92));
@@ -673,6 +842,10 @@ export default function EnviarObituario({
                                 />
                                 <InfoLinha label="Local Sepultamento" value={dados.local_sepultamento} />
                                 <InfoLinha label="Nota de Pesar" value={dados.nota_pesar} />
+                                <InfoLinha
+                                    label="Legado de Luz"
+                                    value={legadoLuzUrl || "Sem link/slug retornado no atendimento"}
+                                />
                             </div>
 
                             {dados.foto_falecido ? (
@@ -733,6 +906,23 @@ export default function EnviarObituario({
                                 />
                                 Foto em preto e branco
                             </label>
+
+                            <label className="mt-3 flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4"
+                                    checked={incluirQrLegado}
+                                    onChange={(e) => setIncluirQrLegado(e.target.checked)}
+                                    disabled={!legadoLuzUrl}
+                                />
+                                Incluir QR Code do Legado de Luz
+                            </label>
+
+                            {!legadoLuzUrl && (
+                                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    O QR Code só aparece quando o atendimento retorna link ou slug do Legado de Luz.
+                                </div>
+                            )}
 
                             <label className="mt-3 block text-sm">
                                 Fonte
