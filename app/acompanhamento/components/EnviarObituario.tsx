@@ -623,7 +623,7 @@ export default function EnviarObituario({
     const [fotoPretoBranco, setFotoPretoBranco] = useState(false);
     const [fontName, setFontName] = useState("Nunito");
     const [fontColor, setFontColor] = useState("#111827");
-    const [incluirQrLegado, setIncluirQrLegado] = useState(true);
+    const [incluirQrLegado, setIncluirQrLegado] = useState(false);
 
     const [previewSrc, setPreviewSrc] = useState("");
     const [loading, setLoading] = useState(false);
@@ -646,6 +646,12 @@ export default function EnviarObituario({
 
         return FRASES_A4[Number(fraseA4Selecionada)] || FRASES_A4[0];
     }, [fraseA4Selecionada, fraseA4Personalizada]);
+
+    useEffect(() => {
+        if (!legadoLuzUrl) {
+            setIncluirQrLegado(false);
+        }
+    }, [legadoLuzUrl]);
 
     useEffect(() => {
         if (!open) return;
@@ -1399,8 +1405,14 @@ export default function EnviarObituario({
                                     onChange={(e) => setIncluirQrLegado(e.target.checked)}
                                     disabled={!legadoLuzUrl}
                                 />
-                                Incluir QR Code do Legado de Luz
+                                Legado de Luz
                             </label>
+
+                            {legadoLuzUrl && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Marque para mostrar o QR Code no obituário e no A4.
+                                </p>
+                            )}
 
                             {!legadoLuzUrl && (
                                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -1537,6 +1549,28 @@ export default function EnviarObituario({
                             <p className="mt-1 text-xs text-muted-foreground">
                                 Escolha uma frase predefinida ou use uma mensagem personalizada.
                             </p>
+
+                            <label className="mt-4 flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4"
+                                    checked={incluirQrLegado}
+                                    onChange={(e) => setIncluirQrLegado(e.target.checked)}
+                                    disabled={!legadoLuzUrl}
+                                />
+                                Legado de Luz
+                            </label>
+
+                            {legadoLuzUrl ? (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Marque para mostrar o QR Code no A4.
+                                </p>
+                            ) : (
+                                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    O QR Code só aparece quando o atendimento retorna link ou
+                                    slug do Legado de Luz.
+                                </div>
+                            )}
 
                             <label className="mt-4 block text-sm">
                                 Frase
