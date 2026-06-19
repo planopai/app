@@ -80,15 +80,15 @@ function getModeloA4Src(comQr: boolean) {
 }
 
 const POSICOES_A4 = {
-    mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 34 },
+    // A4: frases menores para caber melhor no topo.
+    mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 29 },
 
-    // A4: foto ajustada somente para o modelo A4.
-    // Sobe mais e fica um pouco menor.
+    // A4: foto preservada do ajuste anterior.
     foto: { centerX: 300, centerY: 460, ovalW: 255, ovalH: 335 },
 
-    // A4: nome ajustado somente para o modelo A4.
-    // Vai um pouco mais para a direita e sobe mais.
-    nome: { x: 490, y: 445, maxWidth: 520, lineHeight: 48 },
+    // A4: nome alinhado mais à direita com a linha decorativa.
+    // Mantém nome e sobrenome na primeira linha quando couber.
+    nome: { x: 535, y: 440, maxWidth: 500, lineHeight: 43 },
 
     // A4: datas de nascimento e falecimento ainda mais para cima.
     nascimento: { x: 590, y: 578 },
@@ -431,6 +431,105 @@ function loadImage(src: string): Promise<HTMLImageElement> {
             reject(new Error(`Não foi possível carregar a imagem: ${src}`));
         img.src = src;
     });
+}
+
+function dataUrlToUint8Array(dataUrl: string) {
+    const parts = String(dataUrl || "").split(",");
+
+    if (parts.length < 2) {
+        throw new Error("Imagem inválida para gerar PDF.");
+    }
+
+    const header = parts[0] || "";
+    const base64 = parts.slice(1).join(",");
+    const mime = header.match(/data:([^;]+);base64/i)?.[1] || "image/jpeg";
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+
+    return { bytes, mime };
+}
+
+function criarPdfA4ComImagem(dataUrl: string) {
+    const { bytes, mime } = dataUrlToUint8Array(dataUrl);
+
+    if (mime !== "image/jpeg" && mime !== "image/jpg") {
+        throw new Error("A imagem do A4 precisa estar em JPEG para gerar o PDF.");
+    }
+
+    const encoder = new TextEncoder();
+    const chunks: Uint8Array[] = [];
+    const offsets: number[] = [];
+    let offset = 0;
+
+    const addString = (value: string) => {
+        const data = encoder.encode(value);
+        chunks.push(data);
+        offset += data.length;
+    };
+
+    const addBytes = (value: Uint8Array) => {
+        chunks.push(value);
+        offset += value.length;
+    };
+
+    const pageW = 595.28;
+    const pageH = 841.89;
+    const contentStream = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im1 Do\nQ\n`;
+
+    addString("%PDF-1.4\n");
+
+    offsets[1] = offset;
+    addString("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+    offsets[2] = offset;
+    addString("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+    offsets[3] = offset;
+    addString(
+        `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`
+    );
+
+    offsets[4] = offset;
+    addString(
+        `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${A4_EXPORT_WIDTH} /Height ${A4_EXPORT_HEIGHT} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`
+    );
+    addBytes(bytes);
+    addString("\nendstream\nendobj\n");
+
+    offsets[5] = offset;
+    addString(
+        `5 0 obj\n<< /Length ${encoder.encode(contentStream).length} >>\nstream\n${contentStream}endstream\nendobj\n`
+    );
+
+    const xrefOffset = offset;
+
+    addString("xref\n0 6\n");
+    addString("0000000000 65535 f \n");
+
+    for (let i = 1; i <= 5; i++) {
+        addString(`${String(offsets[i] || 0).padStart(10, "0")} 00000 n \n`);
+    }
+
+    addString(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+    return new Blob(chunks, { type: "application/pdf" });
+}
+
+function baixarBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = filename;
+    a.click();
+
+    window.setTimeout(() => {
+        URL.revokeObjectURL(url);
+    }, 1000);
 }
 
 async function carregarImagemParaCanvas(src: string): Promise<HTMLImageElement> {
@@ -1162,7 +1261,7 @@ export default function EnviarObituario({
             // Mensagem personalizada ou predefinida abaixo da linha da logo.
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "center";
-            ctx.font = `600 24px "${selectedFont}"`;
+            ctx.font = `600 21px "${selectedFont}"`;
             drawWrapText(
                 ctx,
                 fraseA4Final,
@@ -1183,9 +1282,10 @@ export default function EnviarObituario({
             }
 
             // Nome do falecido à direita da foto.
+            // Ajuste somente no A4: mais à direita, alinhado com a linha decorativa.
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
-            ctx.font = `800 42px "${selectedFont}"`;
+            ctx.font = `800 38px "${selectedFont}"`;
             drawWrapText(
                 ctx,
                 dados.nome,
@@ -1312,11 +1412,10 @@ export default function EnviarObituario({
 
         if (!src) return;
 
-        const a = document.createElement("a");
-        a.href = src;
         const sufixo = incluirQrLegado && !!legadoLuzUrl ? "a4-com-qr" : "a4-sem-qr";
-        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.jpg`;
-        a.click();
+        const pdf = criarPdfA4ComImagem(src);
+
+        baixarBlob(pdf, `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.pdf`);
     }
 
     function baixarObituario() {
