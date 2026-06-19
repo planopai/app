@@ -4719,27 +4719,39 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                                <div className="text-sm text-slate-700">
-                                    Produtos filtrados: <b>{estoqueRows.length}</b>
-                                </div>
+                            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                    <div className="w-full lg:max-w-xl">
+                                        <Field label="Pesquisar produto">
+                                            <TextInput
+                                                value={qEstoque}
+                                                onChange={(e) => setQEstoque(e.target.value)}
+                                                placeholder="Nome, código de barras, depósito, categoria..."
+                                            />
+                                        </Field>
+                                    </div>
 
-                                <div className="flex flex-wrap gap-2">
-                                    <Button
-                                        variant="soft"
-                                        type="button"
-                                        onClick={() => setEstoqueFilterOpen(true)}
-                                    >
-                                        🔎 Abrir filtro
-                                    </Button>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                                        <div className="text-sm text-slate-700 sm:mr-2">
+                                            Produtos filtrados: <b>{estoqueRows.length}</b>
+                                        </div>
 
-                                    <Button
-                                        variant="ghost"
-                                        type="button"
-                                        onClick={limparFiltrosEstoque}
-                                    >
-                                        Limpar filtros
-                                    </Button>
+                                        <Button
+                                            variant="soft"
+                                            type="button"
+                                            onClick={() => setEstoqueFilterOpen(true)}
+                                        >
+                                            🔎 Abrir filtro
+                                        </Button>
+
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            onClick={limparFiltrosEstoque}
+                                        >
+                                            Limpar filtros
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -7912,14 +7924,6 @@ export default function Page() {
                 }
             >
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <Field label="Pesquisar produto">
-                        <TextInput
-                            value={qEstoque}
-                            onChange={(e) => setQEstoque(e.target.value)}
-                            placeholder="Nome, código de barras, depósito, categoria..."
-                        />
-                    </Field>
-
                     <Field label="Filtros rápidos">
                         <div className="grid min-h-[42px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:grid-cols-2">
                             <label className="flex items-center gap-2 text-sm text-slate-700">
