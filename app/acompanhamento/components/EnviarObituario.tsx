@@ -982,30 +982,35 @@ export default function EnviarObituario({
             }
 
             const INFO_X = 340;
+            const HORA_X = 575;
+
+            const CERIMONIA_LINHA_Y = 1244;
+            const CERIMONIA_LOCAL_Y = 1298;
+            const SEPULTAMENTO_LINHA_Y = 1512;
+            const SEPULTAMENTO_LOCAL_Y = 1566;
 
             ctx.fillStyle = selectedColor;
             ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
 
+            // Cerimônia de despedida:
+            // data e horário ficam na mesma linha.
+            // O horário usa somente a hora de início, posicionado à frente do ícone do relógio.
             if (dados.data_cerimonia) {
-                ctx.fillText(dados.data_cerimonia, INFO_X, 1244);
+                ctx.fillText(dados.data_cerimonia, INFO_X, CERIMONIA_LINHA_Y);
             }
 
-            const horarioCerimonia =
-                dados.velorio_inicio && dados.velorio_fim
-                    ? `${dados.velorio_inicio} às ${dados.velorio_fim}`
-                    : dados.velorio_inicio || dados.velorio_fim || "";
-
-            if (horarioCerimonia) {
-                ctx.fillText(horarioCerimonia, INFO_X, 1298);
+            if (dados.velorio_inicio) {
+                ctx.fillText(dados.velorio_inicio, HORA_X, CERIMONIA_LINHA_Y);
             }
 
+            // O local passa para a linha onde antes ficava o horário.
             if (dados.local_cerimonia) {
                 drawWrapText(
                     ctx,
                     dados.local_cerimonia,
                     INFO_X,
-                    1352,
+                    CERIMONIA_LOCAL_Y,
                     560,
                     31,
                     "left"
@@ -1016,12 +1021,15 @@ export default function EnviarObituario({
             ctx.font = `600 27px "${selectedFont}"`;
             ctx.textAlign = "left";
 
+            // Sepultamento:
+            // data e horário ficam na mesma linha.
+            // O local passa para a linha onde antes ficava a hora.
             if (dados.data_sepultamento) {
-                ctx.fillText(dados.data_sepultamento, INFO_X, 1512);
+                ctx.fillText(dados.data_sepultamento, INFO_X, SEPULTAMENTO_LINHA_Y);
             }
 
             if (dados.hora_sepultamento) {
-                ctx.fillText(dados.hora_sepultamento, INFO_X, 1566);
+                ctx.fillText(dados.hora_sepultamento, HORA_X, SEPULTAMENTO_LINHA_Y);
             }
 
             if (dados.local_sepultamento) {
@@ -1029,7 +1037,7 @@ export default function EnviarObituario({
                     ctx,
                     dados.local_sepultamento,
                     INFO_X,
-                    1620,
+                    SEPULTAMENTO_LOCAL_Y,
                     deveDesenharQrLegado ? 320 : 560,
                     31,
                     "left"
