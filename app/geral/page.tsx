@@ -847,9 +847,9 @@ function FilterPanelModal({
         <div
             role="dialog"
             aria-modal="true"
-            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-slate-950/55 p-3 pt-6 sm:items-center sm:p-4"
         >
-            <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:max-w-5xl sm:rounded-3xl">
+            <div className="flex max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:max-h-[92dvh] sm:max-w-5xl">
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
                     <div className="min-w-0">
                         <h2 className="text-lg font-bold text-slate-900">
@@ -1775,6 +1775,161 @@ export default function Page() {
         classById,
     ]);
 
+
+    const estoqueFiltroOptions = useMemo(() => {
+        type EstoqueFiltroOptionRow = {
+            p: Produto;
+            d: Deposito;
+            qtd: number;
+            min: number;
+            max: number;
+            hasMinMax: boolean;
+        };
+
+        const qq = qEstoque.trim().toLowerCase();
+        const baseRows: EstoqueFiltroOptionRow[] = [];
+
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
+
+            const qtd = clampInt(s.quantidade);
+            if (onlyPositive && qtd <= 0) continue;
+
+            const min = clampInt((s as any).minimo ?? 0);
+            const max = clampInt((s as any).maximo ?? 0);
+            const hasMinMax = min > 0 && max > 0;
+
+            if (onlyLow && !(hasMinMax && qtd <= min)) continue;
+
+            if (qq) {
+                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+                const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
+                const blob = `${p.nome} ${p.codigo_barras} ${d.nome} ${cat} ${fab} ${cls}`.toLowerCase();
+
+                if (!blob.includes(qq)) continue;
+            }
+
+            baseRows.push({ p, d, qtd, min, max, hasMinMax });
+        }
+
+        const depSet = depFiltroEstoque.length ? new Set(depFiltroEstoque.map(Number)) : null;
+        const catSet = catFiltroEstoque.length ? new Set(catFiltroEstoque.map(Number)) : null;
+        const fabSet = fabFiltroEstoque.length ? new Set(fabFiltroEstoque.map(Number)) : null;
+        const clsSet = classFiltroEstoque.length ? new Set(classFiltroEstoque.map(Number)) : null;
+
+        const passaSelecoes = (
+            r: EstoqueFiltroOptionRow,
+            ignorar: "deposito" | "categoria" | "fabricante" | "classificacao"
+        ) => {
+            if (ignorar !== "deposito" && depSet && !depSet.has(Number(r.d.id))) return false;
+
+            if (ignorar !== "categoria" && catSet) {
+                const pid = Number(r.p.categoria_id || 0);
+                if (!catSet.has(pid)) return false;
+            }
+
+            if (ignorar !== "fabricante" && fabSet) {
+                const fid = Number(r.p.fabricante_id || 0);
+                if (!fabSet.has(fid)) return false;
+            }
+
+            if (ignorar !== "classificacao" && clsSet) {
+                const cid = Number(r.p.classificacao_id || 0);
+                if (!clsSet.has(cid)) return false;
+            }
+
+            return true;
+        };
+
+        const uniqById = (items: Opt[]) => {
+            const map = new Map<ID, Opt>();
+
+            for (const item of items) {
+                if (!item.id) continue;
+                if (!map.has(item.id)) map.set(item.id, item);
+            }
+
+            return Array.from(map.values()).sort((a, b) =>
+                a.nome.localeCompare(b.nome, "pt-BR")
+            );
+        };
+
+        const toCategoria = (p: Produto): Opt | null => {
+            const id = Number(p.categoria_id || 0);
+            if (!id) return null;
+
+            const nome = p.categoria_nome || catById.get(id)?.nome || "";
+            if (!nome.trim()) return null;
+
+            return { id, nome };
+        };
+
+        const toFabricante = (p: Produto): Opt | null => {
+            const id = Number(p.fabricante_id || 0);
+            if (!id) return null;
+
+            const nome = p.fabricante_nome || fabById.get(id)?.nome || "";
+            if (!nome.trim()) return null;
+
+            return { id, nome };
+        };
+
+        const toClassificacao = (p: Produto): Opt | null => {
+            const id = Number(p.classificacao_id || 0);
+            if (!id) return null;
+
+            const nome = p.classificacao_nome || classById.get(id)?.nome || "";
+            if (!nome.trim()) return null;
+
+            return { id, nome };
+        };
+
+        return {
+            depositos: uniqById(
+                baseRows
+                    .filter((r) => passaSelecoes(r, "deposito"))
+                    .map((r) => ({ id: r.d.id, nome: r.d.nome }))
+            ),
+
+            categorias: uniqById(
+                baseRows
+                    .filter((r) => passaSelecoes(r, "categoria"))
+                    .map((r) => toCategoria(r.p))
+                    .filter((x): x is Opt => !!x)
+            ),
+
+            fabricantes: uniqById(
+                baseRows
+                    .filter((r) => passaSelecoes(r, "fabricante"))
+                    .map((r) => toFabricante(r.p))
+                    .filter((x): x is Opt => !!x)
+            ),
+
+            classificacoes: uniqById(
+                baseRows
+                    .filter((r) => passaSelecoes(r, "classificacao"))
+                    .map((r) => toClassificacao(r.p))
+                    .filter((x): x is Opt => !!x)
+            ),
+        };
+    }, [
+        saldos,
+        prodById,
+        depById,
+        qEstoque,
+        onlyPositive,
+        onlyLow,
+        depFiltroEstoque,
+        catFiltroEstoque,
+        fabFiltroEstoque,
+        classFiltroEstoque,
+        catById,
+        fabById,
+        classById,
+    ]);
 
     const estoqueResumo = useMemo(() => {
         let totalUnidades = 0;
@@ -7911,7 +8066,6 @@ export default function Page() {
                 open={estoqueFilterOpen}
                 onClose={() => setEstoqueFilterOpen(false)}
                 title="Filtros do estoque"
-                subtitle="Refine a lista de produtos sem deixar os filtros expostos na tela."
                 footer={
                     <>
                         <div className="mb-3 text-xs text-slate-600">
@@ -7967,7 +8121,7 @@ export default function Page() {
 
                     <MultiSelectDropdown
                         label="Depósito"
-                        options={depositos}
+                        options={estoqueFiltroOptions.depositos}
                         selectedIds={depFiltroEstoque}
                         onChangeIds={setDepFiltroEstoque}
                         allLabel="Todos"
@@ -7975,7 +8129,7 @@ export default function Page() {
 
                     <MultiSelectDropdown
                         label="Categoria"
-                        options={categorias}
+                        options={estoqueFiltroOptions.categorias}
                         selectedIds={catFiltroEstoque}
                         onChangeIds={setCatFiltroEstoque}
                         allLabel="Todas"
@@ -7983,7 +8137,7 @@ export default function Page() {
 
                     <MultiSelectDropdown
                         label="Fabricante"
-                        options={fabricantes}
+                        options={estoqueFiltroOptions.fabricantes}
                         selectedIds={fabFiltroEstoque}
                         onChangeIds={setFabFiltroEstoque}
                         allLabel="Todos"
@@ -7991,7 +8145,7 @@ export default function Page() {
 
                     <MultiSelectDropdown
                         label="Classificação"
-                        options={classificacoes}
+                        options={estoqueFiltroOptions.classificacoes}
                         selectedIds={classFiltroEstoque}
                         onChangeIds={setClassFiltroEstoque}
                         allLabel="Todas"
