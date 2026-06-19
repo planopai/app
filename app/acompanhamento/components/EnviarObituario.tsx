@@ -461,19 +461,22 @@ function criarPdfA4ComImagem(dataUrl: string) {
     }
 
     const encoder = new TextEncoder();
-    const chunks: Uint8Array[] = [];
+    const chunks: BlobPart[] = [];
     const offsets: number[] = [];
     let offset = 0;
 
     const addString = (value: string) => {
-        const data = encoder.encode(value);
-        chunks.push(data);
-        offset += data.length;
+        chunks.push(value);
+        offset += encoder.encode(value).length;
     };
 
     const addBytes = (value: Uint8Array) => {
-        chunks.push(value);
-        offset += value.length;
+        // Converte explicitamente para ArrayBuffer para evitar erro do TypeScript
+        // com Uint8Array<ArrayBufferLike> em projetos com tipagem DOM mais restrita.
+        const buffer = new ArrayBuffer(value.byteLength);
+        new Uint8Array(buffer).set(value);
+        chunks.push(buffer);
+        offset += value.byteLength;
     };
 
     const pageW = 595.28;
