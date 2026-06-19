@@ -20,8 +20,7 @@ type ModeloKey =
     | "modelo05"
     | "modelo06"
     | "modelo07"
-    | "modelo08"
-    | "modelo09";
+    | "modelo08";
 
 type QrBox = {
     x: number;
@@ -32,33 +31,43 @@ type QrBox = {
 
 const NOTA_PESAR_FIXA = "Eternas Saudades de Seus Familiares e Amigos.";
 
-const MODELOS: Record<ModeloKey, string> = {
-    modelo01: "/obituario-modelos/MM1.png",
-    modelo02: "/obituario-modelos/MM2.png",
-    modelo03: "/obituario-modelos/M3.png",
-    modelo04: "/obituario-modelos/M4.png",
-    modelo05: "/obituario-modelos/F1.png",
-    modelo06: "/obituario-modelos/F2.png",
-    modelo07: "/obituario-modelos/F3.png",
-    modelo08: "/obituario-modelos/F4.png",
-    modelo09: "/obituario-modelos/I1.png",
+const MODELO_NUMEROS: Record<ModeloKey, number> = {
+    modelo01: 1,
+    modelo02: 2,
+    modelo03: 3,
+    modelo04: 4,
+    modelo05: 5,
+    modelo06: 6,
+    modelo07: 7,
+    modelo08: 8,
 };
 
+function getModeloSrc(modelo: ModeloKey, comQr: boolean) {
+    const numero = MODELO_NUMEROS[modelo] || 1;
+    const prefixo = comQr ? "QR" : "SQR";
+
+    return `/obituario-modelos/${prefixo}${numero}.png`;
+}
+
 const MODELOS_OPTIONS: Array<{ value: ModeloKey; label: string }> = [
-    { value: "modelo01", label: "Masculino 01" },
-    { value: "modelo02", label: "Masculino 02" },
-    { value: "modelo03", label: "Masculino 03" },
-    { value: "modelo04", label: "Masculino 04" },
-    { value: "modelo05", label: "Feminino 01" },
-    { value: "modelo06", label: "Feminino 02" },
-    { value: "modelo07", label: "Feminino 03" },
-    { value: "modelo08", label: "Feminino 04" },
-    { value: "modelo09", label: "Infantil 01" },
+    { value: "modelo01", label: "Modelo 01" },
+    { value: "modelo02", label: "Modelo 02" },
+    { value: "modelo03", label: "Modelo 03" },
+    { value: "modelo04", label: "Modelo 04" },
+    { value: "modelo05", label: "Modelo 05" },
+    { value: "modelo06", label: "Modelo 06" },
+    { value: "modelo07", label: "Modelo 07" },
+    { value: "modelo08", label: "Modelo 08" },
 ];
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
-const MODELO_A4 = "/obituario-modelos/A4.png";
+const MODELO_A4_QR = "/obituario-modelos/A4QR1.png";
+const MODELO_A4_SQR = "/obituario-modelos/A4SQR1.png";
+
+function getModeloA4Src(comQr: boolean) {
+    return comQr ? MODELO_A4_QR : MODELO_A4_SQR;
+}
 
 const POSICOES_A4 = {
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 34 },
@@ -97,7 +106,7 @@ const POSICOES_A4 = {
 };
 
 const FRASES_A4 = [
-    `"Combati o bom combate, acabei a carreira, guardei a fé." (2 Timóteo 4:7) — Mais do que uma despedida, celebramos uma vida vivida com propósito, coragem e integridade. Seu legado de amor e retidão permanecerá vivo em nossos corações para sempre.`,
+
     `"Ainda que eu andasse pelo vale da sombra da morte, não temeria mal algum, porque tu estás comigo..." (Salmo 23:4) — Na hora da partida, encontramos consolo ao saber que o sofrimento deu lugar à paz eterna. Que a transição seja de luz e acolhimento nos braços do Criador.`,
     `"Disse-lhe Jesus: Eu sou a ressurreição e a vida; quem crê em mim, ainda que esteja morto, viverá." (João 11:25) — A morte não é o fim, mas o início de uma jornada eterna. Guardamos a esperança do reencontro e a certeza de que o amor nunca morre.`,
     `"Tudo tem o seu tempo determinado, e há tempo para todo o propósito debaixo do céu... tempo de nascer, e tempo de morrer." (Eclesiastes 3:1-2) — Aceitar a partida é compreender o mistério do tempo de Deus. Agradecemos profundamente pelos anos que pudemos compartilhar ao seu lado.`,
@@ -118,7 +127,6 @@ const QR_POSITIONS: Record<ModeloKey, QrBox> = {
     modelo06: { x: 720, y: 1548, w: 315, h: 315 },
     modelo07: { x: 720, y: 1548, w: 315, h: 315 },
     modelo08: { x: 720, y: 1548, w: 315, h: 315 },
-    modelo09: { x: 720, y: 1548, w: 315, h: 315 },
 };
 
 function onlyDigits(s: string) {
@@ -266,9 +274,8 @@ function getAtendimentoIdLegado(registro?: Registro | null) {
 function getLegadoLuzUrl(registro?: Registro | null) {
     const r = registro as any;
 
-    // Correção principal:
-    // O QR Code do obituário/A4 deve apontar para o Legado de Luz pelo ID do atendimento.
-    // Assim, se o nome/slug do falecido for corrigido, o QR Code continua funcionando.
+    // O QR Code deve apontar para o Legado de Luz pelo ID do atendimento.
+    // Assim, se o nome/slug do falecido for corrigido, o QR continua funcionando.
     const atendimentoId = getAtendimentoIdLegado(registro);
 
     if (atendimentoId) {
@@ -276,7 +283,6 @@ function getLegadoLuzUrl(registro?: Registro | null) {
     }
 
     // Compatibilidade temporária para registros antigos sem ID disponível.
-    // Só usa o slug/código se não houver ID do atendimento.
     const codigo = getCodigoHomenagem(registro);
 
     if (codigo) {
@@ -284,7 +290,6 @@ function getLegadoLuzUrl(registro?: Registro | null) {
     }
 
     // Último fallback: links antigos retornados pela API.
-    // Mantido apenas para não quebrar registros que ainda não vierem com ID.
     const linkExistente = String(
         r?.legado_luz_link ||
         r?.homenagem_link_publico ||
@@ -926,12 +931,12 @@ export default function EnviarObituario({
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            const bg = await loadImage(MODELOS[modelo]);
+            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
+            const bg = await loadImage(getModeloSrc(modelo, deveDesenharQrLegado));
             ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
-            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
 
             if (dados.foto_falecido) {
                 try {
@@ -1104,7 +1109,8 @@ export default function EnviarObituario({
 
             await ensureFontLoaded(fontName || "Nunito");
 
-            const bg = await loadImage(MODELO_A4);
+            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
+            const bg = await loadImage(getModeloA4Src(deveDesenharQrLegado));
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
 
@@ -1122,7 +1128,6 @@ export default function EnviarObituario({
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
             const azulPai = "#001f5b";
-            const deveDesenharQrLegado = incluirQrLegado && !!legadoLuzUrl;
 
             // Mensagem personalizada ou predefinida abaixo da linha da logo.
             ctx.fillStyle = selectedColor;
@@ -1277,7 +1282,8 @@ export default function EnviarObituario({
 
         const a = document.createElement("a");
         a.href = src;
-        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario-a4.jpg`;
+        const sufixo = incluirQrLegado && !!legadoLuzUrl ? "a4-com-qr" : "a4-sem-qr";
+        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.jpg`;
         a.click();
     }
 
@@ -1286,7 +1292,8 @@ export default function EnviarObituario({
 
         const a = document.createElement("a");
         a.href = previewSrc;
-        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario.jpg`;
+        const sufixo = incluirQrLegado && !!legadoLuzUrl ? "com-qr" : "sem-qr";
+        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.jpg`;
         a.click();
     }
 
@@ -1402,7 +1409,7 @@ export default function EnviarObituario({
                                         onClick={() => setModelo(m.value)}
                                     >
                                         <img
-                                            src={MODELOS[m.value]}
+                                            src={getModeloSrc(m.value, incluirQrLegado && !!legadoLuzUrl)}
                                             alt={m.label}
                                             className="mb-2 aspect-[9/16] w-full rounded-md border object-cover"
                                         />
@@ -1438,7 +1445,7 @@ export default function EnviarObituario({
 
                             {legadoLuzUrl && (
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                    Marque para mostrar o QR Code no obituário e no A4.
+                                    Marque para usar os modelos QR1 a QR8 e mostrar o QR Code no obituário e no A4.
                                 </p>
                             )}
 
@@ -1591,7 +1598,7 @@ export default function EnviarObituario({
 
                             {legadoLuzUrl ? (
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                    Marque para mostrar o QR Code no A4.
+                                    Marque para usar o A4QR1 e mostrar o QR Code no A4.
                                 </p>
                             ) : (
                                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
