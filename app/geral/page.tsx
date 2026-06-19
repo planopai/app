@@ -4547,8 +4547,6 @@ export default function Page() {
         setConfFisicoByProd({});
     }
 
-    const currentTabAction = tabActions.find((a) => a.key === tab);
-
     function abrirTela(nextTab: UiTab) {
         setTab(nextTab);
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4565,16 +4563,34 @@ export default function Page() {
                 <Card className="p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
-                            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Administração do Estoque</h1>
-                            
+                            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+                                Administração do Estoque
+                            </h1>
+
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : "—"}</b>
                             </p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                            <Badge>Alertas: {alertCount}</Badge>
-                            <Button variant="ghost" onClick={refreshInit} disabled={loading} type="button">
+                            {tab === "MENU" ? (
+                                <Badge>Alertas: {alertCount}</Badge>
+                            ) : (
+                                <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={voltarParaMenu}
+                                >
+                                    ← Voltar
+                                </Button>
+                            )}
+
+                            <Button
+                                variant="ghost"
+                                onClick={refreshInit}
+                                disabled={loading}
+                                type="button"
+                            >
                                 Atualizar
                             </Button>
                         </div>
@@ -4583,25 +4599,52 @@ export default function Page() {
                     {initErr ? (
                         <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                             {initErr}{" "}
-                            <button className="underline" onClick={refreshInit} type="button">
+                            <button
+                                className="underline"
+                                onClick={refreshInit}
+                                type="button"
+                            >
                                 Tentar novamente
                             </button>
                         </div>
                     ) : null}
                 </Card>
 
-                {tab === "MENU" ? (
+                {tab === "MENU" && (
                     <div className="mt-4">
                         <div className="grid grid-cols-2 gap-3 sm:hidden">
-                            {tabActions.map((a) => {
-                                return (
+                            {tabActions.map((a) => (
+                                <button
+                                    key={a.key}
+                                    type="button"
+                                    onClick={() => abrirTela(a.key)}
+                                    className={[
+                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                        "border bg-white px-3 py-4 shadow-sm transition-all",
+                                        "hover:-translate-y-[1px] hover:shadow-md",
+                                        "dark:bg-gray-900",
+                                        "border-gray-200 dark:border-gray-800",
+                                    ].join(" ")}
+                                >
+                                    <QuickIcon>{a.icon}</QuickIcon>
+
+                                    <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
+                                        {a.label}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <Card className="hidden p-2 sm:block">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                                {tabActions.map((a) => (
                                     <button
                                         key={a.key}
                                         type="button"
                                         onClick={() => abrirTela(a.key)}
                                         className={[
                                             "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                            "border bg-white py-4 px-3 shadow-sm transition-all",
+                                            "border bg-white px-3 py-4 shadow-sm transition-all",
                                             "hover:-translate-y-[1px] hover:shadow-md",
                                             "dark:bg-gray-900",
                                             "border-gray-200 dark:border-gray-800",
@@ -4609,63 +4652,14 @@ export default function Page() {
                                     >
                                         <QuickIcon>{a.icon}</QuickIcon>
 
-                                        <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-white text-center leading-tight">
+                                        <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
                                             {a.label}
                                         </span>
                                     </button>
-                                );
-                            })}
-                        </div>
-
-                        <Card className="hidden p-2 sm:block">
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-                                {tabActions.map((a) => {
-                                    return (
-                                        <button
-                                            key={a.key}
-                                            type="button"
-                                            onClick={() => abrirTela(a.key)}
-                                            className={[
-                                                "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                                "border bg-white py-4 px-3 shadow-sm transition-all",
-                                                "hover:-translate-y-[1px] hover:shadow-md",
-                                                "dark:bg-gray-900",
-                                                "border-gray-200 dark:border-gray-800",
-                                            ].join(" ")}
-                                        >
-                                            <QuickIcon>{a.icon}</QuickIcon>
-
-                                            <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-white text-center leading-tight">
-                                                {a.label}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
+                                ))}
                             </div>
                         </Card>
                     </div>
-                ) : (
-                    <Card className="mt-4 p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                                <p className="text-xs font-medium text-slate-500">
-                                    Tela atual
-                                </p>
-
-                                <h2 className="mt-1 text-lg font-semibold text-slate-900">
-                                    {currentTabAction?.label || "Administração"}
-                                </h2>
-                            </div>
-
-                            <Button
-                                variant="ghost"
-                                type="button"
-                                onClick={voltarParaMenu}
-                            >
-                                ← Voltar
-                            </Button>
-                        </div>
-                    </Card>
                 )}
 
                 <div className="mt-4 grid grid-cols-1 gap-4">
