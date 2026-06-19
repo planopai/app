@@ -53,14 +53,44 @@ function getCodigoHomenagem(registro?: Registro | null) {
     );
 }
 
+function getAtendimentoId(registro?: Registro | null) {
+    const r = registro as any;
+
+    return String(
+        r?.legado_luz_atendimento_id ||
+        r?.atendimento_id ||
+        r?.id ||
+        ""
+    ).trim();
+}
+
 function getLinkPublicoHomenagem(registro?: Registro | null) {
     const r = registro as any;
 
+    // Correção principal:
+    // o Legado de Luz agora deve ser enviado pelo ID do atendimento.
+    // Assim, se o nome/slug do falecido for corrigido, o link continua o mesmo.
+    const atendimentoId = getAtendimentoId(registro);
+
+    if (atendimentoId) {
+        return `${LEGADO_LUZ_URL}?atendimento_id=${encodeURIComponent(atendimentoId)}`;
+    }
+
+    // Compatibilidade temporária para registros antigos sem ID disponível.
+    // Só usa o slug/código se não houver ID do atendimento.
+    const codigo = getCodigoHomenagem(registro);
+
+    if (codigo) {
+        return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+    }
+
+    // Último fallback: links antigos retornados pela API.
+    // Mantido apenas para não quebrar registros que ainda não vierem com ID.
     const linkExistente = String(
-        r?.link_publico ||
+        r?.legado_luz_link ||
         r?.homenagem_link_publico ||
         r?.link_homenagem ||
-        r?.legado_luz_link ||
+        r?.link_publico ||
         ""
     ).trim();
 
@@ -68,13 +98,7 @@ function getLinkPublicoHomenagem(registro?: Registro | null) {
         return linkExistente;
     }
 
-    const codigo = getCodigoHomenagem(registro);
-
-    if (!codigo) {
-        return "";
-    }
-
-    return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+    return "";
 }
 
 function buildWhatsappUrl(registro: Registro) {
@@ -82,7 +106,7 @@ function buildWhatsappUrl(registro: Registro) {
 
     if (!link) {
         throw new Error(
-            "Este atendimento ainda não possui link/slug do Legado de Luz. O informativo.php precisa retornar o slug da tabela homenagens."
+            "Este atendimento ainda não possui ID válido para gerar o link do Legado de Luz."
         );
     }
 
@@ -177,8 +201,8 @@ export default function EnviarLegadoLuz({
             {msg && (
                 <div
                     className={`${alertBase} ${msg.type === "success"
-                            ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                            : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                        ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
+                        : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
                         }`}
                     role="status"
                 >

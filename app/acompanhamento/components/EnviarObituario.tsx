@@ -252,9 +252,39 @@ function getCodigoHomenagem(registro?: Registro | null) {
     );
 }
 
+function getAtendimentoIdLegado(registro?: Registro | null) {
+    const r = registro as any;
+
+    return String(
+        r?.legado_luz_atendimento_id ||
+        r?.atendimento_id ||
+        r?.id ||
+        ""
+    ).trim();
+}
+
 function getLegadoLuzUrl(registro?: Registro | null) {
     const r = registro as any;
 
+    // Correção principal:
+    // O QR Code do obituário/A4 deve apontar para o Legado de Luz pelo ID do atendimento.
+    // Assim, se o nome/slug do falecido for corrigido, o QR Code continua funcionando.
+    const atendimentoId = getAtendimentoIdLegado(registro);
+
+    if (atendimentoId) {
+        return `${LEGADO_LUZ_URL}?atendimento_id=${encodeURIComponent(atendimentoId)}`;
+    }
+
+    // Compatibilidade temporária para registros antigos sem ID disponível.
+    // Só usa o slug/código se não houver ID do atendimento.
+    const codigo = getCodigoHomenagem(registro);
+
+    if (codigo) {
+        return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+    }
+
+    // Último fallback: links antigos retornados pela API.
+    // Mantido apenas para não quebrar registros que ainda não vierem com ID.
     const linkExistente = String(
         r?.legado_luz_link ||
         r?.homenagem_link_publico ||
@@ -267,11 +297,7 @@ function getLegadoLuzUrl(registro?: Registro | null) {
         return linkExistente;
     }
 
-    const codigo = getCodigoHomenagem(registro);
-
-    if (!codigo) return "";
-
-    return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+    return "";
 }
 
 function getRegistroUpdateKey(registro?: Registro | null) {
@@ -279,6 +305,8 @@ function getRegistroUpdateKey(registro?: Registro | null) {
 
     return [
         r?.id,
+        r?.atendimento_id,
+        r?.legado_luz_atendimento_id,
         r?.falecido,
         r?.nome_completo,
         r?.nome_falecido,
@@ -1328,7 +1356,7 @@ export default function EnviarObituario({
                                     label="Legado de Luz"
                                     value={
                                         legadoLuzUrl ||
-                                        "Sem link/slug retornado no atendimento"
+                                        "Sem ID/link do Legado retornado no atendimento"
                                     }
                                 />
                             </div>
@@ -1416,8 +1444,8 @@ export default function EnviarObituario({
 
                             {!legadoLuzUrl && (
                                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    O QR Code só aparece quando o atendimento retorna link ou
-                                    slug do Legado de Luz.
+                                    O QR Code só aparece quando o atendimento retorna ID ou
+                                    link do Legado de Luz.
                                 </div>
                             )}
 
@@ -1567,8 +1595,8 @@ export default function EnviarObituario({
                                 </p>
                             ) : (
                                 <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    O QR Code só aparece quando o atendimento retorna link ou
-                                    slug do Legado de Luz.
+                                    O QR Code só aparece quando o atendimento retorna ID ou
+                                    link do Legado de Luz.
                                 </div>
                             )}
 

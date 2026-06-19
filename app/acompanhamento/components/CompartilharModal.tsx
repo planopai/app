@@ -131,6 +131,28 @@ function getCodigoHomenagem(registro?: Registro | null) {
 function getLegadoLuzUrl(registro?: Registro | null) {
     const r = registro as any;
 
+    // Correção principal:
+    // o link do Legado de Luz deve usar o ID do atendimento, não o slug/nome.
+    // Assim, se o nome do falecido for corrigido, o link continua funcionando.
+    const atendimentoId = String(
+        r?.legado_luz_atendimento_id ||
+        r?.atendimento_id ||
+        r?.id ||
+        ""
+    ).trim();
+
+    if (atendimentoId) {
+        return `${LEGADO_LUZ_URL}?atendimento_id=${encodeURIComponent(atendimentoId)}`;
+    }
+
+    // Compatibilidade temporária para registros antigos sem ID disponível.
+    // Só usa link/código antigo se realmente não houver ID do atendimento.
+    const codigo = getCodigoHomenagem(registro);
+
+    if (codigo) {
+        return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+    }
+
     const linkExistente = String(
         r?.legado_luz_link ||
         r?.homenagem_link_publico ||
@@ -143,11 +165,7 @@ function getLegadoLuzUrl(registro?: Registro | null) {
         return linkExistente;
     }
 
-    const codigo = getCodigoHomenagem(registro);
-
-    if (!codigo) return "";
-
-    return `${LEGADO_LUZ_URL}?codigo=${encodeURIComponent(codigo)}`;
+    return "";
 }
 
 function abrirLink(url: string) {
@@ -318,7 +336,7 @@ export default function CompartilharModal({
             setMsg(null);
 
             if (!legadoLuzUrl) {
-                throw new Error("Este atendimento ainda não possui link/slug do Legado de Luz.");
+                throw new Error("Este atendimento ainda não possui ID válido para o Legado de Luz.");
             }
 
             abrirLink(legadoLuzUrl);
@@ -339,7 +357,7 @@ export default function CompartilharModal({
             }
 
             if (!legadoLuzUrl) {
-                throw new Error("Este atendimento ainda não possui link/slug do Legado de Luz.");
+                throw new Error("Este atendimento ainda não possui ID válido para o Legado de Luz.");
             }
 
             const responsavel = getResponsavel(registro);
@@ -444,8 +462,8 @@ export default function CompartilharModal({
                     {msg && (
                         <div
                             className={`${alertBase} ${msg.type === "success"
-                                    ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                                    : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                                ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
+                                : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
                                 }`}
                             role="status"
                         >
@@ -560,8 +578,8 @@ export default function CompartilharModal({
                 {msg && (
                     <div
                         className={`mt-4 ${alertBase} ${msg.type === "success"
-                                ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                                : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                            ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
+                            : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
                             }`}
                         role="status"
                     >
