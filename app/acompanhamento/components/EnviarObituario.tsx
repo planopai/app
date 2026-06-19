@@ -65,6 +65,16 @@ const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/
 const MODELO_A4_QR = "/obituario-modelos/A4QR1.png";
 const MODELO_A4_SQR = "/obituario-modelos/A4SQR1.png";
 
+// Exportação A4 real em pixels, mantendo proporção ISO A4.
+// 1240x1754 equivale aproximadamente a A4 em 150 DPI.
+const A4_EXPORT_WIDTH = 1240;
+const A4_EXPORT_HEIGHT = 1754;
+
+// Base de desenho usada pelas posições atuais do template A4.
+// O canvas exportado é escalado a partir dessas coordenadas.
+const A4_DESIGN_WIDTH = 1122;
+const A4_DESIGN_HEIGHT = 1402;
+
 function getModeloA4Src(comQr: boolean) {
     return comQr ? MODELO_A4_QR : MODELO_A4_SQR;
 }
@@ -72,9 +82,13 @@ function getModeloA4Src(comQr: boolean) {
 const POSICOES_A4 = {
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 34 },
 
-    // A4: foto maior e mais para cima.
-    foto: { centerX: 300, centerY: 505, ovalW: 285, ovalH: 375 },
-    nome: { x: 450, y: 485, maxWidth: 560, lineHeight: 50 },
+    // A4: foto ajustada somente para o modelo A4.
+    // Sobe mais e fica um pouco menor.
+    foto: { centerX: 300, centerY: 460, ovalW: 255, ovalH: 335 },
+
+    // A4: nome ajustado somente para o modelo A4.
+    // Vai um pouco mais para a direita e sobe mais.
+    nome: { x: 490, y: 445, maxWidth: 520, lineHeight: 48 },
 
     // A4: datas de nascimento e falecimento ainda mais para cima.
     nascimento: { x: 590, y: 578 },
@@ -1126,12 +1140,20 @@ export default function EnviarObituario({
                 throw new Error("Canvas não suportado neste navegador.");
             }
 
-            canvas.width = bg.width || 1122;
-            canvas.height = bg.height || 1402;
+            canvas.width = A4_EXPORT_WIDTH;
+            canvas.height = A4_EXPORT_HEIGHT;
+
+            const scaleX = A4_EXPORT_WIDTH / A4_DESIGN_WIDTH;
+            const scaleY = A4_EXPORT_HEIGHT / A4_DESIGN_HEIGHT;
 
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+
+            // A partir daqui, tudo no A4 usa as coordenadas do layout original,
+            // mas a imagem final exportada sai em tamanho/proporção real A4.
+            ctx.save();
+            ctx.scale(scaleX, scaleY);
+            ctx.drawImage(bg, 0, 0, A4_DESIGN_WIDTH, A4_DESIGN_HEIGHT);
 
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
@@ -1264,6 +1286,8 @@ export default function EnviarObituario({
             if (deveDesenharQrLegado) {
                 await desenharQrLegadoLuzA4(ctx, legadoLuzUrl, POSICOES_A4.qr);
             }
+
+            ctx.restore();
 
             const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
             setPreviewA4Src(dataUrl);
