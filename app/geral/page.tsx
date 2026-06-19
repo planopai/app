@@ -4547,6 +4547,18 @@ export default function Page() {
         setConfFisicoByProd({});
     }
 
+    const currentTabAction = tabActions.find((a) => a.key === tab);
+
+    function abrirTela(nextTab: UiTab) {
+        setTab(nextTab);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function voltarParaMenu() {
+        setTab("MENU");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
     return (
         <main className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-6xl px-4 py-5 sm:py-7">
@@ -4578,54 +4590,21 @@ export default function Page() {
                     ) : null}
                 </Card>
 
-                <div className="mt-4">
-                    <div className="grid grid-cols-2 gap-3 sm:hidden">
-                        {tabActions.map((a) => {
-                            const active = tab === a.key;
-
-                            return (
-                                <button
-                                    key={a.key}
-                                    type="button"
-                                    onClick={() => setTab(a.key)}
-                                    className={[
-                                        "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
-                                        "border bg-white py-4 px-3 shadow-sm transition-all",
-                                        "hover:-translate-y-[1px] hover:shadow-md",
-                                        "dark:bg-gray-900",
-                                        active
-                                            ? "border-sky-300 ring-2 ring-sky-200 dark:border-sky-700 dark:ring-sky-900/40"
-                                            : "border-gray-200 dark:border-gray-800",
-                                    ].join(" ")}
-                                >
-                                    <QuickIcon>{a.icon}</QuickIcon>
-
-                                    <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-white text-center leading-tight">
-                                        {a.label}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <Card className="hidden p-2 sm:block">
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                {tab === "MENU" ? (
+                    <div className="mt-4">
+                        <div className="grid grid-cols-2 gap-3 sm:hidden">
                             {tabActions.map((a) => {
-                                const active = tab === a.key;
-
                                 return (
                                     <button
                                         key={a.key}
                                         type="button"
-                                        onClick={() => setTab(a.key)}
+                                        onClick={() => abrirTela(a.key)}
                                         className={[
                                             "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
                                             "border bg-white py-4 px-3 shadow-sm transition-all",
                                             "hover:-translate-y-[1px] hover:shadow-md",
                                             "dark:bg-gray-900",
-                                            active
-                                                ? "border-sky-300 ring-2 ring-sky-200 dark:border-sky-700 dark:ring-sky-900/40"
-                                                : "border-gray-200 dark:border-gray-800",
+                                            "border-gray-200 dark:border-gray-800",
                                         ].join(" ")}
                                     >
                                         <QuickIcon>{a.icon}</QuickIcon>
@@ -4637,8 +4616,57 @@ export default function Page() {
                                 );
                             })}
                         </div>
+
+                        <Card className="hidden p-2 sm:block">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                                {tabActions.map((a) => {
+                                    return (
+                                        <button
+                                            key={a.key}
+                                            type="button"
+                                            onClick={() => abrirTela(a.key)}
+                                            className={[
+                                                "group flex flex-col items-center justify-center gap-2.5 rounded-2xl",
+                                                "border bg-white py-4 px-3 shadow-sm transition-all",
+                                                "hover:-translate-y-[1px] hover:shadow-md",
+                                                "dark:bg-gray-900",
+                                                "border-gray-200 dark:border-gray-800",
+                                            ].join(" ")}
+                                        >
+                                            <QuickIcon>{a.icon}</QuickIcon>
+
+                                            <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-white text-center leading-tight">
+                                                {a.label}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    </div>
+                ) : (
+                    <Card className="mt-4 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                                <p className="text-xs font-medium text-slate-500">
+                                    Tela atual
+                                </p>
+
+                                <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                                    {currentTabAction?.label || "Administração"}
+                                </h2>
+                            </div>
+
+                            <Button
+                                variant="ghost"
+                                type="button"
+                                onClick={voltarParaMenu}
+                            >
+                                ← Voltar
+                            </Button>
+                        </div>
                     </Card>
-                </div>
+                )}
 
                 <div className="mt-4 grid grid-cols-1 gap-4">
                     {/* HOME / MOVIMENTAÇÃO */}
@@ -4660,7 +4688,7 @@ export default function Page() {
                                 <HomeActionButton
                                     label="Histórico"
                                     icon={<span className="text-lg leading-none">🕘</span>}
-                                    onClick={() => setTab("HISTORICO")}
+                                    onClick={() => abrirTela("HISTORICO")}
                                 />
                             </div>
                         </Card>
@@ -5471,12 +5499,7 @@ export default function Page() {
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Avançado</h2>
-                                    
                                 </div>
-
-                                <Button variant="ghost" onClick={() => setTab("ESTOQUE")} type="button">
-                                    Voltar
-                                </Button>
                             </div>
 
                             {/* GRID DE AÇÕES (PADRÃO MENU AZUL) */}
