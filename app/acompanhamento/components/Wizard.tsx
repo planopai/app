@@ -2431,7 +2431,11 @@ export default function Wizard({
                     if (step.type === "date") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
+
                                 <input
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}

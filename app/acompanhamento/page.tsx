@@ -1566,10 +1566,12 @@ export default function AcompanhamentoPage() {
       }
     }
 
+    const obrigatoriedadeAtiva = obrigatoriosForTipo.length > 0;
+
     // ✅ validação extra (front): se escolheu sala do velório, Velório Online é obrigatório.
     const salaVelorio = String(dataAtualizada?.sala_velorio ?? "").trim();
     const velorioOnline = String(dataAtualizada?.velorio_online ?? "").trim();
-    if (salaVelorio && velorioOnline !== "Sim" && velorioOnline !== "Não") {
+    if (obrigatoriedadeAtiva && salaVelorio && velorioOnline !== "Sim" && velorioOnline !== "Não") {
       setWizardMsg({
         text: 'Selecione "Sim" ou "Não" em Velório Online.',
         ok: false,
@@ -1599,7 +1601,7 @@ export default function AcompanhamentoPage() {
       (Number(origRoupa?.roupa_propria ?? 0) ? 1 : 0)
       : true;
 
-    if (roupaMudou && roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+    if (obrigatoriedadeAtiva && roupaMudou && roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
       if (roupaPid <= 0) {
         setWizardMsg({
           text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".',
@@ -1618,7 +1620,7 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front):
     const involVal = dataAtualizada?.invol ?? "";
-    if (isSim(involVal)) {
+    if (obrigatoriedadeAtiva && isSim(involVal)) {
       const involPid = Number(dataAtualizada?.invol_produto_id ?? 0) || 0;
       const involDep = String(dataAtualizada?.invol_deposito_nome ?? "").trim();
       if (involPid <= 0) {
@@ -1639,7 +1641,7 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front): VÉU
     const veuVal = dataAtualizada?.veu ?? "";
-    if (isSim(veuVal)) {
+    if (obrigatoriedadeAtiva && isSim(veuVal)) {
       const veuPid = Number(dataAtualizada?.veu_produto_id ?? 0) || 0;
       const veuDep = String(dataAtualizada?.veu_deposito_nome ?? "").trim();
       if (veuPid <= 0) {
@@ -1660,7 +1662,7 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front): CORDÃO
     const cordaoVal = dataAtualizada?.cordao ?? "";
-    if (isSim(cordaoVal)) {
+    if (obrigatoriedadeAtiva && isSim(cordaoVal)) {
       const cordaoPid = Number(dataAtualizada?.cordao_produto_id ?? 0) || 0;
       const cordaoDep = String(
         dataAtualizada?.cordao_deposito_nome ?? "",
@@ -1692,7 +1694,7 @@ export default function AcompanhamentoPage() {
     }
 
     const urnaPid = Number(dataAtualizada?.urna_produto_id ?? 0) || 0;
-    if (urnaTxt !== "" && urnaPid <= 0) {
+    if (obrigatoriedadeAtiva && urnaTxt !== "" && urnaPid <= 0) {
       setWizardMsg({
         text: "Selecione uma urna da lista (produto do estoque).",
         ok: false,
