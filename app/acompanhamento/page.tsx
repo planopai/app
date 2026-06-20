@@ -178,11 +178,11 @@ function getWizardConfig(tipo: TipoAtendimento) {
       // Atendimento (nome + contato + dados do falecido/responsável)
       [0, 1, 27, 28, 29, 30, 31],
 
-      // Velório (local + sala + velório online + datas + horários)
-      // 18 local_velorio | 32 sala_velorio | 33 velorio_online | 19/20 datas | 21/22 horários
-      [18, 32, 33, 19, 20, 21, 22],
+      // Velório (local velório + sala + velório online + data/hora início + data/hora fim)
+      // 18 local_velorio | 32 sala_velorio | 33 velorio_online | 19 data início | 21 hora início | 20 data fim | 22 hora fim
+      [18, 32, 33, 19, 21, 20, 22],
 
-      // Sepultamento (local)
+      // Sepultamento (local sepultamento)
       [17],
     ];
 

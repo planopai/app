@@ -36,12 +36,13 @@ export const wizardStepIndexes = [
     [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24],
 
     // Velório
-    // local sepultamento, local velório, sala velório, velório online, data início, observações velório/sepultamento
+    // local velório, sala velório, velório online, data início, hora início, data fim, hora fim, observações velório/sepultamento
     // Obs.: sala_velorio e velorio_online foram adicionados no final do array steps como índices 32 e 33.
-    [17, 18, 32, 33, 19, 25],
+    [18, 32, 33, 19, 21, 20, 22, 25],
 
     // Sepultamento
-    [20, 21, 22, 26],
+    // local sepultamento, observações velório/sepultamento
+    [17, 26],
 ];
 
 export const steps = [
