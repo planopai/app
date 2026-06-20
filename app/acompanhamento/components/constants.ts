@@ -164,12 +164,16 @@ export const steps = [
  * essa regra condicional deve ficar no Wizard.tsx e também no informativo.php.
  */
 export const obrigatorios = [
+    // ATENDIMENTO
     "falecido",
+    "data_nascimento",
+    "data_falecimento",
+    "nome_responsavel",
     "contato",
     "convenio",
     "religiao",
 
-    // ITENS (Sim/Não obrigatórios)
+    // ITENS
     "assistencia",
     "tanato",
     "ornamentacao",
@@ -177,7 +181,7 @@ export const obrigatorios = [
     "veu",
     "cordao",
 
-    // e se quiser também obrigar a escolha da urna/roupa:
+    // ESTOQUE
     "urna",
     "roupa",
 ];

@@ -338,6 +338,32 @@ function normalizeStatusCode(v: any): string {
   return helper ? String(helper) : raw;
 }
 
+function getNumeroFase(status: any): number {
+  const normalizado = normalizeStatusCode(status);
+  const m = String(normalizado || "").match(/^fase(\d+)$/i);
+  return m ? Number(m[1]) || 0 : 0;
+}
+
+function obrigatoriedadeAtivaNoWizard({
+  wizardEditing,
+  wizardData,
+  wizardIdx,
+  registros,
+}: {
+  wizardEditing: boolean;
+  wizardData: Registro;
+  wizardIdx: number | null;
+  registros: Registro[];
+}): boolean {
+  if (!wizardEditing) return false;
+
+  const status =
+    (wizardData as any)?.status ??
+    (typeof wizardIdx === "number" ? (registros[wizardIdx] as any)?.status : "");
+
+  return getNumeroFase(status) >= 2;
+}
+
 // ==============================
 // ✅ Snapshot do registro original (para comparar no EDITAR)
 // ==============================
@@ -544,13 +570,31 @@ export default function AcompanhamentoPage() {
     setTeleStartFase(null);
   }, []);
 
+  
   /* -------------------- Config por tipo -------------------- */
   const {
     wizardStepIndexes: wizardStepIndexesForTipo,
     wizardStepTitles: wizardStepTitlesForTipo,
-    obrigatorios: obrigatoriosForTipo,
+    obrigatorios: obrigatoriosBaseForTipo,
     steps: stepsForTipo,
   } = useMemo(() => getWizardConfig(tipoAtendimento), [tipoAtendimento]);
+
+  const obrigatoriosForTipo = useMemo(() => {
+    const ativo = obrigatoriedadeAtivaNoWizard({
+      wizardEditing,
+      wizardData,
+      wizardIdx,
+      registros,
+    });
+
+    return ativo ? obrigatoriosBaseForTipo : [];
+  }, [
+    obrigatoriosBaseForTipo,
+    wizardEditing,
+    wizardData,
+    wizardIdx,
+    registros,
+  ]);
 
   /* ===========================
      ✅ OFFLINE: Flush da fila
@@ -1160,6 +1204,7 @@ export default function AcompanhamentoPage() {
           (data as any)[s.id] = (r as any)[s.id] ?? "";
         });
         (data as any).id = (r as any).id;
+        (data as any).status = normalizeStatusCode((r as any).status ?? "");
 
         // ✅ Velório (sala + online) no wizardData
         (data as any).sala_velorio = String((r as any).sala_velorio ?? "");

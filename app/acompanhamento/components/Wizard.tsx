@@ -752,6 +752,12 @@ export default function Wizard({
         if (pid > 0 && dep) setCordaoErro("");
     }, [open, cordaoVal, (wizardData as any).cordao, (wizardData as any).cordao_produto_id, (wizardData as any).cordao_deposito_nome]);
 
+    const isRequired = (id: string) => obrigatorios.includes(id);
+
+    // Quando o page.tsx mandar obrigatorios = [], nenhuma regra especial deve bloquear.
+    // Quando fase02 em diante ativar obrigatorios, as regras especiais voltam a valer.
+    const obrigatoriedadeAtiva = obrigatorios.length > 0;
+
     const assistenciaGroupIndex = useMemo(() => {
         return wizardStepIndexes.findIndex((arr) => arr.some((idx) => steps[idx]?.id === "assistencia"));
     }, [wizardStepIndexes, steps]);
@@ -759,10 +765,11 @@ export default function Wizard({
     const isRestrito = typeof wizardRestrictGroup === "number";
 
     const requireAssistencia = useMemo(() => {
+        if (!obrigatorios.includes("assistencia")) return false;
         if (assistenciaGroupIndex < 0) return false;
         if (!isRestrito) return true;
         return wizardRestrictGroup === assistenciaGroupIndex;
-    }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup]);
+    }, [assistenciaGroupIndex, isRestrito, wizardRestrictGroup, obrigatorios]);
 
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
@@ -785,8 +792,6 @@ export default function Wizard({
         () => grupoSteps.some((s) => s.id === "local_velorio" || s.id === "sala_velorio" || s.id === "velorio_online"),
         [grupoSteps]
     );
-
-    const isRequired = (id: string) => obrigatorios.includes(id);
 
     const validarAssistencia = () => {
         if (!requireAssistencia) return true;
@@ -865,6 +870,13 @@ export default function Wizard({
     const validarVelorioOnlineSeNecessario = () => {
         if (!velorioOnlineNoGrupoAtual) return true;
 
+        // Antes de Corpo na Clínica, o page.tsx envia obrigatorios = [].
+        // Nesse cenário, Velório Online não deve bloquear, mesmo se sala estiver marcada.
+        if (!obrigatoriedadeAtiva) {
+            setVelorioOnlineErro("");
+            return true;
+        }
+
         const sala = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
         if (!sala) {
             setVelorioOnlineErro("");
@@ -886,6 +898,12 @@ export default function Wizard({
         const tipoNoGrupoAtual = grupoSteps.some((s) => s.id === "ornamentacao_tipo");
         if (!tipoNoGrupoAtual) return true;
 
+        // Só exige Natural/Artificial quando a obrigatoriedade de Ornamentação estiver ativa.
+        if (!isRequired("ornamentacao")) {
+            setOrnamentacaoTipoErro("");
+            return true;
+        }
+
         if (ornamentacaoVal !== "Sim") {
             setOrnamentacaoTipoErro("");
             return true;
@@ -901,15 +919,21 @@ export default function Wizard({
         return true;
     };
 
+    
     // ✅ valida URNA
     const validarUrnaSeNecessario = () => {
         if (!urnaNoGrupoAtual) return true;
 
+        const req = isRequired("urna");
+        if (!req) {
+            setUrnaErro("");
+            return true;
+        }
+
         const urnaTxt = String((wizardData as any).urna ?? "").trim();
         const pid = Number((wizardData as any).urna_produto_id ?? 0) || 0;
-        const req = isRequired("urna");
 
-        if ((req || urnaTxt !== "") && pid <= 0) {
+        if (!urnaTxt || pid <= 0) {
             setUrnaErro("Selecione uma urna da lista (produto do estoque).");
             return false;
         }
@@ -922,15 +946,20 @@ export default function Wizard({
     const validarRoupaSeNecessario = () => {
         if (!roupaNoGrupoAtual) return true;
 
-        const roupaTxt = String((wizardData as any).roupa ?? "").trim();
         const req = isRequired("roupa");
-
-        if (!req && roupaTxt === "") {
+        if (!req) {
             setRoupaErro("");
             return true;
         }
 
-        if (roupaTxt !== "" && isRoupaPropria(roupaTxt)) {
+        const roupaTxt = String((wizardData as any).roupa ?? "").trim();
+
+        if (!roupaTxt) {
+            setRoupaErro('Selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".');
+            return false;
+        }
+
+        if (isRoupaPropria(roupaTxt)) {
             setRoupaErro("");
             return true;
         }
@@ -938,11 +967,12 @@ export default function Wizard({
         const pid = Number((wizardData as any).roupa_produto_id ?? 0) || 0;
         const dep = String((wizardData as any).roupa_deposito_nome ?? "").trim();
 
-        if (roupaTxt !== "" && pid <= 0) {
+        if (pid <= 0) {
             setRoupaErro('Selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".');
             return false;
         }
-        if (roupaTxt !== "" && pid > 0 && dep === "") {
+
+        if (!dep) {
             setRoupaErro("Selecione o local de saída da roupa.");
             return false;
         }
@@ -951,9 +981,14 @@ export default function Wizard({
         return true;
     };
 
-    // ✅ valida INVOL (só se invol=Sim)
+    // ✅ valida INVOL somente quando a obrigatoriedade de INVOL estiver ativa e invol = Sim
     const validarInvolSeNecessario = () => {
         if (!involNoGrupoAtual && !involItemNoGrupoAtual) return true;
+
+        if (!isRequired("invol")) {
+            setInvolErro("");
+            return true;
+        }
 
         const invol = String((wizardData as any).invol ?? involVal ?? "");
         if (invol !== "Sim") {
@@ -968,6 +1003,7 @@ export default function Wizard({
             setInvolErro("Selecione um INVOL da lista (produto do estoque).");
             return false;
         }
+
         if (!dep) {
             setInvolErro("Selecione o local do INVOL (ARMARIO SANDRO ou ARMARIO ILDO).");
             return false;
@@ -977,8 +1013,14 @@ export default function Wizard({
         return true;
     };
 
+    // ✅ valida VÉU somente quando a obrigatoriedade de VÉU estiver ativa e veu = Sim
     const validarVeuSeNecessario = () => {
         if (!veuNoGrupoAtual && !veuItemNoGrupoAtual) return true;
+
+        if (!isRequired("veu")) {
+            setVeuErro("");
+            return true;
+        }
 
         const veu = String((wizardData as any).veu ?? veuVal ?? "");
         if (veu !== "Sim") {
@@ -993,6 +1035,7 @@ export default function Wizard({
             setVeuErro("Selecione um VÉU da lista (produto do estoque).");
             return false;
         }
+
         if (!dep) {
             setVeuErro("Selecione o local do VÉU (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
             return false;
@@ -1002,8 +1045,14 @@ export default function Wizard({
         return true;
     };
 
+    // ✅ valida CORDÃO somente quando a obrigatoriedade de CORDÃO estiver ativa e cordao = Sim
     const validarCordaoSeNecessario = () => {
         if (!cordaoNoGrupoAtual && !cordaoItemNoGrupoAtual) return true;
+
+        if (!isRequired("cordao")) {
+            setCordaoErro("");
+            return true;
+        }
 
         const cordao = String((wizardData as any).cordao ?? cordaoVal ?? "");
         if (cordao !== "Sim") {
@@ -1018,6 +1067,7 @@ export default function Wizard({
             setCordaoErro("Selecione um CORDÃO da lista (produto do estoque).");
             return false;
         }
+
         if (!dep) {
             setCordaoErro("Selecione o local do CORDÃO (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
             return false;
@@ -1502,7 +1552,7 @@ export default function Wizard({
                                 <EstoqueCombobox
                                     inputId="wizard-veu_item"
                                     label="VÉU (estoque)"
-                                    required={true}
+                                    required={isRequired("veu")}
                                     placeholder={step.placeholder || "Selecione no estoque…"}
                                     initialValue={String((wizardData as any).veu_item ?? "")}
                                     disabled={wizardSubmitting}
@@ -1616,7 +1666,7 @@ export default function Wizard({
                                 <EstoqueCombobox
                                     inputId="wizard-cordao_item"
                                     label="CORDÃO (estoque)"
-                                    required={true}
+                                    required={isRequired("cordao")}
                                     placeholder={step.placeholder || "Selecione no estoque…"}
                                     initialValue={String((wizardData as any).cordao_item ?? "")}
                                     disabled={wizardSubmitting}
@@ -1701,7 +1751,7 @@ export default function Wizard({
                         return (
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">
-                                    {step.label} <span className="text-xs text-muted-foreground">(endereço ou link)</span>
+                                    Velório Online {obrigatoriedadeAtiva && <span className="text-red-600">*</span>}
                                 </label>
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1824,7 +1874,9 @@ export default function Wizard({
 
                                     {!mostraVelorioOnline && (
                                         <p className="mt-2 text-xs text-slate-500">
-                                            Ao marcar uma sala, será obrigatório informar se terá Velório Online.
+                                            {obrigatoriedadeAtiva
+                                                ? "Ao marcar uma sala, será obrigatório informar se terá Velório Online."
+                                                : "Velório Online ficará obrigatório somente após Corpo na Clínica."}
                                         </p>
                                     )}
                                 </div>
@@ -2067,7 +2119,7 @@ export default function Wizard({
                                 <EstoqueCombobox
                                     inputId="wizard-invol_item"
                                     label="INVOL (estoque)"
-                                    required={true}
+                                    required={isRequired("invol")}
                                     placeholder={step.placeholder || "Selecione no estoque…"}
                                     initialValue={String((wizardData as any).invol_item ?? "")}
                                     disabled={wizardSubmitting}
