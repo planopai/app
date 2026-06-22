@@ -570,7 +570,7 @@ export default function AcompanhamentoPage() {
     setTeleStartFase(null);
   }, []);
 
-  
+
   /* -------------------- Config por tipo -------------------- */
   const {
     wizardStepIndexes: wizardStepIndexesForTipo,
@@ -1547,6 +1547,15 @@ export default function AcompanhamentoPage() {
     const dataAtualizada: any = salvarGrupoWizard();
     if (!dataAtualizada) return;
 
+    // ✅ Quando estiver editando apenas uma aba, envia para o PHP quais campos
+    // pertencem ao escopo atual. Assim o backend não valida campos de outras abas.
+    const wizardRestrictIds =
+      typeof wizardRestrictGroup === "number"
+        ? (wizardStepIndexesForTipo[wizardRestrictGroup] || [])
+          .map((i) => (stepsForTipo as any)[i]?.id)
+          .filter(Boolean)
+        : null;
+
     let grupoObrigatorios: string[];
     if (typeof wizardRestrictGroup === "number") {
       const grupo = wizardStepIndexesForTipo[wizardRestrictGroup];
@@ -1710,6 +1719,10 @@ export default function AcompanhamentoPage() {
           acao: wizardEditing ? "editar" : "novo",
         };
 
+        if (payload.acao === "editar" && wizardRestrictIds) {
+          payload._wizard_restrict_ids = wizardRestrictIds;
+        }
+
         if (payload.acao === "editar") {
           // ✅ remove roupa do payload se não mudou
           scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
@@ -1739,6 +1752,10 @@ export default function AcompanhamentoPage() {
         ...dataAtualizada,
         acao: wizardEditing ? "editar" : "novo",
       };
+
+      if (payload.acao === "editar" && wizardRestrictIds) {
+        payload._wizard_restrict_ids = wizardRestrictIds;
+      }
 
       if (payload.acao === "editar") {
         // ✅ remove roupa do payload se não mudou
@@ -1797,6 +1814,10 @@ export default function AcompanhamentoPage() {
           ...dataAtualizada,
           acao: wizardEditing ? "editar" : "novo",
         };
+
+        if (payload.acao === "editar" && wizardRestrictIds) {
+          payload._wizard_restrict_ids = wizardRestrictIds;
+        }
         if (payload.acao === "editar") {
           try {
             scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
