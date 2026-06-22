@@ -29,6 +29,7 @@ type Produto = {
     descricao?: string | null;
     codigo_barras: string;
     valor: string | number;
+    preco_custo?: string | number | null;
     minimo: number;
     maximo?: number;
     foto_url?: string | null;
@@ -1423,6 +1424,7 @@ export default function Page() {
     const [editNome, setEditNome] = useState("");
     const [editDescricao, setEditDescricao] = useState<string>(""); // ✅ NOVO
     const [editValor, setEditValor] = useState<string>("R$ 0,00");
+    const [editPrecoCusto, setEditPrecoCusto] = useState<string>("R$ 0,00");
     const [editMin, setEditMin] = useState<number>(0);
     const [editMax, setEditMax] = useState<number>(0); // (produto / padrão)
 
@@ -1563,7 +1565,7 @@ export default function Page() {
     // ✅ NOVO: abre/fecha o filtro da aba Conferência
     const [confFilterOpen, setConfFilterOpen] = useState(false);
 
-    
+
     const [confDepositoId, setConfDepositoId] = useState<ID>(0);
     const [confFabId, setConfFabId] = useState<ID | "Todos">("Todos");
     const [confCatId, setConfCatId] = useState<ID | "Todas">("Todas");
@@ -1600,8 +1602,8 @@ export default function Page() {
     const [confDetId, setConfDetId] = useState<number>(0);
     const [confDetHead, setConfDetHead] = useState<ConferenciaDetalheHead | null>(null);
     const [confDetItems, setConfDetItems] = useState<ConferenciaItem[]>([]);
-    
-    
+
+
 
 
     async function loadConferenciasRegistros() {
@@ -1982,7 +1984,7 @@ export default function Page() {
         }
 
         const sep = ";";
-        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)"];
+        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)", "Preço de Custo (un)"];
 
 
         const lines: string[] = [];
@@ -1992,9 +1994,10 @@ export default function Page() {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
             const valorNum = Number(p.valor) || 0;
+            const precoCustoNum = Number(p.preco_custo) || 0;
 
             lines.push(
-                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum)]
+                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), moneyBRL(precoCustoNum)]
 
                     .map((x) => escapeCsvCell(x, sep))
                     .join(sep)
@@ -2299,7 +2302,7 @@ export default function Page() {
         const depId = Number(confDepositoId);
         if (!depId) return [];
 
-        
+
 
         const qq = confQ.trim().toLowerCase();
 
@@ -2371,7 +2374,7 @@ export default function Page() {
         catById,
         classById,
     ]);
-    
+
 
     function parseFisico(v: string): number | null {
         const t = (v || "").replace(/\D/g, "").trim();
@@ -3184,6 +3187,7 @@ export default function Page() {
             codigo_barras: cb,
             nome,
             valor: Number.isFinite(Number(novoValor)) ? Number(novoValor) : 0,
+            preco_custo: Number.isFinite(Number(novoPrecoCusto)) ? Number(novoPrecoCusto) : 0,
             minimo: clampInt(novoMin),
             maximo: clampInt(novoMax),
 
@@ -3211,6 +3215,7 @@ export default function Page() {
         setNovoCodigoBarras("");
         setNovoNome("");
         setNovoValor(0);
+        setNovoPrecoCusto(0);
         setNovoMin(0);
         setNovoMax(0);
         setNovoFoto("");
@@ -3467,6 +3472,10 @@ export default function Page() {
         const valorDigits = String(Math.round(Math.max(0, valorNum) * 100));
         setEditValor(maskBRLFromDigits(valorDigits));
 
+        const precoCustoNum = Number(p.preco_custo) || 0;
+        const precoCustoDigits = String(Math.round(Math.max(0, precoCustoNum) * 100));
+        setEditPrecoCusto(maskBRLFromDigits(precoCustoDigits));
+
         // mantém padrão do produto (não quebra legado)
         setEditMin(clampInt(p.minimo));
         setEditMax(clampInt((p as any).maximo ?? 0));
@@ -3608,6 +3617,7 @@ export default function Page() {
                 nome: editNome.trim(),
                 descricao: editDescricao.trim() || "",
                 valor: parseBRLToNumber(editValor),
+                preco_custo: parseBRLToNumber(editPrecoCusto),
                 minimo: clampInt(editMin),
                 maximo: clampInt(editMax),
                 categoria_id: editCatId ? Number(editCatId) : 0,
@@ -4416,6 +4426,7 @@ export default function Page() {
     const [novoCodigoBarras, setNovoCodigoBarras] = useState("");
     const [novoNome, setNovoNome] = useState("");
     const [novoValor, setNovoValor] = useState<number>(0);
+    const [novoPrecoCusto, setNovoPrecoCusto] = useState<number>(0);
     const [novoMin, setNovoMin] = useState<number>(0);
     const [novoMax, setNovoMax] = useState<number>(0);
     const [novoFoto, setNovoFoto] = useState<string>("");
@@ -4882,7 +4893,7 @@ export default function Page() {
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
-                                    
+
                                 </div>
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
 
@@ -5274,7 +5285,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            
+
 
 
                             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
@@ -5450,7 +5461,7 @@ export default function Page() {
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
                                     <h2 className="text-base font-semibold text-slate-900">Histórico</h2>
-                                    
+
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={loadHistorico} disabled={histLoading} type="button">
@@ -5780,6 +5791,16 @@ export default function Page() {
                                             inputMode="numeric"
                                             value={editValor}
                                             onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
+                                            placeholder="R$ 0,00"
+                                        />
+                                    </Field>
+
+                                    <Field label="Preço de Custo (R$)">
+                                        <TextInput
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={editPrecoCusto}
+                                            onChange={(e) => setEditPrecoCusto(maskBRLInput(e.target.value))}
                                             placeholder="R$ 0,00"
                                         />
                                     </Field>
@@ -7134,6 +7155,18 @@ export default function Page() {
                         </div>
 
                         <div className="sm:col-span-2">
+                            <Field label="Preço de Custo (R$)">
+                                <TextInput
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={Number.isFinite(Number(novoPrecoCusto)) ? String(novoPrecoCusto) : "0"}
+                                    onChange={(e) => setNovoPrecoCusto(Number(e.target.value || 0))}
+                                />
+                            </Field>
+                        </div>
+
+                        <div className="sm:col-span-2">
                             <Field label="Mínimo (padrão do produto)">
                                 <TextInput
                                     type="number"
@@ -7921,7 +7954,7 @@ export default function Page() {
 
 
 
-            
+
             {/* ✅ MODAL: DETALHE DA CONFERÊNCIA SALVA */}
             <Modal
                 open={confDetOpen}
@@ -8294,7 +8327,7 @@ export default function Page() {
                     </Field>
                 </div>
             </FilterPanelModal>
-            
+
             {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
 
