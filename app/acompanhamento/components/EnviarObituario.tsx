@@ -83,36 +83,15 @@ const POSICOES_A4 = {
     // A4: frases menores para caber melhor no topo.
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 29 },
 
-    // A4: foto 20% maior, preservando o topo e crescendo para os lados e para baixo.
-    foto: { centerX: 300, centerY: 494, ovalW: 306, ovalH: 402 },
+    // A4: foto ainda maior, preservando o topo e crescendo mais para baixo.
+    foto: { centerX: 300, centerY: 543, ovalW: 360, ovalH: 500 },
 
     // A4: nome maior, mais acima e com uma palavra por linha.
     nome: { x: 535, y: 350, maxWidth: 500, lineHeight: 52 },
 
-    // A4: datas na mesma linha, nascimento à esquerda e falecimento à direita.
+    // A4: nascimento e falecimento na mesma linha.
     nascimento: { x: 590, y: 578 },
     falecimento: { x: 775, y: 578 },
-
-    // A4: bloco central separado dos obituários normais.
-    // Somente local da cerimônia e cemitério foram bem pouco para a esquerda.
-    cerimonia: {
-        linhaDataHoraX: 265,
-        linhaDataHoraY: 805,
-        linhaDataHoraMaxWidth: 245,
-        localX: 612,
-        localY: 805,
-        localMaxWidth: 350,
-        lineHeight: 28,
-    },
-    sepultamento: {
-        linhaDataHoraX: 265,
-        linhaDataHoraY: 915,
-        linhaDataHoraMaxWidth: 245,
-        localX: 612,
-        localY: 915,
-        localMaxWidth: 350,
-        lineHeight: 28,
-    },
 
     // A4: QR Code maior, mantendo o centro visual no quadro inferior.
     qr: { x: 235, y: 952, w: 300, h: 300 } as QrBox,
@@ -588,7 +567,7 @@ function drawWrapText(
     }
 }
 
-function drawOneWordPerLine(
+function drawWordsOnePerLine(
     ctx: CanvasRenderingContext2D,
     text: string,
     x: number,
@@ -646,7 +625,7 @@ async function desenharQrLegadoLuzA4(
     if (!url) return;
 
     const qrDataUrl = await QRCode.toDataURL(url, {
-        width: 720,
+        width: 620,
         margin: 1,
         errorCorrectionLevel: "M",
         color: {
@@ -659,7 +638,7 @@ async function desenharQrLegadoLuzA4(
 
     ctx.save();
 
-    const qrSize = Math.min(box.w - 24, box.h - 24);
+    const qrSize = Math.min(box.w - 30, box.h - 30);
     const qrX = box.x + (box.w - qrSize) / 2;
     const qrY = box.y + (box.h - qrSize) / 2;
 
@@ -1277,7 +1256,6 @@ export default function EnviarObituario({
 
             const selectedFont = fontName || "Nunito";
             const selectedColor = fontColor || "#111827";
-            const azulPai = "#001f5b";
 
             // Mensagem personalizada ou predefinida abaixo da linha da logo.
             ctx.fillStyle = selectedColor;
@@ -1302,12 +1280,12 @@ export default function EnviarObituario({
                 }
             }
 
-            // Nome do falecido à direita da foto.
-            // Ajuste somente no A4: fonte maior, mais acima e uma palavra por linha.
+            // Nome do falecido à direita da foto, exclusivo do A4.
+            // Cada palavra do nome é desenhada em uma linha própria.
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
-            ctx.font = `800 46px "${selectedFont}"`;
-            drawOneWordPerLine(
+            ctx.font = `800 44px "${selectedFont}"`;
+            drawWordsOnePerLine(
                 ctx,
                 dados.nome,
                 POSICOES_A4.nome.x,
@@ -1316,7 +1294,7 @@ export default function EnviarObituario({
                 "left"
             );
 
-            // Datas de nascimento e falecimento na mesma linha no modelo A4.
+            // Datas de nascimento e falecimento na mesma linha, exclusivo do A4.
             ctx.fillStyle = selectedColor;
             ctx.font = `700 28px "${selectedFont}"`;
             ctx.textAlign = "left";
@@ -1337,70 +1315,7 @@ export default function EnviarObituario({
                 );
             }
 
-            // Informações A4 da cerimônia e sepultamento no quadro central.
-            // Estas posições são exclusivas do A4 e não alteram os modelos comuns.
-            // A4: cerimônia usa somente data + horário de início, igual ao sepultamento.
-            const cerimoniaLinha = montarLinhaDataHora(
-                dados.data_cerimonia,
-                dados.velorio_inicio
-            );
-
-            const sepultamentoLinha = montarLinhaDataHora(
-                dados.data_sepultamento,
-                dados.hora_sepultamento
-            );
-
-            ctx.fillStyle = azulPai;
-            ctx.font = `800 22px "${selectedFont}"`;
-            ctx.textAlign = "left";
-
-            if (cerimoniaLinha) {
-                drawWrapText(
-                    ctx,
-                    cerimoniaLinha,
-                    POSICOES_A4.cerimonia.linhaDataHoraX,
-                    POSICOES_A4.cerimonia.linhaDataHoraY,
-                    POSICOES_A4.cerimonia.linhaDataHoraMaxWidth,
-                    POSICOES_A4.cerimonia.lineHeight,
-                    "left"
-                );
-            }
-
-            if (dados.local_cerimonia) {
-                drawWrapText(
-                    ctx,
-                    dados.local_cerimonia,
-                    POSICOES_A4.cerimonia.localX,
-                    POSICOES_A4.cerimonia.localY,
-                    POSICOES_A4.cerimonia.localMaxWidth,
-                    POSICOES_A4.cerimonia.lineHeight,
-                    "left"
-                );
-            }
-
-            if (sepultamentoLinha) {
-                drawWrapText(
-                    ctx,
-                    sepultamentoLinha,
-                    POSICOES_A4.sepultamento.linhaDataHoraX,
-                    POSICOES_A4.sepultamento.linhaDataHoraY,
-                    POSICOES_A4.sepultamento.linhaDataHoraMaxWidth,
-                    POSICOES_A4.sepultamento.lineHeight,
-                    "left"
-                );
-            }
-
-            if (dados.local_sepultamento) {
-                drawWrapText(
-                    ctx,
-                    dados.local_sepultamento,
-                    POSICOES_A4.sepultamento.localX,
-                    POSICOES_A4.sepultamento.localY,
-                    POSICOES_A4.sepultamento.localMaxWidth,
-                    POSICOES_A4.sepultamento.lineHeight,
-                    "left"
-                );
-            }
+            // A4: por solicitação, não renderiza informações de cerimônia e sepultamento.
 
             // QR Code no quadro inferior esquerdo.
             if (deveDesenharQrLegado) {
@@ -1825,17 +1740,21 @@ export default function EnviarObituario({
                             <h3 className="font-semibold">Pré-visualização A4</h3>
                         </div>
 
-                        {loadingA4 ? (
+                        {loadingA4 && (
                             <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
                                 Gerando A4...
                             </div>
-                        ) : previewA4Src ? (
+                        )}
+
+                        {!loadingA4 && previewA4Src && (
                             <img
                                 src={previewA4Src}
                                 alt="Pré-visualização do obituário A4"
                                 className="mx-auto block w-full max-w-[520px] rounded-md border object-contain"
                             />
-                        ) : (
+                        )}
+
+                        {!loadingA4 && !previewA4Src && (
                             <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
                                 A pré-visualização A4 será gerada automaticamente.
                             </div>
