@@ -72,6 +72,37 @@ function makeKey(tipo: "item" | "subitem", id: number | string) {
     return `${tipo}:${String(id)}`;
 }
 
+function normalizeMateriaisForSave(input: MateriaisState): DynMat {
+    const src = ((input || {}) as any) as DynMat;
+    const out: DynMat = {};
+
+    for (const [key, value] of Object.entries(src)) {
+        if (!value?.checked) continue;
+
+        const qtd = Math.max(1, toInt(value?.qtd ?? 1, 1));
+
+        out[key] = {
+            checked: true,
+            qtd,
+            nome: value?.nome,
+            categoria_id: value?.categoria_id,
+            item_id: value?.item_id,
+            tipo: value?.tipo,
+            raw_id: value?.raw_id,
+        };
+    }
+
+    return out;
+}
+
+function buildMateriaisJson(input: MateriaisState): string {
+    try {
+        return JSON.stringify(normalizeMateriaisForSave(input));
+    } catch {
+        return "{}";
+    }
+}
+
 export default function MateriaisModal({
     open,
     setOpen,
@@ -409,7 +440,14 @@ export default function MateriaisModal({
                         className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-60"
                         disabled={needLogin}
                         onClick={() => {
-                            setWizardData((d) => ({ ...d, materiais }));
+                            const materiaisJson = buildMateriaisJson(materiais);
+
+                            setWizardData((d) => ({
+                                ...d,
+                                materiais,
+                                materiais_json: materiaisJson,
+                            }));
+
                             setOpen(false);
                         }}
                     >

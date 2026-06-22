@@ -1172,6 +1172,9 @@ export default function AcompanhamentoPage() {
     // ✅ insumos tanato (novo formato) - começa vazio
     (empty as any).arrumacao_json = "";
 
+    // ✅ materiais de assistência (novo formato) - começa vazio
+    (empty as any).materiais_json = "";
+
     setWizardData(empty);
     setMateriais(defaultMateriais());
     setArrumacao(defaultArrumacao());
@@ -1281,6 +1284,7 @@ export default function AcompanhamentoPage() {
         const mats = parseMateriaisFromRegistro(r);
         setMateriais(mats);
         (data as any).materiais = mats;
+        (data as any).materiais_json = String((r as any).materiais_json ?? "");
 
         const arr = parseArrumacaoFromRegistro(r);
         setArrumacao(arr);
@@ -1353,6 +1357,14 @@ export default function AcompanhamentoPage() {
     next.materiais = materiais;
     next.arrumacao = arrumacao;
     next.tipo_atendimento = tipoAtendimento;
+
+    // ✅ garante que os materiais dinâmicos sejam enviados ao PHP
+    // O front usa `materiais`, mas o backend salva `materiais_json`.
+    try {
+      next.materiais_json = JSON.stringify(materiais || {});
+    } catch {
+      next.materiais_json = "{}";
+    }
 
     // ✅ VELÓRIO: sala selecionada e velório online
     // - Se não houver sala marcada, limpa velorio_online para não mandar informação solta.
