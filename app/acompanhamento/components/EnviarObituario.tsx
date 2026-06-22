@@ -83,16 +83,15 @@ const POSICOES_A4 = {
     // A4: frases menores para caber melhor no topo.
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 29 },
 
-    // A4: foto preservada do ajuste anterior.
-    foto: { centerX: 300, centerY: 460, ovalW: 255, ovalH: 335 },
+    // A4: foto 20% maior, preservando o topo e crescendo para os lados e para baixo.
+    foto: { centerX: 300, centerY: 494, ovalW: 306, ovalH: 402 },
 
-    // A4: nome alinhado mais à direita com a linha decorativa.
-    // Mantém nome e sobrenome na primeira linha quando couber.
-    nome: { x: 535, y: 440, maxWidth: 500, lineHeight: 43 },
+    // A4: nome maior, mais acima e com uma palavra por linha.
+    nome: { x: 535, y: 350, maxWidth: 500, lineHeight: 52 },
 
-    // A4: datas de nascimento e falecimento ainda mais para cima.
+    // A4: datas na mesma linha, nascimento à esquerda e falecimento à direita.
     nascimento: { x: 590, y: 578 },
-    falecimento: { x: 590, y: 633 },
+    falecimento: { x: 775, y: 578 },
 
     // A4: bloco central separado dos obituários normais.
     // Somente local da cerimônia e cemitério foram bem pouco para a esquerda.
@@ -115,8 +114,8 @@ const POSICOES_A4 = {
         lineHeight: 28,
     },
 
-    // A4: QR Code bem pouco para cima.
-    qr: { x: 260, y: 977, w: 250, h: 250 } as QrBox,
+    // A4: QR Code maior, mantendo o centro visual no quadro inferior.
+    qr: { x: 235, y: 952, w: 300, h: 300 } as QrBox,
 };
 
 const FRASES_A4 = [
@@ -589,6 +588,25 @@ function drawWrapText(
     }
 }
 
+function drawOneWordPerLine(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    lineHeight: number,
+    align: "center" | "left" | "right" = "left"
+) {
+    const words = String(text || "")
+        .split(/\s+/)
+        .filter(Boolean);
+
+    ctx.textAlign = align;
+
+    words.forEach((word, index) => {
+        ctx.fillText(word, x, y + index * lineHeight);
+    });
+}
+
 async function desenharQrLegadoLuz(
     ctx: CanvasRenderingContext2D,
     url: string,
@@ -628,7 +646,7 @@ async function desenharQrLegadoLuzA4(
     if (!url) return;
 
     const qrDataUrl = await QRCode.toDataURL(url, {
-        width: 620,
+        width: 720,
         margin: 1,
         errorCorrectionLevel: "M",
         color: {
@@ -641,7 +659,7 @@ async function desenharQrLegadoLuzA4(
 
     ctx.save();
 
-    const qrSize = Math.min(box.w - 30, box.h - 30);
+    const qrSize = Math.min(box.w - 24, box.h - 24);
     const qrX = box.x + (box.w - qrSize) / 2;
     const qrY = box.y + (box.h - qrSize) / 2;
 
@@ -1285,21 +1303,20 @@ export default function EnviarObituario({
             }
 
             // Nome do falecido à direita da foto.
-            // Ajuste somente no A4: mais à direita, alinhado com a linha decorativa.
+            // Ajuste somente no A4: fonte maior, mais acima e uma palavra por linha.
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
-            ctx.font = `800 38px "${selectedFont}"`;
-            drawWrapText(
+            ctx.font = `800 46px "${selectedFont}"`;
+            drawOneWordPerLine(
                 ctx,
                 dados.nome,
                 POSICOES_A4.nome.x,
                 POSICOES_A4.nome.y,
-                POSICOES_A4.nome.maxWidth,
                 POSICOES_A4.nome.lineHeight,
                 "left"
             );
 
-            // Datas de nascimento e falecimento próximas à estrela e à cruz do modelo A4.
+            // Datas de nascimento e falecimento na mesma linha no modelo A4.
             ctx.fillStyle = selectedColor;
             ctx.font = `700 28px "${selectedFont}"`;
             ctx.textAlign = "left";
