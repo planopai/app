@@ -443,10 +443,23 @@ export default function MateriaisModal({
                             const materiaisJson = buildMateriaisJson(materiais);
 
                             setWizardData((d) => ({
-                                ...d,
+                                ...(d as any),
+
+                                // ✅ Mantém o objeto usado pelo front.
                                 materiais,
+
+                                // ✅ Campo que o informativo.php salva no banco.
                                 materiais_json: materiaisJson,
-                            }));
+
+                                // ✅ Escopo especial para o page.tsx:
+                                // quando o próximo "Salvar" do Wizard acontecer,
+                                // o backend deve validar/salvar somente materiais_json,
+                                // e não a aba Itens inteira.
+                                _wizard_restrict_ids: ["materiais_json"],
+                                _wizard_modal_restrict_ids: ["materiais_json"],
+                                _wizard_modal_scope: "materiais",
+                                _wizard_modal_dirty_at: Date.now(),
+                            } as Registro));
 
                             setOpen(false);
                         }}

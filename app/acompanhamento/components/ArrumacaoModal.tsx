@@ -472,6 +472,12 @@ export default function ArrumacaoModal({
                             ...d,
                             arrumacao, // mantém booleans no objeto (compatibilidade)
                             arrumacao_json: json, // ✅ fonte da verdade (booleans + insumos)
+
+                            // ✅ informa ao page.tsx que o próximo salvamento é só da conservação
+                            // Isso evita o informativo.php validar a aba Itens inteira e cobrar Roupa/Urna.
+                            _wizard_restrict_ids: ["arrumacao_json"] as any,
+                            _wizard_modal_restrict_ids: ["arrumacao_json"] as any,
+                            _wizard_modal_scope: "arrumacao" as any,
                         }));
 
                         setOpen(false);

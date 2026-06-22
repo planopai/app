@@ -146,6 +146,38 @@ function parseInsumosFromArrumacaoJson(
   }
 }
 
+
+function normalizeRestrictIds(v: any): string[] | null {
+  if (v == null || v === "") return null;
+
+  let raw = v;
+
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    if (!s) return null;
+
+    try {
+      const parsed = JSON.parse(s);
+      raw = parsed;
+    } catch {
+      raw = s.split(",");
+    }
+  }
+
+  if (!Array.isArray(raw)) return null;
+
+  const ids = raw
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean);
+
+  return ids.length ? Array.from(new Set(ids)) : null;
+}
+
+function scopeHasAny(scopeIds: string[] | null, ids: string[]): boolean {
+  if (!scopeIds) return true;
+  return ids.some((id) => scopeIds.includes(id));
+}
+
 /* -------------------- utils sessão (IDs de terceiros) -------------------- */
 function addTerceiroIdToSession(id: string | number | undefined | null) {
   try {
@@ -1306,6 +1338,17 @@ export default function AcompanhamentoPage() {
     const grupo = wizardStepIndexesForTipo[wizardStep];
     const next: any = { ...wizardData };
 
+    // ✅ Se o usuário acabou de salvar um modal interno (Materiais/Arrumação),
+    // o próximo salvar do Wizard deve respeitar esse escopo menor.
+    // Isso impede que a aba Itens inteira seja validada ao salvar apenas
+    // materiais_json ou arrumacao_json.
+    const modalRestrictIdsForSave = normalizeRestrictIds(
+      (wizardData as any)?._wizard_modal_restrict_ids,
+    );
+
+    const deveValidarCampoObrigatorio = (id: string) =>
+      !modalRestrictIdsForSave || modalRestrictIdsForSave.includes(id);
+
     for (const idx of grupo) {
       const s = (stepsForTipo as any)[idx] as any;
 
@@ -1330,7 +1373,7 @@ export default function AcompanhamentoPage() {
 
         v = (el?.value ?? "").trim();
 
-        if (obrigatoriosForTipo.includes(s.id) && !v) {
+        if (deveValidarCampoObrigatorio(s.id) && obrigatoriosForTipo.includes(s.id) && !v) {
           el?.focus?.();
           setWizardMsg({
             text: "Preencha todos campos obrigatórios.",
@@ -1341,7 +1384,7 @@ export default function AcompanhamentoPage() {
       }
 
       // valida obrigatórios também para async
-      if (obrigatoriosForTipo.includes(s.id) && !v) {
+      if (deveValidarCampoObrigatorio(s.id) && obrigatoriosForTipo.includes(s.id) && !v) {
         setWizardMsg({
           text: "Preencha todos campos obrigatórios.",
           ok: false,
@@ -1358,10 +1401,16 @@ export default function AcompanhamentoPage() {
     next.arrumacao = arrumacao;
     next.tipo_atendimento = tipoAtendimento;
 
-    // ✅ garante que os materiais dinâmicos sejam enviados ao PHP
+    // ✅ garante que os materiais dinâmicos sejam enviados ao PHP.
     // O front usa `materiais`, mas o backend salva `materiais_json`.
+    // Quando o MateriaisModal já gerou o JSON normalizado, preserva esse valor.
     try {
-      next.materiais_json = JSON.stringify(materiais || {});
+      const jsonDoModal = String(next?.materiais_json ?? "").trim();
+      if (modalRestrictIdsForSave?.includes("materiais_json") && jsonDoModal) {
+        next.materiais_json = jsonDoModal;
+      } else {
+        next.materiais_json = JSON.stringify(materiais || {});
+      }
     } catch {
       next.materiais_json = "{}";
     }
@@ -1559,20 +1608,28 @@ export default function AcompanhamentoPage() {
     const dataAtualizada: any = salvarGrupoWizard();
     if (!dataAtualizada) return;
 
-    // ✅ Quando estiver editando apenas uma aba, envia para o PHP quais campos
-    // pertencem ao escopo atual. Assim o backend não valida campos de outras abas.
-    const wizardRestrictIds =
+    // ✅ Prioridade de escopo:
+    // 1) Escopo vindo dos modais internos: Materiais/Arrumação.
+    // 2) Escopo da aba editada no InfoModal.
+    // 3) Edição completa.
+    const modalRestrictIds = normalizeRestrictIds(
+      dataAtualizada?._wizard_modal_restrict_ids,
+    );
+
+    const groupRestrictIds =
       typeof wizardRestrictGroup === "number"
         ? (wizardStepIndexesForTipo[wizardRestrictGroup] || [])
           .map((i) => (stepsForTipo as any)[i]?.id)
           .filter(Boolean)
         : null;
 
+    const wizardRestrictIds = modalRestrictIds || groupRestrictIds;
+
+    const escopoTemAlgum = (ids: string[]) => scopeHasAny(wizardRestrictIds, ids);
+
     let grupoObrigatorios: string[];
-    if (typeof wizardRestrictGroup === "number") {
-      const grupo = wizardStepIndexesForTipo[wizardRestrictGroup];
-      const ids = grupo.map((i) => (stepsForTipo as any)[i].id);
-      grupoObrigatorios = ids.filter((id) => obrigatoriosForTipo.includes(id));
+    if (wizardRestrictIds) {
+      grupoObrigatorios = wizardRestrictIds.filter((id) => obrigatoriosForTipo.includes(id));
     } else {
       grupoObrigatorios = obrigatoriosForTipo;
     }
@@ -1592,7 +1649,13 @@ export default function AcompanhamentoPage() {
     // ✅ validação extra (front): se escolheu sala do velório, Velório Online é obrigatório.
     const salaVelorio = String(dataAtualizada?.sala_velorio ?? "").trim();
     const velorioOnline = String(dataAtualizada?.velorio_online ?? "").trim();
-    if (obrigatoriedadeAtiva && salaVelorio && velorioOnline !== "Sim" && velorioOnline !== "Não") {
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["local_velorio", "sala_velorio", "velorio_online"]) &&
+      salaVelorio &&
+      velorioOnline !== "Sim" &&
+      velorioOnline !== "Não"
+    ) {
       setWizardMsg({
         text: 'Selecione "Sim" ou "Não" em Velório Online.',
         ok: false,
@@ -1622,7 +1685,13 @@ export default function AcompanhamentoPage() {
       (Number(origRoupa?.roupa_propria ?? 0) ? 1 : 0)
       : true;
 
-    if (obrigatoriedadeAtiva && roupaMudou && roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["roupa", "roupa_produto_id", "roupa_deposito_nome", "roupa_codigo_barras"]) &&
+      roupaMudou &&
+      roupaTxt !== "" &&
+      !isRoupaPropria(roupaTxt)
+    ) {
       if (roupaPid <= 0) {
         setWizardMsg({
           text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".',
@@ -1641,7 +1710,11 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front):
     const involVal = dataAtualizada?.invol ?? "";
-    if (obrigatoriedadeAtiva && isSim(involVal)) {
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["invol", "invol_item", "invol_produto_id", "invol_deposito_nome"]) &&
+      isSim(involVal)
+    ) {
       const involPid = Number(dataAtualizada?.invol_produto_id ?? 0) || 0;
       const involDep = String(dataAtualizada?.invol_deposito_nome ?? "").trim();
       if (involPid <= 0) {
@@ -1662,7 +1735,11 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front): VÉU
     const veuVal = dataAtualizada?.veu ?? "";
-    if (obrigatoriedadeAtiva && isSim(veuVal)) {
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["veu", "veu_item", "veu_produto_id", "veu_deposito_nome"]) &&
+      isSim(veuVal)
+    ) {
       const veuPid = Number(dataAtualizada?.veu_produto_id ?? 0) || 0;
       const veuDep = String(dataAtualizada?.veu_deposito_nome ?? "").trim();
       if (veuPid <= 0) {
@@ -1683,7 +1760,11 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front): CORDÃO
     const cordaoVal = dataAtualizada?.cordao ?? "";
-    if (obrigatoriedadeAtiva && isSim(cordaoVal)) {
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["cordao", "cordao_item", "cordao_produto_id", "cordao_deposito_nome"]) &&
+      isSim(cordaoVal)
+    ) {
       const cordaoPid = Number(dataAtualizada?.cordao_produto_id ?? 0) || 0;
       const cordaoDep = String(
         dataAtualizada?.cordao_deposito_nome ?? "",
@@ -1706,7 +1787,7 @@ export default function AcompanhamentoPage() {
 
     // ✅ validação extra (front): INSUMOS TANATO (arrumacao_json novo)
     const ins = parseInsumosFromArrumacaoJson(dataAtualizada?.arrumacao_json);
-    if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
+    if (escopoTemAlgum(["arrumacao", "arrumacao_json"]) && ins && (!ins.deposito_nome || ins.itens.length === 0)) {
       setWizardMsg({
         text: "Insumos Tanatopraxia: selecione o depósito e informe itens com quantidade (>=1).",
         ok: false,
@@ -1715,13 +1796,30 @@ export default function AcompanhamentoPage() {
     }
 
     const urnaPid = Number(dataAtualizada?.urna_produto_id ?? 0) || 0;
-    if (obrigatoriedadeAtiva && urnaTxt !== "" && urnaPid <= 0) {
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["urna", "urna_produto_id", "urna_deposito_nome"]) &&
+      urnaTxt !== "" &&
+      urnaPid <= 0
+    ) {
       setWizardMsg({
         text: "Selecione uma urna da lista (produto do estoque).",
         ok: false,
       });
       return;
     }
+
+    const aplicarEscopoNoPayload = (payload: any) => {
+      if (payload.acao === "editar" && wizardRestrictIds) {
+        payload._wizard_restrict_ids = wizardRestrictIds;
+      }
+
+      // Esses campos são marcadores internos do front. O PHP só precisa de _wizard_restrict_ids.
+      delete payload._wizard_modal_restrict_ids;
+      delete payload._wizard_modal_scope;
+
+      return payload;
+    };
 
     if (!isOnlineNow()) {
       try {
@@ -1731,9 +1829,7 @@ export default function AcompanhamentoPage() {
           acao: wizardEditing ? "editar" : "novo",
         };
 
-        if (payload.acao === "editar" && wizardRestrictIds) {
-          payload._wizard_restrict_ids = wizardRestrictIds;
-        }
+        aplicarEscopoNoPayload(payload);
 
         if (payload.acao === "editar") {
           // ✅ remove roupa do payload se não mudou
@@ -1765,9 +1861,7 @@ export default function AcompanhamentoPage() {
         acao: wizardEditing ? "editar" : "novo",
       };
 
-      if (payload.acao === "editar" && wizardRestrictIds) {
-        payload._wizard_restrict_ids = wizardRestrictIds;
-      }
+      aplicarEscopoNoPayload(payload);
 
       if (payload.acao === "editar") {
         // ✅ remove roupa do payload se não mudou
@@ -1827,9 +1921,7 @@ export default function AcompanhamentoPage() {
           acao: wizardEditing ? "editar" : "novo",
         };
 
-        if (payload.acao === "editar" && wizardRestrictIds) {
-          payload._wizard_restrict_ids = wizardRestrictIds;
-        }
+        aplicarEscopoNoPayload(payload);
         if (payload.acao === "editar") {
           try {
             scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
