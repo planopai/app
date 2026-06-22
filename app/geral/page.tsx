@@ -8328,7 +8328,7 @@ export default function Page() {
                 </div>
             </FilterPanelModal>
 
-            {/* SCANNER */}
+            {/* SCANNERS */}
             <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
 
             <BarcodeScannerModal
