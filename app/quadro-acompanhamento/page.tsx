@@ -2427,49 +2427,58 @@ const MobileCards = React.memo(function MobileCards({
     return (
         <section className="flex flex-col gap-3 sm:hidden">
             {ativos.length === 0 ? (
-                <div className="rounded-2xl border border-slate-700/60 bg-[#0f172a]/90 p-4 text-center text-sm text-slate-400">Nenhum atendimento encontrado.</div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500 shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90 dark:text-slate-400">
+                    Nenhum atendimento encontrado.
+                </div>
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
                     const trackingId = getRegistroTrackingId(r);
 
                     return (
-                        <article key={trackingId || i} className="overflow-hidden rounded-2xl border border-slate-700/60 bg-[#0f172a]/90 p-3 shadow-sm">
-                            <div className="flex items-start justify-between gap-3">
+                        <article
+                            key={trackingId || i}
+                            className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90"
+                        >
+                            <div>
                                 <button
-                                    className="min-w-0 text-left text-base font-bold leading-snug text-slate-100 underline-offset-2 hover:underline"
+                                    className="block w-full min-w-0 text-left text-base font-bold leading-snug text-slate-900 underline-offset-2 hover:underline dark:text-slate-100"
                                     onClick={() => onSelect(r)}
                                     title={shown(r.falecido)}
                                 >
                                     <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
 
-                                <div className="shrink-0 text-right">
+                                <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden">
+                                    <ConvenioBadge convenio={r.convenio} size="xs" />
                                     <EtapasInlineDots filled={preenchidas} />
-                                    <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
-                                    <div className="mt-1">
-                                        <ConvenioBadge convenio={r.convenio} size="xs" />
-                                    </div>
+                                    <span className="shrink-0 text-xs font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                                        {dateOr(r.data)}
+                                    </span>
                                 </div>
                             </div>
 
                             <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
-                                    <div className="text-slate-400">Local</div>
-                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
+                                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-700/50 dark:bg-slate-950/35">
+                                    <div className="text-slate-500 dark:text-slate-400">Local</div>
+                                    <div className="mt-1 truncate font-semibold text-slate-900 dark:text-slate-100">
+                                        <LocalVelorioValue value={r.local_velorio} />
+                                    </div>
                                 </div>
 
-                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
-                                    <div className="text-slate-400">Sepultamento</div>
-                                    <div className="mt-1 font-semibold text-slate-100">{dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}</div>
+                                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-700/50 dark:bg-slate-950/35">
+                                    <div className="text-slate-500 dark:text-slate-400">Sepultamento</div>
+                                    <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                                        {dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="mt-2 text-xs text-slate-400">
-                                Agente: <b className="text-slate-200">{shown(r.agente)}</b>
+                            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Agente: <b className="text-slate-800 dark:text-slate-200">{shown(r.agente)}</b>
                             </div>
 
-                            <div className="mt-2 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-700/50 dark:bg-slate-950/35">
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
                             </div>
                         </article>
@@ -2478,7 +2487,7 @@ const MobileCards = React.memo(function MobileCards({
             )}
 
             {hiddenCount > 0 && (
-                <div className="rounded-xl border border-slate-700/60 bg-[#0f172a]/90 px-3 py-2 text-center text-xs font-semibold text-slate-400">
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold text-slate-500 shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90 dark:text-slate-400">
                     + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
                 </div>
             )}
@@ -2608,7 +2617,7 @@ function StatusPill({
                 </div>
             </div>
 
-            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-100"}`}>{time}</div>
+            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-400/60 dark:text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-800 dark:text-slate-100"}`}>{time}</div>
 
             {skipped && (
                 <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
