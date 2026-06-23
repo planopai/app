@@ -567,6 +567,49 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 
 type Opt = { id: ID; nome: string };
 
+function uniqOptions(items: Array<Opt | null | undefined>) {
+    const map = new Map<ID, Opt>();
+
+    for (const item of items) {
+        if (!item?.id) continue;
+        if (!map.has(item.id)) map.set(item.id, item);
+    }
+
+    return Array.from(map.values()).sort((a, b) =>
+        a.nome.localeCompare(b.nome, "pt-BR")
+    );
+}
+
+function produtoCategoriaOption(p: Produto, catById: Map<ID, Categoria>): Opt | null {
+    const id = Number(p.categoria_id || 0);
+    if (!id) return null;
+
+    const nome = p.categoria_nome || catById.get(id)?.nome || "";
+    if (!nome.trim()) return null;
+
+    return { id, nome };
+}
+
+function produtoFabricanteOption(p: Produto, fabById: Map<ID, Fabricante>): Opt | null {
+    const id = Number(p.fabricante_id || 0);
+    if (!id) return null;
+
+    const nome = p.fabricante_nome || fabById.get(id)?.nome || "";
+    if (!nome.trim()) return null;
+
+    return { id, nome };
+}
+
+function produtoClassificacaoOption(p: Produto, classById: Map<ID, Classificacao>): Opt | null {
+    const id = Number(p.classificacao_id || 0);
+    if (!id) return null;
+
+    const nome = p.classificacao_nome || classById.get(id)?.nome || "";
+    if (!nome.trim()) return null;
+
+    return { id, nome };
+}
+
 function MultiSelectDropdown({
     label,
     options,
@@ -2298,6 +2341,95 @@ export default function Page() {
     // =========================
     // CONFERÊNCIA: linhas (1 depósito) + filtros
     // =========================
+    const conferenciaFiltroOptions = useMemo(() => {
+        type ConferenciaFiltroRow = {
+            p: Produto;
+            d: Deposito;
+            qtdSistema: number;
+            fabricante: string;
+            categoria: string;
+            classificacao: string;
+        };
+
+        const qq = confQ.trim().toLowerCase();
+        const rows: ConferenciaFiltroRow[] = [];
+
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
+
+            const qtdSistema = clampInt(s.quantidade);
+            if (confOnlyPositive && qtdSistema <= 0) continue;
+
+            const fabricante =
+                p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+            const categoria =
+                p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
+            const classificacao =
+                p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
+
+            if (qq) {
+                const blob = `${p.nome} ${p.codigo_barras} ${d.nome} ${fabricante} ${categoria} ${classificacao}`.toLowerCase();
+                if (!blob.includes(qq)) continue;
+            }
+
+            rows.push({ p, d, qtdSistema, fabricante, categoria, classificacao });
+        }
+
+        const depId = Number(confDepositoId || 0);
+        const fabId = confFabId === "Todos" ? 0 : Number(confFabId || 0);
+        const catId = confCatId === "Todas" ? 0 : Number(confCatId || 0);
+        const clsId = confClassId === "Todas" ? 0 : Number(confClassId || 0);
+
+        const passaSelecoes = (
+            r: ConferenciaFiltroRow,
+            ignorar: "deposito" | "fabricante" | "categoria" | "classificacao"
+        ) => {
+            if (ignorar !== "deposito" && depId && Number(r.d.id) !== depId) return false;
+            if (ignorar !== "fabricante" && fabId && Number(r.p.fabricante_id || 0) !== fabId) return false;
+            if (ignorar !== "categoria" && catId && Number(r.p.categoria_id || 0) !== catId) return false;
+            if (ignorar !== "classificacao" && clsId && Number(r.p.classificacao_id || 0) !== clsId) return false;
+            return true;
+        };
+
+        return {
+            depositos: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "deposito"))
+                    .map((r) => ({ id: r.d.id, nome: r.d.nome }))
+            ),
+            fabricantes: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "fabricante"))
+                    .map((r) => produtoFabricanteOption(r.p, fabById))
+            ),
+            categorias: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "categoria"))
+                    .map((r) => produtoCategoriaOption(r.p, catById))
+            ),
+            classificacoes: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "classificacao"))
+                    .map((r) => produtoClassificacaoOption(r.p, classById))
+            ),
+        };
+    }, [
+        confDepositoId,
+        confFabId,
+        confCatId,
+        confClassId,
+        confQ,
+        confOnlyPositive,
+        saldos,
+        prodById,
+        depById,
+        fabById,
+        catById,
+        classById,
+    ]);
+
     const conferenciaRows = useMemo(() => {
         const depId = Number(confDepositoId);
         if (!depId) return [];
@@ -3098,28 +3230,90 @@ export default function Page() {
         return m;
     }, [saldos, entradaDepositoId]);
 
-    // NOVO: lista de produtos filtrada por depósito + fabricante (Entrada)
+    // Entrada: filtros dinâmicos. Cada filtro mostra somente opções ainda possíveis
+    // considerando os outros filtros já escolhidos.
+    const entradaFiltroOptions = useMemo(() => {
+        type EntradaFiltroRow = { p: Produto; d: Deposito };
+        const rows: EntradaFiltroRow[] = [];
+
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
+
+            rows.push({ p, d });
+        }
+
+        const depId = Number(entradaDepositoId || 0);
+        const catId = entradaCatFiltroId === "Todas" ? 0 : Number(entradaCatFiltroId || 0);
+        const fabId = entradaFabFiltroId === "Todos" ? 0 : Number(entradaFabFiltroId || 0);
+
+        const passaSelecoes = (
+            r: EntradaFiltroRow,
+            ignorar: "deposito" | "categoria" | "fabricante"
+        ) => {
+            if (ignorar !== "deposito" && depId && Number(r.d.id) !== depId) return false;
+            if (ignorar !== "categoria" && catId && Number(r.p.categoria_id || 0) !== catId) return false;
+            if (ignorar !== "fabricante" && fabId && Number(r.p.fabricante_id || 0) !== fabId) return false;
+            return true;
+        };
+
+        return {
+            depositos: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "deposito"))
+                    .map((r) => ({ id: r.d.id, nome: r.d.nome }))
+            ),
+            categorias: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "categoria"))
+                    .map((r) => produtoCategoriaOption(r.p, catById))
+            ),
+            fabricantes: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "fabricante"))
+                    .map((r) => produtoFabricanteOption(r.p, fabById))
+            ),
+        };
+    }, [
+        saldos,
+        prodById,
+        depById,
+        entradaDepositoId,
+        entradaCatFiltroId,
+        entradaFabFiltroId,
+        catById,
+        fabById,
+    ]);
+
+    // NOVO: lista de produtos filtrada por depósito + fabricante/categoria (Entrada)
     const entradaProdutosNoDeposito = useMemo(() => {
         const depId = Number(entradaDepositoId);
 
-        // pega apenas produtos que existem no depósito (tem linha de saldo)
         const ids = new Set<ID>();
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
         let list = produtos.filter((p) => ids.has(p.id));
 
-        // filtro categoria
         if (entradaCatFiltroId !== "Todas") {
             list = list.filter((p) => Number(p.categoria_id || 0) === Number(entradaCatFiltroId));
         }
 
-        // filtro fabricante
         if (entradaFabFiltroId !== "Todos") {
             list = list.filter((p) => Number(p.fabricante_id || 0) === Number(entradaFabFiltroId));
         }
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     }, [saldos, produtos, entradaDepositoId, entradaCatFiltroId, entradaFabFiltroId]);
+
+    useEffect(() => {
+        const produtoAindaExiste = entradaProdutoId && entradaProdutosNoDeposito.some((p) => p.id === entradaProdutoId);
+        if (entradaProdutoId && !produtoAindaExiste) {
+            setEntradaProdutoId(0);
+            setEntradaProdQuery("");
+            setEntradaBarcode("");
+        }
+    }, [entradaProdutosNoDeposito, entradaProdutoId]);
 
     async function fileToDataUrl(file: File): Promise<string> {
         return await new Promise((resolve, reject) => {
@@ -3863,10 +4057,50 @@ export default function Page() {
         return m;
     }, [saldos, saidaDepositoId]);
 
+    const saidaFiltroOptions = useMemo(() => {
+        type SaidaFiltroRow = { p: Produto; d: Deposito; qtd: number };
+        const rows: SaidaFiltroRow[] = [];
+
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
+
+            const qtd = clampInt(s.quantidade);
+            if (qtd <= 0) continue;
+
+            rows.push({ p, d, qtd });
+        }
+
+        const depId = Number(saidaDepositoId || 0);
+        const catId = saidaCategoriaId === "Todas" ? 0 : Number(saidaCategoriaId || 0);
+
+        const passaSelecoes = (r: SaidaFiltroRow, ignorar: "deposito" | "categoria") => {
+            if (ignorar !== "deposito" && depId && Number(r.d.id) !== depId) return false;
+            if (ignorar !== "categoria" && catId && Number(r.p.categoria_id || 0) !== catId) return false;
+            return true;
+        };
+
+        return {
+            depositos: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "deposito"))
+                    .map((r) => ({ id: r.d.id, nome: r.d.nome }))
+            ),
+            categorias: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "categoria"))
+                    .map((r) => produtoCategoriaOption(r.p, catById))
+            ),
+        };
+    }, [saldos, prodById, depById, saidaDepositoId, saidaCategoriaId, catById]);
+
     const saidaProdutosNoDeposito = useMemo(() => {
         const depId = Number(saidaDepositoId);
         const ids = new Set<ID>();
-        for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
+        for (const s of saldos) {
+            if (s.deposito_id === depId && clampInt(s.quantidade) > 0) ids.add(s.produto_id);
+        }
 
         let list = produtos.filter((p) => ids.has(p.id));
 
@@ -3876,6 +4110,15 @@ export default function Page() {
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     }, [saldos, produtos, saidaDepositoId, saidaCategoriaId]);
+
+    useEffect(() => {
+        const produtoAindaExiste = saidaProdutoId && saidaProdutosNoDeposito.some((p) => p.id === saidaProdutoId);
+        if (saidaProdutoId && !produtoAindaExiste) {
+            setSaidaProdutoId(0);
+            setSaidaProdQuery("");
+            setSaidaBarcode("");
+        }
+    }, [saidaProdutosNoDeposito, saidaProdutoId]);
 
     function onSaidaBarcodePick(code: string) {
         // mantém para digitação manual no campo (sem popup)
@@ -4195,10 +4438,50 @@ export default function Page() {
         return m;
     }, [saldos, trfOrigemId]);
 
+    const trfFiltroOptions = useMemo(() => {
+        type TrfFiltroRow = { p: Produto; d: Deposito; qtd: number };
+        const rows: TrfFiltroRow[] = [];
+
+        for (const s of saldos) {
+            const p = prodById.get(s.produto_id);
+            const d = depById.get(s.deposito_id);
+            if (!p || !d) continue;
+
+            const qtd = clampInt(s.quantidade);
+            if (qtd <= 0) continue;
+
+            rows.push({ p, d, qtd });
+        }
+
+        const origemId = Number(trfOrigemId || 0);
+        const catId = trfCategoriaId === "Todas" ? 0 : Number(trfCategoriaId || 0);
+
+        const passaSelecoes = (r: TrfFiltroRow, ignorar: "origem" | "categoria") => {
+            if (ignorar !== "origem" && origemId && Number(r.d.id) !== origemId) return false;
+            if (ignorar !== "categoria" && catId && Number(r.p.categoria_id || 0) !== catId) return false;
+            return true;
+        };
+
+        return {
+            origens: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "origem"))
+                    .map((r) => ({ id: r.d.id, nome: r.d.nome }))
+            ),
+            categorias: uniqOptions(
+                rows
+                    .filter((r) => passaSelecoes(r, "categoria"))
+                    .map((r) => produtoCategoriaOption(r.p, catById))
+            ),
+        };
+    }, [saldos, prodById, depById, trfOrigemId, trfCategoriaId, catById]);
+
     const trfProdutosNaOrigem = useMemo(() => {
         const depId = Number(trfOrigemId);
         const ids = new Set<ID>();
-        for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
+        for (const s of saldos) {
+            if (s.deposito_id === depId && clampInt(s.quantidade) > 0) ids.add(s.produto_id);
+        }
 
         let list = produtos.filter((p) => ids.has(p.id));
 
@@ -4208,6 +4491,15 @@ export default function Page() {
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     }, [saldos, produtos, trfOrigemId, trfCategoriaId]);
+
+    useEffect(() => {
+        const produtoAindaExiste = trfProdutoId && trfProdutosNaOrigem.some((p) => p.id === trfProdutoId);
+        if (trfProdutoId && !produtoAindaExiste) {
+            setTrfProdutoId(0);
+            setTrfProdQuery("");
+            setTrfBarcode("");
+        }
+    }, [trfProdutosNaOrigem, trfProdutoId]);
 
     function onTrfBarcodePick(code: string) {
         // mantém para digitação manual no campo (sem popup)
@@ -6085,7 +6377,7 @@ export default function Page() {
                                     setEntradaProdQuery("");
                                 }}
                             >
-                                {depositos.map((d) => (
+                                {entradaFiltroOptions.depositos.map((d) => (
                                     <option key={d.id} value={d.id}>
                                         {d.nome}
                                     </option>
@@ -6104,7 +6396,7 @@ export default function Page() {
                                 }}
                             >
                                 <option value="Todos">Todos</option>
-                                {fabricantes.map((f) => (
+                                {entradaFiltroOptions.fabricantes.map((f) => (
                                     <option key={f.id} value={f.id}>
                                         {f.nome}
                                     </option>
@@ -6124,7 +6416,7 @@ export default function Page() {
                                 }}
                             >
                                 <option value="Todas">Todas</option>
-                                {categorias.map((c) => (
+                                {entradaFiltroOptions.categorias.map((c) => (
                                     <option key={c.id} value={c.id}>
                                         {c.nome}
                                     </option>
@@ -6368,11 +6660,19 @@ export default function Page() {
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {/* 1ª linha: Depósito (origem) + Destino */}
                         <Field label="Depósito (origem)">
-                            <Select value={saidaDepositoId} onChange={(e) => setSaidaDepositoId(Number(e.target.value))}>
+                            <Select
+                                value={saidaDepositoId}
+                                onChange={(e) => {
+                                    setSaidaDepositoId(Number(e.target.value));
+                                    setSaidaProdutoId(0);
+                                    setSaidaProdQuery("");
+                                    setSaidaBarcode("");
+                                }}
+                            >
                                 <option value={0} disabled>
                                     Selecionar...
                                 </option>
-                                {depositos.map((d) => (
+                                {saidaFiltroOptions.depositos.map((d) => (
                                     <option key={d.id} value={d.id}>
                                         {d.nome}
                                     </option>
@@ -6410,10 +6710,15 @@ export default function Page() {
                         <Field label="Categoria (filtro)">
                             <Select
                                 value={saidaCategoriaId as any}
-                                onChange={(e) => setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                                onChange={(e) => {
+                                    setSaidaCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value));
+                                    setSaidaProdutoId(0);
+                                    setSaidaProdQuery("");
+                                    setSaidaBarcode("");
+                                }}
                             >
                                 <option value="Todas">Todas</option>
-                                {categorias.map((c) => (
+                                {saidaFiltroOptions.categorias.map((c) => (
                                     <option key={c.id} value={c.id}>
                                         {c.nome}
                                     </option>
@@ -6587,11 +6892,21 @@ export default function Page() {
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {/* 1ª linha: Depósito (origem) + Destino */}
                         <Field label="Depósito (origem)">
-                            <Select value={trfOrigemId} onChange={(e) => setTrfOrigemId(Number(e.target.value))}>
+                            <Select
+                                value={trfOrigemId}
+                                onChange={(e) => {
+                                    const id = Number(e.target.value);
+                                    setTrfOrigemId(id);
+                                    if (Number(trfDestinoId) === id) setTrfDestinoId(0);
+                                    setTrfProdutoId(0);
+                                    setTrfProdQuery("");
+                                    setTrfBarcode("");
+                                }}
+                            >
                                 <option value={0} disabled>
                                     Selecionar...
                                 </option>
-                                {depositos.map((d) => (
+                                {trfFiltroOptions.origens.map((d) => (
                                     <option key={d.id} value={d.id}>
                                         {d.nome}
                                     </option>
@@ -6604,11 +6919,13 @@ export default function Page() {
                                 <option value={0} disabled>
                                     Selecionar...
                                 </option>
-                                {depositos.map((d) => (
-                                    <option key={d.id} value={d.id}>
-                                        {d.nome}
-                                    </option>
-                                ))}
+                                {depositos
+                                    .filter((d) => Number(d.id) !== Number(trfOrigemId))
+                                    .map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.nome}
+                                        </option>
+                                    ))}
                             </Select>
                         </Field>
 
@@ -6629,10 +6946,15 @@ export default function Page() {
                         <Field label="Categoria (filtro)">
                             <Select
                                 value={trfCategoriaId as any}
-                                onChange={(e) => setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value))}
+                                onChange={(e) => {
+                                    setTrfCategoriaId(e.target.value === "Todas" ? "Todas" : Number(e.target.value));
+                                    setTrfProdutoId(0);
+                                    setTrfProdQuery("");
+                                    setTrfBarcode("");
+                                }}
                             >
                                 <option value="Todas">Todas</option>
-                                {categorias.map((c) => (
+                                {trfFiltroOptions.categorias.map((c) => (
                                     <option key={c.id} value={c.id}>
                                         {c.nome}
                                     </option>
@@ -8194,7 +8516,7 @@ export default function Page() {
                                 Selecionar...
                             </option>
 
-                            {depositos.map((d) => (
+                            {conferenciaFiltroOptions.depositos.map((d) => (
                                 <option key={d.id} value={d.id}>
                                     {d.nome}
                                 </option>
@@ -8223,7 +8545,7 @@ export default function Page() {
                         >
                             <option value="Todos">Todos</option>
 
-                            {fabricantes.map((f) => (
+                            {conferenciaFiltroOptions.fabricantes.map((f) => (
                                 <option key={f.id} value={f.id}>
                                     {f.nome}
                                 </option>
@@ -8244,7 +8566,7 @@ export default function Page() {
                         >
                             <option value="Todas">Todas</option>
 
-                            {categorias.map((c) => (
+                            {conferenciaFiltroOptions.categorias.map((c) => (
                                 <option key={c.id} value={c.id}>
                                     {c.nome}
                                 </option>
@@ -8265,7 +8587,7 @@ export default function Page() {
                         >
                             <option value="Todas">Todas</option>
 
-                            {classificacoes.map((c) => (
+                            {conferenciaFiltroOptions.classificacoes.map((c) => (
                                 <option key={c.id} value={c.id}>
                                     {c.nome}
                                 </option>
