@@ -804,6 +804,30 @@ function dateOr(d?: string) {
     return f;
 }
 
+/** Mostra só dia/mês para a coluna Sepultamento, mantendo "a definir" para vazio ou zero. */
+function dateDayMonthOr(d?: string) {
+    const raw = (d ?? "").trim();
+    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const [, mm, dd] = raw.split("-");
+        return `${dd}/${mm}`;
+    }
+
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+        const [dd, mm] = raw.split("/");
+        return `${dd}/${mm}`;
+    }
+
+    const br = raw.match(/(\d{2})\/(\d{2})/);
+    if (br) return `${br[1]}/${br[2]}`;
+
+    const iso = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}/${iso[2]}`;
+
+    return raw;
+}
+
 function timeOr(t?: string) {
     const raw = (t ?? "").trim();
     if (!raw) return "a definir";
@@ -939,6 +963,31 @@ function convenioClass(kind: ConvenioKind) {
         default:
             return "bg-slate-500";
     }
+}
+
+function ConvenioBadge({
+    convenio,
+    size = "sm",
+}: {
+    convenio?: string;
+    size?: "xs" | "sm";
+}) {
+    const kind = normalizeConvenio(convenio);
+    const sizeClass =
+        size === "xs"
+            ? "px-1.5 py-0.5 text-[9px]"
+            : "px-2.5 py-1 text-[11px]";
+
+    return (
+        <span
+            className={`inline-flex items-center rounded-full font-semibold text-white ${convenioClass(
+                kind
+            )} ${sizeClass}`}
+            title="Convênio"
+        >
+            {kind}
+        </span>
+    );
 }
 
 /* ---------------- Etapas (bolinhas) ---------------- */
@@ -1399,6 +1448,170 @@ function iconForAction(acao?: string, status?: string): string {
     return "•";
 }
 
+/* ===== Status visual com tempo por etapa ===== */
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "dot";
+type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
+type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
+
+const STATUS_STEP_DEFS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
+    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "timer" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
+    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "flower" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
+    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
+    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "car" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "timer" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
+];
+
+const STATUS_STEPS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
+    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
+];
+
+const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
+    acc[step.key] = step;
+    return acc;
+}, {});
+
+const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
+const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase07"]);
+
+function getStatusStepInfo(status?: string): StatusStepInfo {
+    const key = normalizarStatus(status) || "";
+    return STATUS_STEP_MAP[key] ?? {
+        key: key || "indefinido",
+        label: capStatus(status) || "a definir",
+        shortLabel: "Status",
+        icon: "dot",
+    };
+}
+
+function getRegistroBackendId(r: Registro): string | undefined {
+    const raw =
+        (r as any).sepultamento_id ??
+        (r as any).sepultamentoId ??
+        (r as any).id ??
+        (r as any).id_atendimento ??
+        (r as any).codigo;
+
+    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
+    return s || undefined;
+}
+
+function getRegistroTrackingId(r: Registro): string {
+    return (
+        getRegistroBackendId(r) ??
+        `${decodeHtmlEntitiesDeep(String(r.falecido ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.data ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.hora_fim_velorio ?? "")).trim()}`
+    );
+}
+
+function getStatusFromLog(log: LogItem): string | undefined {
+    const detalhes = isPlainObject(log.detalhes) ? (log.detalhes as Record<string, unknown>) : {};
+    const raw =
+        log.status_novo ??
+        (detalhes.status_novo as string | undefined) ??
+        (detalhes.status as string | undefined) ??
+        (detalhes.novo_status as string | undefined);
+
+    const normalized = normalizarStatus(raw);
+    return normalized?.startsWith("fase") ? normalized : undefined;
+}
+
+function formatDurationMs(msRaw: number): string {
+    const ms = Math.max(0, Number.isFinite(msRaw) ? msRaw : 0);
+    const totalMinutes = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
+    const logTimes = (logs ?? [])
+        .map((log) => parseLogTs(log.datahora))
+        .filter((ts) => ts > 0)
+        .sort((a, b) => a - b);
+
+    if (logTimes.length > 0) return logTimes[0];
+
+    const registroTs = parseRegistroDateTime(registro);
+    return registroTs > 0 ? registroTs : nowMs;
+}
+
+function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
+    const currentKey = normalizarStatus(registro.status);
+    const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
+
+    const statusEvents = (logs ?? [])
+        .map((log) => ({ key: getStatusFromLog(log), ts: parseLogTs(log.datahora) }))
+        .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
+        .sort((a, b) => a.ts - b.ts);
+
+    const unique: { key: string; ts: number }[] = [{ key: "fase01", ts: createdTs }];
+
+    for (const ev of statusEvents) {
+        if (ev.ts < createdTs) continue;
+
+        if (ev.key === "fase01") continue;
+
+        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
+            unique.push(ev);
+        }
+    }
+
+    const hasAdvancedByLog = unique.some((ev) => ev.key !== "fase01");
+    const effectiveCurrentKey = hasAdvancedByLog ? currentKey : "fase01";
+
+    if (hasAdvancedByLog && currentKey && unique[unique.length - 1]?.key !== currentKey) {
+        unique.push({ key: currentKey, ts: nowMs });
+    }
+
+    return unique.map((ev, idx) => {
+        const info = getStatusStepInfo(ev.key);
+        const isLast = idx === unique.length - 1;
+        const end = isLast ? nowMs : unique[idx + 1].ts;
+
+        return {
+            key: info.key,
+            label: info.label,
+            shortLabel: info.shortLabel,
+            icon: info.icon,
+            start: ev.ts,
+            end,
+            active: isLast && ev.key === effectiveCurrentKey,
+        };
+    });
+}
+
+function getStatusDisplayData(segments: StatusSegment[]) {
+    const durations = new Map<string, number>();
+    let activeKey: string | undefined;
+
+    for (const seg of segments) {
+        const duration = Math.max(0, seg.end - seg.start);
+        const displayKey = STATUS_IDLE_KEYS.has(seg.key)
+            ? "idle"
+            : STATUS_MAIN_KEYS.has(seg.key)
+                ? seg.key
+                : undefined;
+
+        if (!displayKey) continue;
+
+        durations.set(displayKey, (durations.get(displayKey) ?? 0) + duration);
+        if (seg.active) activeKey = displayKey;
+    }
+
+    return { durations, activeKey };
+}
+
 /* =========================
    Página
    ========================= */
@@ -1407,6 +1620,7 @@ const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quint
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
+    const [nowMs, setNowMs] = useState(() => Date.now());
 
     const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
     const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
@@ -1426,10 +1640,12 @@ export default function QuadroAtendimentoPage() {
     const [detailGaleriaFotos, setDetailGaleriaFotos] = useState<TimelineFoto[]>([]);
 
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
+    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
 
     useEffect(() => {
         const update = () => {
             const now = new Date();
+            setNowMs(now.getTime());
             const h = now.getHours().toString().padStart(2, "0");
             const m = now.getMinutes().toString().padStart(2, "0");
             const s = now.getSeconds().toString().padStart(2, "0");
@@ -1586,6 +1802,53 @@ export default function QuadroAtendimentoPage() {
         withTs.sort((a, b) => b.ts - a.ts);
         return withTs.map((x) => x.r);
     }, [registros]);
+
+    useEffect(() => {
+        let alive = true;
+
+        async function carregarLogsDaLista() {
+            const registrosVisiveis = ativosOrdenados.slice(0, 60);
+
+            const pendentes = registrosVisiveis.filter((r) => {
+                const trackingId = getRegistroTrackingId(r);
+                return trackingId && !statusLogsById[trackingId];
+            });
+
+            if (pendentes.length === 0) return;
+
+            const pares = await Promise.all(
+                pendentes.map(async (r) => {
+                    const trackingId = getRegistroTrackingId(r);
+
+                    try {
+                        const logs = await buscarLogsDoRegistro(r);
+                        return [trackingId, logs] as const;
+                    } catch {
+                        return [trackingId, [] as LogItem[]] as const;
+                    }
+                })
+            );
+
+            if (!alive) return;
+
+            setStatusLogsById((prev) => {
+                const next = { ...prev };
+
+                for (const [trackingId, logs] of pares) {
+                    next[trackingId] = logs;
+                }
+
+                return next;
+            });
+        }
+
+        carregarLogsDaLista();
+
+        return () => {
+            alive = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ativosOrdenados]);
 
     const TAG_SERVICO = "Atendimento:";
 
@@ -1745,8 +2008,18 @@ export default function QuadroAtendimentoPage() {
                 </div>
             </div>
 
-            <DesktopTable ativos={ativosOrdenados} onSelect={showDetail} />
-            <MobileCards ativos={ativosOrdenados} onSelect={showDetail} />
+            <DesktopTable
+                ativos={ativosOrdenados}
+                onSelect={showDetail}
+                statusLogsById={statusLogsById}
+                nowMs={nowMs}
+            />
+            <MobileCards
+                ativos={ativosOrdenados}
+                onSelect={showDetail}
+                statusLogsById={statusLogsById}
+                nowMs={nowMs}
+            />
 
             <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">Avisos</h2>
@@ -2056,135 +2329,160 @@ export default function QuadroAtendimentoPage() {
 
 /* ===== Listas Memoizadas ===== */
 
-const DesktopTable = React.memo(function DesktopTable({ ativos, onSelect }: { ativos: Registro[]; onSelect: (r: Registro) => void }) {
+const DesktopTable = React.memo(function DesktopTable({
+    ativos,
+    hiddenCount = 0,
+    onSelect,
+    statusLogsById,
+    nowMs,
+}: {
+    ativos: Registro[];
+    hiddenCount?: number;
+    onSelect: (r: Registro) => void;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+}) {
     return (
-        <div className="hidden sm:block rounded-2xl border bg-card/60 p-0 shadow-sm">
-            <div className="overflow-x-auto rounded-2xl">
-                <table className="min-w-full text-sm">
-                    <thead className="bg-muted/60 text-muted-foreground">
-                        <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left">
-                            <th>Data</th>
-                            <th>Falecido(a)</th>
-                            <th>Local</th>
-                            <th>Hora</th>
-                            <th>Agente</th>
-                            <th>Status</th>
-                            <th>Etapas</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                        {ativos.length === 0 ? (
-                            <tr>
-                                <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
-                                    Nenhum atendimento encontrado.
-                                </td>
-                            </tr>
-                        ) : (
-                            ativos.map((r, i) => {
-                                const preenchidas = etapasPreenchidas(r);
-                                return (
-                                    <tr key={i} className="[&>td]:px-4 [&>td]:py-3">
-                                        <td>{dateOr(r.data)}</td>
-                                        <td>
-                                            <button className="font-semibold underline-offset-2 hover:underline" onClick={() => onSelect(r)} title="Ver detalhes">
-                                                {shown(r.falecido)}
-                                            </button>
-                                        </td>
-                                        <td>
-                                            <LocalVelorioValue value={r.local_velorio} />
-                                        </td>
-                                        <td>{timeOr(r.hora_fim_velorio)}</td>
-                                        <td>{shown(r.agente)}</td>
-                                        <td>
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${badgeClass(r.status)}`}>
-                                                {capStatus(r.status) || "a definir"}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <EtapasInlineDots filled={preenchidas} />
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
+        <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-2xl border border-slate-700/60 bg-[#0f172a]/90 shadow-sm sm:flex sm:flex-col">
+            <div className="grid h-9 shrink-0 grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/70 px-4 text-[12px] font-bold text-slate-300">
+                <div>Data</div>
+                <div>Falecido(a)</div>
+                <div>Local</div>
+                <div>Sepultamento</div>
+                <div>Agente</div>
+                <div>Status</div>
             </div>
-        </div>
+
+            <div className="min-h-0 overflow-hidden">
+                {ativos.length === 0 ? (
+                    <div className="flex h-40 items-center justify-center text-sm text-slate-400">Nenhum atendimento encontrado.</div>
+                ) : (
+                    ativos.map((r, i) => {
+                        const preenchidas = etapasPreenchidas(r);
+                        const trackingId = getRegistroTrackingId(r);
+
+                        return (
+                            <div
+                                key={trackingId || i}
+                                className="grid h-[64px] grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-700/45 px-4 text-[12px] text-slate-100 last:border-b-0"
+                            >
+                                <div className="min-w-0">
+                                    <div className="mb-1 flex justify-center">
+                                        <EtapasInlineDots filled={preenchidas} />
+                                    </div>
+                                    <div className="text-center text-[13px] font-bold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
+                                    <div className="mt-1 flex justify-center">
+                                        <ConvenioBadge convenio={r.convenio} size="xs" />
+                                    </div>
+                                </div>
+
+                                <button
+                                    className="min-w-0 text-left text-[13px] font-bold leading-tight text-slate-100 underline-offset-2 hover:underline"
+                                    onClick={() => onSelect(r)}
+                                    title={shown(r.falecido)}
+                                >
+                                    <span className="block truncate">{shown(r.falecido)}</span>
+                                </button>
+
+                                <div className="min-w-0 text-[13px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
+                                    <div className="truncate"><LocalVelorioValue value={r.local_velorio} /></div>
+                                </div>
+
+                                <div className="min-w-0 leading-tight">
+                                    <div className="text-[12px] font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                    <div className="mt-0.5 truncate text-[13px] font-bold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                </div>
+
+                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+
+            {hiddenCount > 0 && (
+                <div className="border-t border-slate-700/50 px-3 py-2 text-center text-xs font-semibold text-slate-400">
+                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
+                </div>
+            )}
+        </section>
     );
 });
 
-const MobileCards = React.memo(function MobileCards({ ativos, onSelect }: { ativos: Registro[]; onSelect: (r: Registro) => void }) {
+const MobileCards = React.memo(function MobileCards({
+    ativos,
+    hiddenCount = 0,
+    onSelect,
+    statusLogsById,
+    nowMs,
+}: {
+    ativos: Registro[];
+    hiddenCount?: number;
+    onSelect: (r: Registro) => void;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+}) {
     return (
-        <div className="sm:hidden space-y-3">
+        <section className="flex flex-col gap-3 sm:hidden">
             {ativos.length === 0 ? (
-                <div className="rounded-xl border bg-card/60 p-4 text-center text-muted-foreground">Nenhum atendimento encontrado.</div>
+                <div className="rounded-2xl border border-slate-700/60 bg-[#0f172a]/90 p-4 text-center text-sm text-slate-400">Nenhum atendimento encontrado.</div>
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
-                    const dataBR = dateOr(r.data);
-                    const hora = timeOr(r.hora_fim_velorio);
-                    const statusTxt = capStatus(r.status) || "a definir";
-                    const statusBg = badgeClass(r.status);
-                    const localSep = shown(r.local_sepultamento || r.local);
-                    const convKind = normalizeConvenio(r.convenio);
+                    const trackingId = getRegistroTrackingId(r);
 
                     return (
-                        <div key={i} className="rounded-xl border bg-card/60 p-4 shadow-sm">
+                        <article key={trackingId || i} className="overflow-hidden rounded-2xl border border-slate-700/60 bg-[#0f172a]/90 p-3 shadow-sm">
                             <div className="flex items-start justify-between gap-3">
                                 <button
-                                    className="text-left text-[17px] font-semibold leading-tight underline-offset-2 hover:underline"
+                                    className="min-w-0 text-left text-base font-bold leading-snug text-slate-100 underline-offset-2 hover:underline"
                                     onClick={() => onSelect(r)}
-                                    title="Ver detalhes"
+                                    title={shown(r.falecido)}
                                 >
-                                    {shown(r.falecido)}
+                                    <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
-                                <div className="shrink-0 text-xs text-muted-foreground mt-0.5">{dataBR}</div>
-                            </div>
 
-                            <div className="mt-2 flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2">
-                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${statusBg}`}>
-                                        {statusTxt}
-                                    </span>
-                                    <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${convenioClass(convKind)}`}
-                                        title="Convênio"
-                                    >
-                                        {convKind}
-                                    </span>
-                                </div>
-                                <div className="text-xs">
-                                    <span className="text-muted-foreground">Agente:&nbsp;</span>
-                                    <b>{shown(r.agente)}</b>
+                                <div className="shrink-0 text-right">
+                                    <EtapasInlineDots filled={preenchidas} />
+                                    <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
+                                    <div className="mt-1">
+                                        <ConvenioBadge convenio={r.convenio} size="xs" />
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="mt-2 text-sm">
-                                <span className="text-muted-foreground">Local:&nbsp;</span>
-                                <LocalVelorioValue value={r.local_velorio} />
-                            </div>
-
-                            <div className="mt-3 rounded-lg border bg-background p-3">
-                                <div className="text-sm">
-                                    <span className="text-muted-foreground">Sepultamento&nbsp;</span>
-                                    <b>{localSep}</b>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="text-slate-400">Local</div>
+                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
-                                <div className="mt-1 grid grid-cols-2 text-sm">
-                                    <div className="text-muted-foreground">{dateOr(r.data_fim_velorio)}</div>
-                                    <div className="text-right">{hora}</div>
+
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="text-slate-400">Sepultamento</div>
+                                    <div className="mt-1 font-semibold text-slate-100">{dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}</div>
                                 </div>
                             </div>
 
-                            <div className="mt-3">
-                                <div className="text-xs text-muted-foreground">Etapas:</div>
-                                <EtapasInlineDots filled={preenchidas} />
+                            <div className="mt-2 text-xs text-slate-400">
+                                Agente: <b className="text-slate-200">{shown(r.agente)}</b>
                             </div>
-                        </div>
+
+                            <div className="mt-2 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
+                            </div>
+                        </article>
                     );
                 })
             )}
-        </div>
+
+            {hiddenCount > 0 && (
+                <div className="rounded-xl border border-slate-700/60 bg-[#0f172a]/90 px-3 py-2 text-center text-xs font-semibold text-slate-400">
+                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
+                </div>
+            )}
+        </section>
     );
 });
 
@@ -2212,18 +2510,270 @@ function Field({ label, value, className = "" }: { label: string; value: React.R
 }
 
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
-    const labels = ["D", "I", "V", "S"];
     return (
-        <div className="mt-1 flex items-center gap-4">
-            {labels.map((label, k) => (
-                <div key={k} className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">{label}</span>
-                    <span className={`h-3.5 w-3.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
-                </div>
+        <div className="flex items-center gap-1" title="Etapas preenchidas">
+            {[0, 1, 2, 3].map((k) => (
+                <span key={k} className={`h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
             ))}
         </div>
     );
 }
+
+function StatusTimelineCell({
+    registro,
+    logs,
+    nowMs,
+    variant = "desktop",
+}: {
+    registro: Registro;
+    logs?: LogItem[];
+    nowMs: number;
+    variant?: "desktop" | "mobile";
+}) {
+    const segments = buildStatusSegments(registro, logs, nowMs);
+    const firstStart = segments[0]?.start ?? nowMs;
+    const totalMs = Math.max(0, nowMs - firstStart);
+
+    const { durations, activeKey } = getStatusDisplayData(segments);
+
+    return (
+        <div
+            className={
+                variant === "mobile"
+                    ? "flex w-full min-w-0 items-center justify-start gap-1 overflow-x-auto pb-1"
+                    : "-ml-5 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1"
+            }
+        >
+            {STATUS_STEPS.map((step) => {
+                const duration = durations.get(step.key) ?? 0;
+                const skipped = isStatusStepSkipped(registro, step.key);
+                const isActive = !skipped && activeKey === step.key;
+
+                return (
+                    <StatusPill
+                        key={step.key}
+                        icon={step.icon}
+                        label={step.shortLabel}
+                        time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
+                        active={isActive}
+                        muted={!isActive && (duration <= 0 || skipped)}
+                        skipped={skipped}
+                        title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                    />
+                );
+            })}
+
+            <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
+    if (stepKey === "fase03") return isNao(registro.tanato);
+    if (stepKey === "fase05") return isNao((registro.ornamentacao_tipo ?? registro.ornamentacao) as string | undefined);
+    return false;
+}
+
+function StatusPill({
+    icon,
+    label,
+    time,
+    active = false,
+    muted = false,
+    total = false,
+    skipped = false,
+    title,
+}: {
+    icon: StatusIconKey;
+    label: string;
+    time: string;
+    active?: boolean;
+    muted?: boolean;
+    total?: boolean;
+    skipped?: boolean;
+    title?: string;
+}) {
+    return (
+        <div
+            className={`relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
+            title={title ?? `${label} • ${time}`}
+        >
+            <div className={`relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`}>
+                <div
+                    className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
+                    aria-hidden="true"
+                >
+                    <StatusIcon type={icon} />
+                </div>
+            </div>
+
+            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-100"}`}>{time}</div>
+
+            {skipped && (
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
+                    ×
+                </span>
+            )}
+        </div>
+    );
+}
+
+function StatusIcon({ type }: { type: StatusIconKey }) {
+    const common = {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2.15,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+        className: "h-full w-full",
+    };
+
+    switch (type) {
+        case "hospital":
+            return (
+                <svg {...common}>
+                    <path d="M4 21V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V21" />
+                    <path d="M9 21v-5a3 3 0 0 1 6 0v5" />
+                    <path d="M12 7.5v5" />
+                    <path d="M9.5 10h5" />
+                    <path d="M6.5 21h11" />
+                </svg>
+            );
+
+        case "testTube":
+            return (
+                <svg {...common}>
+                    <path d="M10 2h7" />
+                    <path d="M14 2v6.6l4.5 7.8A3.7 3.7 0 0 1 15.3 22H8.7a3.7 3.7 0 0 1-3.2-5.6L10 8.6V2" />
+                    <path d="M8.2 15h7.6" />
+                </svg>
+            );
+
+        case "flower":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M12 4.5c1.7 1.7 1.7 3.3 0 5-1.7-1.7-1.7-3.3 0-5Z" />
+                    <path d="M12 19.5c-1.7-1.7-1.7-3.3 0-5 1.7 1.7 1.7 3.3 0 5Z" />
+                    <path d="M4.5 12c1.7-1.7 3.3-1.7 5 0-1.7 1.7-3.3 1.7-5 0Z" />
+                    <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
+                </svg>
+            );
+
+        case "coffin":
+            return (
+                <svg {...common}>
+                    <path d="M9 3h6l3 5-1.5 13h-9L6 8l3-5Z" />
+                    <path d="M12 7v8" />
+                    <path d="M9.8 10h4.4" />
+                </svg>
+            );
+
+        case "car":
+            return (
+                <svg {...common}>
+                    <path d="M5 16h14" />
+                    <path d="M6.5 16l1.4-5.2A3 3 0 0 1 10.8 8h2.4a3 3 0 0 1 2.9 2.8L17.5 16" />
+                    <circle cx="8" cy="17" r="2" />
+                    <circle cx="16" cy="17" r="2" />
+                    <path d="M9 12h6" />
+                </svg>
+            );
+
+        case "box":
+            return (
+                <svg {...common}>
+                    <path d="M4 8.5 12 4l8 4.5-8 4.5L4 8.5Z" />
+                    <path d="M4 8.5V16l8 4 8-4V8.5" />
+                    <path d="M12 13v7" />
+                    <path d="M8.2 6.2 16 10.6" />
+                </svg>
+            );
+
+        case "hourglass":
+            return (
+                <svg {...common}>
+                    <path d="M6 3h12" />
+                    <path d="M6 21h12" />
+                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
+                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
+                    <path d="M10 8h4" />
+                    <path d="M10 16h4" />
+                </svg>
+            );
+
+        case "timer":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="13" r="7" />
+                    <path d="M12 13V9" />
+                    <path d="M12 13l3 2" />
+                    <path d="M9 2h6" />
+                    <path d="M12 2v3" />
+                </svg>
+            );
+
+        default:
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+                </svg>
+            );
+    }
+}
+
+function StatusBlinkStyle() {
+    return (
+        <style jsx global>{`
+            @keyframes qa-status-pulse {
+                0%, 100% {
+                    opacity: 1;
+                    transform: scale(1);
+                    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.95));
+                }
+                50% {
+                    opacity: 0.55;
+                    transform: scale(1.1);
+                    filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.9));
+                }
+            }
+
+            @keyframes qa-status-ring-pulse {
+                0%, 100% {
+                    opacity: 1;
+                    transform: scale(1);
+                    box-shadow: 0 0 6px rgba(34, 197, 94, 0.42);
+                    border-color: rgba(34, 197, 94, 0.92);
+                }
+                50% {
+                    opacity: 0.72;
+                    transform: scale(1.07);
+                    box-shadow: 0 0 9px rgba(34, 197, 94, 0.68);
+                    border-color: rgba(34, 197, 94, 1);
+                }
+            }
+
+            .qa-status-blink {
+                display: inline-block;
+                animation: qa-status-pulse 1.05s ease-in-out infinite;
+            }
+
+            .qa-status-active-ring {
+                animation: qa-status-ring-pulse 1.05s ease-in-out infinite;
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .qa-status-blink,
+                .qa-status-active-ring {
+                    animation: none !important;
+                }
+            }
+        `}</style>
+    );
+}
+
 
 function EtapasRow({ registro }: { registro: Registro }) {
     const preenchidas = etapasPreenchidas(registro);
