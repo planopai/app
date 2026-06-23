@@ -2343,8 +2343,8 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-2xl border border-slate-700/60 bg-[#0f172a]/90 shadow-sm sm:flex sm:flex-col">
-            <div className="grid h-9 shrink-0 grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/70 px-4 text-[12px] font-bold text-slate-300">
+        <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90 sm:flex sm:flex-col">
+            <div className="grid h-9 shrink-0 grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 text-[12px] font-bold text-slate-600 dark:border-slate-700/50 dark:bg-slate-800/70 dark:text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2355,7 +2355,7 @@ const DesktopTable = React.memo(function DesktopTable({
 
             <div className="min-h-0 overflow-hidden">
                 {ativos.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center text-sm text-slate-400">Nenhum atendimento encontrado.</div>
+                    <div className="flex h-40 items-center justify-center text-sm text-slate-500 dark:text-slate-400">Nenhum atendimento encontrado.</div>
                 ) : (
                     ativos.map((r, i) => {
                         const preenchidas = etapasPreenchidas(r);
@@ -2364,36 +2364,36 @@ const DesktopTable = React.memo(function DesktopTable({
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[64px] grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-700/45 px-4 text-[12px] text-slate-100 last:border-b-0"
+                                className="grid h-[64px] grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-200/80 px-4 text-[12px] text-slate-700 last:border-b-0 dark:border-slate-700/45 dark:text-slate-100"
                             >
                                 <div className="min-w-0">
                                     <div className="mb-1 flex justify-center">
                                         <EtapasInlineDots filled={preenchidas} />
                                     </div>
-                                    <div className="text-center text-[13px] font-bold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
+                                    <div className="text-center text-[13px] font-bold leading-none tabular-nums text-slate-900 dark:text-slate-100">{dateOr(r.data)}</div>
                                     <div className="mt-1 flex justify-center">
                                         <ConvenioBadge convenio={r.convenio} size="xs" />
                                     </div>
                                 </div>
 
                                 <button
-                                    className="min-w-0 text-left text-[13px] font-bold leading-tight text-slate-100 underline-offset-2 hover:underline"
+                                    className="min-w-0 text-left text-[13px] font-bold leading-tight text-slate-900 underline-offset-2 hover:underline dark:text-slate-100"
                                     onClick={() => onSelect(r)}
                                     title={shown(r.falecido)}
                                 >
                                     <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
 
-                                <div className="min-w-0 text-[13px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
+                                <div className="min-w-0 text-[13px] font-medium leading-tight text-slate-700 dark:text-slate-200" title={shown(r.local_velorio)}>
                                     <div className="truncate"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
 
                                 <div className="min-w-0 leading-tight">
-                                    <div className="text-[12px] font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
-                                    <div className="mt-0.5 truncate text-[13px] font-bold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                    <div className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                    <div className="mt-0.5 truncate text-[13px] font-bold tabular-nums text-slate-900 dark:text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
                                 </div>
 
-                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-700 dark:text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
 
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
                             </div>
@@ -2403,7 +2403,7 @@ const DesktopTable = React.memo(function DesktopTable({
             </div>
 
             {hiddenCount > 0 && (
-                <div className="border-t border-slate-700/50 px-3 py-2 text-center text-xs font-semibold text-slate-400">
+                <div className="border-t border-slate-200 px-3 py-2 text-center text-xs font-semibold text-slate-500 dark:border-slate-700/50 dark:text-slate-400">
                     + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
                 </div>
             )}
