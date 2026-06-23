@@ -3003,7 +3003,6 @@ export default function Page() {
 
     // ENTRADA
     const [entradaOpen, setEntradaOpen] = useState(false);
-    const [entradaScanOpen, setEntradaScanOpen] = useState(false);
 
     // ✅ NOVO: popup "Concluir" + sucesso
     const [entradaConcluirOpen, setEntradaConcluirOpen] = useState(false);
@@ -3059,10 +3058,14 @@ export default function Page() {
 
 
     const entradaProdutoExistente = useMemo(() => {
+        if (entradaProdutoId) {
+            return produtos.find((p) => p.id === entradaProdutoId) ?? null;
+        }
+
         const cb = entradaBarcode.trim();
         if (!cb) return null;
         return produtos.find((p) => p.codigo_barras === cb) ?? null;
-    }, [entradaBarcode, produtos]);
+    }, [entradaBarcode, entradaProdutoId, produtos]);
 
     // NOVO: quando digitar/scanear CB, sincroniza com a barra de pesquisa (Entrada)
     useEffect(() => {
@@ -3267,10 +3270,12 @@ export default function Page() {
 
         const deposito_id = Number(entradaDepositoId);
         const quantidade = clampInt(entradaQtd || "0");
-        const codigo_barras = entradaBarcode.trim();
+        const produtoSelecionado = entradaProdutoExistente;
+        const codigo_barras = String(produtoSelecionado?.codigo_barras || entradaBarcode).trim();
 
         if (!deposito_id) return alert("Selecione o depósito."), null;
-        if (!codigo_barras) return alert("Informe/Leia o código de barras."), null;
+        if (!produtoSelecionado) return alert("Selecione um produto."), null;
+        if (!codigo_barras) return alert("O produto selecionado não possui código de barras."), null;
         if (quantidade <= 0) return alert("Quantidade inválida."), null;
 
         const payload: any = {
@@ -3281,15 +3286,7 @@ export default function Page() {
             observacao: entradaObs.trim() || undefined,
         };
 
-        const msgNaoCadastrado =
-            "Produto não cadastrado. Por gentileza, solicite a criação de um novo produto ao setor responsável.";
-
-        const nomeProduto = entradaProdutoExistente?.nome || "";
-
-        if (!entradaProdutoExistente) {
-            alert(msgNaoCadastrado);
-            return null;
-        }
+        const nomeProduto = produtoSelecionado.nome || "";
 
         const resumo = `${nomeProduto} — CB ${codigo_barras} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id
             }`;
@@ -6073,7 +6070,6 @@ export default function Page() {
             <Modal
                 open={entradaOpen}
                 title="Entrada"
-                subtitle="Monte a lista e conclua. Se o produto não existir, cadastre na hora."
                 onClose={cancelarEntrada}
             >
                 <div className="space-y-4">
@@ -6163,37 +6159,7 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        {/* ✅ Código + Scan (sempre na mesma linha) */}
-                        <div className="sm:col-span-2 flex items-end gap-2">
-                            <div className="flex-1">
-                                <Field label="Código de barras">
-                                    <TextInput
-                                        value={entradaBarcode}
-                                        onChange={(e) => setEntradaBarcode(e.target.value)}
-                                        placeholder="Ex: 789..."
-                                        inputMode="numeric"
-                                    />
-                                </Field>
-                            </div>
-
-                            <div className="w-[120px]">
-                                <Field label="Scan">
-                                    <Button
-                                        variant="soft"
-                                        onClick={() => setEntradaScanOpen(true)}
-                                        type="button"
-                                        className="w-full"
-                                    >
-                                        📷 Ler
-                                    </Button>
-                                </Field>
-                            </div>
-                        </div>
-
-
-
-
-                        {/* 4ª linha: Quantidade + Adicionar à lista */}
+                        {/* 3ª linha: Quantidade + Adicionar à lista */}
                         <Field label="Quantidade">
                             <TextInput
                                 type="text"
@@ -6222,17 +6188,12 @@ export default function Page() {
                     {/* status produto */}
                     {entradaProdutoExistente ? (
                         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                            Produto encontrado: <b>{entradaProdutoExistente.nome}</b>{" "}
+                            Produto selecionado: <b>{entradaProdutoExistente.nome}</b>{" "}
                             <span className="text-xs text-emerald-700">• clique no nome na tabela de estoque para editar</span>
                         </div>
-                    ) : entradaBarcode.trim() ? (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                            <b>Produto não cadastrado.</b> Por gentileza, solicite a criação de um novo produto ao setor responsável.
-                        </div>
                     ) : (
-
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                            Informe o código de barras para continuar.
+                            Selecione um produto para continuar.
                         </div>
                     )}
 
@@ -8329,8 +8290,6 @@ export default function Page() {
             </FilterPanelModal>
 
             {/* SCANNERS */}
-            <BarcodeScannerModal open={entradaScanOpen} title="Ler código de barras (Entrada)" onClose={() => setEntradaScanOpen(false)} onDetected={(code) => setEntradaBarcode(code)} />
-
             <BarcodeScannerModal
                 open={saidaScanOpen}
                 title="Ler código de barras (Saída)"
