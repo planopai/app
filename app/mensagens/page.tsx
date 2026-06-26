@@ -13,62 +13,316 @@ import {
     IconSearch,
 } from "@tabler/icons-react";
 
-type Room = 1 | 2 | 3;
+type AttendanceFilter = "todos" | "sala01" | "sala02" | "sala03" | "externo";
+type PeriodStatus = "em_andamento" | "agendado" | "encerrado" | "sem_horario";
+type MessageStatus = "pendente" | "aprovado" | "reprovado" | "excluido";
 
 type MessageItem = {
     id: number;
+    tipo?: string;
     name: string;
     text: string;
     image?: string | null;
+    status?: MessageStatus | string;
+    criado_em?: string | null;
+    arquivo_mime?: string | null;
 };
 
-type ApiResponse = {
-    receivedMessages: MessageItem[];
-    approvedMessages: MessageItem[];
-};
-
-type MemorialItem = {
+type AtendimentoItem = {
     id: number;
-    sala: string;
-    nome_completo: string;
-    data_nascimento: string | null;
-    data_falecimento: string | null;
-    criado_em: string; // timestamp
+    atendimento_id: number;
+    homenagem_id?: number | null;
+    codigo_homenagem?: string;
+    slug?: string;
+    falecido: string;
+    sala?: string | null;
+    atendimento_tabela?: string | null;
+    data_nascimento?: string | null;
+    data_falecimento?: string | null;
+    data_inicio_velorio?: string | null;
+    hora_inicio_velorio?: string | null;
+    data_fim_velorio?: string | null;
+    hora_fim_velorio?: string | null;
+    inicio?: string | null;
+    fim?: string | null;
+    pendentes?: number;
+    aprovadas?: number;
+    total?: number;
+    status_periodo?: PeriodStatus | string;
+    link_publico?: string | null;
+    raw?: any;
 };
 
+type ApiMessagesResponse = {
+    receivedMessages?: MessageItem[];
+    approvedMessages?: MessageItem[];
+    pendentes?: any[];
+    aprovadas?: any[];
+    envios?: any[];
+    mensagens?: any[];
+};
+
+const API_URL = "https://api.planoassistencialintegrado.com.br/homenagens.php";
+const PUBLIC_BASE_URL = "https://planoassistencialintegrado.com.br";
 const FALLBACK_IMG = "https://via.placeholder.com/100";
 
-// Proxies (evitam CORS e mantêm cookies)
-const fetchMap: Record<Room, string> = {
-    1: "/api/php/fetchMessages.php",
-    2: "/api/php/fetchMessages2.php",
-    3: "/api/php/fetchMessages3.php",
+const ADMIN_ACTIONS = {
+    listarAtendimentos: "admin_listar_atendimentos",
+    listarMensagens: "admin_listar_mensagens_atendimento",
+    aprovar: "admin_aprovar_mensagem",
+    excluir: "admin_excluir_mensagem",
 };
-const approveMap: Record<Room, (id: number) => string> = {
-    1: (id) => `/api/php/approveMessage.php?id=${id}`,
-    2: (id) => `/api/php/approveMessage2.php?id=${id}`,
-    3: (id) => `/api/php/approveMessage3.php?id=${id}`,
-};
-const deleteMap: Record<Room, (id: number, type: "received" | "approved") => string> = {
-    1: (id, t) => `/api/php/deleteMessage.php?id=${id}&type=${t}`,
-    2: (id, t) => `/api/php/deleteMessage2.php?id=${id}&type=${t}`,
-    3: (id, t) => `/api/php/deleteMessage3.php?id=${id}&type=${t}`,
-};
-
-function resolveImageSrc(src?: string | null): string {
-    if (!src) return FALLBACK_IMG;
-    let s = src.trim();
-    if (!s) return FALLBACK_IMG;
-    if (/^(data:|blob:|https?:\/\/)/i.test(s)) return s;
-    s = s.replace(/^\.?\//, "");
-    return `/api/php/${s}`;
-}
 
 const btn =
     "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold " +
-    "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50";
+    "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50 disabled:pointer-events-none";
 
-function RoomButton({
+function onlyDigits(v: unknown): string {
+    return String(v ?? "").replace(/\D+/g, "");
+}
+
+function asNumber(v: unknown, fallback = 0): number {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function pad2(v: string | number): string {
+    return String(v).padStart(2, "0");
+}
+
+function normalizeDate(v?: string | null): string {
+    const s = String(v ?? "").trim();
+    if (!s || s === "0000-00-00" || s === "0000-00-00 00:00:00") return "";
+
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        return s.slice(0, 10);
+    }
+
+    const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (br) {
+        return `${br[3]}-${br[2]}-${br[1]}`;
+    }
+
+    return s;
+}
+
+function normalizeHour(v?: string | null): string {
+    const s = String(v ?? "").trim();
+    if (!s) return "";
+    const m = s.match(/(\d{1,2}):(\d{2})/);
+    if (!m) return "";
+    return `${pad2(m[1])}:${m[2]}`;
+}
+
+function formatDateBR(v?: string | null): string {
+    const d = normalizeDate(v);
+    if (!d) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        const [y, m, day] = d.split("-");
+        return `${day}/${m}/${y}`;
+    }
+    return d;
+}
+
+function formatHourBR(v?: string | null): string {
+    return normalizeHour(v);
+}
+
+function buildDateTime(data?: string | null, hora?: string | null): Date | null {
+    const d = normalizeDate(data);
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+
+    const h = normalizeHour(hora) || "00:00";
+    const dt = new Date(`${d}T${h}:00`);
+
+    if (Number.isNaN(dt.getTime())) return null;
+
+    return dt;
+}
+
+function derivePeriodStatus(a: AtendimentoItem): PeriodStatus {
+    const status = String(a.status_periodo ?? "").toLowerCase().trim();
+
+    if (["em_andamento", "andamento", "ativo", "aberto", "durante"].includes(status)) return "em_andamento";
+    if (["agendado", "futuro", "aguardando"].includes(status)) return "agendado";
+    if (["encerrado", "finalizado", "fechado"].includes(status)) return "encerrado";
+
+    const inicio = a.inicio
+        ? new Date(String(a.inicio).replace(" ", "T"))
+        : buildDateTime(a.data_inicio_velorio, a.hora_inicio_velorio);
+
+    const fim = a.fim
+        ? new Date(String(a.fim).replace(" ", "T"))
+        : buildDateTime(a.data_fim_velorio, a.hora_fim_velorio);
+
+    if (!inicio || !fim || Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+        return "sem_horario";
+    }
+
+    const now = new Date();
+
+    if (now < inicio) return "agendado";
+    if (now > fim) return "encerrado";
+    return "em_andamento";
+}
+
+function periodLabel(status: PeriodStatus): string {
+    if (status === "em_andamento") return "Em andamento";
+    if (status === "agendado") return "Agendado";
+    if (status === "encerrado") return "Encerrado";
+    return "Sem horário";
+}
+
+function periodClass(status: PeriodStatus): string {
+    if (status === "em_andamento") return "border-green-200 bg-green-50 text-green-700";
+    if (status === "agendado") return "border-blue-200 bg-blue-50 text-blue-700";
+    if (status === "encerrado") return "border-slate-200 bg-slate-50 text-slate-600";
+    return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function normalizeSala(v?: string | null): string {
+    const s = String(v ?? "").trim().toLowerCase();
+
+    if (!s) return "Atendimento Externo";
+    if (s === "1" || s === "01" || s.includes("sala 01") || s.includes("sala-01") || s.includes("sala_01")) return "Sala 01";
+    if (s === "2" || s === "02" || s.includes("sala 02") || s.includes("sala-02") || s.includes("sala_02")) return "Sala 02";
+    if (s === "3" || s === "03" || s.includes("sala 03") || s.includes("sala-03") || s.includes("sala_03")) return "Sala 03";
+
+    if (s.includes("extern")) return "Atendimento Externo";
+
+    return v || "Atendimento Externo";
+}
+
+function filterParam(f: AttendanceFilter): string {
+    if (f === "sala01") return "01";
+    if (f === "sala02") return "02";
+    if (f === "sala03") return "03";
+    if (f === "externo") return "externo";
+    return "todos";
+}
+
+function resolveImageSrc(src?: string | null): string {
+    if (!src) return FALLBACK_IMG;
+
+    let s = String(src).trim();
+
+    if (!s) return FALLBACK_IMG;
+    if (/^(data:|blob:|https?:\/\/)/i.test(s)) return s;
+
+    s = s.replace(/^\.?\//, "");
+
+    return `${PUBLIC_BASE_URL}/${s}`;
+}
+
+function normalizeMessage(raw: any): MessageItem {
+    const id = asNumber(raw?.id ?? raw?.envio_id);
+    const name = String(raw?.name ?? raw?.nome_visitante ?? raw?.nome ?? "Visitante").trim() || "Visitante";
+    const text = String(raw?.text ?? raw?.mensagem ?? "").trim();
+    const image = raw?.image ?? raw?.arquivo_url ?? raw?.foto ?? null;
+
+    return {
+        id,
+        tipo: raw?.tipo ? String(raw.tipo) : undefined,
+        name,
+        text,
+        image,
+        status: raw?.status,
+        criado_em: raw?.criado_em ?? null,
+        arquivo_mime: raw?.arquivo_mime ?? null,
+    };
+}
+
+function normalizeAtendimento(raw: any): AtendimentoItem {
+    const atendimentoId = asNumber(
+        raw?.atendimento_id ??
+        raw?.legado_luz_atendimento_id ??
+        raw?.id
+    );
+
+    const homenagemId = raw?.homenagem_id ?? raw?.homenagem?.id ?? raw?.id_homenagem ?? null;
+    const falecido = String(
+        raw?.falecido ??
+        raw?.nome_falecido ??
+        raw?.nome_completo ??
+        raw?.homenagem?.falecido ??
+        "Atendimento sem nome"
+    ).trim();
+
+    const sala = raw?.sala ?? raw?.nome_sala ?? raw?.local_velorio ?? raw?.local ?? null;
+
+    return {
+        id: atendimentoId,
+        atendimento_id: atendimentoId,
+        homenagem_id: homenagemId !== null && homenagemId !== undefined ? asNumber(homenagemId) : null,
+        codigo_homenagem: raw?.codigo_homenagem ?? raw?.slug ?? raw?.legado_luz_slug ?? raw?.homenagem?.slug ?? "",
+        slug: raw?.slug ?? raw?.codigo_homenagem ?? raw?.legado_luz_slug ?? raw?.homenagem?.slug ?? "",
+        falecido,
+        sala,
+        atendimento_tabela: raw?.atendimento_tabela ?? raw?.tabela ?? "sepultamentos",
+        data_nascimento: raw?.data_nascimento ?? raw?.nascimento ?? raw?.data_nascimento_falecido ?? null,
+        data_falecimento: raw?.data_falecimento ?? raw?.falecimento ?? raw?.data_obito ?? raw?.obito ?? null,
+        data_inicio_velorio: raw?.data_inicio_velorio ?? raw?.data_inicio ?? raw?.inicio_data ?? null,
+        hora_inicio_velorio: raw?.hora_inicio_velorio ?? raw?.hora_inicio ?? raw?.inicio_hora ?? null,
+        data_fim_velorio: raw?.data_fim_velorio ?? raw?.data_fim ?? raw?.fim_data ?? null,
+        hora_fim_velorio: raw?.hora_fim_velorio ?? raw?.hora_fim ?? raw?.fim_hora ?? null,
+        inicio: raw?.inicio ?? raw?.inicio_velorio ?? null,
+        fim: raw?.fim ?? raw?.fim_velorio ?? null,
+        pendentes: asNumber(raw?.pendentes ?? raw?.total_pendentes ?? raw?.qtd_pendentes ?? 0),
+        aprovadas: asNumber(raw?.aprovadas ?? raw?.total_aprovadas ?? raw?.qtd_aprovadas ?? 0),
+        total: asNumber(raw?.total ?? raw?.total_envios ?? raw?.qtd_total ?? 0),
+        status_periodo: raw?.status_periodo ?? raw?.status_janela ?? raw?.periodo_status,
+        link_publico: raw?.link_publico ?? raw?.legado_luz_link ?? raw?.homenagem_link_publico ?? null,
+        raw,
+    };
+}
+
+async function apiPost(payload: Record<string, any>): Promise<any> {
+    const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        credentials: "include",
+        cache: "no-store",
+        body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || data?.erro || data?.success === false || data?.sucesso === false) {
+        throw new Error(data?.msg || data?.message || data?.erro || "Falha ao consultar homenagens.php.");
+    }
+
+    return data;
+}
+
+async function apiGet(params: Record<string, any>): Promise<any> {
+    const url = new URL(API_URL);
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+            url.searchParams.set(key, String(value));
+        }
+    });
+
+    url.searchParams.set("_cb", String(Date.now()));
+
+    const response = await fetch(url.toString(), {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || data?.erro || data?.success === false || data?.sucesso === false) {
+        throw new Error(data?.msg || data?.message || data?.erro || "Falha ao carregar homenagem.");
+    }
+
+    return data;
+}
+
+function FilterButton({
     label,
     active,
     onClick,
@@ -79,6 +333,7 @@ function RoomButton({
 }) {
     return (
         <button
+            type="button"
             onClick={onClick}
             className={[
                 "flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-3 font-semibold transition",
@@ -93,6 +348,77 @@ function RoomButton({
     );
 }
 
+function AtendimentoCard({
+    item,
+    active,
+    onClick,
+}: {
+    item: AtendimentoItem;
+    active: boolean;
+    onClick: () => void;
+}) {
+    const status = derivePeriodStatus(item);
+    const periodo =
+        item.inicio || item.fim
+            ? `${String(item.inicio || "").replace("T", " ")} ${item.fim ? "até " + String(item.fim).replace("T", " ") : ""}`
+            : [
+                formatDateBR(item.data_inicio_velorio),
+                formatHourBR(item.hora_inicio_velorio),
+                item.data_fim_velorio || item.hora_fim_velorio ? "até" : "",
+                formatDateBR(item.data_fim_velorio),
+                formatHourBR(item.hora_fim_velorio),
+            ].filter(Boolean).join(" ");
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={[
+                "w-full rounded-2xl border p-4 text-left shadow-sm transition",
+                active
+                    ? "border-primary bg-primary/5 ring-1 ring-primary/25"
+                    : "border-muted bg-white hover:bg-muted/20",
+            ].join(" ")}
+        >
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="truncate text-base font-bold text-foreground">
+                        {item.falecido}
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-muted-foreground">
+                        Atendimento #{item.atendimento_id} · {normalizeSala(item.sala)}
+                    </div>
+                </div>
+
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-bold ${periodClass(status)}`}>
+                    {periodLabel(status)}
+                </span>
+            </div>
+
+            {periodo ? (
+                <div className="mt-2 text-xs font-medium text-muted-foreground">
+                    {periodo}
+                </div>
+            ) : null}
+
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-lg border bg-card/60 px-2 py-2">
+                    <div className="font-black text-foreground">{item.pendentes || 0}</div>
+                    <div className="text-muted-foreground">Pendentes</div>
+                </div>
+                <div className="rounded-lg border bg-card/60 px-2 py-2">
+                    <div className="font-black text-foreground">{item.aprovadas || 0}</div>
+                    <div className="text-muted-foreground">Aprovadas</div>
+                </div>
+                <div className="rounded-lg border bg-card/60 px-2 py-2">
+                    <div className="font-black text-foreground">{item.total || 0}</div>
+                    <div className="text-muted-foreground">Total</div>
+                </div>
+            </div>
+        </button>
+    );
+}
+
 function MessageCard({
     item,
     actions,
@@ -101,59 +427,100 @@ function MessageCard({
     actions?: React.ReactNode;
 }) {
     const src = resolveImageSrc(item.image);
+    const isAudio = String(item.arquivo_mime || "").startsWith("audio/");
+    const isVideo = String(item.arquivo_mime || "").startsWith("video/");
+
     return (
-        <div className="min-w-0 flex items-start gap-3 rounded-xl border bg-white p-3 shadow-sm sm:p-4">
-            <img
-                src={src}
-                alt={item.name}
-                className="size-16 rounded-md border object-cover sm:size-20"
-                loading="lazy"
-                onError={(e) => {
-                    const img = e.currentTarget as HTMLImageElement;
-                    if (img.src !== FALLBACK_IMG) img.src = FALLBACK_IMG;
-                }}
-            />
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-base font-semibold">{item.name}</div>
-                <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                    {item.text}
-                </p>
-                {actions && <div className="mt-3 flex flex-wrap gap-2">{actions}</div>}
+        <div className="min-w-0 rounded-xl border bg-white p-3 shadow-sm sm:p-4">
+            <div className="flex items-start gap-3">
+                {isAudio ? (
+                    <div className="grid size-16 shrink-0 place-items-center rounded-md border bg-muted/30 text-xs font-bold text-muted-foreground sm:size-20">
+                        Áudio
+                    </div>
+                ) : isVideo ? (
+                    <div className="grid size-16 shrink-0 place-items-center rounded-md border bg-muted/30 text-xs font-bold text-muted-foreground sm:size-20">
+                        Vídeo
+                    </div>
+                ) : (
+                    <img
+                        src={src}
+                        alt={item.name}
+                        className="size-16 shrink-0 rounded-md border object-cover sm:size-20"
+                        loading="lazy"
+                        onError={(e) => {
+                            const img = e.currentTarget as HTMLImageElement;
+                            if (img.src !== FALLBACK_IMG) img.src = FALLBACK_IMG;
+                        }}
+                    />
+                )}
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="truncate text-base font-semibold">{item.name}</div>
+                        {item.tipo ? (
+                            <span className="rounded-full border bg-muted/20 px-2 py-0.5 text-[11px] font-bold uppercase text-muted-foreground">
+                                {item.tipo}
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {item.criado_em ? (
+                        <div className="mt-0.5 text-xs font-medium text-muted-foreground">
+                            {String(item.criado_em).replace("T", " ")}
+                        </div>
+                    ) : null}
+
+                    {item.text ? (
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                            {item.text}
+                        </p>
+                    ) : (
+                        <p className="mt-2 text-sm italic text-muted-foreground">
+                            Homenagem enviada sem texto.
+                        </p>
+                    )}
+
+                    {isAudio && item.image ? (
+                        <audio className="mt-3 w-full" controls src={resolveImageSrc(item.image)} />
+                    ) : null}
+
+                    {isVideo && item.image ? (
+                        <video className="mt-3 max-h-72 w-full rounded-lg border bg-black" controls src={resolveImageSrc(item.image)} />
+                    ) : null}
+
+                    {actions && <div className="mt-3 flex flex-wrap gap-2">{actions}</div>}
+                </div>
             </div>
         </div>
     );
 }
 
 export default function MensagensPage() {
-    const [room, setRoom] = useState<Room>(1);
-    const [loading, setLoading] = useState(false);
+    const [filter, setFilter] = useState<AttendanceFilter>("todos");
+    const [query, setQuery] = useState("");
+    const [loadingAtendimentos, setLoadingAtendimentos] = useState(false);
+    const [loadingMessages, setLoadingMessages] = useState(false);
+    const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+    const [atendimentos, setAtendimentos] = useState<AtendimentoItem[]>([]);
+    const [selected, setSelected] = useState<AtendimentoItem | null>(null);
     const [received, setReceived] = useState<MessageItem[]>([]);
     const [approved, setApproved] = useState<MessageItem[]>([]);
     const [error, setError] = useState<string | null>(null);
 
-    // Modal & geração
     const [showModal, setShowModal] = useState(false);
     const [falecido, setFalecido] = useState("");
-    const [nascimento, setNascimento] = useState(""); // yyyy-mm-dd
-    const [falecimento, setFalecimento] = useState(""); // yyyy-mm-dd
+    const [nascimento, setNascimento] = useState("");
+    const [falecimento, setFalecimento] = useState("");
     const [generating, setGenerating] = useState(false);
     const [progress, setProgress] = useState(0);
     const [progressMsg, setProgressMsg] = useState("");
 
-    // modo de preenchimento (manual | memorial)
-    const [fillMode, setFillMode] = useState<"manual" | "memorial">("manual");
+    const selectedAtendimentoId = selected?.atendimento_id || 0;
 
-    // dados do memorial
-    const [memorialList, setMemorialList] = useState<MemorialItem[]>([]);
-    const [memorialLoading, setMemorialLoading] = useState(false);
-    const [memorialError, setMemorialError] = useState<string | null>(null);
-    const [memorialQuery, setMemorialQuery] = useState("");
-    const [selectedMemorialId, setSelectedMemorialId] = useState<number | null>(null);
-
-    // Carrega jsPDF (UMD)
     useEffect(() => {
         const KEY = "__jspdf_loaded__";
         if ((window as any)[KEY]) return;
+
         const script = document.createElement("script");
         script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
         script.async = true;
@@ -161,61 +528,16 @@ export default function MensagensPage() {
         document.body.appendChild(script);
     }, []);
 
-    const fetchUrl = useMemo(() => `${fetchMap[room]}?cb=${Date.now()}`, [room]);
-    const approveUrl = useCallback((id: number) => approveMap[room](id), [room]);
-    const deleteUrl = useCallback(
-        (id: number, type: "received" | "approved") => deleteMap[room](id, type),
-        [room]
-    );
-
-    const loadMessages = useCallback(async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            const res = await fetch(fetchUrl, { cache: "no-store", credentials: "include" });
-            if (!res.ok) throw new Error("Falha ao carregar mensagens.");
-            const data: ApiResponse = await res.json();
-            setReceived(data.receivedMessages || []);
-            setApproved(data.approvedMessages || []);
-        } catch (e: any) {
-            setError(e?.message || "Erro ao carregar mensagens.");
-            setReceived([]);
-            setApproved([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [fetchUrl]);
-
-    const approveMessage = async (id: number) => {
-        try {
-            await fetch(approveUrl(id), { method: "POST", credentials: "include" });
-            await loadMessages();
-        } catch {
-            alert("Erro ao aprovar a mensagem.");
-        }
-    };
-
-    const deleteMessage = async (id: number, type: "received" | "approved") => {
-        try {
-            await fetch(deleteUrl(id, type), { method: "POST", credentials: "include" });
-            await loadMessages();
-        } catch {
-            alert("Erro ao excluir a mensagem.");
-        }
-    };
-
-    useEffect(() => {
-        loadMessages();
-    }, [loadMessages]);
-
-    // ===== util: cache simples de dataURLs =====
     const dataUrlCache = useRef<Map<string, string>>(new Map());
+
     async function toDataURL(url: string): Promise<string> {
         const cache = dataUrlCache.current;
         if (cache.has(url)) return cache.get(url)!;
+
         try {
             const resp = await fetch(url, { credentials: "include" });
-            if (!resp.ok) throw new Error("img fetch fail");
+            if (!resp.ok) throw new Error("Falha ao carregar imagem.");
+
             const blob = await resp.blob();
             const dataUrl: string = await new Promise((resolve, reject) => {
                 const fr = new FileReader();
@@ -223,6 +545,7 @@ export default function MensagensPage() {
                 fr.onerror = reject;
                 fr.readAsDataURL(blob);
             });
+
             cache.set(url, dataUrl);
             return dataUrl;
         } catch {
@@ -230,58 +553,27 @@ export default function MensagensPage() {
         }
     }
 
-    // ===== Fontes =====
-    const djvStateRef = useRef<"none" | "ok" | "fail">("none");
-    async function ensureDejaVu(doc: any): Promise<boolean> {
-        if (djvStateRef.current === "ok") return true;
-        if (djvStateRef.current === "fail") return false;
-        try {
-            const regularUrl =
-                "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts-ttf@2.37/ttf/DejaVuSans.ttf";
-            const boldUrl =
-                "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts-ttf@2.37/ttf/DejaVuSans-Bold.ttf";
-            async function fetchTTF(u: string) {
-                const r = await fetch(u);
-                if (!r.ok) throw new Error("Fonte não encontrada");
-                const b = await r.arrayBuffer();
-                let binary = "";
-                const bytes = new Uint8Array(b);
-                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                return btoa(binary);
-            }
-            const [regB64, boldB64] = await Promise.all([fetchTTF(regularUrl), fetchTTF(boldUrl)]);
-            doc.addFileToVFS("DejaVuSans.ttf", regB64);
-            doc.addFont("DejaVuSans.ttf", "DejaVuSans", "normal");
-            doc.addFileToVFS("DejaVuSans-Bold.ttf", boldB64);
-            doc.addFont("DejaVuSans-Bold.ttf", "DejaVuSans", "bold");
-            djvStateRef.current = "ok";
-            return true;
-        } catch {
-            djvStateRef.current = "fail";
-            return false;
-        }
-    }
     const nunitoStateRef = useRef<"none" | "ok" | "fail">("none");
+
     async function ensureNunito(doc: any): Promise<boolean> {
         if (nunitoStateRef.current === "ok") return true;
         if (nunitoStateRef.current === "fail") return false;
 
         try {
-            // TTF variável (colchetes escapados)
-            const nunitoUrl =
-                "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito%5Bwght%5D.ttf";
-
+            const nunitoUrl = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nunito/Nunito%5Bwght%5D.ttf";
             const r = await fetch(nunitoUrl);
-            if (!r.ok) throw new Error("Fonte Nunito não encontrada");
-            const buf = await r.arrayBuffer();
+            if (!r.ok) throw new Error("Fonte não encontrada");
 
-            // arrayBuffer -> base64
+            const buf = await r.arrayBuffer();
             let binary = "";
             const bytes = new Uint8Array(buf);
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+
             const b64 = btoa(binary);
 
-            // Registra a fonte nunito / mesma fonte para normal e bold (o variável cobre ambos)
             doc.addFileToVFS("Nunito.ttf", b64);
             doc.addFont("Nunito.ttf", "Nunito", "normal");
             doc.addFont("Nunito.ttf", "Nunito", "bold");
@@ -294,7 +586,6 @@ export default function MensagensPage() {
         }
     }
 
-    // --- Sanitização robusta p/ PDF
     const sanitizeForPdf = (input?: string) => {
         let s = (input ?? "").normalize("NFC");
         s = s.replace(/\r\n?/g, "\n").replace(/\u00A0/g, " ");
@@ -305,11 +596,13 @@ export default function MensagensPage() {
             /[\u2764\u2665\u2661\u{1F494}\u{1F493}\u{1F495}-\u{1F49F}\u{1F9E1}\u{1FA77}]/gu,
             "♥"
         );
+
         try {
             s = s.replace(/\p{Extended_Pictographic}/gu, "•");
         } catch {
             s = s.replace(/[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/gu, "•");
         }
+
         return s;
     };
 
@@ -325,37 +618,218 @@ export default function MensagensPage() {
         draw: boolean
     ) {
         const clean = sanitizeForPdf(text);
+
         doc.setFont(fontName, fontStyle);
         doc.setFontSize(fontSize);
+
         const lines = doc.splitTextToSize(clean, maxW) as string[];
         const mmPerPt = 0.352777778;
         const lh = fontSize * 1.15 * mmPerPt;
         const height = Math.max(lh * lines.length, lh);
+
         if (draw) {
-            if (typeof (doc as any).setCharSpace === "function") (doc as any).setCharSpace(0);
             let cy = y;
+
             for (const ln of lines) {
                 doc.text(ln, x, cy, { baseline: "top", align: "left" });
                 cy += lh;
             }
         }
+
         return { lines, height, lineHeight: lh };
     }
 
-    const formatDateBR = (iso: string) => {
-        if (!iso) return "";
-        const [y, m, d] = iso.split("-");
-        return `${d}/${m}/${y}`;
+    const loadAtendimentos = useCallback(async () => {
+        try {
+            setLoadingAtendimentos(true);
+            setError(null);
+
+            const data = await apiPost({
+                acao: ADMIN_ACTIONS.listarAtendimentos,
+                filtro: filterParam(filter),
+                q: query.trim(),
+                limite: 200,
+            });
+
+            const rows = data?.atendimentos ?? data?.dados ?? data?.items ?? [];
+            const normalized = Array.isArray(rows) ? rows.map(normalizeAtendimento) : [];
+
+            setAtendimentos(normalized);
+
+            if (selected) {
+                const stillExists = normalized.find((a) => a.atendimento_id === selected.atendimento_id);
+                if (stillExists) {
+                    setSelected(stillExists);
+                } else {
+                    setSelected(null);
+                    setReceived([]);
+                    setApproved([]);
+                }
+            }
+        } catch (e: any) {
+            setError(e?.message || "Erro ao carregar atendimentos.");
+            setAtendimentos([]);
+            setSelected(null);
+            setReceived([]);
+            setApproved([]);
+        } finally {
+            setLoadingAtendimentos(false);
+        }
+    }, [filter, query, selected]);
+
+    const loadMessages = useCallback(async (atendimento?: AtendimentoItem | null) => {
+        const item = atendimento ?? selected;
+
+        if (!item?.atendimento_id) {
+            setReceived([]);
+            setApproved([]);
+            return;
+        }
+
+        try {
+            setLoadingMessages(true);
+            setError(null);
+
+            const data: ApiMessagesResponse = await apiPost({
+                acao: ADMIN_ACTIONS.listarMensagens,
+                atendimento_id: item.atendimento_id,
+                homenagem_id: item.homenagem_id,
+                codigo: item.codigo_homenagem || item.slug || "",
+            });
+
+            let pendentes: MessageItem[] = [];
+            let aprovadas: MessageItem[] = [];
+
+            if (Array.isArray(data.receivedMessages) || Array.isArray(data.approvedMessages)) {
+                pendentes = (data.receivedMessages || []).map(normalizeMessage);
+                aprovadas = (data.approvedMessages || []).map(normalizeMessage);
+            } else if (Array.isArray(data.pendentes) || Array.isArray(data.aprovadas)) {
+                pendentes = (data.pendentes || []).map(normalizeMessage);
+                aprovadas = (data.aprovadas || []).map(normalizeMessage);
+            } else {
+                const envios = data.envios ?? data.mensagens ?? [];
+                const normalized = Array.isArray(envios) ? envios.map(normalizeMessage) : [];
+
+                pendentes = normalized.filter((m) => String(m.status || "").toLowerCase() === "pendente");
+                aprovadas = normalized.filter((m) => String(m.status || "").toLowerCase() === "aprovado");
+            }
+
+            setReceived(pendentes);
+            setApproved(aprovadas);
+        } catch (e: any) {
+            setError(e?.message || "Erro ao carregar mensagens do atendimento.");
+            setReceived([]);
+            setApproved([]);
+        } finally {
+            setLoadingMessages(false);
+        }
+    }, [selected]);
+
+    const refreshAll = useCallback(async () => {
+        await loadAtendimentos();
+
+        if (selected) {
+            await loadMessages(selected);
+        }
+    }, [loadAtendimentos, loadMessages, selected]);
+
+    useEffect(() => {
+        loadAtendimentos();
+    }, [filter]);
+
+    const onSearch = () => {
+        loadAtendimentos();
     };
 
-    // ------- Exportar o PDF Para a Geração Das Homenagens Toda -------
+    const onPickAtendimento = async (item: AtendimentoItem) => {
+        setSelected(item);
+        setFalecido(item.falecido || "");
+        setNascimento(normalizeDate(item.data_nascimento));
+        setFalecimento(normalizeDate(item.data_falecimento));
+        await loadMessages(item);
+    };
+
+    const approveMessage = async (id: number) => {
+        if (!selectedAtendimentoId) {
+            alert("Selecione um atendimento.");
+            return;
+        }
+
+        try {
+            setActionLoadingId(id);
+
+            await apiPost({
+                acao: ADMIN_ACTIONS.aprovar,
+                atendimento_id: selectedAtendimentoId,
+                homenagem_id: selected?.homenagem_id,
+                codigo: selected?.codigo_homenagem || selected?.slug || "",
+                envio_id: id,
+            });
+
+            await loadMessages(selected);
+            await loadAtendimentos();
+        } catch (e: any) {
+            alert(e?.message || "Erro ao aprovar a mensagem.");
+        } finally {
+            setActionLoadingId(null);
+        }
+    };
+
+    const deleteMessage = async (id: number) => {
+        if (!selectedAtendimentoId) {
+            alert("Selecione um atendimento.");
+            return;
+        }
+
+        if (!confirm("Deseja excluir esta homenagem?")) {
+            return;
+        }
+
+        try {
+            setActionLoadingId(id);
+
+            await apiPost({
+                acao: ADMIN_ACTIONS.excluir,
+                atendimento_id: selectedAtendimentoId,
+                homenagem_id: selected?.homenagem_id,
+                codigo: selected?.codigo_homenagem || selected?.slug || "",
+                envio_id: id,
+            });
+
+            await loadMessages(selected);
+            await loadAtendimentos();
+        } catch (e: any) {
+            alert(e?.message || "Erro ao excluir a mensagem.");
+        } finally {
+            setActionLoadingId(null);
+        }
+    };
+
+    const loadPublicApprovedAsFallback = async () => {
+        if (!selected?.atendimento_id) return;
+
+        const data = await apiGet({
+            acao: "carregar",
+            atendimento_id: selected.atendimento_id,
+        });
+
+        const envios = Array.isArray(data?.envios_aprovados) ? data.envios_aprovados : [];
+        setApproved(envios.map(normalizeMessage));
+    };
+
     const runExport = useCallback(
         async (meta: { nome: string; nasc: string; obito: string }) => {
             const w: any = window as any;
             const jspdf = w.jspdf;
+
             if (!jspdf || !jspdf.jsPDF) {
                 throw new Error("Ferramenta de PDF ainda carregando. Tente novamente.");
             }
+
+            if (!approved.length) {
+                throw new Error("Não há mensagens aprovadas para gerar o livro.");
+            }
+
             const { jsPDF } = jspdf;
             const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
@@ -363,259 +837,217 @@ export default function MensagensPage() {
             const pageH = doc.internal.pageSize.getHeight();
             const centerX = pageW / 2;
 
-            const NAME_SIZE = 48;
-            const DATE_SIZE = 24;
-
             setProgress(5);
-            setProgressMsg("Carregando fontes…");
+            setProgressMsg("Carregando fonte…");
 
             const nunitoOk = await ensureNunito(doc);
-            const dejaOk = await ensureDejaVu(doc);
+            const FONT = nunitoOk ? "Nunito" : "helvetica";
 
-            // Fallback inteligente: Fonte Nunito -> DejaVu -> Helvetica
-            const CONTENT_FONT = nunitoOk ? "Nunito" : dejaOk ? "DejaVuSans" : "helvetica";
-            const COVER_FONT = nunitoOk ? "Nunito" : dejaOk ? "DejaVuSans" : "helvetica";
+            setProgress(12);
+            setProgressMsg("Montando capa…");
 
-            setProgress(15);
-            setProgressMsg("Carregando imagens de capa…");
-
-            const capa = await toDataURL("/capa.png");
-            doc.addImage(capa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            try {
+                const capa = await toDataURL("/capa.png");
+                doc.addImage(capa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            } catch {
+                doc.setFillColor(248, 250, 252);
+                doc.rect(0, 0, pageW, pageH, "F");
+            }
 
             doc.setTextColor(34, 51, 80);
-            doc.setFont(COVER_FONT, "bold");
-            doc.setFontSize(NAME_SIZE);
-            const maxTitleW = pageW * 0.8;
+            doc.setFont(FONT, "bold");
+            doc.setFontSize(44);
+
+            const maxTitleW = pageW * 0.82;
             const nameLines = doc.splitTextToSize(sanitizeForPdf(meta.nome), maxTitleW) as string[];
             const mmPerPt = 0.352777778;
-            const nameLH = NAME_SIZE * 1.15 * mmPerPt;
+            const nameLH = 44 * 1.15 * mmPerPt;
             const blockH = nameLH * nameLines.length;
-            let nameY = pageH * 0.42 - blockH / 2;
-            (doc as any).text(nameLines, centerX, nameY, { align: "center", baseline: "top" });
+            const nameY = pageH * 0.42 - blockH / 2;
 
-            const dtY = nameY + blockH + 8;
+            doc.text(nameLines, centerX, nameY, { align: "center", baseline: "top" });
+
             const d1 = formatDateBR(meta.nasc);
             const d2 = formatDateBR(meta.obito);
-            doc.setFont(COVER_FONT, "normal");
-            doc.setFontSize(DATE_SIZE);
-            const gap = 24;
-            const w1 = doc.getTextWidth(d1);
-            const w2 = doc.getTextWidth(d2);
-            doc.text(d1, centerX - gap - w1 / 2, dtY, { baseline: "top" });
-            doc.text(d2, centerX + gap - w2 / 2, dtY, { baseline: "top" });
 
-            setProgress(25);
-            setProgressMsg("Carregando contracapas…");
-            const contracapa = await toDataURL("/contracapa.png");
-            const contracapa2 = await toDataURL("/contracapa02.png");
-            doc.addPage();
-            doc.addImage(contracapa, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
-            doc.addPage();
-            doc.addImage(contracapa2, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+            if (d1 || d2) {
+                doc.setFont(FONT, "normal");
+                doc.setFontSize(22);
+                doc.text([d1, d2].filter(Boolean).join("  |  "), centerX, nameY + blockH + 10, {
+                    align: "center",
+                    baseline: "top",
+                });
+            }
 
-            setProgress(35);
-            setProgressMsg("Preparando páginas de mensagens…");
+            setProgress(24);
+            setProgressMsg("Preparando páginas…");
 
-            const bgData = await toDataURL("/fundo.png");
-            const startContentPage = () => {
+            const startContentPage = async () => {
                 doc.addPage();
-                doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+
+                try {
+                    const bgData = await toDataURL("/fundo.png");
+                    doc.addImage(bgData, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+                } catch {
+                    doc.setFillColor(255, 255, 255);
+                    doc.rect(0, 0, pageW, pageH, "F");
+                }
             };
-            startContentPage();
+
+            await startContentPage();
 
             const margin = { top: 16, right: 14, bottom: 16, left: 14 };
             const contentW = pageW - margin.left - margin.right;
-
             const cardsPerPage = 4;
             const gapY = 8;
-            const minCardH = 36;
-            const maxCardH = 56;
-            const availH = pageH - margin.top - margin.bottom;
-            const baseH = (availH - gapY * (cardsPerPage - 1)) / cardsPerPage;
-            const cardH = Math.max(minCardH, Math.min(maxCardH, baseH));
-
+            const cardH = 58;
             const cardPadX = 8;
             const cardPadY = 8;
-            const cornerRadius = 6;
-            const borderWidth = 0.6;
-
-            const imgSize = 26;
+            const imgSize = 27;
             const innerGap = 8;
-            const nameBodyGap = 6;
 
-            const titleStart = 12;
-            const bodyStart = 11;
-            const bodyMin = 9;
-
-            const total = Math.max(approved.length, 1);
             for (let i = 0; i < approved.length; i++) {
                 const m = approved[i];
                 const idx = i % cardsPerPage;
-                if (i > 0 && idx === 0) startContentPage();
+
+                if (i > 0 && idx === 0) {
+                    await startContentPage();
+                }
 
                 const cardX = margin.left;
                 const cardY = margin.top + idx * (cardH + gapY);
 
                 doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(210);
-                doc.setLineWidth(borderWidth);
-                doc.roundedRect(cardX, cardY, contentW, cardH, cornerRadius, cornerRadius, "FD");
+                doc.setDrawColor(218, 226, 236);
+                doc.setLineWidth(0.5);
+                doc.roundedRect(cardX, cardY, contentW, cardH, 6, 6, "FD");
 
                 const imgX = cardX + cardPadX;
                 const imgY = cardY + cardPadY;
-                try {
-                    const imgUrl = resolveImageSrc(m.image);
-                    const imgData = await toDataURL(imgUrl);
-                    doc.addImage(imgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
-                } catch { }
+
+                if (m.image && !String(m.arquivo_mime || "").startsWith("audio/") && !String(m.arquivo_mime || "").startsWith("video/")) {
+                    try {
+                        const imgData = await toDataURL(resolveImageSrc(m.image));
+                        doc.addImage(imgData, "JPEG", imgX, imgY, imgSize, imgSize, undefined, "FAST");
+                    } catch {
+                        doc.setFillColor(241, 245, 249);
+                        doc.roundedRect(imgX, imgY, imgSize, imgSize, 3, 3, "F");
+                    }
+                } else {
+                    doc.setFillColor(241, 245, 249);
+                    doc.roundedRect(imgX, imgY, imgSize, imgSize, 3, 3, "F");
+                }
 
                 const textX = imgX + imgSize + innerGap;
                 const textTop = cardY + cardPadY;
                 const textMaxW = contentW - (textX - cardX) - cardPadX;
                 const maxH = cardH - 2 * cardPadY;
 
-                let titleSize = titleStart;
-                let { height: nameH } = wrapText(
-                    doc,
-                    m.name || "",
-                    textX,
-                    textTop,
-                    textMaxW,
-                    CONTENT_FONT,
-                    "bold",
-                    titleSize,
-                    false
-                );
+                const title = wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", 12, false);
 
-                // Declara BodySize Antes de Usar
-                let bodySize = bodyStart;
-
+                let bodySize = 10.5;
                 let body = wrapText(
                     doc,
-                    m.text || "",
+                    m.text || "Registrou uma homenagem.",
                     textX,
-                    textTop + nameH + nameBodyGap,
+                    textTop + title.height + 5,
                     textMaxW,
-                    CONTENT_FONT,
+                    FONT,
                     "normal",
                     bodySize,
                     false
                 );
 
-                // Ajuste de tamanho até caber no cartão
-                while (nameH + nameBodyGap + body.height > maxH && bodySize > bodyMin) {
+                while (title.height + 5 + body.height > maxH && bodySize > 8.5) {
                     bodySize -= 0.5;
                     body = wrapText(
                         doc,
-                        m.text || "",
+                        m.text || "Registrou uma homenagem.",
                         textX,
-                        textTop + nameH + nameBodyGap,
+                        textTop + title.height + 5,
                         textMaxW,
-                        CONTENT_FONT,
+                        FONT,
                         "normal",
                         bodySize,
                         false
                     );
                 }
 
-                // Se ainda passar, trunca com "…"
-                if (nameH + nameBodyGap + body.height > maxH) {
-                    const mmPerPt2 = 0.352777778;
-                    const lh = bodySize * 1.15 * mmPerPt2;
-                    const maxBodyH = maxH - nameH - nameBodyGap;
-                    const maxLines = Math.max(0, Math.floor(maxBodyH / lh));
-                    let clean = sanitizeForPdf(m.text || "") || "";
-                    let lines = (doc.splitTextToSize(clean, textMaxW) as string[]).slice(0, maxLines);
-                    if (lines.length && maxLines > 0) {
-                        lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
-                    }
-                    body = { lines, height: Math.max(lh * lines.length, 0), lineHeight: lh };
-                }
+                wrapText(doc, m.name || "", textX, textTop, textMaxW, FONT, "bold", 12, true);
+                wrapText(
+                    doc,
+                    m.text || "Registrou uma homenagem.",
+                    textX,
+                    textTop + title.height + 5,
+                    textMaxW,
+                    FONT,
+                    "normal",
+                    bodySize,
+                    true
+                );
 
-                // Desenha título e corpo
-                wrapText(doc, m.name || "", textX, textTop, textMaxW, CONTENT_FONT, "bold", titleSize, true);
-                doc.setFont(CONTENT_FONT, "normal");
-                doc.setFontSize(bodySize);
-                let y = textTop + nameH + nameBodyGap;
-                for (const ln of body.lines) {
-                    doc.text(ln, textX, y, { baseline: "top", align: "left" });
-                    y += body.lineHeight;
-                }
-
-                const pct = 35 + Math.round(((i + 1) / total) * 60);
+                const pct = 24 + Math.round(((i + 1) / approved.length) * 72);
                 setProgress(pct);
-                setProgressMsg(`Gerando mensagens (${i + 1}/${total})…`);
+                setProgressMsg(`Gerando mensagens (${i + 1}/${approved.length})…`);
             }
 
             setProgress(98);
             setProgressMsg("Finalizando documento…");
 
-            const safeName = falecido ? falecido : `sala0${room}`;
-            doc.save(`livro_homenagens_${safeName.replace(/\s+/g, "_").toLowerCase()}.pdf`);
+            const safeName = (meta.nome || selected?.falecido || `atendimento_${selectedAtendimentoId}`)
+                .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+                .replace(/\s+/g, "_")
+                .toLowerCase();
+
+            doc.save(`livro_homenagens_${safeName}.pdf`);
+
             setProgress(100);
             setProgressMsg("Concluído!");
         },
-        [approved, room, falecido]
+        [approved, selected, selectedAtendimentoId]
     );
 
-    const onOpenModal = () => {
-        setShowModal(true);
+    const onOpenModal = async () => {
+        if (!selected) {
+            alert("Selecione um atendimento.");
+            return;
+        }
+
+        if (!approved.length) {
+            try {
+                await loadPublicApprovedAsFallback();
+            } catch {
+                // Mantém mensagem padrão abaixo.
+            }
+        }
+
+        setFalecido(selected.falecido || "");
+        setNascimento(normalizeDate(selected.data_nascimento));
+        setFalecimento(normalizeDate(selected.data_falecimento));
         setProgress(0);
         setProgressMsg("");
-        setFillMode("manual");
-        setSelectedMemorialId(null);
-    };
-
-    // ====== Buscar do Memorial ======
-    const loadMemorial = useCallback(async () => {
-        try {
-            setMemorialLoading(true);
-            setMemorialError(null);
-            const params = new URLSearchParams();
-            if (memorialQuery.trim()) params.set("q", memorialQuery.trim());
-            params.set("limit", "3");
-            const url = `/api/php/livro.php?${params.toString()}`;
-            const res = await fetch(url, { cache: "no-store", credentials: "include" });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || data?.success === false) {
-                throw new Error(data?.message || "Falha ao carregar o memorial.");
-            }
-            const arr: MemorialItem[] = data?.dados ?? [];
-            setMemorialList(arr); // já vem ordenado DESC
-        } catch (e: any) {
-            setMemorialError(e?.message || "Erro ao carregar memorial.");
-            setMemorialList([]);
-        } finally {
-            setMemorialLoading(false);
-        }
-    }, [memorialQuery]);
-
-    useEffect(() => {
-        if (showModal && fillMode === "memorial") {
-            loadMemorial();
-        }
-    }, [showModal, fillMode, loadMemorial]);
-
-    // Ao selecionar um item do memorial:
-    const onPickFromMemorial = (item: MemorialItem) => {
-        setSelectedMemorialId(item.id);
-        setFalecido(item.nome_completo || "");
-        setNascimento(item.data_nascimento || "");
-        setFalecimento(item.data_falecimento || "");
-        setFillMode("manual"); // volta para manual (permite editar)
+        setShowModal(true);
     };
 
     const onSubmitGenerate = async (e: React.FormEvent) => {
         e.preventDefault();
+
         if (!falecido.trim()) {
             alert("Informe o nome do falecido.");
             return;
         }
+
         try {
             setGenerating(true);
             setProgress(1);
             setProgressMsg("Iniciando…");
-            await runExport({ nome: falecido.trim(), nasc: nascimento, obito: falecimento });
+
+            await runExport({
+                nome: falecido.trim(),
+                nasc: nascimento,
+                obito: falecimento,
+            });
+
             setGenerating(false);
             setShowModal(false);
         } catch (err: any) {
@@ -626,142 +1058,282 @@ export default function MensagensPage() {
         }
     };
 
+    const totals = useMemo(() => {
+        return atendimentos.reduce(
+            (acc, item) => {
+                acc.pendentes += item.pendentes || 0;
+                acc.aprovadas += item.aprovadas || 0;
+                acc.total += item.total || 0;
+                return acc;
+            },
+            { pendentes: 0, aprovadas: 0, total: 0 }
+        );
+    }, [atendimentos]);
+
     return (
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-4">
-            {/* Topbar */}
+        <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                    <h1 className="text-2xl font-bold leading-tight">Filtro de Mensagens Recebidas</h1>
-                    
+                    <h1 className="text-2xl font-bold leading-tight">
+                        Homenagens por Atendimento
+                    </h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Moderação interna vinculada ao atendimento, não à sala.
+                    </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={loadMessages} className={btn} title="Atualizar">
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={refreshAll} className={btn} title="Atualizar">
                         <IconRefresh className="size-4" />
                         Atualizar
                     </button>
                 </div>
             </div>
 
-            {/* Todas As Salas Disponiveis  */}
-            <div className="mb-5 rounded-2xl border bg-card/60 p-3 sm:p-4 shadow-sm">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <RoomButton label="Sala 01" active={room === 1} onClick={() => setRoom(1)} />
-                    <RoomButton label="Sala 02" active={room === 2} onClick={() => setRoom(2)} />
-                    <RoomButton label="Sala 03" active={room === 3} onClick={() => setRoom(3)} />
+            <div className="mb-5 rounded-2xl border bg-card/60 p-3 shadow-sm sm:p-4">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+                    <FilterButton label="Todos" active={filter === "todos"} onClick={() => setFilter("todos")} />
+                    <FilterButton label="Sala 01" active={filter === "sala01"} onClick={() => setFilter("sala01")} />
+                    <FilterButton label="Sala 02" active={filter === "sala02"} onClick={() => setFilter("sala02")} />
+                    <FilterButton label="Sala 03" active={filter === "sala03"} onClick={() => setFilter("sala03")} />
+                    <FilterButton label="Atendimento Externo" active={filter === "externo"} onClick={() => setFilter("externo")} />
+                </div>
+
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <div className="relative flex-1">
+                        <IconSearch className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") onSearch();
+                            }}
+                            placeholder="Buscar por nome do falecido, ID do atendimento ou código da homenagem…"
+                            className="w-full rounded-xl border bg-white px-9 py-2.5 text-sm outline-none focus:border-primary"
+                        />
+                    </div>
+
+                    <button type="button" onClick={onSearch} className={btn}>
+                        <IconListSearch className="size-4" />
+                        Buscar
+                    </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs sm:max-w-md">
+                    <div className="rounded-lg border bg-white px-2 py-2">
+                        <div className="font-black">{totals.pendentes}</div>
+                        <div className="text-muted-foreground">Pendentes</div>
+                    </div>
+                    <div className="rounded-lg border bg-white px-2 py-2">
+                        <div className="font-black">{totals.aprovadas}</div>
+                        <div className="text-muted-foreground">Aprovadas</div>
+                    </div>
+                    <div className="rounded-lg border bg-white px-2 py-2">
+                        <div className="font-black">{totals.total}</div>
+                        <div className="text-muted-foreground">Total</div>
+                    </div>
                 </div>
             </div>
 
-            {/* Estado geral */}
-            {loading && (
-                <div className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                    Carregando mensagens…
-                </div>
-            )}
             {error && (
-                <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-200">
+                <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
                     {error}
                 </div>
             )}
 
-            {/* Todas As Mensagens Que Foram Recebidas Dos Familiares e Amigos Durante o Velório */}
-            <section className="mb-6">
-                <div className="mb-3 flex items-center gap-2">
-                    <IconMessageCircle2 className="size-5 text-muted-foreground" />
-                    <h2 className="text-lg font-semibold">Mensagens Recebidas</h2>
-                </div>
-
-                {received.length === 0 ? (
-                    <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                        Nenhuma mensagem recebida nesta sala.
-                    </div>
-                ) : (
-                    <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
-                        {received.map((m) => (
-                            <MessageCard
-                                key={`r-${m.id}`}
-                                item={m}
-                                actions={
-                                    <>
-                                        <button
-                                            onClick={() => approveMessage(m.id)}
-                                            className={`${btn} hover:bg-green-50 dark:hover:bg-green-900/20`}
-                                            title="Aprovar"
-                                        >
-                                            <IconCheck className="size-4 text-green-600" />
-                                            Aprovar
-                                        </button>
-                                        <button
-                                            onClick={() => deleteMessage(m.id, "received")}
-                                            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
-                                            title="Excluir"
-                                        >
-                                            <IconTrash className="size-4 text-red-600" />
-                                            Excluir
-                                        </button>
-                                    </>
-                                }
-                            />
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            {/* Mensgens Que Foram Aprovadas Pelos Usuarios Durante o Velorio  */}
-            <section>
-                <div className="mb-3 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                        <IconMessageCircle2 className="size-5 text-muted-foreground" />
-                        <h2 className="text-lg font-semibold">Mensagens Aprovadas</h2>
-                    </div>
-                </div>
-
-                {approved.length === 0 ? (
-                    <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                        Não há mensagem aprovada nesta sala.
-                    </div>
-                ) : (
-                    <>
-                        <div className="mb-3 flex justify-end">
-                            <button
-                                type="button"
-                                onClick={onOpenModal}
-                                className={btn}
-                                title="Gerar Livro de Homenagens"
-                            >
-                                <IconDownload className="size-4" />
-                                Baixar Mensagens
-                            </button>
+            <div className="grid gap-5 lg:grid-cols-[390px_minmax(0,1fr)]">
+                <aside className="min-w-0">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            <IconUserCheck className="size-5 text-muted-foreground" />
+                            <h2 className="text-lg font-semibold">Atendimentos</h2>
                         </div>
+                        {loadingAtendimentos ? (
+                            <span className="text-xs font-semibold text-muted-foreground">Carregando…</span>
+                        ) : null}
+                    </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
-                            {approved.map((m) => (
-                                <MessageCard
-                                    key={`a-${m.id}`}
-                                    item={m}
-                                    actions={
-                                        <button
-                                            onClick={() => deleteMessage(m.id, "approved")}
-                                            className={`${btn} hover:bg-red-50 dark:hover:bg-red-900/20`}
-                                            title="Excluir"
-                                        >
-                                            <IconTrash className="size-4 text-red-600" />
-                                            Excluir
-                                        </button>
-                                    }
+                    {atendimentos.length === 0 ? (
+                        <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
+                            Nenhum atendimento encontrado para este filtro.
+                        </div>
+                    ) : (
+                        <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1">
+                            {atendimentos.map((item) => (
+                                <AtendimentoCard
+                                    key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
+                                    item={item}
+                                    active={selected?.atendimento_id === item.atendimento_id}
+                                    onClick={() => onPickAtendimento(item)}
                                 />
                             ))}
                         </div>
-                    </>
-                )}
-            </section>
+                    )}
+                </aside>
 
-            {/* MODAL – Gerar Livro de Homenagens ( Abre a Função Para Gerar Os Livros de Homenagens Para As Familias dos Falecidos ) */}
+                <main className="min-w-0">
+                    {!selected ? (
+                        <div className="rounded-2xl border bg-card/60 p-8 text-center">
+                            <IconMessageCircle2 className="mx-auto mb-3 size-9 text-muted-foreground" />
+                            <h2 className="text-xl font-bold">Selecione um atendimento</h2>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                As mensagens pendentes e aprovadas serão exibidas de acordo com o atendimento selecionado.
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="text-xs font-bold uppercase text-muted-foreground">
+                                            Atendimento #{selected.atendimento_id} · {normalizeSala(selected.sala)}
+                                        </div>
+                                        <h2 className="mt-1 truncate text-2xl font-black">
+                                            {selected.falecido}
+                                        </h2>
+                                        <div className="mt-1 text-sm text-muted-foreground">
+                                            {[formatDateBR(selected.data_nascimento), formatDateBR(selected.data_falecimento)]
+                                                .filter(Boolean)
+                                                .join(" - ")}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <button type="button" onClick={() => loadMessages(selected)} className={btn}>
+                                            <IconRefresh className="size-4" />
+                                            Atualizar mensagens
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={onOpenModal}
+                                            className={btn}
+                                            disabled={!approved.length}
+                                            title="Gerar Livro de Homenagens"
+                                        >
+                                            <IconDownload className="size-4" />
+                                            Baixar Mensagens
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                                    <span className={`rounded-full border px-2 py-1 font-bold ${periodClass(derivePeriodStatus(selected))}`}>
+                                        {periodLabel(derivePeriodStatus(selected))}
+                                    </span>
+                                    {selected.link_publico ? (
+                                        <a
+                                            href={selected.link_publico}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="rounded-full border px-2 py-1 font-bold text-primary hover:bg-primary/5"
+                                        >
+                                            Abrir Legado de Luz
+                                        </a>
+                                    ) : null}
+                                </div>
+                            </div>
+
+                            {loadingMessages && (
+                                <div className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                                    Carregando mensagens do atendimento…
+                                </div>
+                            )}
+
+                            <section className="mb-6">
+                                <div className="mb-3 flex items-center gap-2">
+                                    <IconMessageCircle2 className="size-5 text-muted-foreground" />
+                                    <h2 className="text-lg font-semibold">
+                                        Mensagens Pendentes
+                                    </h2>
+                                </div>
+
+                                {received.length === 0 ? (
+                                    <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
+                                        Nenhuma mensagem pendente neste atendimento.
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
+                                        {received.map((m) => (
+                                            <MessageCard
+                                                key={`r-${m.id}`}
+                                                item={m}
+                                                actions={
+                                                    <>
+                                                        <button
+                                                            onClick={() => approveMessage(m.id)}
+                                                            disabled={actionLoadingId === m.id}
+                                                            className={`${btn} hover:bg-green-50`}
+                                                            title="Aprovar"
+                                                        >
+                                                            <IconCheck className="size-4 text-green-600" />
+                                                            Aprovar
+                                                        </button>
+                                                        <button
+                                                            onClick={() => deleteMessage(m.id)}
+                                                            disabled={actionLoadingId === m.id}
+                                                            className={`${btn} hover:bg-red-50`}
+                                                            title="Excluir"
+                                                        >
+                                                            <IconTrash className="size-4 text-red-600" />
+                                                            Excluir
+                                                        </button>
+                                                    </>
+                                                }
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </section>
+
+                            <section>
+                                <div className="mb-3 flex items-center gap-2">
+                                    <IconMessageCircle2 className="size-5 text-muted-foreground" />
+                                    <h2 className="text-lg font-semibold">
+                                        Mensagens Aprovadas
+                                    </h2>
+                                </div>
+
+                                {approved.length === 0 ? (
+                                    <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
+                                        Não há mensagem aprovada neste atendimento.
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
+                                        {approved.map((m) => (
+                                            <MessageCard
+                                                key={`a-${m.id}`}
+                                                item={m}
+                                                actions={
+                                                    <button
+                                                        onClick={() => deleteMessage(m.id)}
+                                                        disabled={actionLoadingId === m.id}
+                                                        className={`${btn} hover:bg-red-50`}
+                                                        title="Excluir"
+                                                    >
+                                                        <IconTrash className="size-4 text-red-600" />
+                                                        Excluir
+                                                    </button>
+                                                }
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </section>
+                        </>
+                    )}
+                </main>
+            </div>
+
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3">
                     <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
                         <div className="mb-4 flex items-center justify-between">
                             <div>
                                 <h3 className="text-xl font-semibold">Gerar Livro de Homenagens</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    O livro será gerado apenas com as mensagens aprovadas deste atendimento.
+                                </p>
                             </div>
                             <button
                                 type="button"
@@ -772,104 +1344,6 @@ export default function MensagensPage() {
                             </button>
                         </div>
 
-                        {/* Tabs de modo */}
-                        <div className="mb-3 grid grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setFillMode("manual")}
-                                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${fillMode === "manual"
-                                        ? "border-primary bg-primary/5 text-primary"
-                                        : "border-muted hover:bg-muted/40"
-                                    }`}
-                            >
-                                <IconUserCheck className="size-4" />
-                                Manual
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setFillMode("memorial")}
-                                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${fillMode === "memorial"
-                                        ? "border-primary bg-primary/5 text-primary"
-                                        : "border-muted hover:bg-muted/40"
-                                    }`}
-                            >
-                                <IconListSearch className="size-4" />
-                                Automático
-                            </button>
-                        </div>
-
-                        {/* Painel Memorial — SOMENTE LISTA DE NOMES */}
-                        {fillMode === "memorial" && (
-                            <div className="mb-5 rounded-xl border p-3">
-                                <div className="mb-3 flex items-center gap-2">
-                                    <div className="relative flex-1">
-                                        <IconSearch className="pointer-events-none absolute left-2 top-2.5 size-4 text-muted-foreground" />
-                                        <input
-                                            type="text"
-                                            placeholder="Buscar por nome…"
-                                            className="w-full rounded-md border px-8 py-2 text-sm"
-                                            value={memorialQuery}
-                                            onChange={(e) => setMemorialQuery(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter") loadMemorial();
-                                            }}
-                                        />
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={loadMemorial}
-                                        className={btn}
-                                        title="Atualizar lista"
-                                    >
-                                        <IconRefresh className="size-4" />
-                                        Atualizar
-                                    </button>
-                                </div>
-
-                                {memorialLoading && (
-                                    <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
-                                        Carregando memorial…
-                                    </div>
-                                )}
-                                {memorialError && (
-                                    <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-200">
-                                        {memorialError}
-                                    </div>
-                                )}
-
-                                <div className="max-h-72 overflow-auto rounded-lg border divide-y">
-                                    {memorialList.length === 0 ? (
-                                        <div className="px-3 py-6 text-center text-sm opacity-70">
-                                            Nenhum registro encontrado.
-                                        </div>
-                                    ) : (
-                                        memorialList.map((it) => {
-                                            const selected = selectedMemorialId === it.id;
-                                            return (
-                                                <button
-                                                    type="button"
-                                                    key={it.id}
-                                                    onClick={() => onPickFromMemorial(it)}
-                                                    className={`block w-full cursor-pointer px-3 py-2 text-left text-sm transition ${selected
-                                                            ? "bg-primary/10 font-semibold text-primary"
-                                                            : "hover:bg-muted/30"
-                                                        }`}
-                                                    title="Selecionar"
-                                                >
-                                                    {it.nome_completo}
-                                                </button>
-                                            );
-                                        })
-                                    )}
-                                </div>
-
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                    Clique no nome do(a) falecido(a).
-                                </p>
-                            </div>
-                        )}
-
-                        {/* Formulário (sempre visível — pode vir preenchido do memorial) */}
                         <form onSubmit={onSubmitGenerate} className="space-y-3">
                             <div>
                                 <label className="block text-sm font-medium">Nome do falecido</label>
@@ -882,6 +1356,7 @@ export default function MensagensPage() {
                                     required
                                 />
                             </div>
+
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
                                     <label className="block text-sm font-medium">Nascimento</label>
@@ -903,7 +1378,6 @@ export default function MensagensPage() {
                                 </div>
                             </div>
 
-                            {/* Progresso */}
                             {generating ? (
                                 <div className="rounded-md border bg-muted/20 p-3">
                                     <div className="mb-2 text-sm">{progressMsg}</div>
@@ -928,7 +1402,7 @@ export default function MensagensPage() {
                                 <button
                                     type="submit"
                                     disabled={generating}
-                                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
                                 >
                                     Gerar Livro de Homenagens
                                 </button>
