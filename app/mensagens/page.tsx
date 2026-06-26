@@ -64,6 +64,7 @@ type ApiMessagesResponse = {
 
 const API_URL = "https://api.planoassistencialintegrado.com.br/homenagens.php";
 const PUBLIC_BASE_URL = "https://planoassistencialintegrado.com.br";
+const API_BASE_URL = "https://api.planoassistencialintegrado.com.br";
 const FALLBACK_IMG = "https://via.placeholder.com/100";
 
 const ADMIN_ACTIONS = {
@@ -279,15 +280,46 @@ function filterParam(f: AttendanceFilter): string {
     return "todos";
 }
 
+function isSalaFilter(f: AttendanceFilter): boolean {
+    return f === "sala01" || f === "sala02" || f === "sala03";
+}
+
+function shouldShowAtendimentoList(f: AttendanceFilter): boolean {
+    // Nas salas 01, 02 e 03 há apenas um atendimento ativo por vez.
+    // A lista lateral fica apenas para "Ativos" geral e Atendimento Externo.
+    return f === "todos" || f === "externo";
+}
+
 function resolveImageSrc(src?: string | null): string {
     if (!src) return FALLBACK_IMG;
 
     let s = String(src).trim();
 
     if (!s) return FALLBACK_IMG;
-    if (/^(data:|blob:|https?:\/\/)/i.test(s)) return s;
+
+    if (/^(data:|blob:)/i.test(s)) {
+        return s;
+    }
+
+    // Os uploads das homenagens ficam no domínio da API.
+    // Se o backend ou algum registro antigo vier com o domínio público, normaliza para a API.
+    if (/^https?:\/\/planoassistencialintegrado\.com\.br\/uploads\//i.test(s)) {
+        return s.replace(/^https?:\/\/planoassistencialintegrado\.com\.br/i, API_BASE_URL);
+    }
+
+    if (/^https?:\/\/www\.planoassistencialintegrado\.com\.br\/uploads\//i.test(s)) {
+        return s.replace(/^https?:\/\/www\.planoassistencialintegrado\.com\.br/i, API_BASE_URL);
+    }
+
+    if (/^https?:\/\//i.test(s)) {
+        return s;
+    }
 
     s = s.replace(/^\.?\//, "");
+
+    if (s.startsWith("uploads/")) {
+        return `${API_BASE_URL}/${s}`;
+    }
 
     return `${PUBLIC_BASE_URL}/${s}`;
 }
@@ -607,6 +639,7 @@ export default function MensagensPage() {
     }, []);
 
     const dataUrlCache = useRef<Map<string, string>>(new Map());
+    const lastLoadedAtendimentoRef = useRef<number>(0);
 
     async function toDataURL(url: string): Promise<string> {
         const cache = dataUrlCache.current;
@@ -740,6 +773,23 @@ export default function MensagensPage() {
 
             setAtendimentos(atuais);
 
+            if (isSalaFilter(filter)) {
+                const atualDaSala = atuais[0] ?? null;
+
+                if (atualDaSala) {
+                    setSelected(atualDaSala);
+                    setFalecido(atualDaSala.falecido || "");
+                    setNascimento(normalizeDate(atualDaSala.data_nascimento));
+                    setFalecimento(normalizeDate(atualDaSala.data_falecimento));
+                } else {
+                    setSelected(null);
+                    setReceived([]);
+                    setApproved([]);
+                }
+
+                return;
+            }
+
             if (selected) {
                 const stillExists = atuais.find((a) => a.atendimento_id === selected.atendimento_id);
                 if (stillExists) {
@@ -818,6 +868,22 @@ export default function MensagensPage() {
     }, [loadAtendimentos, loadMessages, selected]);
 
     useEffect(() => {
+        const id = selected?.atendimento_id || 0;
+
+        if (!id) {
+            lastLoadedAtendimentoRef.current = 0;
+            return;
+        }
+
+        if (lastLoadedAtendimentoRef.current === id) {
+            return;
+        }
+
+        lastLoadedAtendimentoRef.current = id;
+        loadMessages(selected);
+    }, [selected?.atendimento_id, loadMessages, selected]);
+
+    useEffect(() => {
         loadAtendimentos();
     }, [filter]);
 
@@ -830,6 +896,7 @@ export default function MensagensPage() {
         setFalecido(item.falecido || "");
         setNascimento(normalizeDate(item.data_nascimento));
         setFalecimento(normalizeDate(item.data_falecimento));
+        lastLoadedAtendimentoRef.current = item.atendimento_id;
         await loadMessages(item);
     };
 
@@ -1142,6 +1209,8 @@ export default function MensagensPage() {
         }
     };
 
+    const showAtendimentoList = shouldShowAtendimentoList(filter);
+
     const totals = useMemo(() => {
         return atendimentos.reduce(
             (acc, item) => {
@@ -1159,10 +1228,10 @@ export default function MensagensPage() {
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                     <h1 className="text-2xl font-bold leading-tight">
-                        Homenagens Ativas por Atendimento
+                        Homenagens Ativas
                     </h1>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Exibe somente atendimentos em andamento neste momento.
+                        Nas salas, o atendimento ativo abre direto. No atendimento externo, use a lista para selecionar.
                     </p>
                 </div>
 
@@ -1177,32 +1246,34 @@ export default function MensagensPage() {
             <div className="mb-5 rounded-2xl border bg-card/60 p-3 shadow-sm sm:p-4">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
                     <FilterButton label="Ativos" active={filter === "todos"} onClick={() => setFilter("todos")} />
-                    <FilterButton label="Sala 01" active={filter === "sala01"} onClick={() => setFilter("sala01")} />
-                    <FilterButton label="Sala 02" active={filter === "sala02"} onClick={() => setFilter("sala02")} />
-                    <FilterButton label="Sala 03" active={filter === "sala03"} onClick={() => setFilter("sala03")} />
+                    <FilterButton label="Sala 01" active={filter === "sala01"} onClick={() => { setQuery(""); setFilter("sala01"); }} />
+                    <FilterButton label="Sala 02" active={filter === "sala02"} onClick={() => { setQuery(""); setFilter("sala02"); }} />
+                    <FilterButton label="Sala 03" active={filter === "sala03"} onClick={() => { setQuery(""); setFilter("sala03"); }} />
                     <FilterButton label="Atendimento Externo" active={filter === "externo"} onClick={() => setFilter("externo")} />
                 </div>
 
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <div className="relative flex-1">
-                        <IconSearch className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
-                        <input
-                            type="text"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") onSearch();
-                            }}
-                            placeholder="Buscar por nome do falecido, ID do atendimento ou código da homenagem…"
-                            className="w-full rounded-xl border bg-white px-9 py-2.5 text-sm outline-none focus:border-primary"
-                        />
-                    </div>
+                {showAtendimentoList ? (
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <div className="relative flex-1">
+                            <IconSearch className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
+                            <input
+                                type="text"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") onSearch();
+                                }}
+                                placeholder="Buscar por nome do falecido, ID do atendimento ou código da homenagem…"
+                                className="w-full rounded-xl border bg-white px-9 py-2.5 text-sm outline-none focus:border-primary"
+                            />
+                        </div>
 
-                    <button type="button" onClick={onSearch} className={btn}>
-                        <IconListSearch className="size-4" />
-                        Buscar
-                    </button>
-                </div>
+                        <button type="button" onClick={onSearch} className={btn}>
+                            <IconListSearch className="size-4" />
+                            Buscar
+                        </button>
+                    </div>
+                ) : null}
 
                 <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs sm:max-w-md">
                     <div className="rounded-lg border bg-white px-2 py-2">
@@ -1226,43 +1297,49 @@ export default function MensagensPage() {
                 </div>
             )}
 
-            <div className="grid gap-5 lg:grid-cols-[390px_minmax(0,1fr)]">
-                <aside className="min-w-0">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                            <IconUserCheck className="size-5 text-muted-foreground" />
-                            <h2 className="text-lg font-semibold">Atendimentos ativos</h2>
+            <div className={showAtendimentoList ? "grid gap-5 lg:grid-cols-[390px_minmax(0,1fr)]" : "grid gap-5"}>
+                {showAtendimentoList ? (
+                    <aside className="min-w-0">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <IconUserCheck className="size-5 text-muted-foreground" />
+                                <h2 className="text-lg font-semibold">Atendimentos ativos</h2>
+                            </div>
+                            {loadingAtendimentos ? (
+                                <span className="text-xs font-semibold text-muted-foreground">Carregando…</span>
+                            ) : null}
                         </div>
-                        {loadingAtendimentos ? (
-                            <span className="text-xs font-semibold text-muted-foreground">Carregando…</span>
-                        ) : null}
-                    </div>
 
-                    {atendimentos.length === 0 ? (
-                        <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                            Nenhum atendimento em andamento encontrado para este filtro.
-                        </div>
-                    ) : (
-                        <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1">
-                            {atendimentos.map((item) => (
-                                <AtendimentoCard
-                                    key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
-                                    item={item}
-                                    active={selected?.atendimento_id === item.atendimento_id}
-                                    onClick={() => onPickAtendimento(item)}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </aside>
+                        {atendimentos.length === 0 ? (
+                            <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
+                                Nenhum atendimento em andamento encontrado.
+                            </div>
+                        ) : (
+                            <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1">
+                                {atendimentos.map((item) => (
+                                    <AtendimentoCard
+                                        key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
+                                        item={item}
+                                        active={selected?.atendimento_id === item.atendimento_id}
+                                        onClick={() => onPickAtendimento(item)}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </aside>
+                ) : null}
 
                 <main className="min-w-0">
                     {!selected ? (
                         <div className="rounded-2xl border bg-card/60 p-8 text-center">
                             <IconMessageCircle2 className="mx-auto mb-3 size-9 text-muted-foreground" />
-                            <h2 className="text-xl font-bold">Selecione um atendimento</h2>
+                            <h2 className="text-xl font-bold">
+                                {isSalaFilter(filter) ? "Nenhum atendimento ativo nesta sala" : "Selecione um atendimento"}
+                            </h2>
                             <p className="mt-2 text-sm text-muted-foreground">
-                                As mensagens pendentes e aprovadas serão exibidas de acordo com o atendimento selecionado.
+                                {isSalaFilter(filter)
+                                    ? "Quando houver atendimento em andamento dentro do horário do velório, ele será aberto automaticamente aqui."
+                                    : "As mensagens pendentes e aprovadas serão exibidas de acordo com o atendimento selecionado."}
                             </p>
                         </div>
                     ) : (
