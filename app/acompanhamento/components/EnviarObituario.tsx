@@ -87,8 +87,8 @@ const POSICOES_A4 = {
     // A4: foto um pouco mais larga, preservando altura e posição vertical.
     foto: { centerX: 300, centerY: 593, ovalW: 456, ovalH: 600 },
 
-    // A4: nome um pouco mais acima, mantendo alinhamento à direita da foto.
-    nome: { x: 600, y: 555, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
+    // A4: nome mais acima, mantendo alinhamento à direita da foto.
+    nome: { x: 600, y: 515, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
 
     // A4: separador curto e fino entre o nome e as datas.
     separadorNomeData: { x: 600, yOffset: 45, w: 360 },
@@ -96,8 +96,8 @@ const POSICOES_A4 = {
     // A4: datas alinhadas ao nome, com espaçamento vertical uniforme.
     datas: { x: 600, yOffset: 45, gapX: 235 },
 
-    // A4: QR Code maior, alinhado ao início do nome e calculado abaixo das datas.
-    qr: { x: 600, yOffset: 45, w: 420, h: 420 },
+    // A4: QR Code um pouco menor, alinhado ao início do nome e mais abaixo das datas.
+    qr: { x: 600, yOffset: 120, w: 380, h: 380 },
 };
 
 const FRASES_A4 = [
