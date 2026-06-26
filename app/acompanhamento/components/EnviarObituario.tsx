@@ -96,8 +96,8 @@ const POSICOES_A4 = {
     // A4: datas mais à direita, sempre mantendo distância fixa do nome.
     datas: { x: 600, yOffset: 60, gapX: 235 },
 
-    // A4: QR Code maior, mantendo o centro visual no quadro inferior.
-    qr: { x: 235, y: 952, w: 300, h: 300 } as QrBox,
+    // A4: QR Code maior, alinhado ao início do nome e das datas, mais abaixo.
+    qr: { x: 600, y: 900, w: 420, h: 420 } as QrBox,
 };
 
 const FRASES_A4 = [
@@ -659,7 +659,7 @@ async function desenharQrLegadoLuzA4(
     if (!url) return;
 
     const qrDataUrl = await QRCode.toDataURL(url, {
-        width: 620,
+        width: 900,
         margin: 1,
         errorCorrectionLevel: "M",
         color: {
@@ -672,9 +672,9 @@ async function desenharQrLegadoLuzA4(
 
     ctx.save();
 
-    const qrSize = Math.min(box.w - 30, box.h - 30);
-    const qrX = box.x + (box.w - qrSize) / 2;
-    const qrY = box.y + (box.h - qrSize) / 2;
+    const qrSize = Math.min(box.w, box.h);
+    const qrX = box.x;
+    const qrY = box.y;
 
     ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
