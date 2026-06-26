@@ -166,6 +166,84 @@ function derivePeriodStatus(a: AtendimentoItem): PeriodStatus {
     return "em_andamento";
 }
 
+function parseDateTimeStrict(value?: string | null): Date | null {
+    const s = String(value ?? "").trim();
+
+    if (!s || s === "0000-00-00" || s === "0000-00-00 00:00:00") {
+        return null;
+    }
+
+    const normalized = s.replace(" ", "T");
+    const dt = new Date(normalized);
+
+    if (Number.isNaN(dt.getTime())) {
+        return null;
+    }
+
+    return dt;
+}
+
+function buildDateTimeStrict(data?: string | null, hora?: string | null): Date | null {
+    const d = normalizeDate(data);
+    const h = normalizeHour(hora);
+
+    if (!d || !h || !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        return null;
+    }
+
+    const dt = new Date(`${d}T${h}:00`);
+
+    if (Number.isNaN(dt.getTime())) {
+        return null;
+    }
+
+    return dt;
+}
+
+function getStrictPeriodRange(a: AtendimentoItem): { inicio: Date; fim: Date } | null {
+    const inicioCampos = buildDateTimeStrict(a.data_inicio_velorio, a.hora_inicio_velorio);
+    const fimCampos = buildDateTimeStrict(a.data_fim_velorio, a.hora_fim_velorio);
+
+    if (inicioCampos && fimCampos) {
+        return { inicio: inicioCampos, fim: fimCampos };
+    }
+
+    const inicioCompleto = parseDateTimeStrict(a.inicio);
+    const fimCompleto = parseDateTimeStrict(a.fim);
+
+    if (inicioCompleto && fimCompleto) {
+        return { inicio: inicioCompleto, fim: fimCompleto };
+    }
+
+    return null;
+}
+
+function isAtendimentoNoPeriodoAtual(a: AtendimentoItem): boolean {
+    const periodo = getStrictPeriodRange(a);
+
+    if (!periodo) {
+        return false;
+    }
+
+    const now = new Date();
+
+    return now >= periodo.inicio && now <= periodo.fim;
+}
+
+function derivePeriodStatusStrict(a: AtendimentoItem): PeriodStatus {
+    const periodo = getStrictPeriodRange(a);
+
+    if (!periodo) {
+        return "sem_horario";
+    }
+
+    const now = new Date();
+
+    if (now < periodo.inicio) return "agendado";
+    if (now > periodo.fim) return "encerrado";
+    return "em_andamento";
+}
+
 function periodLabel(status: PeriodStatus): string {
     if (status === "em_andamento") return "Em andamento";
     if (status === "agendado") return "Agendado";
@@ -357,7 +435,7 @@ function AtendimentoCard({
     active: boolean;
     onClick: () => void;
 }) {
-    const status = derivePeriodStatus(item);
+    const status = derivePeriodStatusStrict(item);
     const periodo =
         item.inicio || item.fim
             ? `${String(item.inicio || "").replace("T", " ")} ${item.fim ? "até " + String(item.fim).replace("T", " ") : ""}`
@@ -648,16 +726,22 @@ export default function MensagensPage() {
                 acao: ADMIN_ACTIONS.listarAtendimentos,
                 filtro: filterParam(filter),
                 q: query.trim(),
-                limite: 200,
+                limite: 500,
+                somente_periodo_atual: true,
             });
 
             const rows = data?.atendimentos ?? data?.dados ?? data?.items ?? [];
             const normalized = Array.isArray(rows) ? rows.map(normalizeAtendimento) : [];
 
-            setAtendimentos(normalized);
+            // Regra principal deste painel:
+            // exibir somente atendimentos cujo período do velório esteja acontecendo agora.
+            // Atendimentos futuros, encerrados ou sem data/hora completa ficam fora da tela.
+            const atuais = normalized.filter(isAtendimentoNoPeriodoAtual);
+
+            setAtendimentos(atuais);
 
             if (selected) {
-                const stillExists = normalized.find((a) => a.atendimento_id === selected.atendimento_id);
+                const stillExists = atuais.find((a) => a.atendimento_id === selected.atendimento_id);
                 if (stillExists) {
                     setSelected(stillExists);
                 } else {
@@ -1075,10 +1159,10 @@ export default function MensagensPage() {
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                     <h1 className="text-2xl font-bold leading-tight">
-                        Homenagens por Atendimento
+                        Homenagens Ativas por Atendimento
                     </h1>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Moderação interna vinculada ao atendimento, não à sala.
+                        Exibe somente atendimentos em andamento neste momento.
                     </p>
                 </div>
 
@@ -1092,7 +1176,7 @@ export default function MensagensPage() {
 
             <div className="mb-5 rounded-2xl border bg-card/60 p-3 shadow-sm sm:p-4">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
-                    <FilterButton label="Todos" active={filter === "todos"} onClick={() => setFilter("todos")} />
+                    <FilterButton label="Ativos" active={filter === "todos"} onClick={() => setFilter("todos")} />
                     <FilterButton label="Sala 01" active={filter === "sala01"} onClick={() => setFilter("sala01")} />
                     <FilterButton label="Sala 02" active={filter === "sala02"} onClick={() => setFilter("sala02")} />
                     <FilterButton label="Sala 03" active={filter === "sala03"} onClick={() => setFilter("sala03")} />
@@ -1147,7 +1231,7 @@ export default function MensagensPage() {
                     <div className="mb-3 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                             <IconUserCheck className="size-5 text-muted-foreground" />
-                            <h2 className="text-lg font-semibold">Atendimentos</h2>
+                            <h2 className="text-lg font-semibold">Atendimentos ativos</h2>
                         </div>
                         {loadingAtendimentos ? (
                             <span className="text-xs font-semibold text-muted-foreground">Carregando…</span>
@@ -1156,7 +1240,7 @@ export default function MensagensPage() {
 
                     {atendimentos.length === 0 ? (
                         <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                            Nenhum atendimento encontrado para este filtro.
+                            Nenhum atendimento em andamento encontrado para este filtro.
                         </div>
                     ) : (
                         <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1">
@@ -1218,8 +1302,8 @@ export default function MensagensPage() {
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                                    <span className={`rounded-full border px-2 py-1 font-bold ${periodClass(derivePeriodStatus(selected))}`}>
-                                        {periodLabel(derivePeriodStatus(selected))}
+                                    <span className={`rounded-full border px-2 py-1 font-bold ${periodClass(derivePeriodStatusStrict(selected))}`}>
+                                        {periodLabel(derivePeriodStatusStrict(selected))}
                                     </span>
                                     {selected.link_publico ? (
                                         <a
