@@ -87,8 +87,8 @@ const POSICOES_A4 = {
     // A4: foto 20% maior, preservando o topo e crescendo para baixo.
     foto: { centerX: 300, centerY: 593, ovalW: 432, ovalH: 600 },
 
-    // A4: nome mais à direita, afastado da foto, maior e em negrito.
-    nome: { x: 600, y: 350, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
+    // A4: nome mais à direita, afastado da foto, maior, em negrito e posicionado mais abaixo.
+    nome: { x: 600, y: 595, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
 
     // A4: separador curto e fino entre o nome e as datas.
     separadorNomeData: { x: 600, yOffset: 24, w: 360 },
@@ -1845,4 +1845,3 @@ function InfoLinha({
         </div>
     );
 }
-
