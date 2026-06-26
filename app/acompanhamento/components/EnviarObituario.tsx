@@ -84,20 +84,20 @@ const POSICOES_A4 = {
     // A4: frases menores para caber melhor no topo.
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 29 },
 
-    // A4: foto 20% maior, preservando o topo e crescendo para baixo.
-    foto: { centerX: 300, centerY: 593, ovalW: 432, ovalH: 600 },
+    // A4: foto um pouco mais larga, preservando altura e posição vertical.
+    foto: { centerX: 300, centerY: 593, ovalW: 456, ovalH: 600 },
 
-    // A4: nome mais à direita, afastado da foto, maior, em negrito e posicionado mais abaixo.
-    nome: { x: 600, y: 595, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
+    // A4: nome um pouco mais acima, mantendo alinhamento à direita da foto.
+    nome: { x: 600, y: 555, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
 
     // A4: separador curto e fino entre o nome e as datas.
-    separadorNomeData: { x: 600, yOffset: 24, w: 360 },
+    separadorNomeData: { x: 600, yOffset: 45, w: 360 },
 
-    // A4: datas mais à direita, sempre mantendo distância fixa do nome.
-    datas: { x: 600, yOffset: 60, gapX: 235 },
+    // A4: datas alinhadas ao nome, com espaçamento vertical uniforme.
+    datas: { x: 600, yOffset: 45, gapX: 235 },
 
-    // A4: QR Code maior, alinhado ao início do nome e das datas, mais abaixo.
-    qr: { x: 600, y: 900, w: 420, h: 420 } as QrBox,
+    // A4: QR Code maior, alinhado ao início do nome e calculado abaixo das datas.
+    qr: { x: 600, yOffset: 45, w: 420, h: 420 },
 };
 
 const FRASES_A4 = [
@@ -1378,9 +1378,16 @@ export default function EnviarObituario({
 
             // A4: por solicitação, não renderiza informações de cerimônia e sepultamento.
 
-            // QR Code no quadro inferior esquerdo.
+            // QR Code alinhado ao nome e às datas, com espaçamento vertical uniforme.
+            const qrA4Y = datasA4Y + POSICOES_A4.qr.yOffset;
+
             if (deveDesenharQrLegado) {
-                await desenharQrLegadoLuzA4(ctx, legadoLuzUrl, POSICOES_A4.qr);
+                await desenharQrLegadoLuzA4(ctx, legadoLuzUrl, {
+                    x: POSICOES_A4.qr.x,
+                    y: qrA4Y,
+                    w: POSICOES_A4.qr.w,
+                    h: POSICOES_A4.qr.h,
+                });
             }
 
             ctx.restore();
@@ -1845,3 +1852,5 @@ function InfoLinha({
         </div>
     );
 }
+
+
