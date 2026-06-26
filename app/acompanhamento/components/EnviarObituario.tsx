@@ -87,12 +87,14 @@ const POSICOES_A4 = {
     // A4: foto 20% maior, preservando o topo e crescendo para baixo.
     foto: { centerX: 300, centerY: 593, ovalW: 432, ovalH: 600 },
 
-    // A4: nome maior, em negrito e com uma palavra por linha.
-    nome: { x: 535, y: 350, maxWidth: 500, lineHeight: 68 },
+    // A4: nome mais à direita, afastado da foto, maior e em negrito.
+    nome: { x: 600, y: 350, maxWidth: 420, lineHeight: 70, fontSize: 62, minFontSize: 46 },
 
-    // A4: nascimento e falecimento mais abaixo, iniciando alinhado ao nome.
-    nascimento: { x: 535, y: 650 },
-    falecimento: { x: 760, y: 650 },
+    // A4: separador curto e fino entre o nome e as datas.
+    separadorNomeData: { x: 600, yOffset: 24, w: 360 },
+
+    // A4: datas mais à direita, sempre mantendo distância fixa do nome.
+    datas: { x: 600, yOffset: 60, gapX: 235 },
 
     // A4: QR Code maior, mantendo o centro visual no quadro inferior.
     qr: { x: 235, y: 952, w: 300, h: 300 } as QrBox,
@@ -568,23 +570,54 @@ function drawWrapText(
     }
 }
 
-function drawWordsOnePerLine(
+function montarLinhasNomeA4(
     ctx: CanvasRenderingContext2D,
     text: string,
-    x: number,
-    y: number,
-    lineHeight: number,
-    align: "center" | "left" | "right" = "left"
+    maxWidth: number,
+    initialFontSize: number,
+    minFontSize: number,
+    fontFamily: string
 ) {
     const words = String(text || "")
         .split(/\s+/)
         .filter(Boolean);
 
-    ctx.textAlign = align;
+    const primeiraLinha = words.slice(0, 2).join(" ");
+    const segundaLinha = words.length > 2 ? words.slice(2).join(" ") : "";
+    const lines = [primeiraLinha, segundaLinha].filter(Boolean);
 
-    words.forEach((word, index) => {
-        ctx.fillText(word, x, y + index * lineHeight);
-    });
+    let fontSize = initialFontSize;
+
+    while (fontSize >= minFontSize) {
+        ctx.font = `800 ${fontSize}px "${fontFamily}"`;
+
+        const coube = lines.every((line) => ctx.measureText(line).width <= maxWidth);
+        if (coube) break;
+
+        fontSize -= 2;
+    }
+
+    return {
+        lines,
+        fontSize: Math.max(fontSize, minFontSize),
+    };
+}
+
+function desenharLinhaSeparadoraA4(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    color: string
+) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width, y);
+    ctx.stroke();
+    ctx.restore();
 }
 
 async function desenharQrLegadoLuz(
@@ -1282,20 +1315,47 @@ export default function EnviarObituario({
             }
 
             // Nome do falecido à direita da foto, exclusivo do A4.
-            // Cada palavra do nome é desenhada em uma linha própria.
-            ctx.fillStyle = selectedColor;
-            ctx.textAlign = "left";
-            ctx.font = `800 62px "${selectedFont}"`;
-            drawWordsOnePerLine(
+            // A primeira linha tenta manter nome e sobrenome juntos.
+            // Se houver mais palavras, elas caem para a segunda linha.
+            const nomeA4 = montarLinhasNomeA4(
                 ctx,
                 dados.nome,
-                POSICOES_A4.nome.x,
-                POSICOES_A4.nome.y,
-                POSICOES_A4.nome.lineHeight,
-                "left"
+                POSICOES_A4.nome.maxWidth,
+                POSICOES_A4.nome.fontSize,
+                POSICOES_A4.nome.minFontSize,
+                selectedFont
             );
 
-            // Datas de nascimento e falecimento na mesma linha, exclusivo do A4.
+            ctx.fillStyle = selectedColor;
+            ctx.textAlign = "left";
+            ctx.font = `800 ${nomeA4.fontSize}px "${selectedFont}"`;
+
+            nomeA4.lines.forEach((line, index) => {
+                ctx.fillText(
+                    line,
+                    POSICOES_A4.nome.x,
+                    POSICOES_A4.nome.y + index * POSICOES_A4.nome.lineHeight
+                );
+            });
+
+            const ultimaLinhaNomeY =
+                POSICOES_A4.nome.y +
+                (nomeA4.lines.length - 1) * POSICOES_A4.nome.lineHeight;
+
+            const separadorNomeDataY =
+                ultimaLinhaNomeY + POSICOES_A4.separadorNomeData.yOffset;
+
+            desenharLinhaSeparadoraA4(
+                ctx,
+                POSICOES_A4.separadorNomeData.x,
+                separadorNomeDataY,
+                POSICOES_A4.separadorNomeData.w,
+                selectedColor
+            );
+
+            const datasA4Y = separadorNomeDataY + POSICOES_A4.datas.yOffset;
+
+            // Datas de nascimento e falecimento abaixo do nome, com distância fixa.
             ctx.fillStyle = selectedColor;
             ctx.font = `700 28px "${selectedFont}"`;
             ctx.textAlign = "left";
@@ -1303,16 +1363,16 @@ export default function EnviarObituario({
             if (dados.data_nascimento) {
                 ctx.fillText(
                     dados.data_nascimento,
-                    POSICOES_A4.nascimento.x,
-                    POSICOES_A4.nascimento.y
+                    POSICOES_A4.datas.x,
+                    datasA4Y
                 );
             }
 
             if (dados.data_falecimento) {
                 ctx.fillText(
                     dados.data_falecimento,
-                    POSICOES_A4.falecimento.x,
-                    POSICOES_A4.falecimento.y
+                    POSICOES_A4.datas.x + POSICOES_A4.datas.gapX,
+                    datasA4Y
                 );
             }
 
