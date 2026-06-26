@@ -11,6 +11,7 @@ import {
 import * as QRCode from "qrcode";
 import Modal from "./Modal";
 import type { Registro } from "./types";
+import { Maiden_Orange } from "next/font/google";
 
 type ModeloKey =
     | "modelo01"
@@ -83,15 +84,15 @@ const POSICOES_A4 = {
     // A4: frases menores para caber melhor no topo.
     mensagem: { x: 561, y: 185, maxWidth: 870, lineHeight: 29 },
 
-    // A4: foto ainda maior, preservando o topo e crescendo mais para baixo.
-    foto: { centerX: 300, centerY: 543, ovalW: 360, ovalH: 500 },
+    // A4: foto 20% maior, preservando o topo e crescendo para baixo.
+    foto: { centerX: 300, centerY: 593, ovalW: 432, ovalH: 600 },
 
-    // A4: nome maior, mais acima e com uma palavra por linha.
-    nome: { x: 535, y: 350, maxWidth: 500, lineHeight: 52 },
+    // A4: nome maior, em negrito e com uma palavra por linha.
+    nome: { x: 535, y: 350, maxWidth: 500, lineHeight: 68 },
 
-    // A4: nascimento e falecimento na mesma linha.
-    nascimento: { x: 590, y: 578 },
-    falecimento: { x: 775, y: 578 },
+    // A4: nascimento e falecimento mais abaixo, iniciando alinhado ao nome.
+    nascimento: { x: 535, y: 650 },
+    falecimento: { x: 760, y: 650 },
 
     // A4: QR Code maior, mantendo o centro visual no quadro inferior.
     qr: { x: 235, y: 952, w: 300, h: 300 } as QrBox,
@@ -1284,7 +1285,7 @@ export default function EnviarObituario({
             // Cada palavra do nome é desenhada em uma linha própria.
             ctx.fillStyle = selectedColor;
             ctx.textAlign = "left";
-            ctx.font = `800 44px "${selectedFont}"`;
+            ctx.font = `800 62px "${selectedFont}"`;
             drawWordsOnePerLine(
                 ctx,
                 dados.nome,
@@ -1784,3 +1785,4 @@ function InfoLinha({
         </div>
     );
 }
+
