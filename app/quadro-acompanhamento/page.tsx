@@ -2544,37 +2544,49 @@ function StatusTimelineCell({
     const totalMs = Math.max(0, nowMs - firstStart);
 
     const { durations, activeKey } = getStatusDisplayData(segments);
+    const isMobile = variant === "mobile";
 
     return (
-        <div
-            className={
-                variant === "mobile"
-                    ? "flex w-full min-w-0 items-center justify-start gap-1 overflow-x-auto pb-1"
-                    : "-ml-5 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1"
-            }
-        >
-            {STATUS_STEPS.map((step) => {
-                const duration = durations.get(step.key) ?? 0;
-                const skipped = isStatusStepSkipped(registro, step.key);
-                const isActive = !skipped && activeKey === step.key;
+        <>
+            <div
+                className={
+                    isMobile
+                        ? "grid w-full min-w-0 grid-cols-8 items-center justify-items-center gap-0 overflow-visible px-1 py-0.5"
+                        : "-ml-5 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1"
+                }
+            >
+                {STATUS_STEPS.map((step) => {
+                    const duration = durations.get(step.key) ?? 0;
+                    const skipped = isStatusStepSkipped(registro, step.key);
+                    const isActive = !skipped && activeKey === step.key;
 
-                return (
-                    <StatusPill
-                        key={step.key}
-                        icon={step.icon}
-                        label={step.shortLabel}
-                        time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
-                        active={isActive}
-                        muted={!isActive && (duration <= 0 || skipped)}
-                        skipped={skipped}
-                        title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
-                    />
-                );
-            })}
+                    return (
+                        <StatusPill
+                            key={step.key}
+                            icon={step.icon}
+                            label={step.shortLabel}
+                            time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
+                            active={isActive}
+                            muted={!isActive && (duration <= 0 || skipped)}
+                            skipped={skipped}
+                            variant={variant}
+                            title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                        />
+                    );
+                })}
 
-            <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
+                <StatusPill
+                    icon="timer"
+                    label="Total"
+                    time={formatDurationMs(totalMs)}
+                    total
+                    variant={variant}
+                    title="Tempo total em atendimento"
+                />
+            </div>
+
             <StatusBlinkStyle />
-        </div>
+        </>
     );
 }
 
@@ -2592,6 +2604,7 @@ function StatusPill({
     muted = false,
     total = false,
     skipped = false,
+    variant = "desktop",
     title,
 }: {
     icon: StatusIconKey;
@@ -2601,26 +2614,42 @@ function StatusPill({
     muted?: boolean;
     total?: boolean;
     skipped?: boolean;
+    variant?: "desktop" | "mobile";
     title?: string;
 }) {
+    const isMobile = variant === "mobile";
+
+    const boxClass = isMobile
+        ? `relative flex h-[40px] w-[34px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "" : ""}`
+        : `relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`;
+
+    const circleClass = isMobile
+        ? `relative flex h-[25px] w-[25px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_9px_rgba(34,197,94,.48)]" : "border border-transparent"}`
+        : `relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`;
+
+    const iconClass = isMobile
+        ? `relative flex h-[19px] w-[19px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`
+        : `relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`;
+
+    const timeClass = isMobile
+        ? `mt-[3px] w-full truncate text-[9px] font-black leading-none tabular-nums ${muted ? "text-slate-400/60 dark:text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-800 dark:text-slate-100"}`
+        : `mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-400/60 dark:text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-800 dark:text-slate-100"}`;
+
     return (
         <div
-            className={`relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
+            className={boxClass}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={`relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`}>
-                <div
-                    className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
-                    aria-hidden="true"
-                >
+            <div className={circleClass}>
+                <div className={iconClass} aria-hidden="true">
                     <StatusIcon type={icon} />
                 </div>
             </div>
 
-            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-400/60 dark:text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-800 dark:text-slate-100"}`}>{time}</div>
+            <div className={timeClass}>{time}</div>
 
             {skipped && (
-                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
+                <span className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center font-semibold leading-none text-[#00AEEC] ${isMobile ? "text-[46px]" : "text-[43px]"}`}>
                     ×
                 </span>
             )}
