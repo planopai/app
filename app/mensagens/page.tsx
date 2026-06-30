@@ -598,7 +598,11 @@ function MessageCard({
                         <video className="mt-3 max-h-72 w-full rounded-lg border bg-black" controls src={resolveImageSrc(item.image)} />
                     ) : null}
 
-                    {actions && <div className="mt-3 flex flex-wrap gap-2">{actions}</div>}
+                    {actions && (
+                        <div className="mt-4 flex w-full flex-wrap items-center justify-between gap-6">
+                            {actions}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -618,6 +622,7 @@ export default function MensagensPage() {
     const [error, setError] = useState<string | null>(null);
 
     const [showModal, setShowModal] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<MessageItem | null>(null);
     const [falecido, setFalecido] = useState("");
     const [nascimento, setNascimento] = useState("");
     const [falecimento, setFalecimento] = useState("");
@@ -926,14 +931,10 @@ export default function MensagensPage() {
         }
     };
 
-    const deleteMessage = async (id: number) => {
+    const deleteMessage = async (id: number): Promise<boolean> => {
         if (!selectedAtendimentoId) {
             alert("Selecione um atendimento.");
-            return;
-        }
-
-        if (!confirm("Deseja excluir esta homenagem?")) {
-            return;
+            return false;
         }
 
         try {
@@ -949,10 +950,26 @@ export default function MensagensPage() {
 
             await loadMessages(selected);
             await loadAtendimentos();
+            return true;
         } catch (e: any) {
             alert(e?.message || "Erro ao excluir a mensagem.");
+            return false;
         } finally {
             setActionLoadingId(null);
+        }
+    };
+
+    const requestDeleteMessage = (item: MessageItem) => {
+        setDeleteTarget(item);
+    };
+
+    const confirmDeleteMessage = async () => {
+        if (!deleteTarget) return;
+
+        const deleted = await deleteMessage(deleteTarget.id);
+
+        if (deleted) {
+            setDeleteTarget(null);
         }
     };
 
@@ -1424,16 +1441,16 @@ export default function MensagensPage() {
                                                         <button
                                                             onClick={() => approveMessage(m.id)}
                                                             disabled={actionLoadingId === m.id}
-                                                            className={`${btn} hover:bg-green-50`}
+                                                            className={`${btn} min-w-[118px] justify-center hover:bg-green-50`}
                                                             title="Aprovar"
                                                         >
                                                             <IconCheck className="size-4 text-green-600" />
                                                             Aprovar
                                                         </button>
                                                         <button
-                                                            onClick={() => deleteMessage(m.id)}
+                                                            onClick={() => requestDeleteMessage(m)}
                                                             disabled={actionLoadingId === m.id}
-                                                            className={`${btn} hover:bg-red-50`}
+                                                            className={`${btn} ml-auto min-w-[118px] justify-center hover:bg-red-50`}
                                                             title="Excluir"
                                                         >
                                                             <IconTrash className="size-4 text-red-600" />
@@ -1466,15 +1483,17 @@ export default function MensagensPage() {
                                                 key={`a-${m.id}`}
                                                 item={m}
                                                 actions={
-                                                    <button
-                                                        onClick={() => deleteMessage(m.id)}
-                                                        disabled={actionLoadingId === m.id}
-                                                        className={`${btn} hover:bg-red-50`}
-                                                        title="Excluir"
-                                                    >
-                                                        <IconTrash className="size-4 text-red-600" />
-                                                        Excluir
-                                                    </button>
+                                                    <div className="flex w-full justify-end">
+                                                        <button
+                                                            onClick={() => requestDeleteMessage(m)}
+                                                            disabled={actionLoadingId === m.id}
+                                                            className={`${btn} min-w-[118px] justify-center hover:bg-red-50`}
+                                                            title="Excluir"
+                                                        >
+                                                            <IconTrash className="size-4 text-red-600" />
+                                                            Excluir
+                                                        </button>
+                                                    </div>
                                                 }
                                             />
                                         ))}
@@ -1485,6 +1504,49 @@ export default function MensagensPage() {
                     )}
                 </main>
             </div>
+
+            {deleteTarget && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+                        <div className="mb-3 flex items-center gap-2 text-red-600">
+                            <IconTrash className="size-5" />
+                            <h3 className="text-lg font-bold text-foreground">Confirmar exclusão</h3>
+                        </div>
+
+                        <p className="text-sm leading-6 text-muted-foreground">
+                            Deseja excluir esta homenagem? Esta ação não poderá ser desfeita.
+                        </p>
+
+                        <div className="mt-3 rounded-xl border bg-muted/20 p-3">
+                            <div className="text-sm font-semibold text-foreground">
+                                {deleteTarget.name || "Visitante"}
+                            </div>
+                            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                                {deleteTarget.text || "Homenagem enviada sem texto."}
+                            </p>
+                        </div>
+
+                        <div className="mt-5 flex items-center justify-between gap-4">
+                            <button
+                                type="button"
+                                onClick={() => setDeleteTarget(null)}
+                                disabled={actionLoadingId === deleteTarget.id}
+                                className="min-w-[120px] rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted/30 disabled:opacity-60"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDeleteMessage}
+                                disabled={actionLoadingId === deleteTarget.id}
+                                className="ml-auto min-w-[120px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                            >
+                                {actionLoadingId === deleteTarget.id ? "Excluindo..." : "Excluir"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3">
