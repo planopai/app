@@ -5,6 +5,7 @@ import {
     IconMessageCircle2,
     IconCheck,
     IconTrash,
+    IconX,
     IconRefresh,
     IconDoor,
     IconDownload,
@@ -532,16 +533,24 @@ function AtendimentoCard({
 function MessageCard({
     item,
     actions,
+    cornerAction,
 }: {
     item: MessageItem;
     actions?: React.ReactNode;
+    cornerAction?: React.ReactNode;
 }) {
     const src = resolveImageSrc(item.image);
     const isAudio = String(item.arquivo_mime || "").startsWith("audio/");
     const isVideo = String(item.arquivo_mime || "").startsWith("video/");
 
     return (
-        <div className="min-w-0 rounded-xl border bg-white p-3 shadow-sm sm:p-4">
+        <div className="relative min-w-0 rounded-xl border bg-white p-3 pr-12 shadow-sm sm:p-4 sm:pr-12">
+            {cornerAction ? (
+                <div className="absolute right-3 top-3 z-10">
+                    {cornerAction}
+                </div>
+            ) : null}
+
             <div className="flex items-start gap-3">
                 {isAudio ? (
                     <div className="grid size-16 shrink-0 place-items-center rounded-md border bg-muted/30 text-xs font-bold text-muted-foreground sm:size-20">
@@ -1436,27 +1445,28 @@ export default function MensagensPage() {
                                             <MessageCard
                                                 key={`r-${m.id}`}
                                                 item={m}
+                                                cornerAction={
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => requestDeleteMessage(m)}
+                                                        disabled={actionLoadingId === m.id}
+                                                        className="inline-flex size-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50 disabled:pointer-events-none"
+                                                        title="Excluir"
+                                                        aria-label="Excluir homenagem"
+                                                    >
+                                                        <IconX className="size-5" />
+                                                    </button>
+                                                }
                                                 actions={
-                                                    <>
-                                                        <button
-                                                            onClick={() => approveMessage(m.id)}
-                                                            disabled={actionLoadingId === m.id}
-                                                            className={`${btn} min-w-[118px] justify-center hover:bg-green-50`}
-                                                            title="Aprovar"
-                                                        >
-                                                            <IconCheck className="size-4 text-green-600" />
-                                                            Aprovar
-                                                        </button>
-                                                        <button
-                                                            onClick={() => requestDeleteMessage(m)}
-                                                            disabled={actionLoadingId === m.id}
-                                                            className={`${btn} ml-auto min-w-[118px] justify-center hover:bg-red-50`}
-                                                            title="Excluir"
-                                                        >
-                                                            <IconTrash className="size-4 text-red-600" />
-                                                            Excluir
-                                                        </button>
-                                                    </>
+                                                    <button
+                                                        onClick={() => approveMessage(m.id)}
+                                                        disabled={actionLoadingId === m.id}
+                                                        className={`${btn} min-w-[118px] justify-center hover:bg-green-50`}
+                                                        title="Aprovar"
+                                                    >
+                                                        <IconCheck className="size-4 text-green-600" />
+                                                        Aprovar
+                                                    </button>
                                                 }
                                             />
                                         ))}
@@ -1482,18 +1492,17 @@ export default function MensagensPage() {
                                             <MessageCard
                                                 key={`a-${m.id}`}
                                                 item={m}
-                                                actions={
-                                                    <div className="flex w-full justify-end">
-                                                        <button
-                                                            onClick={() => requestDeleteMessage(m)}
-                                                            disabled={actionLoadingId === m.id}
-                                                            className={`${btn} min-w-[118px] justify-center hover:bg-red-50`}
-                                                            title="Excluir"
-                                                        >
-                                                            <IconTrash className="size-4 text-red-600" />
-                                                            Excluir
-                                                        </button>
-                                                    </div>
+                                                cornerAction={
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => requestDeleteMessage(m)}
+                                                        disabled={actionLoadingId === m.id}
+                                                        className="inline-flex size-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50 disabled:pointer-events-none"
+                                                        title="Excluir"
+                                                        aria-label="Excluir homenagem"
+                                                    >
+                                                        <IconX className="size-5" />
+                                                    </button>
                                                 }
                                             />
                                         ))}
@@ -1637,3 +1646,4 @@ export default function MensagensPage() {
         </div>
     );
 }
+
