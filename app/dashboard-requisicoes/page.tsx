@@ -392,7 +392,7 @@ async function apiGet<T>(action: string, filters?: Partial<Filters>, extra?: Rec
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-3xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
 }
 
 function Button({
@@ -402,7 +402,7 @@ function Button({
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" | "soft" | "danger" }) {
     const base =
-        "inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-[15px] font-semibold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
+        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[15px] font-medium shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
 
     const cls =
         variant === "solid"
@@ -423,7 +423,7 @@ function Button({
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-600">{label}</span>
+            <span className="mb-1 block text-xs font-medium text-slate-700">{label}</span>
             {children}
             {hint ? <span className="mt-1 block text-xs text-slate-500">{hint}</span> : null}
         </label>
@@ -435,7 +435,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
         <input
             {...props}
             className={[
-                "w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-[16px] text-slate-900 shadow-sm outline-none",
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-sm outline-none",
                 "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
                 props.className || "",
             ].join(" ")}
@@ -448,7 +448,7 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
         <select
             {...props}
             className={[
-                "w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-[16px] text-slate-900 shadow-sm outline-none",
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-sm outline-none",
                 "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
                 props.className || "",
             ].join(" ")}
@@ -497,14 +497,14 @@ function Modal({
 
     return (
         <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-slate-950/55 p-3 pt-6 sm:items-center sm:p-4">
-            <div className={["flex max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl", maxWidth].join(" ")}>
+            <div className={["flex max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl", maxWidth].join(" ")}>
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
                     <div className="min-w-0">
-                        <h2 className="text-lg font-black tracking-tight text-slate-950">{title}</h2>
+                        <h2 className="text-base font-bold tracking-tight text-slate-950">{title}</h2>
                         {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
                     </div>
                     <button
-                        className="rounded-2xl px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100"
+                        className="rounded-xl px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100"
                         onClick={onClose}
                         type="button"
                         aria-label="Fechar"
@@ -541,15 +541,15 @@ function StatCard({
             type="button"
             onClick={onClick}
             className={[
-                "rounded-3xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md",
+                "rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md",
                 active ? "border-slate-900 ring-2 ring-slate-200" : danger ? "border-rose-200" : "border-slate-200",
             ].join(" ")}
         >
             <div className="flex items-start justify-between gap-3">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
-                {danger ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-700">ALERTA</span> : null}
+                {danger ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">ALERTA</span> : null}
             </div>
-            <div className={["mt-3 text-3xl font-black tracking-tight", danger ? "text-rose-700" : "text-slate-950"].join(" ")}>{numberBR(value)}</div>
+            <div className={["mt-3 text-2xl font-bold tracking-tight", danger ? "text-rose-700" : "text-slate-950"].join(" ")}>{numberBR(value)}</div>
             {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
         </button>
     );
@@ -608,7 +608,7 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-black tracking-tight text-slate-950">{codigoReq(row)}</h3>
+                            <h3 className="text-base font-bold tracking-tight text-slate-950">{codigoReq(row)}</h3>
                             <Badge className={statusClass(row.status)}>{statusLabel(row.status)}</Badge>
                             {late ? <Badge className="border-rose-200 bg-rose-50 text-rose-800">+24h em trânsito</Badge> : null}
                         </div>
@@ -620,19 +620,19 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                    <div className="rounded-2xl bg-slate-50 p-3">
+                    <div className="rounded-xl bg-slate-50 p-3">
                         <div className="font-bold uppercase tracking-wide text-slate-500">Solicitante</div>
                         <div className="mt-1 truncate font-semibold text-slate-900">{row.solicitante_nome || "Não informado"}</div>
                     </div>
-                    <div className="rounded-2xl bg-slate-50 p-3">
+                    <div className="rounded-xl bg-slate-50 p-3">
                         <div className="font-bold uppercase tracking-wide text-slate-500">Destino</div>
                         <div className="mt-1 truncate font-semibold text-slate-900">{destinoLabel(row)}</div>
                     </div>
-                    <div className="rounded-2xl bg-slate-50 p-3">
+                    <div className="rounded-xl bg-slate-50 p-3">
                         <div className="font-bold uppercase tracking-wide text-slate-500">Abertura</div>
                         <div className="mt-1 font-semibold text-slate-900">{fmtDateTime(row.criado_em)}</div>
                     </div>
-                    <div className="rounded-2xl bg-slate-50 p-3">
+                    <div className="rounded-xl bg-slate-50 p-3">
                         <div className="font-bold uppercase tracking-wide text-slate-500">Quantidade</div>
                         <div className="mt-1 font-semibold text-slate-900">{numberBR(row.total_quantidade, 3)}</div>
                     </div>
@@ -659,36 +659,36 @@ function DetailModal({ detail, loading, onClose }: { detail: ReqDetail | null; l
             onClose={onClose}
         >
             {loading ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Carregando detalhes...</div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Carregando detalhes...</div>
             ) : detail ? (
                 <div className="space-y-5">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Status</div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</div>
                             <div className="mt-2">
                                 <Badge className={statusClass(detail.status)}>{statusLabel(detail.status)}</Badge>
                             </div>
                         </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Criada em</div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Criada em</div>
                             <div className="mt-2 text-sm font-bold text-slate-950">{fmtDateTime(detail.criado_em)}</div>
                         </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Atendimento</div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Atendimento</div>
                             <div className="mt-2 text-sm font-bold text-slate-950">{detail.id_atendimento || "Sem vínculo"}</div>
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 p-4">
-                        <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Justificativa</h3>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Justificativa</h3>
                         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{detail.justificativa || "Não informada."}</p>
                     </div>
 
                     <div>
-                        <h3 className="mb-3 text-sm font-black uppercase tracking-wide text-slate-500">Itens</h3>
+                        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Itens</h3>
                         <div className="space-y-2">
                             {(detail.items || []).map((item) => (
-                                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                                <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-3">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                         <div className="min-w-0">
                                             <div className="font-bold text-slate-950">{item.produto_nome_snapshot}</div>
@@ -701,15 +701,15 @@ function DetailModal({ detail, loading, onClose }: { detail: ReqDetail | null; l
                                         <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[260px]">
                                             <div className="rounded-xl bg-slate-50 p-2">
                                                 <div className="font-bold text-slate-500">Solicitada</div>
-                                                <div className="mt-1 font-black text-slate-900">{numberBR(item.quantidade_solicitada, 3)}</div>
+                                                <div className="mt-1 font-bold text-slate-900">{numberBR(item.quantidade_solicitada, 3)}</div>
                                             </div>
                                             <div className="rounded-xl bg-slate-50 p-2">
                                                 <div className="font-bold text-slate-500">Enviada</div>
-                                                <div className="mt-1 font-black text-slate-900">{item.quantidade_enviada == null ? "-" : numberBR(item.quantidade_enviada, 3)}</div>
+                                                <div className="mt-1 font-bold text-slate-900">{item.quantidade_enviada == null ? "-" : numberBR(item.quantidade_enviada, 3)}</div>
                                             </div>
                                             <div className="rounded-xl bg-slate-50 p-2">
                                                 <div className="font-bold text-slate-500">Recebida</div>
-                                                <div className="mt-1 font-black text-slate-900">{item.quantidade_recebida == null ? "-" : numberBR(item.quantidade_recebida, 3)}</div>
+                                                <div className="mt-1 font-bold text-slate-900">{item.quantidade_recebida == null ? "-" : numberBR(item.quantidade_recebida, 3)}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -720,13 +720,13 @@ function DetailModal({ detail, loading, onClose }: { detail: ReqDetail | null; l
                     </div>
 
                     <div>
-                        <h3 className="mb-3 text-sm font-black uppercase tracking-wide text-slate-500">Linha do tempo</h3>
+                        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Linha do tempo</h3>
                         <div className="space-y-2">
                             {(detail.eventos || []).length === 0 ? (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Nenhum evento registrado.</div>
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Nenhum evento registrado.</div>
                             ) : (
                                 (detail.eventos || []).map((ev) => (
-                                    <div key={ev.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                                    <div key={ev.id} className="rounded-xl border border-slate-200 bg-white p-3">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                             <div className="font-bold text-slate-950">{compactEventName(ev.evento)}</div>
                                             <div className="text-xs font-semibold text-slate-500">{fmtDateTime(ev.criado_em)}</div>
@@ -748,7 +748,7 @@ function DetailModal({ detail, loading, onClose }: { detail: ReqDetail | null; l
 }
 
 export default function DashboardRequisicoesPage() {
-    const [me, setMe] = useState<Me | null>(null);
+    const [, setMe] = useState<Me | null>(null);
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
     const [depositos, setDepositos] = useState<Deposito[]>([]);
     const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -951,19 +951,12 @@ export default function DashboardRequisicoesPage() {
     }
 
     return (
-        <main className="min-h-[100dvh] bg-slate-50 px-3 py-4 text-slate-900 sm:px-6 lg:px-8">
-            <div className="mx-auto max-w-7xl space-y-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                        <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Materiais</div>
-                        <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Dashboard de requisições</h1>
-                        <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-                            Acompanhe solicitações, status, prazos, alertas e histórico filtrado por data, produto, unidade ou solicitante.
-                        </p>
-                        {me ? <p className="mt-1 text-xs text-slate-500">Usuário: {me.nome || me.usuario}</p> : null}
-                    </div>
+        <main className="min-h-[100dvh] bg-gray-50 px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-6xl space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-950">Dashboard Requisições</h1>
 
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="grid grid-cols-3 gap-2 sm:flex">
                         <Button type="button" variant="ghost" onClick={() => setFilterOpen(true)}>
                             Filtrar
                         </Button>
@@ -971,12 +964,12 @@ export default function DashboardRequisicoesPage() {
                             Atualizar
                         </Button>
                         <Button type="button" onClick={() => void exportCsv()} disabled={exporting}>
-                            {exporting ? "Exportando..." : "Exportar CSV"}
+                            {exporting ? "Exportando..." : "CSV"}
                         </Button>
                     </div>
                 </div>
 
-                {msg ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{msg}</div> : null}
+                {msg ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{msg}</div> : null}
 
                 <div className="flex flex-wrap gap-2">
                     {activeFilterChips.length === 0 ? (
@@ -1004,8 +997,8 @@ export default function DashboardRequisicoesPage() {
                     <Card className="p-4 sm:p-5">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                             <div>
-                                <h2 className="text-lg font-black tracking-tight text-slate-950">Distribuição por status</h2>
-                                <p className="mt-1 text-sm text-slate-600">Resumo visual do período e filtros aplicados.</p>
+                                <h2 className="text-base font-bold tracking-tight text-slate-950">Distribuição por status</h2>
+
                             </div>
                             <div className="text-xs font-semibold text-slate-500">Total: {numberBR(totalFiltrado)}</div>
                         </div>
@@ -1022,7 +1015,7 @@ export default function DashboardRequisicoesPage() {
                                     <div className="h-3 overflow-hidden rounded-full bg-slate-100">
                                         <div className="h-full rounded-full bg-slate-900" style={{ width: `${r.total === 0 ? 0 : r.percent}%` }} />
                                     </div>
-                                    <div className="text-right font-black text-slate-950">{numberBR(r.total)}</div>
+                                    <div className="text-right font-bold text-slate-950">{numberBR(r.total)}</div>
                                 </button>
                             ))}
                         </div>
@@ -1031,8 +1024,8 @@ export default function DashboardRequisicoesPage() {
                     <Card className="p-4 sm:p-5">
                         <div className="flex items-start justify-between gap-3">
                             <div>
-                                <h2 className="text-lg font-black tracking-tight text-slate-950">Alertas</h2>
-                                <p className="mt-1 text-sm text-slate-600">Pendências que merecem atenção.</p>
+                                <h2 className="text-base font-bold tracking-tight text-slate-950">Alertas</h2>
+
                             </div>
                             <Badge className="border-rose-200 bg-rose-50 text-rose-800">{numberBR(summary.atrasadas_24h || 0)} atrasadas</Badge>
                         </div>
@@ -1041,16 +1034,16 @@ export default function DashboardRequisicoesPage() {
                             <button
                                 type="button"
                                 onClick={() => void applyFilters({ ...appliedFilters, status: "EM_TRANSITO", atrasadas: true })}
-                                className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-left"
+                                className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-left"
                             >
-                                <div className="text-sm font-black text-rose-900">Em trânsito acima de 24h</div>
-                                <div className="mt-1 text-2xl font-black text-rose-800">{numberBR(summary.atrasadas_24h || alertasTransito.length || 0)}</div>
+                                <div className="text-sm font-bold text-rose-900">Em trânsito acima de 24h</div>
+                                <div className="mt-1 text-2xl font-bold text-rose-800">{numberBR(summary.atrasadas_24h || alertasTransito.length || 0)}</div>
                                 <div className="mt-1 text-xs text-rose-700">Toque para filtrar somente as atrasadas.</div>
                             </button>
 
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                                <div className="text-sm font-black text-amber-900">Produtos no mínimo</div>
-                                <div className="mt-1 text-2xl font-black text-amber-800">{numberBR(alertasMinimo.length)}</div>
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                <div className="text-sm font-bold text-amber-900">Produtos no mínimo</div>
+                                <div className="mt-1 text-2xl font-bold text-amber-800">{numberBR(alertasMinimo.length)}</div>
                                 <div className="mt-1 text-xs text-amber-700">Quantidade igual ou abaixo do mínimo configurado.</div>
                             </div>
                         </div>
@@ -1061,12 +1054,12 @@ export default function DashboardRequisicoesPage() {
                     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                         {alertasTransito.length > 0 ? (
                             <Card className="p-4 sm:p-5">
-                                <h2 className="text-lg font-black tracking-tight text-slate-950">Trânsito acima de 24h</h2>
+                                <h2 className="text-base font-bold tracking-tight text-slate-950">Trânsito acima de 24h</h2>
                                 <div className="mt-4 space-y-2">
                                     {alertasTransito.slice(0, 6).map((r) => (
-                                        <button key={r.id} type="button" onClick={() => void openDetail(r.id)} className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50">
+                                        <button key={r.id} type="button" onClick={() => void openDetail(r.id)} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50">
                                             <div className="flex items-center justify-between gap-3">
-                                                <div className="font-black text-slate-950">{codigoReq(r)}</div>
+                                                <div className="font-bold text-slate-950">{codigoReq(r)}</div>
                                                 <Badge className="border-rose-200 bg-rose-50 text-rose-800">{hoursSince(r.enviado_em) || "+24"}h</Badge>
                                             </div>
                                             <div className="mt-1 line-clamp-1 text-sm font-semibold text-slate-700">{r.itens_resumo}</div>
@@ -1079,11 +1072,11 @@ export default function DashboardRequisicoesPage() {
 
                         {alertasMinimo.length > 0 ? (
                             <Card className="p-4 sm:p-5">
-                                <h2 className="text-lg font-black tracking-tight text-slate-950">Estoque mínimo</h2>
+                                <h2 className="text-base font-bold tracking-tight text-slate-950">Estoque mínimo</h2>
                                 <div className="mt-4 space-y-2">
                                     {alertasMinimo.slice(0, 6).map((a, idx) => (
-                                        <div key={`${a.produto_id}-${a.deposito_id}-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-3">
-                                            <div className="font-black text-slate-950">{a.produto_nome}</div>
+                                        <div key={`${a.produto_id}-${a.deposito_id}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                                            <div className="font-bold text-slate-950">{a.produto_nome}</div>
                                             <div className="mt-1 text-xs text-slate-500">{a.deposito_nome}{a.codigo_barras ? ` | CB ${a.codigo_barras}` : ""}</div>
                                             <div className="mt-2 flex flex-wrap gap-2">
                                                 <FilterChip>Saldo {numberBR(a.quantidade, 3)}</FilterChip>
@@ -1100,7 +1093,7 @@ export default function DashboardRequisicoesPage() {
                 <Card className="overflow-hidden">
                     <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                         <div>
-                            <h2 className="text-lg font-black tracking-tight text-slate-950">Requisições filtradas</h2>
+                            <h2 className="text-base font-bold tracking-tight text-slate-950">Requisições filtradas</h2>
                             <p className="mt-1 text-sm text-slate-600">
                                 {loading ? "Carregando..." : `${numberBR(rows.length)} registros nesta página`}
                                 {offset > 0 ? ` | A partir do registro ${offset + 1}` : ""}
@@ -1124,9 +1117,9 @@ export default function DashboardRequisicoesPage() {
 
                     <div className="p-4 sm:p-5">
                         {loading ? (
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Carregando dashboard...</div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Carregando dashboard...</div>
                         ) : rows.length === 0 ? (
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Nenhuma requisição encontrada para os filtros aplicados.</div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Nenhuma requisição encontrada para os filtros aplicados.</div>
                         ) : (
                             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                                 {rows.map((row) => (
@@ -1140,8 +1133,7 @@ export default function DashboardRequisicoesPage() {
 
             <Modal
                 open={filterOpen}
-                title="Filtros do dashboard"
-                subtitle="Use os filtros para restringir o período, status, solicitante, produto e atendimento."
+                title="Filtros"
                 onClose={() => setFilterOpen(false)}
                 footer={
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
@@ -1237,7 +1229,7 @@ export default function DashboardRequisicoesPage() {
                             type="button"
                             onClick={() => setFilters((f) => ({ ...f, atrasadas: !f.atrasadas, status: !f.atrasadas ? "EM_TRANSITO" : f.status }))}
                             className={[
-                                "flex w-full items-center justify-between rounded-2xl border px-3.5 py-3 text-left text-[16px] font-bold shadow-sm",
+                                "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-[15px] font-bold shadow-sm",
                                 filters.atrasadas ? "border-rose-200 bg-rose-50 text-rose-800" : "border-slate-200 bg-white text-slate-700",
                             ].join(" ")}
                         >

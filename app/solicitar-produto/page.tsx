@@ -305,7 +305,7 @@ async function apiPost<T>(body: Record<string, unknown>) {
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-3xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -324,7 +324,7 @@ const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<H
             ref={ref}
             {...props}
             className={[
-                "w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-[16px] text-slate-900 shadow-sm outline-none",
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
                 "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
                 props.className || "",
             ].join(" ")}
@@ -337,7 +337,7 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
         <textarea
             {...props}
             className={[
-                "w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-[16px] text-slate-900 shadow-sm outline-none",
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
                 "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
                 props.className || "",
             ].join(" ")}
@@ -350,7 +350,7 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
         <select
             {...props}
             className={[
-                "w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-[16px] text-slate-900 shadow-sm outline-none",
+                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
                 "focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
                 props.className || "",
             ].join(" ")}
@@ -365,7 +365,7 @@ function Button({
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "soft" | "ghost" | "danger" }) {
     const base =
-        "inline-flex min-h-11 items-center justify-center rounded-2xl px-4 py-2 text-[15px] font-bold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
+        "inline-flex min-h-10 items-center justify-center rounded-xl px-4 py-2 text-[15px] font-bold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
 
     const style =
         variant === "solid"
@@ -432,10 +432,10 @@ function Modal({
 
     return (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-3 sm:items-center sm:p-4">
-            <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
                     <div className="min-w-0">
-                        <h2 className="text-base font-black text-slate-900">{title}</h2>
+                        <h2 className="text-base font-bold text-slate-900">{title}</h2>
                         {subtitle ? <p className="mt-1 text-sm leading-5 text-slate-600">{subtitle}</p> : null}
                     </div>
                     <button type="button" onClick={onClose} className="rounded-2xl px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100" aria-label="Fechar">
@@ -504,7 +504,7 @@ function ProductCombobox({
                 />
 
                 {open ? (
-                    <div className="absolute left-0 right-0 z-30 mt-2 max-h-80 overflow-auto rounded-3xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <div className="absolute left-0 right-0 z-30 mt-2 max-h-80 overflow-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
                         {list.length === 0 ? (
                             <div className="p-4 text-sm text-slate-500">Nenhum produto encontrado.</div>
                         ) : (
@@ -525,7 +525,7 @@ function ProductCombobox({
                                         className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left hover:bg-slate-50"
                                     >
                                         <div className="min-w-0">
-                                            <div className="line-clamp-2 text-sm font-black text-slate-900">{p.nome}</div>
+                                            <div className="line-clamp-2 text-sm font-bold text-slate-900">{p.nome}</div>
                                             <div className="mt-1 text-xs text-slate-500">
                                                 {p.codigo_barras || "Sem código"}
                                                 {p.categoria_nome ? ` • ${p.categoria_nome}` : ""}
@@ -534,7 +534,7 @@ function ProductCombobox({
                                         </div>
                                         <div className="shrink-0 text-right">
                                             <div className="text-xs text-slate-500">Saldo total</div>
-                                            <div className="text-sm font-black text-slate-900">{fmtQtd(saldo)}</div>
+                                            <div className="text-sm font-bold text-slate-900">{fmtQtd(saldo)}</div>
                                         </div>
                                     </button>
                                 );
@@ -549,8 +549,8 @@ function ProductCombobox({
 
 function EmptyState({ title, text }: { title: string; text: string }) {
     return (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-            <p className="text-sm font-black text-slate-900">{title}</p>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+            <p className="text-sm font-bold text-slate-900">{title}</p>
             <p className="mt-1 text-sm leading-5 text-slate-600">{text}</p>
         </div>
     );
@@ -580,13 +580,13 @@ function RequestCard({
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-black text-slate-900">{row.codigo || `REQ-${row.id}`}</h3>
+                            <h3 className="text-base font-bold text-slate-900">{row.codigo || `REQ-${row.id}`}</h3>
                             <StatusBadge status={status} options={statusOptions} />
                             {atrasada ? <Pill className="bg-rose-50 text-rose-800 ring-1 ring-rose-200">+24h</Pill> : null}
                         </div>
                         <p className="mt-1 text-xs text-slate-500">Aberta em {fmtDateTime(row.criado_em)}</p>
                     </div>
-                    <button type="button" onClick={() => onOpen(row.id)} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm hover:bg-slate-50">
+                    <button type="button" onClick={() => onOpen(row.id)} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
                         Ver
                     </button>
                 </div>
@@ -654,44 +654,44 @@ function DetailModal({
                         <Pill className="bg-slate-100 text-slate-700">{row.destino_tipo === "DEPOSITO" ? "Destino com entrada" : "Consumo"}</Pill>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
                         <div>
                             <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Solicitante</div>
-                            <div className="font-black text-slate-900">{row.solicitante_nome || "-"}</div>
+                            <div className="font-bold text-slate-900">{row.solicitante_nome || "-"}</div>
                         </div>
                         <div>
                             <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Criada em</div>
-                            <div className="font-black text-slate-900">{fmtDateTime(row.criado_em)}</div>
+                            <div className="font-bold text-slate-900">{fmtDateTime(row.criado_em)}</div>
                         </div>
                         <div>
                             <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Enviada em</div>
-                            <div className="font-black text-slate-900">{fmtDateTime(row.enviado_em)}</div>
+                            <div className="font-bold text-slate-900">{fmtDateTime(row.enviado_em)}</div>
                         </div>
                         <div>
                             <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Recebida em</div>
-                            <div className="font-black text-slate-900">{fmtDateTime(row.recebido_em)}</div>
+                            <div className="font-bold text-slate-900">{fmtDateTime(row.recebido_em)}</div>
                         </div>
                     </div>
 
                     <div>
-                        <h3 className="mb-2 text-sm font-black text-slate-900">Itens</h3>
+                        <h3 className="mb-2 text-sm font-bold text-slate-900">Itens</h3>
                         <div className="space-y-2">
                             {row.items?.map((item) => (
-                                <div key={item.id} className="rounded-3xl border border-slate-200 bg-white p-3">
-                                    <div className="text-sm font-black text-slate-900">{item.produto_nome_snapshot}</div>
+                                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                                    <div className="text-sm font-bold text-slate-900">{item.produto_nome_snapshot}</div>
                                     <div className="mt-1 text-xs text-slate-500">Código: {item.codigo_barras_snapshot || "sem código"}</div>
                                     <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                                         <div className="rounded-2xl bg-slate-50 p-2">
                                             <div className="text-slate-500">Solicitada</div>
-                                            <div className="font-black text-slate-900">{fmtQtd(item.quantidade_solicitada)}</div>
+                                            <div className="font-bold text-slate-900">{fmtQtd(item.quantidade_solicitada)}</div>
                                         </div>
                                         <div className="rounded-2xl bg-slate-50 p-2">
                                             <div className="text-slate-500">Enviada</div>
-                                            <div className="font-black text-slate-900">{item.quantidade_enviada == null ? "-" : fmtQtd(item.quantidade_enviada)}</div>
+                                            <div className="font-bold text-slate-900">{item.quantidade_enviada == null ? "-" : fmtQtd(item.quantidade_enviada)}</div>
                                         </div>
                                         <div className="rounded-2xl bg-slate-50 p-2">
                                             <div className="text-slate-500">Recebida</div>
-                                            <div className="font-black text-slate-900">{item.quantidade_recebida == null ? "-" : fmtQtd(item.quantidade_recebida)}</div>
+                                            <div className="font-bold text-slate-900">{item.quantidade_recebida == null ? "-" : fmtQtd(item.quantidade_recebida)}</div>
                                         </div>
                                     </div>
                                     {item.observacao ? <p className="mt-2 text-sm text-slate-600">{item.observacao}</p> : null}
@@ -701,14 +701,14 @@ function DetailModal({
                     </div>
 
                     <div>
-                        <h3 className="mb-2 text-sm font-black text-slate-900">Linha do tempo</h3>
+                        <h3 className="mb-2 text-sm font-bold text-slate-900">Linha do tempo</h3>
                         <div className="space-y-2">
                             {row.eventos?.length ? (
                                 row.eventos.map((ev) => (
-                                    <div key={ev.id} className="rounded-3xl border border-slate-200 bg-white p-3">
+                                    <div key={ev.id} className="rounded-2xl border border-slate-200 bg-white p-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <div className="text-sm font-black text-slate-900">{ev.evento.replace(/_/g, " ")}</div>
+                                                <div className="text-sm font-bold text-slate-900">{ev.evento.replace(/_/g, " ")}</div>
                                                 <div className="text-xs text-slate-500">{ev.usuario_nome || `Usuário #${ev.usuario_id}`}</div>
                                             </div>
                                             <div className="shrink-0 text-right text-xs text-slate-500">{fmtDateTime(ev.criado_em)}</div>
@@ -984,30 +984,37 @@ export default function RequisitarMateriaisPage() {
     const selectedProduto = produtoById.get(produtoId) || null;
 
     return (
-        <main className="min-h-[100dvh] bg-slate-50 pb-[calc(2rem+env(safe-area-inset-bottom))] text-slate-900">
-            <div className="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-6">
-                <header className="mb-4 rounded-3xl bg-slate-900 p-5 text-white shadow-sm">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                        <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Materiais</p>
-                            <h1 className="mt-1 text-2xl font-black tracking-tight">Requisição de Material</h1>
-                            <p className="mt-2 max-w-2xl text-sm leading-5 text-slate-300">Solicite materiais, acompanhe o andamento e confirme recebimentos em trânsito.</p>
+        <main className="min-h-[100dvh] bg-gray-50 pb-[calc(2rem+env(safe-area-inset-bottom))] text-slate-900">
+            <div className="mx-auto w-full max-w-5xl px-5 py-5">
+                <header className="mb-5 flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
+                            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" className="text-sky-700">
+                                <path d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" stroke="currentColor" strokeWidth="1.8" />
+                                <path d="M8.5 9h7M8.5 13h4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                <path d="M15 16h5M17.5 13.5v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            </svg>
                         </div>
-                        {me ? (
-                            <div className="rounded-2xl bg-white/10 px-3 py-2 text-sm">
-                                <div className="text-xs text-slate-300">Usuário</div>
-                                <div className="font-black">{me.nome || me.usuario || `#${me.id}`}</div>
-                            </div>
-                        ) : null}
+
+                        <div className="min-w-0">
+                            <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">Solicitar Produto</h1>
+                        </div>
                     </div>
+
+                    {me ? (
+                        <div className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-xs shadow-sm sm:block">
+                            <div className="text-slate-500">Usuário</div>
+                            <div className="font-bold text-slate-900">{me.nome || me.usuario || `#${me.id}`}</div>
+                        </div>
+                    ) : null}
                 </header>
 
-                <div className="mb-4 grid grid-cols-2 gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+                <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                     <button
                         type="button"
                         onClick={() => setView("NOVA")}
                         className={[
-                            "rounded-2xl px-3 py-3 text-sm font-black transition",
+                            "rounded-2xl px-3 py-3 text-sm font-bold transition",
                             view === "NOVA" ? "bg-slate-900 text-white shadow-sm" : "text-slate-700 hover:bg-slate-50",
                         ].join(" ")}
                     >
@@ -1017,7 +1024,7 @@ export default function RequisitarMateriaisPage() {
                         type="button"
                         onClick={() => setView("MINHAS")}
                         className={[
-                            "rounded-2xl px-3 py-3 text-sm font-black transition",
+                            "rounded-2xl px-3 py-3 text-sm font-bold transition",
                             view === "MINHAS" ? "bg-slate-900 text-white shadow-sm" : "text-slate-700 hover:bg-slate-50",
                         ].join(" ")}
                     >
@@ -1028,17 +1035,16 @@ export default function RequisitarMateriaisPage() {
                 {loadingInit ? (
                     <Card className="p-6 text-center text-sm text-slate-500">Carregando dados da requisição...</Card>
                 ) : err ? (
-                    <div className="mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{err}</div>
+                    <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{err}</div>
                 ) : null}
 
-                {okMsg ? <div className="mb-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{okMsg}</div> : null}
+                {okMsg ? <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{okMsg}</div> : null}
 
                 {view === "NOVA" ? (
                     <div className="space-y-4">
                         <Card className="overflow-hidden">
                             <div className="border-b border-slate-100 p-4">
-                                <h2 className="text-base font-black text-slate-900">Dados da solicitação</h2>
-                                <p className="mt-1 text-sm leading-5 text-slate-600">Preencha o destino, informe a justificativa e adicione os itens desejados.</p>
+                                <h2 className="text-base font-bold text-slate-900">Dados da solicitação</h2>
                             </div>
 
                             <div className="space-y-4 p-4">
@@ -1051,7 +1057,7 @@ export default function RequisitarMateriaisPage() {
                                     </Field>
 
                                     {destinoTipo === "DEPOSITO" ? (
-                                        <Field label="Unidade de destino" hint="Ao receber, o saldo entra neste depósito.">
+                                        <Field label="Unidade de destino">
                                             <Select value={destinoDepositoId} onChange={(e) => setDestinoDepositoId(Number(e.target.value))}>
                                                 <option value={0}>Selecione</option>
                                                 {depositos.map((d) => (
@@ -1062,26 +1068,25 @@ export default function RequisitarMateriaisPage() {
                                             </Select>
                                         </Field>
                                     ) : (
-                                        <Field label="Destino ou setor" hint="Exemplo: Tanatopraxia, limpeza, escritório, atendimento externo.">
+                                        <Field label="Destino ou setor">
                                             <TextInput value={destinoTexto} onChange={(e) => setDestinoTexto(e.target.value)} placeholder="Informe o local de uso" />
                                         </Field>
                                     )}
 
-                                    <Field label="ID de Atendimento" hint={atendimentoObrigatorio ? "Obrigatório para os itens incluídos." : "Obrigatório quando aplicável."}>
+                                    <Field label="ID de Atendimento">
                                         <TextInput value={idAtendimento} onChange={(e) => setIdAtendimento(e.target.value)} placeholder="Ex: 8831" inputMode="numeric" />
                                     </Field>
                                 </div>
 
-                                <Field label="Justificativa" hint="Explique a finalidade da retirada para manter a rastreabilidade.">
-                                    <TextArea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={3} placeholder="Ex: reposição de pronto uso, atendimento emergencial, limpeza programada..." />
+                                <Field label="Justificativa">
+                                    <TextArea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={3} placeholder="Informe a finalidade" />
                                 </Field>
                             </div>
                         </Card>
 
                         <Card className="overflow-visible">
                             <div className="border-b border-slate-100 p-4">
-                                <h2 className="text-base font-black text-slate-900">Itens solicitados</h2>
-                                <p className="mt-1 text-sm leading-5 text-slate-600">Adicione um ou mais produtos antes de enviar.</p>
+                                <h2 className="text-base font-bold text-slate-900">Produto</h2>
                             </div>
 
                             <div className="space-y-4 p-4">
@@ -1102,15 +1107,15 @@ export default function RequisitarMateriaisPage() {
                                 </div>
 
                                 {selectedProduto ? (
-                                    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                                        <div className="font-black text-slate-900">{selectedProduto.nome}</div>
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                        <div className="font-bold text-slate-900">{selectedProduto.nome}</div>
                                         <div className="mt-1 text-xs text-slate-500">Saldo total no sistema: {fmtQtd(saldoTotalByProd.get(selectedProduto.id) || 0)}</div>
-                                        {requiresAtendimento(selectedProduto) ? <div className="mt-2 text-xs font-black text-amber-700">Este item exige ID de Atendimento.</div> : null}
+                                        {requiresAtendimento(selectedProduto) ? <div className="mt-2 text-xs font-bold text-amber-700">Este item exige ID de Atendimento.</div> : null}
                                     </div>
                                 ) : null}
 
-                                <Field label="Observação do item" hint="Opcional.">
-                                    <TextInput value={itemObs} onChange={(e) => setItemObs(e.target.value)} placeholder="Ex: tamanho, finalidade ou detalhe do item" />
+                                <Field label="Observação">
+                                    <TextInput value={itemObs} onChange={(e) => setItemObs(e.target.value)} placeholder="Opcional" />
                                 </Field>
 
                                 <Button type="button" variant="soft" onClick={addItem} className="w-full sm:w-auto">
@@ -1120,17 +1125,17 @@ export default function RequisitarMateriaisPage() {
                                 {itens.length ? (
                                     <div className="space-y-2">
                                         {itens.map((item) => (
-                                            <div key={item.local_id} className="rounded-3xl border border-slate-200 bg-white p-3">
+                                            <div key={item.local_id} className="rounded-2xl border border-slate-200 bg-white p-3">
                                                 <div className="flex items-start justify-between gap-3">
                                                     <div className="min-w-0">
-                                                        <div className="line-clamp-2 text-sm font-black text-slate-900">{item.produto_nome}</div>
+                                                        <div className="line-clamp-2 text-sm font-bold text-slate-900">{item.produto_nome}</div>
                                                         <div className="mt-1 text-xs text-slate-500">
                                                             {item.codigo_barras || "Sem código"} • Qtd {fmtQtd(item.quantidade)}
                                                         </div>
-                                                        {item.exige_atendimento ? <div className="mt-1 text-xs font-black text-amber-700">Exige ID de Atendimento</div> : null}
+                                                        {item.exige_atendimento ? <div className="mt-1 text-xs font-bold text-amber-700">Exige ID de Atendimento</div> : null}
                                                         {item.observacao ? <div className="mt-2 text-sm text-slate-600">{item.observacao}</div> : null}
                                                     </div>
-                                                    <button type="button" onClick={() => removeItem(item.local_id)} className="rounded-2xl px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-50">
+                                                    <button type="button" onClick={() => removeItem(item.local_id)} className="rounded-2xl px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50">
                                                         Remover
                                                     </button>
                                                 </div>
@@ -1138,12 +1143,12 @@ export default function RequisitarMateriaisPage() {
                                         ))}
                                     </div>
                                 ) : (
-                                    <EmptyState title="Nenhum item adicionado" text="Busque um produto, informe a quantidade e toque em adicionar item." />
+                                    <EmptyState title="Nenhum item" text="Adicione o produto solicitado." />
                                 )}
                             </div>
                         </Card>
 
-                        <div className="sticky bottom-0 -mx-3 border-t border-slate-200 bg-slate-50/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
+                        <div className="sticky bottom-0 -mx-5 border-t border-slate-200 bg-gray-50/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
                             <Button type="button" onClick={submitReq} disabled={saving || loadingInit} className="w-full">
                                 {saving ? "Enviando..." : "Enviar requisição"}
                             </Button>
@@ -1177,7 +1182,7 @@ export default function RequisitarMateriaisPage() {
                         {loadingRows ? (
                             <Card className="p-6 text-center text-sm text-slate-500">Carregando suas solicitações...</Card>
                         ) : rows.length === 0 ? (
-                            <EmptyState title="Nenhuma requisição encontrada" text="Crie uma nova requisição ou ajuste os filtros." />
+                            <EmptyState title="Nenhuma requisição" text="Não há registros para mostrar." />
                         ) : (
                             <div className="space-y-3">
                                 {rows.map((row) => (

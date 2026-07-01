@@ -18,12 +18,6 @@ type Me = {
     usuario: string;
 };
 
-type Usuario = {
-    id: ID;
-    nome: string;
-    usuario: string;
-};
-
 type Deposito = {
     id: ID;
     nome: string;
@@ -52,10 +46,15 @@ type StatusOption = {
     nome: string;
 };
 
+type Contadores = {
+    por_status?: Partial<Record<StatusId, number>>;
+    atrasadas_24h?: number;
+    status_labels?: Partial<Record<StatusId, string>>;
+};
+
 type InitResp = {
     ok: boolean;
     me?: Me;
-    usuarios?: Usuario[];
     depositos?: Deposito[];
     produtos?: Produto[];
     saldos?: Saldo[];
@@ -156,12 +155,6 @@ type ActionResp = {
     need_login?: 1;
 };
 
-type Contadores = {
-    por_status?: Partial<Record<StatusId, number>>;
-    atrasadas_24h?: number;
-    status_labels?: Partial<Record<StatusId, string>>;
-};
-
 type SendItemDraft = {
     id: ID;
     produto_id: ID;
@@ -202,6 +195,7 @@ const STATUS_BADGE_CLASS: Record<StatusId, string> = {
 
 function toStatus(v: unknown): StatusId {
     const s = String(v || "").toUpperCase();
+
     if (
         s === "PENDENTE" ||
         s === "EM_SEPARACAO" ||
@@ -212,12 +206,12 @@ function toStatus(v: unknown): StatusId {
     ) {
         return s;
     }
+
     return "PENDENTE";
 }
 
 function statusLabel(v: unknown) {
-    const s = toStatus(v);
-    return STATUS_LABEL[s] || String(v || "");
+    return STATUS_LABEL[toStatus(v)] || String(v || "");
 }
 
 function statusClass(v: unknown) {
@@ -225,8 +219,9 @@ function statusClass(v: unknown) {
 }
 
 function numberBR(v: unknown, decimals = 3) {
-    const n = Number(v || 0);
+    const n = Number(String(v ?? "0").replace(",", "."));
     const safe = Number.isFinite(n) ? n : 0;
+
     return new Intl.NumberFormat("pt-BR", {
         minimumFractionDigits: 0,
         maximumFractionDigits: decimals,
@@ -241,7 +236,9 @@ function asNumber(v: unknown) {
 function normalizeDecimalInput(raw: string) {
     const clean = raw.replace(/[^0-9,\.]/g, "").replace(".", ",");
     const parts = clean.split(",");
+
     if (parts.length <= 1) return parts[0] || "";
+
     return `${parts[0]},${parts.slice(1).join("").slice(0, 3)}`;
 }
 
@@ -258,15 +255,20 @@ function decimalToApi(v: string | number) {
     return raw.replace(/[^0-9.\-]/g, "");
 }
 
-function fmtDateTime(iso?: string | null) {
-    if (!iso) return "-";
+function fmtDateTime(value?: string | null) {
+    if (!value) return "-";
+
     try {
+        const normalized = String(value).includes("T") ? String(value) : String(value).replace(" ", "T");
+        const d = new Date(normalized);
+        if (Number.isNaN(d.getTime())) return String(value);
+
         return new Intl.DateTimeFormat("pt-BR", {
             dateStyle: "short",
             timeStyle: "short",
-        }).format(new Date(iso));
+        }).format(d);
     } catch {
-        return iso;
+        return String(value);
     }
 }
 
@@ -286,15 +288,18 @@ function isTruthy(v: unknown) {
 
 async function safeJson<T>(r: Response): Promise<T> {
     const ct = r.headers.get("content-type") || "";
+
     if (!ct.includes("application/json")) {
         const txt = await r.text().catch(() => "");
         throw new Error(`Resposta inesperada. ${txt ? txt.slice(0, 180) : ""}`.trim());
     }
+
     return (await r.json()) as T;
 }
 
 async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
     const u = new URL(API_BASE);
+
     Object.entries(qs).forEach(([k, v]) => {
         if (v === undefined || v === "") return;
         u.searchParams.set(k, String(v));
@@ -332,7 +337,8 @@ function Button({
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "soft" | "ghost" | "danger" }) {
     const base =
-        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[15px] font-semibold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
+        "inline-flex min-h-10 items-center justify-center rounded-xl px-3 py-2 text-[15px] font-semibold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
+
     const cls =
         variant === "solid"
             ? "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
@@ -349,12 +355,11 @@ function Button({
     );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
             <span className="mb-1 block text-xs font-semibold text-slate-700">{label}</span>
             {children}
-            {hint ? <span className="mt-1 block text-[11px] text-slate-500">{hint}</span> : null}
         </label>
     );
 }
@@ -405,22 +410,22 @@ function Badge({ status }: { status: unknown }) {
 function Modal({
     open,
     title,
-    subtitle,
     onClose,
     children,
     maxWidth = "max-w-2xl",
 }: {
     open: boolean;
     title: string;
-    subtitle?: string;
     onClose: () => void;
     children: React.ReactNode;
     maxWidth?: string;
 }) {
     useEffect(() => {
         if (!open) return;
+
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
+
         return () => {
             document.body.style.overflow = prev;
         };
@@ -432,14 +437,12 @@ function Modal({
         <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-slate-950/55 p-3 pt-5 sm:items-center sm:p-4" role="dialog" aria-modal="true">
             <div className={["flex max-h-[calc(100dvh-2.5rem)] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl", maxWidth].join(" ")}>
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
-                    <div className="min-w-0">
-                        <h2 className="truncate text-lg font-bold text-slate-900">{title}</h2>
-                        {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
-                    </div>
+                    <h2 className="truncate text-lg font-bold text-slate-900">{title}</h2>
                     <button className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100" type="button" onClick={onClose} aria-label="Fechar">
                         ✕
                     </button>
                 </div>
+
                 <div className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">{children}</div>
             </div>
         </div>
@@ -448,8 +451,7 @@ function Modal({
 
 function EmptyState({ title, text }: { title: string; text: string }) {
     return (
-        <Card className="p-5 text-center">
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-slate-100 text-xl">📦</div>
+        <Card className="p-6 text-center">
             <h3 className="font-bold text-slate-900">{title}</h3>
             <p className="mt-1 text-sm text-slate-600">{text}</p>
         </Card>
@@ -493,17 +495,26 @@ export default function OperarRequisicoesPage() {
 
     const saldoMap = useMemo(() => {
         const map = new Map<string, number>();
+
         for (const s of saldos) {
             map.set(`${Number(s.produto_id)}:${Number(s.deposito_id)}`, asNumber(s.quantidade));
         }
+
         return map;
     }, [saldos]);
+
+    const totalGeral = useMemo(() => {
+        const porStatus = contadores?.por_status || {};
+        return STATUS_OPTIONS.reduce((acc, item) => acc + Number(porStatus[item.id] || 0), 0);
+    }, [contadores]);
 
     const filteredStatusText = selectedStatus === "TODAS" ? "PENDENTE,EM_SEPARACAO,EM_TRANSITO,ENTREGUE,RECUSADA,CANCELADA" : selectedStatus;
 
     const loadInit = useCallback(async () => {
         const data = await apiGet<InitResp>({ action: "init" });
+
         if (!data.ok) throw new Error(data.msg || "Não foi possível carregar a tela.");
+
         setMe(data.me || null);
         setDepositos(data.depositos || []);
         setProdutos(data.produtos || []);
@@ -522,6 +533,7 @@ export default function OperarRequisicoesPage() {
         });
 
         if (!data.ok) throw new Error(data.msg || "Não foi possível carregar a fila.");
+
         setRows(data.rows || []);
     }, [dataFim, dataIni, filteredStatusText, q]);
 
@@ -529,6 +541,7 @@ export default function OperarRequisicoesPage() {
         setError("");
         setOkMsg("");
         setLoading(true);
+
         try {
             await loadInit();
             await loadRows();
@@ -540,12 +553,13 @@ export default function OperarRequisicoesPage() {
     }, [loadInit, loadRows]);
 
     useEffect(() => {
-        refreshAll();
+        void refreshAll();
     }, [refreshAll]);
 
     async function refreshAfterAction(msg?: string) {
         await loadInit();
         await loadRows();
+
         if (msg) setOkMsg(msg);
     }
 
@@ -557,9 +571,10 @@ export default function OperarRequisicoesPage() {
 
         try {
             const data = await apiGet<DetailResp>({ action: "detalhar", id: row.id });
-            if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível abrir a requisição.");
-            setDetail(data.row);
 
+            if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível abrir a requisição.");
+
+            setDetail(data.row);
             apiPost<ActionResp>({ action: "visualizar", id: row.id }).catch(() => undefined);
         } catch (e: any) {
             setError(e?.message || "Erro ao abrir detalhe.");
@@ -571,13 +586,16 @@ export default function OperarRequisicoesPage() {
 
     async function startSeparation(row: ReqListRow | ReqDetail) {
         if (busy) return;
+
         setBusy(true);
         setError("");
         setOkMsg("");
 
         try {
             const data = await apiPost<ActionResp>({ action: "iniciar_separacao", id: row.id });
+
             if (!data.ok) throw new Error(data.msg || "Não foi possível iniciar a separação.");
+
             await refreshAfterAction(data.msg || "Separação iniciada.");
         } catch (e: any) {
             setError(e?.message || "Erro ao iniciar separação.");
@@ -593,6 +611,7 @@ export default function OperarRequisicoesPage() {
 
         try {
             const data = await apiGet<DetailResp>({ action: "detalhar", id: row.id });
+
             if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível carregar itens.");
 
             const items = (data.row.items || []).map((it) => ({
@@ -656,6 +675,7 @@ export default function OperarRequisicoesPage() {
             });
 
             if (!data.ok) throw new Error(data.msg || "Não foi possível enviar o material.");
+
             setSendOpen(false);
             setSendReq(null);
             setSendItems([]);
@@ -690,6 +710,7 @@ export default function OperarRequisicoesPage() {
         try {
             const action = reasonOpen === "RECUSAR" ? "recusar" : "cancelar";
             const data = await apiPost<ActionResp>({ action, id: reasonReq.id, motivo: reason.trim() });
+
             if (!data.ok) throw new Error(data.msg || "Não foi possível concluir a ação.");
 
             setReasonOpen(null);
@@ -706,69 +727,38 @@ export default function OperarRequisicoesPage() {
     const counter = (status: StatusId) => Number(contadores?.por_status?.[status] || 0);
 
     return (
-        <main className="min-h-[100dvh] bg-slate-50 px-3 py-4 text-slate-900 sm:px-6 lg:px-8">
+        <main className="min-h-[100dvh] bg-gray-50 px-3 py-4 text-slate-900 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-6xl space-y-4">
-                <header className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Requisição Digital</p>
-                            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Operar requisições</h1>
-                            <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                                Fila do estoque para iniciar separação, enviar material, recusar ou cancelar solicitações.
-                            </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                            <Button type="button" variant="ghost" onClick={() => setShowFilters(true)}>
-                                Filtrar
-                            </Button>
-                            <Button type="button" onClick={refreshAll} disabled={loading || busy}>
-                                Atualizar
-                            </Button>
-                        </div>
+                <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Requisições</h1>
+                        {me ? <p className="mt-1 text-xs text-slate-500">Operador: {me.nome || me.usuario}</p> : null}
                     </div>
 
-                    {me ? <p className="mt-3 text-xs text-slate-500">Operador: <b>{me.nome || me.usuario}</b></p> : null}
+                    <div className="flex gap-2">
+                        <Button type="button" variant="ghost" onClick={() => setShowFilters(true)}>
+                            Filtrar
+                        </Button>
+                        <Button type="button" onClick={refreshAll} disabled={loading || busy}>
+                            Atualizar
+                        </Button>
+                    </div>
                 </header>
 
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-                    <button
-                        type="button"
-                        onClick={() => setSelectedStatus("TODAS")}
-                        className={[
-                            "rounded-2xl border p-3 text-left shadow-sm transition",
-                            selectedStatus === "TODAS" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
-                        ].join(" ")}
-                    >
-                        <span className="block text-xs font-semibold opacity-75">Todas</span>
-                        <span className="mt-1 block text-xl font-black">{rows.length}</span>
-                    </button>
+                    <StatusButton label="Todas" value={totalGeral} active={selectedStatus === "TODAS"} onClick={() => setSelectedStatus("TODAS")} />
 
                     {STATUS_OPTIONS.map((s) => (
-                        <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => setSelectedStatus(s.id)}
-                            className={[
-                                "rounded-2xl border p-3 text-left shadow-sm transition",
-                                selectedStatus === s.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
-                            ].join(" ")}
-                        >
-                            <span className="block truncate text-xs font-semibold opacity-75">{s.nome}</span>
-                            <span className="mt-1 block text-xl font-black">{counter(s.id)}</span>
-                        </button>
+                        <StatusButton key={s.id} label={s.nome} value={counter(s.id)} active={selectedStatus === s.id} onClick={() => setSelectedStatus(s.id)} />
                     ))}
                 </div>
 
                 {Number(contadores?.atrasadas_24h || 0) > 0 ? (
                     <Card className="border-rose-200 bg-rose-50 p-4">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <p className="font-bold text-rose-900">Atenção: {contadores?.atrasadas_24h} requisição(ões) em trânsito há mais de 24 horas.</p>
-                                <p className="mt-1 text-sm text-rose-800">Use o filtro de status Em trânsito para localizar e cobrar recebimento.</p>
-                            </div>
+                            <p className="font-bold text-rose-900">{contadores?.atrasadas_24h} em trânsito há mais de 24 horas.</p>
                             <Button type="button" variant="danger" onClick={() => setSelectedStatus("EM_TRANSITO")}>
-                                Ver em trânsito
+                                Ver
                             </Button>
                         </div>
                     </Card>
@@ -779,9 +769,12 @@ export default function OperarRequisicoesPage() {
 
                 <Card className="p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                        <Field label="Busca rápida">
-                            <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Produto, solicitante, atendimento ou código" />
-                        </Field>
+                        <div className="flex-1">
+                            <Field label="Busca">
+                                <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Produto, solicitante, atendimento ou código" />
+                            </Field>
+                        </div>
+
                         <div className="flex gap-2">
                             <Button type="button" onClick={loadRows} disabled={loading || busy}>
                                 Buscar
@@ -802,9 +795,9 @@ export default function OperarRequisicoesPage() {
                 </Card>
 
                 {loading ? (
-                    <Card className="p-6 text-center text-sm font-semibold text-slate-600">Carregando fila...</Card>
+                    <Card className="p-6 text-center text-sm font-semibold text-slate-600">Carregando...</Card>
                 ) : rows.length === 0 ? (
-                    <EmptyState title="Nenhuma requisição encontrada" text="Ajuste os filtros ou atualize a tela para buscar novas solicitações." />
+                    <EmptyState title="Nenhuma requisição encontrada" text="Ajuste os filtros ou atualize a tela." />
                 ) : (
                     <div className="space-y-3">
                         {rows.map((row) => (
@@ -823,13 +816,15 @@ export default function OperarRequisicoesPage() {
                 )}
             </div>
 
-            <Modal open={showFilters} title="Filtros da fila" subtitle="Use poucos filtros para manter a operação rápida no celular." onClose={() => setShowFilters(false)}>
+            <Modal open={showFilters} title="Filtros" onClose={() => setShowFilters(false)}>
                 <div className="space-y-4">
                     <Field label="Status">
                         <Select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as StatusId | "TODAS")}>
                             <option value="TODAS">Todas</option>
                             {STATUS_OPTIONS.map((s) => (
-                                <option key={s.id} value={s.id}>{s.nome}</option>
+                                <option key={s.id} value={s.id}>
+                                    {s.nome}
+                                </option>
                             ))}
                         </Select>
                     </Field>
@@ -855,7 +850,7 @@ export default function OperarRequisicoesPage() {
                                 await loadRows();
                             }}
                         >
-                            Aplicar filtros
+                            Aplicar
                         </Button>
                         <Button
                             type="button"
@@ -873,9 +868,9 @@ export default function OperarRequisicoesPage() {
                 </div>
             </Modal>
 
-            <Modal open={detailOpen} title={detail ? reqCode(detail) : "Detalhe da requisição"} subtitle={detail ? `${statusLabel(detail.status)} • ${fmtDateTime(detail.criado_em)}` : "Carregando..."} onClose={() => setDetailOpen(false)} maxWidth="max-w-4xl">
+            <Modal open={detailOpen} title={detail ? reqCode(detail) : "Detalhe"} onClose={() => setDetailOpen(false)} maxWidth="max-w-4xl">
                 {detailLoading ? (
-                    <div className="p-5 text-center text-sm font-semibold text-slate-600">Carregando detalhe...</div>
+                    <div className="p-5 text-center text-sm font-semibold text-slate-600">Carregando...</div>
                 ) : detail ? (
                     <DetailContent
                         detail={detail}
@@ -888,13 +883,15 @@ export default function OperarRequisicoesPage() {
                 ) : null}
             </Modal>
 
-            <Modal open={sendOpen} title="Enviar material" subtitle={sendReq ? `${reqCode(sendReq)} • ${destinationText(sendReq)}` : undefined} onClose={() => setSendOpen(false)} maxWidth="max-w-4xl">
+            <Modal open={sendOpen} title="Enviar material" onClose={() => setSendOpen(false)} maxWidth="max-w-4xl">
                 <div className="space-y-4">
-                    <Field label="Depósito de origem" hint="O saldo será baixado deste depósito ao confirmar o envio.">
+                    <Field label="Depósito de origem">
                         <Select value={sendDepositoId || ""} onChange={(e) => setSendDepositoId(Number(e.target.value || 0))}>
                             <option value="">Selecione...</option>
                             {depositos.map((d) => (
-                                <option key={d.id} value={d.id}>{d.nome}</option>
+                                <option key={d.id} value={d.id}>
+                                    {d.nome}
+                                </option>
                             ))}
                         </Select>
                     </Field>
@@ -913,10 +910,14 @@ export default function OperarRequisicoesPage() {
                                             <p className="font-bold text-slate-900">{item.nome}</p>
                                             <p className="mt-1 text-xs text-slate-500">
                                                 Solicitado: <b>{numberBR(item.solicitada)}</b>
-                                                {produto?.codigo_barras ? <> • CB: <b>{produto.codigo_barras}</b></> : null}
+                                                {produto?.codigo_barras ? (
+                                                    <>
+                                                        {" "}| CB: <b>{produto.codigo_barras}</b>
+                                                    </>
+                                                ) : null}
                                             </p>
                                             <p className={["mt-1 text-xs", invalid ? "font-bold text-rose-700" : "text-slate-500"].join(" ")}>
-                                                Disponível no depósito selecionado: <b>{numberBR(disponivel)}</b>
+                                                Disponível: <b>{numberBR(disponivel)}</b>
                                             </p>
                                         </div>
 
@@ -931,8 +932,8 @@ export default function OperarRequisicoesPage() {
                         })}
                     </div>
 
-                    <Field label="Observação do envio">
-                        <TextArea rows={3} value={sendObs} onChange={(e) => setSendObs(e.target.value)} placeholder="Exemplo: entregue para retirada na recepção." />
+                    <Field label="Observação">
+                        <TextArea rows={3} value={sendObs} onChange={(e) => setSendObs(e.target.value)} />
                     </Field>
 
                     <div className={["rounded-2xl border p-3 text-sm font-semibold", sendValidation.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"].join(" ")}>
@@ -950,24 +951,15 @@ export default function OperarRequisicoesPage() {
                 </div>
             </Modal>
 
-            <Modal
-                open={reasonOpen !== null}
-                title={reasonOpen === "RECUSAR" ? "Recusar requisição" : "Cancelar requisição"}
-                subtitle={reasonReq ? reqCode(reasonReq) : undefined}
-                onClose={() => setReasonOpen(null)}
-            >
+            <Modal open={reasonOpen !== null} title={reasonOpen === "RECUSAR" ? "Recusar" : "Cancelar"} onClose={() => setReasonOpen(null)}>
                 <div className="space-y-4">
-                    <Field label={reasonOpen === "RECUSAR" ? "Motivo da recusa" : "Motivo do cancelamento"}>
-                        <TextArea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Descreva o motivo para manter a auditoria do fluxo." />
+                    <Field label="Motivo">
+                        <TextArea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} />
                     </Field>
-
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                        Esta ação será registrada no histórico da requisição.
-                    </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <Button type="button" variant={reasonOpen === "RECUSAR" ? "danger" : "solid"} onClick={confirmReason} disabled={busy}>
-                            {reasonOpen === "RECUSAR" ? "Confirmar recusa" : "Confirmar cancelamento"}
+                            Confirmar
                         </Button>
                         <Button type="button" variant="ghost" onClick={() => setReasonOpen(null)}>
                             Voltar
@@ -976,6 +968,22 @@ export default function OperarRequisicoesPage() {
                 </div>
             </Modal>
         </main>
+    );
+}
+
+function StatusButton({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={[
+                "rounded-2xl border p-3 text-left shadow-sm transition",
+                active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
+            ].join(" ")}
+        >
+            <span className="block truncate text-xs font-semibold opacity-75">{label}</span>
+            <span className="mt-1 block text-xl font-black">{value}</span>
+        </button>
     );
 }
 
@@ -1010,27 +1018,61 @@ function RequestCard({
                         <div className="flex flex-wrap items-center gap-2">
                             <h2 className="text-lg font-black text-slate-950">{reqCode(row)}</h2>
                             <Badge status={row.status} />
-                            {isTruthy(row.atrasada_24h) ? <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-800">+24h em trânsito</span> : null}
+                            {isTruthy(row.atrasada_24h) ? <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-800">+24h</span> : null}
                         </div>
 
-                        <p className="mt-2 text-sm font-semibold text-slate-900">{row.itens_resumo || "Itens não informados no resumo"}</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">{row.itens_resumo || "Itens não informados"}</p>
 
                         <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
-                            <p>Solicitante: <b>{row.solicitante_nome || "-"}</b></p>
-                            <p>Destino: <b>{destinationText(row)}</b></p>
-                            <p>Aberta em: <b>{fmtDateTime(row.criado_em)}</b></p>
-                            <p>Atendimento: <b>{row.id_atendimento || "-"}</b></p>
-                            {row.deposito_origem_nome ? <p>Origem: <b>{row.deposito_origem_nome}</b></p> : null}
-                            {row.enviado_em ? <p>Enviada em: <b>{fmtDateTime(row.enviado_em)}</b></p> : null}
+                            <p>
+                                Solicitante: <b>{row.solicitante_nome || "-"}</b>
+                            </p>
+                            <p>
+                                Destino: <b>{destinationText(row)}</b>
+                            </p>
+                            <p>
+                                Aberta em: <b>{fmtDateTime(row.criado_em)}</b>
+                            </p>
+                            <p>
+                                Atendimento: <b>{row.id_atendimento || "-"}</b>
+                            </p>
+                            {row.deposito_origem_nome ? (
+                                <p>
+                                    Origem: <b>{row.deposito_origem_nome}</b>
+                                </p>
+                            ) : null}
+                            {row.enviado_em ? (
+                                <p>
+                                    Enviada em: <b>{fmtDateTime(row.enviado_em)}</b>
+                                </p>
+                            ) : null}
                         </div>
                     </div>
 
-                    <div className="flex shrink-0 flex-col gap-2 sm:w-52">
-                        {canStart ? <Button type="button" onClick={onStart} disabled={busy}>Iniciar separação</Button> : null}
-                        {canSend ? <Button type="button" variant={canStart ? "soft" : "solid"} onClick={onSend} disabled={busy}>Enviar material</Button> : null}
-                        <Button type="button" variant="ghost" onClick={onOpen}>Ver detalhes</Button>
-                        {canReject ? <Button type="button" variant="ghost" onClick={onReject} disabled={busy}>Recusar</Button> : null}
-                        {canCancel ? <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancelar</Button> : null}
+                    <div className="flex shrink-0 flex-col gap-2 sm:w-48">
+                        {canStart ? (
+                            <Button type="button" onClick={onStart} disabled={busy}>
+                                Iniciar
+                            </Button>
+                        ) : null}
+                        {canSend ? (
+                            <Button type="button" variant={canStart ? "soft" : "solid"} onClick={onSend} disabled={busy}>
+                                Enviar
+                            </Button>
+                        ) : null}
+                        <Button type="button" variant="ghost" onClick={onOpen}>
+                            Detalhes
+                        </Button>
+                        {canReject ? (
+                            <Button type="button" variant="ghost" onClick={onReject} disabled={busy}>
+                                Recusar
+                            </Button>
+                        ) : null}
+                        {canCancel ? (
+                            <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
+                                Cancelar
+                            </Button>
+                        ) : null}
                     </div>
                 </div>
             </div>
@@ -1066,8 +1108,8 @@ function DetailContent({
                 <InfoBox label="Solicitante" value={detail.solicitante_nome || detail.solicitante_usuario || "-"} />
                 <InfoBox label="Destino" value={destinationText(detail)} />
                 <InfoBox label="Aberta em" value={fmtDateTime(detail.criado_em)} />
-                <InfoBox label="ID de atendimento" value={detail.id_atendimento || "-"} />
-                <InfoBox label="Tipo de destino" value={detail.destino_tipo === "DEPOSITO" ? "Entrada em depósito" : "Consumo"} />
+                <InfoBox label="Atendimento" value={detail.id_atendimento || "-"} />
+                <InfoBox label="Tipo" value={detail.destino_tipo === "DEPOSITO" ? "Depósito" : "Consumo"} />
             </div>
 
             {detail.justificativa ? (
@@ -1078,7 +1120,7 @@ function DetailContent({
             ) : null}
 
             <div>
-                <h3 className="mb-2 text-sm font-black text-slate-900">Itens da requisição</h3>
+                <h3 className="mb-2 text-sm font-black text-slate-900">Itens</h3>
                 <div className="space-y-2">
                     {(detail.items || []).map((item) => (
                         <Card key={item.id} className="p-3">
@@ -1087,10 +1129,15 @@ function DetailContent({
                                     <p className="font-bold text-slate-900">{item.produto_nome_snapshot}</p>
                                     <p className="mt-1 text-xs text-slate-500">
                                         Produto #{item.produto_id}
-                                        {item.codigo_barras_snapshot ? <> • CB: <b>{item.codigo_barras_snapshot}</b></> : null}
+                                        {item.codigo_barras_snapshot ? (
+                                            <>
+                                                {" "}| CB: <b>{item.codigo_barras_snapshot}</b>
+                                            </>
+                                        ) : null}
                                     </p>
                                     {item.observacao ? <p className="mt-2 text-sm text-slate-600">{item.observacao}</p> : null}
                                 </div>
+
                                 <div className="grid grid-cols-3 gap-2 text-center text-xs sm:w-72">
                                     <QtyMini label="Solicitada" value={item.quantidade_solicitada} />
                                     <QtyMini label="Enviada" value={item.quantidade_enviada} />
@@ -1103,10 +1150,26 @@ function DetailContent({
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                {canStart ? <Button type="button" onClick={onStart} disabled={busy}>Iniciar separação</Button> : null}
-                {canSend ? <Button type="button" onClick={onSend} disabled={busy}>Enviar material</Button> : null}
-                {canReject ? <Button type="button" variant="danger" onClick={onReject} disabled={busy}>Recusar</Button> : null}
-                {canCancel ? <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancelar</Button> : null}
+                {canStart ? (
+                    <Button type="button" onClick={onStart} disabled={busy}>
+                        Iniciar
+                    </Button>
+                ) : null}
+                {canSend ? (
+                    <Button type="button" onClick={onSend} disabled={busy}>
+                        Enviar
+                    </Button>
+                ) : null}
+                {canReject ? (
+                    <Button type="button" variant="danger" onClick={onReject} disabled={busy}>
+                        Recusar
+                    </Button>
+                ) : null}
+                {canCancel ? (
+                    <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
+                        Cancelar
+                    </Button>
+                ) : null}
             </div>
 
             <div>
@@ -1119,7 +1182,9 @@ function DetailContent({
                                     <p className="text-sm font-bold text-slate-900">{eventLabel(ev.evento)}</p>
                                     <p className="text-xs text-slate-500">{fmtDateTime(ev.criado_em)}</p>
                                 </div>
-                                <p className="mt-1 text-xs text-slate-600">Usuário: <b>{ev.usuario_nome || ev.usuario_login || ev.usuario_id}</b></p>
+                                <p className="mt-1 text-xs text-slate-600">
+                                    Usuário: <b>{ev.usuario_nome || ev.usuario_login || ev.usuario_id}</b>
+                                </p>
                                 {ev.observacao ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{ev.observacao}</p> : null}
                             </div>
                         ))}
@@ -1161,5 +1226,6 @@ function eventLabel(ev: string) {
         RECUSADA: "Recusada",
         CANCELADA: "Cancelada",
     };
+
     return map[s] || ev;
 }
