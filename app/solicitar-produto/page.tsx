@@ -172,7 +172,6 @@ type ItemDraft = {
     codigo_barras?: string | null;
     quantidade: string;
     observacao: string;
-    exige_atendimento: boolean;
 };
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
@@ -252,29 +251,64 @@ function statusLabel(status: string, options: StatusOption[]) {
     return options.find((s) => s.id === status)?.nome || STATUS_FALLBACK.find((s) => s.id === status)?.nome || status;
 }
 
-function requiresAtendimento(p?: Produto | null) {
-    if (!p) return false;
-    if (Number(p.exige_atendimento || 0) === 1) return true;
+type JustificativaId =
+    | "MERCADORIA_REVENDA"
+    | "USO_CONSUMO"
+    | "INSUMOS_ATENDIMENTO";
 
-    const text = normalizeText(`${p.nome} ${p.categoria_nome || ""} ${p.classificacao_nome || ""}`);
-    return ["urna", "roupa", "fluid", "tanato"].some((needle) => text.includes(needle));
+type JustificativaOption = {
+    id: JustificativaId;
+    label: string;
+    valor: string;
+    destino_tipo: "CONSUMO" | "DEPOSITO";
+    classificacoes: string[];
+};
+
+const JUSTIFICATIVAS: JustificativaOption[] = [
+    {
+        id: "MERCADORIA_REVENDA",
+        label: "Mercadoria para revenda: Reposição de Estoque",
+        valor: "Reposição de Estoque",
+        destino_tipo: "DEPOSITO",
+        classificacoes: ["MERCADORIA PARA REVENDA"],
+    },
+    {
+        id: "USO_CONSUMO",
+        label: "Uso e Consumo: Consumo Interno",
+        valor: "Consumo Interno",
+        destino_tipo: "CONSUMO",
+        classificacoes: ["MATERIAL DE USO E CONSUMO"],
+    },
+    {
+        id: "INSUMOS_ATENDIMENTO",
+        label: "Insumo - Insumos Para Atendimentos Funerários",
+        valor: "Insumos Para Atendimentos Funerários",
+        destino_tipo: "DEPOSITO",
+        classificacoes: ["INSUMOS"],
+    },
+];
+
+function classificacaoProduto(p?: Produto | null) {
+    return normalizeText(p?.classificacao_nome || "");
 }
 
-function tipoRequisicaoLabel(tipo: "CONSUMO" | "DEPOSITO") {
-    return tipo === "DEPOSITO" ? "Transferência" : "Saída";
+function produtoPermitidoPorJustificativa(p: Produto, justificativaId: JustificativaId | "") {
+    if (!justificativaId) return false;
+
+    const regra = JUSTIFICATIVAS.find((j) => j.id === justificativaId);
+    if (!regra) return false;
+
+    const classificacao = classificacaoProduto(p);
+
+    return regra.classificacoes.some((classe) => classificacao === normalizeText(classe));
 }
 
-function produtoPermitidoPorTipo(p: Produto, tipo: "CONSUMO" | "DEPOSITO") {
-    const classificacao = normalizeText(p.classificacao_nome || "");
+function destinoTipoDaJustificativa(justificativaId: JustificativaId | ""): "CONSUMO" | "DEPOSITO" {
+    return JUSTIFICATIVAS.find((j) => j.id === justificativaId)?.destino_tipo || "CONSUMO";
+}
 
-    if (tipo === "CONSUMO") {
-        return classificacao === normalizeText("MATERIAL DE USO E CONSUMO");
-    }
-
-    return (
-        classificacao === normalizeText("MERCADORIA PARA REVENDA") ||
-        classificacao === normalizeText("INSUMOS")
-    );
+function justificativaValor(justificativaId: JustificativaId | "") {
+    return JUSTIFICATIVAS.find((j) => j.id === justificativaId)?.valor || "";
 }
 
 function destinoLabel(row: ReqListRow) {
@@ -527,8 +561,6 @@ function ProductCombobox({
                         ) : (
                             list.map((p) => {
                                 const saldo = saldoTotalByProd.get(p.id) || 0;
-                                const exige = requiresAtendimento(p);
-
                                 return (
                                     <button
                                         key={p.id}
@@ -547,7 +579,6 @@ function ProductCombobox({
                                                 {p.codigo_barras || "Sem código"}
                                                 {p.categoria_nome ? ` • ${p.categoria_nome}` : ""}
                                             </div>
-                                            {exige ? <div className="mt-1 text-[11px] font-bold text-amber-700">Exige ID de atendimento</div> : null}
                                         </div>
                                         <div className="shrink-0 text-right">
                                             <div className="text-xs text-slate-500">Saldo total</div>
@@ -620,10 +651,6 @@ function RequestCard({
                         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Destino</span>
                         <div className="font-bold text-slate-900">{destinoLabel(row)}</div>
                     </div>
-                    <div>
-                        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Atendimento</span>
-                        <div className="font-bold text-slate-900">{row.id_atendimento || "Não informado"}</div>
-                    </div>
                 </div>
 
                 {row.justificativa ? <p className="line-clamp-2 text-sm leading-5 text-slate-600">{row.justificativa}</p> : null}
@@ -667,7 +694,6 @@ function DetailModal({
                 <div className="space-y-4">
                     <div className="flex flex-wrap gap-2">
                         <StatusBadge status={String(row.status)} options={statusOptions} />
-                        {row.id_atendimento ? <Pill className="bg-slate-100 text-slate-700">Atendimento {row.id_atendimento}</Pill> : null}
                         <Pill className="bg-slate-100 text-slate-700">{row.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</Pill>
                     </div>
 
@@ -762,11 +788,8 @@ export default function RequisitarMateriaisPage() {
     const [filtroStatus, setFiltroStatus] = useState<string>("");
     const [filtroQ, setFiltroQ] = useState("");
 
-    const [destinoTipo, setDestinoTipo] = useState<"CONSUMO" | "DEPOSITO">("CONSUMO");
-    const [destinoTexto, setDestinoTexto] = useState("");
     const [destinoDepositoId, setDestinoDepositoId] = useState<ID>(0);
-    const [idAtendimento, setIdAtendimento] = useState("");
-    const [justificativa, setJustificativa] = useState("");
+    const [justificativaId, setJustificativaId] = useState<JustificativaId | "">("");
 
     const [produtoId, setProdutoId] = useState<ID>(0);
     const [produtoQuery, setProdutoQuery] = useState("");
@@ -790,12 +813,17 @@ export default function RequisitarMateriaisPage() {
 
     const produtoById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
 
-    const produtosFiltradosPorTipo = useMemo(
-        () => produtos.filter((p) => produtoPermitidoPorTipo(p, destinoTipo)),
-        [produtos, destinoTipo]
+    const destinoTipo = useMemo(() => destinoTipoDaJustificativa(justificativaId), [justificativaId]);
+
+    const justificativaSelecionada = useMemo(
+        () => JUSTIFICATIVAS.find((j) => j.id === justificativaId) || null,
+        [justificativaId]
     );
 
-    const atendimentoObrigatorio = useMemo(() => itens.some((i) => i.exige_atendimento), [itens]);
+    const produtosFiltradosPorJustificativa = useMemo(
+        () => produtos.filter((p) => produtoPermitidoPorJustificativa(p, justificativaId)),
+        [produtos, justificativaId]
+    );
 
     async function loadInit() {
         setLoadingInit(true);
@@ -854,12 +882,10 @@ export default function RequisitarMateriaisPage() {
         setItemObs("");
     }
 
-    function handleTipoRequisicaoChange(next: "CONSUMO" | "DEPOSITO") {
-        if (next === destinoTipo) return;
+    function handleJustificativaChange(next: JustificativaId | "") {
+        if (next === justificativaId) return;
 
-        setDestinoTipo(next);
-        setDestinoTexto("");
-        setDestinoDepositoId(0);
+        setJustificativaId(next);
         setItens([]);
         resetItemFields();
     }
@@ -881,8 +907,13 @@ export default function RequisitarMateriaisPage() {
             return;
         }
 
-        if (!produtoPermitidoPorTipo(produto, destinoTipo)) {
-            setErr(`Este produto não pertence ao tipo de requisição ${tipoRequisicaoLabel(destinoTipo)}.`);
+        if (!justificativaId) {
+            setErr("Selecione a justificativa antes de adicionar produtos.");
+            return;
+        }
+
+        if (!produtoPermitidoPorJustificativa(produto, justificativaId)) {
+            setErr("Este produto não pertence à classificação permitida para a justificativa escolhida.");
             resetItemFields();
             return;
         }
@@ -902,7 +933,6 @@ export default function RequisitarMateriaisPage() {
                 codigo_barras: produto.codigo_barras || null,
                 quantidade: quantidade.trim() || "1",
                 observacao: itemObs.trim(),
-                exige_atendimento: requiresAtendimento(produto),
             },
         ]);
 
@@ -915,11 +945,17 @@ export default function RequisitarMateriaisPage() {
 
     function validateForm() {
         if (!me) return "Sessão inválida. Recarregue a página.";
-        if (destinoTipo === "DEPOSITO" && !destinoDepositoId) return "Selecione a unidade de destino.";
-        if (destinoTipo === "CONSUMO" && !destinoTexto.trim()) return "Informe o setor ou local de uso.";
-        if (!justificativa.trim()) return "Informe a justificativa da retirada.";
+        if (!justificativaId) return "Selecione a justificativa.";
+        if (!destinoDepositoId) return "Selecione o destino ou setor.";
         if (!itens.length) return "Inclua pelo menos um item.";
-        if (atendimentoObrigatorio && !idAtendimento.trim()) return "ID de Atendimento obrigatório para urna, roupa, fluido ou item de tanatopraxia.";
+
+        const invalidItem = itens.find((i) => {
+            const produto = produtoById.get(i.produto_id);
+            return !produto || !produtoPermitidoPorJustificativa(produto, justificativaId);
+        });
+
+        if (invalidItem) return "Há item incompatível com a justificativa escolhida. Remova o item e selecione novamente.";
+
         return "";
     }
 
@@ -936,13 +972,14 @@ export default function RequisitarMateriaisPage() {
         setSaving(true);
 
         try {
+            const destino = depositos.find((d) => Number(d.id) === Number(destinoDepositoId));
             const payload = {
                 action: "criar",
                 destino_tipo: destinoTipo,
-                unidade_destino_id: destinoTipo === "DEPOSITO" ? destinoDepositoId : 0,
-                unidade_destino_texto: destinoTipo === "CONSUMO" ? destinoTexto.trim() : "",
-                id_atendimento: idAtendimento.trim(),
-                justificativa: justificativa.trim(),
+                unidade_destino_id: destinoDepositoId,
+                unidade_destino_texto: destinoTipo === "CONSUMO" ? (destino?.nome || "") : "",
+                id_atendimento: "",
+                justificativa: justificativaValor(justificativaId),
                 itens: itens.map((i) => ({
                     produto_id: i.produto_id,
                     quantidade: i.quantidade,
@@ -955,8 +992,8 @@ export default function RequisitarMateriaisPage() {
 
             setOkMsg(`${data.codigo || "Requisição"} criada com sucesso.`);
             setItens([]);
-            setJustificativa("");
-            setIdAtendimento("");
+            setJustificativaId("");
+            setDestinoDepositoId(0);
             resetItemFields();
             setView("MINHAS");
             await loadMinhas();
@@ -1086,39 +1123,35 @@ export default function RequisitarMateriaisPage() {
                             </div>
 
                             <div className="space-y-4 p-4">
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                    <Field label="Tipo de Requisição">
-                                        <Select value={destinoTipo} onChange={(e) => handleTipoRequisicaoChange(e.target.value as "CONSUMO" | "DEPOSITO")}>
-                                            <option value="CONSUMO">Saída</option>
-                                            <option value="DEPOSITO">Transferência</option>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <Field label="Justificativa">
+                                        <Select value={justificativaId} onChange={(e) => handleJustificativaChange(e.target.value as JustificativaId | "")}>
+                                            <option value="">Selecione</option>
+                                            {JUSTIFICATIVAS.map((j) => (
+                                                <option key={j.id} value={j.id}>
+                                                    {j.label}
+                                                </option>
+                                            ))}
                                         </Select>
                                     </Field>
 
-                                    {destinoTipo === "DEPOSITO" ? (
-                                        <Field label="Unidade de destino">
-                                            <Select value={destinoDepositoId} onChange={(e) => setDestinoDepositoId(Number(e.target.value))}>
-                                                <option value={0}>Selecione</option>
-                                                {depositos.map((d) => (
-                                                    <option key={d.id} value={d.id}>
-                                                        {d.nome}
-                                                    </option>
-                                                ))}
-                                            </Select>
-                                        </Field>
-                                    ) : (
-                                        <Field label="Destino ou setor">
-                                            <TextInput value={destinoTexto} onChange={(e) => setDestinoTexto(e.target.value)} placeholder="Informe o local de uso" />
-                                        </Field>
-                                    )}
-
-                                    <Field label="ID de Atendimento">
-                                        <TextInput value={idAtendimento} onChange={(e) => setIdAtendimento(e.target.value)} placeholder="Ex: 8831" inputMode="numeric" />
+                                    <Field label="Destino ou Setor">
+                                        <Select value={destinoDepositoId} onChange={(e) => setDestinoDepositoId(Number(e.target.value))}>
+                                            <option value={0}>Selecione</option>
+                                            {depositos.map((d) => (
+                                                <option key={d.id} value={d.id}>
+                                                    {d.nome}
+                                                </option>
+                                            ))}
+                                        </Select>
                                     </Field>
                                 </div>
 
-                                <Field label="Justificativa">
-                                    <TextArea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={3} placeholder="Informe a finalidade" />
-                                </Field>
+                                {justificativaSelecionada ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+                                        Tipo definido automaticamente: <b>{justificativaSelecionada.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</b>
+                                    </div>
+                                ) : null}
                             </div>
                         </Card>
 
@@ -1131,7 +1164,7 @@ export default function RequisitarMateriaisPage() {
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
                                     <ProductCombobox
                                         label="Produto"
-                                        produtos={produtosFiltradosPorTipo}
+                                        produtos={produtosFiltradosPorJustificativa}
                                         valueId={produtoId}
                                         onChangeId={setProdutoId}
                                         query={produtoQuery}
@@ -1148,7 +1181,6 @@ export default function RequisitarMateriaisPage() {
                                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                                         <div className="font-bold text-slate-900">{selectedProduto.nome}</div>
                                         <div className="mt-1 text-xs text-slate-500">Saldo total no sistema: {fmtQtd(saldoTotalByProd.get(selectedProduto.id) || 0)}</div>
-                                        {requiresAtendimento(selectedProduto) ? <div className="mt-2 text-xs font-bold text-amber-700">Este item exige ID de Atendimento.</div> : null}
                                     </div>
                                 ) : null}
 
@@ -1170,7 +1202,6 @@ export default function RequisitarMateriaisPage() {
                                                         <div className="mt-1 text-xs text-slate-500">
                                                             {item.codigo_barras || "Sem código"} • Qtd {fmtQtd(item.quantidade)}
                                                         </div>
-                                                        {item.exige_atendimento ? <div className="mt-1 text-xs font-bold text-amber-700">Exige ID de Atendimento</div> : null}
                                                         {item.observacao ? <div className="mt-2 text-sm text-slate-600">{item.observacao}</div> : null}
                                                     </div>
                                                     <button type="button" onClick={() => removeItem(item.local_id)} className="rounded-2xl px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50">
@@ -1208,7 +1239,7 @@ export default function RequisitarMateriaisPage() {
                                 </Field>
 
                                 <Field label="Busca">
-                                    <TextInput value={filtroQ} onChange={(e) => setFiltroQ(e.target.value)} placeholder="Produto, código, atendimento ou destino" />
+                                    <TextInput value={filtroQ} onChange={(e) => setFiltroQ(e.target.value)} placeholder="Produto, código ou destino" />
                                 </Field>
 
                                 <Button type="button" variant="soft" onClick={loadMinhas} disabled={loadingRows} className="w-full sm:w-auto">
