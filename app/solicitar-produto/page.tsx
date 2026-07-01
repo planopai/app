@@ -260,6 +260,23 @@ function requiresAtendimento(p?: Produto | null) {
     return ["urna", "roupa", "fluid", "tanato"].some((needle) => text.includes(needle));
 }
 
+function tipoRequisicaoLabel(tipo: "CONSUMO" | "DEPOSITO") {
+    return tipo === "DEPOSITO" ? "Transferência" : "Saída";
+}
+
+function produtoPermitidoPorTipo(p: Produto, tipo: "CONSUMO" | "DEPOSITO") {
+    const classificacao = normalizeText(p.classificacao_nome || "");
+
+    if (tipo === "CONSUMO") {
+        return classificacao === normalizeText("MATERIAL DE USO E CONSUMO");
+    }
+
+    return (
+        classificacao === normalizeText("MERCADORIA PARA REVENDA") ||
+        classificacao === normalizeText("INSUMOS")
+    );
+}
+
 function destinoLabel(row: ReqListRow) {
     if (row.unidade_destino_nome) return row.unidade_destino_nome;
     if (row.unidade_destino_texto) return row.unidade_destino_texto;
@@ -651,7 +668,7 @@ function DetailModal({
                     <div className="flex flex-wrap gap-2">
                         <StatusBadge status={String(row.status)} options={statusOptions} />
                         {row.id_atendimento ? <Pill className="bg-slate-100 text-slate-700">Atendimento {row.id_atendimento}</Pill> : null}
-                        <Pill className="bg-slate-100 text-slate-700">{row.destino_tipo === "DEPOSITO" ? "Destino com entrada" : "Consumo"}</Pill>
+                        <Pill className="bg-slate-100 text-slate-700">{row.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</Pill>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
@@ -773,6 +790,11 @@ export default function RequisitarMateriaisPage() {
 
     const produtoById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
 
+    const produtosFiltradosPorTipo = useMemo(
+        () => produtos.filter((p) => produtoPermitidoPorTipo(p, destinoTipo)),
+        [produtos, destinoTipo]
+    );
+
     const atendimentoObrigatorio = useMemo(() => itens.some((i) => i.exige_atendimento), [itens]);
 
     async function loadInit() {
@@ -832,6 +854,16 @@ export default function RequisitarMateriaisPage() {
         setItemObs("");
     }
 
+    function handleTipoRequisicaoChange(next: "CONSUMO" | "DEPOSITO") {
+        if (next === destinoTipo) return;
+
+        setDestinoTipo(next);
+        setDestinoTexto("");
+        setDestinoDepositoId(0);
+        setItens([]);
+        resetItemFields();
+    }
+
     function addItem() {
         setErr("");
         setOkMsg("");
@@ -846,6 +878,12 @@ export default function RequisitarMateriaisPage() {
 
         if (qtd <= 0) {
             setErr("Informe uma quantidade maior que zero.");
+            return;
+        }
+
+        if (!produtoPermitidoPorTipo(produto, destinoTipo)) {
+            setErr(`Este produto não pertence ao tipo de requisição ${tipoRequisicaoLabel(destinoTipo)}.`);
+            resetItemFields();
             return;
         }
 
@@ -878,7 +916,7 @@ export default function RequisitarMateriaisPage() {
     function validateForm() {
         if (!me) return "Sessão inválida. Recarregue a página.";
         if (destinoTipo === "DEPOSITO" && !destinoDepositoId) return "Selecione a unidade de destino.";
-        if (destinoTipo === "CONSUMO" && !destinoTexto.trim()) return "Informe o setor, unidade ou local de uso.";
+        if (destinoTipo === "CONSUMO" && !destinoTexto.trim()) return "Informe o setor ou local de uso.";
         if (!justificativa.trim()) return "Informe a justificativa da retirada.";
         if (!itens.length) return "Inclua pelo menos um item.";
         if (atendimentoObrigatorio && !idAtendimento.trim()) return "ID de Atendimento obrigatório para urna, roupa, fluido ou item de tanatopraxia.";
@@ -1049,10 +1087,10 @@ export default function RequisitarMateriaisPage() {
 
                             <div className="space-y-4 p-4">
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                    <Field label="Tipo de destino">
-                                        <Select value={destinoTipo} onChange={(e) => setDestinoTipo(e.target.value as "CONSUMO" | "DEPOSITO")}>
-                                            <option value="CONSUMO">Consumo ou setor</option>
-                                            <option value="DEPOSITO">Entrada em depósito</option>
+                                    <Field label="Tipo de Requisição">
+                                        <Select value={destinoTipo} onChange={(e) => handleTipoRequisicaoChange(e.target.value as "CONSUMO" | "DEPOSITO")}>
+                                            <option value="CONSUMO">Saída</option>
+                                            <option value="DEPOSITO">Transferência</option>
                                         </Select>
                                     </Field>
 
@@ -1093,7 +1131,7 @@ export default function RequisitarMateriaisPage() {
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
                                     <ProductCombobox
                                         label="Produto"
-                                        produtos={produtos}
+                                        produtos={produtosFiltradosPorTipo}
                                         valueId={produtoId}
                                         onChangeId={setProdutoId}
                                         query={produtoQuery}
