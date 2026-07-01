@@ -267,21 +267,21 @@ type JustificativaOption = {
 const JUSTIFICATIVAS: JustificativaOption[] = [
     {
         id: "MERCADORIA_REVENDA",
-        label: "Mercadoria para revenda: Reposição de Estoque",
+        label: "Reposição de Estoque",
         valor: "Reposição de Estoque",
         destino_tipo: "DEPOSITO",
         classificacoes: ["MERCADORIA PARA REVENDA"],
     },
     {
         id: "USO_CONSUMO",
-        label: "Uso e Consumo: Consumo Interno",
+        label: "Consumo Interno",
         valor: "Consumo Interno",
         destino_tipo: "CONSUMO",
         classificacoes: ["MATERIAL DE USO E CONSUMO"],
     },
     {
         id: "INSUMOS_ATENDIMENTO",
-        label: "Insumo - Insumos Para Atendimentos Funerários",
+        label: "Insumos Para Atendimentos Funerários",
         valor: "Insumos Para Atendimentos Funerários",
         destino_tipo: "DEPOSITO",
         classificacoes: ["INSUMOS"],
