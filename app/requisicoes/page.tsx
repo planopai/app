@@ -487,7 +487,7 @@ export default function OperarRequisicoesPage() {
     const [sendItems, setSendItems] = useState<SendItemDraft[]>([]);
     const [sendObs, setSendObs] = useState("");
 
-    const [reasonOpen, setReasonOpen] = useState<"RECUSAR" | "CANCELAR" | null>(null);
+    const [reasonOpen, setReasonOpen] = useState<"RECUSAR" | null>(null);
     const [reasonReq, setReasonReq] = useState<ReqListRow | ReqDetail | null>(null);
     const [reason, setReason] = useState("");
 
@@ -687,7 +687,7 @@ export default function OperarRequisicoesPage() {
         }
     }
 
-    function openReason(kind: "RECUSAR" | "CANCELAR", row: ReqListRow | ReqDetail) {
+    function openReason(kind: "RECUSAR", row: ReqListRow | ReqDetail) {
         setReasonOpen(kind);
         setReasonReq(row);
         setReason("");
@@ -699,7 +699,7 @@ export default function OperarRequisicoesPage() {
         if (!reasonOpen || !reasonReq || busy) return;
 
         if (!reason.trim()) {
-            setError(reasonOpen === "RECUSAR" ? "Informe o motivo da recusa." : "Informe o motivo do cancelamento.");
+            setError("Informe o motivo da recusa.");
             return;
         }
 
@@ -708,7 +708,7 @@ export default function OperarRequisicoesPage() {
         setOkMsg("");
 
         try {
-            const action = reasonOpen === "RECUSAR" ? "recusar" : "cancelar";
+            const action = "recusar";
             const data = await apiPost<ActionResp>({ action, id: reasonReq.id, motivo: reason.trim() });
 
             if (!data.ok) throw new Error(data.msg || "Não foi possível concluir a ação.");
@@ -809,7 +809,6 @@ export default function OperarRequisicoesPage() {
                                 onStart={() => startSeparation(row)}
                                 onSend={() => prepareSend(row)}
                                 onReject={() => openReason("RECUSAR", row)}
-                                onCancel={() => openReason("CANCELAR", row)}
                             />
                         ))}
                     </div>
@@ -877,7 +876,6 @@ export default function OperarRequisicoesPage() {
                         onStart={() => startSeparation(detail)}
                         onSend={() => prepareSend(detail)}
                         onReject={() => openReason("RECUSAR", detail)}
-                        onCancel={() => openReason("CANCELAR", detail)}
                         busy={busy}
                     />
                 ) : null}
@@ -951,14 +949,14 @@ export default function OperarRequisicoesPage() {
                 </div>
             </Modal>
 
-            <Modal open={reasonOpen !== null} title={reasonOpen === "RECUSAR" ? "Recusar" : "Cancelar"} onClose={() => setReasonOpen(null)}>
+            <Modal open={reasonOpen !== null} title="Recusar" onClose={() => setReasonOpen(null)}>
                 <div className="space-y-4">
                     <Field label="Motivo">
                         <TextArea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} />
                     </Field>
 
                     <div className="flex flex-col gap-2 sm:flex-row">
-                        <Button type="button" variant={reasonOpen === "RECUSAR" ? "danger" : "solid"} onClick={confirmReason} disabled={busy}>
+                        <Button type="button" variant="danger" onClick={confirmReason} disabled={busy}>
                             Confirmar
                         </Button>
                         <Button type="button" variant="ghost" onClick={() => setReasonOpen(null)}>
@@ -994,7 +992,6 @@ function RequestCard({
     onStart,
     onSend,
     onReject,
-    onCancel,
 }: {
     row: ReqListRow;
     busy: boolean;
@@ -1002,13 +999,11 @@ function RequestCard({
     onStart: () => void;
     onSend: () => void;
     onReject: () => void;
-    onCancel: () => void;
 }) {
     const status = toStatus(row.status);
     const canStart = status === "PENDENTE";
     const canSend = status === "EM_SEPARACAO" || status === "PENDENTE";
     const canReject = status === "PENDENTE" || status === "EM_SEPARACAO";
-    const canCancel = status === "PENDENTE" || status === "EM_SEPARACAO";
 
     return (
         <Card className={isTruthy(row.atrasada_24h) ? "border-rose-200" : ""}>
@@ -1068,11 +1063,6 @@ function RequestCard({
                                 Recusar
                             </Button>
                         ) : null}
-                        {canCancel ? (
-                            <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
-                                Cancelar
-                            </Button>
-                        ) : null}
                     </div>
                 </div>
             </div>
@@ -1085,21 +1075,18 @@ function DetailContent({
     onStart,
     onSend,
     onReject,
-    onCancel,
     busy,
 }: {
     detail: ReqDetail;
     onStart: () => void;
     onSend: () => void;
     onReject: () => void;
-    onCancel: () => void;
     busy: boolean;
 }) {
     const status = toStatus(detail.status);
     const canStart = status === "PENDENTE";
     const canSend = status === "PENDENTE" || status === "EM_SEPARACAO";
     const canReject = status === "PENDENTE" || status === "EM_SEPARACAO";
-    const canCancel = status === "PENDENTE" || status === "EM_SEPARACAO";
 
     return (
         <div className="space-y-4">
@@ -1163,11 +1150,6 @@ function DetailContent({
                 {canReject ? (
                     <Button type="button" variant="danger" onClick={onReject} disabled={busy}>
                         Recusar
-                    </Button>
-                ) : null}
-                {canCancel ? (
-                    <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
-                        Cancelar
                     </Button>
                 ) : null}
             </div>
