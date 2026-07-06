@@ -7,7 +7,6 @@ import {
     IconClipboardList,
     IconChartBar,
     IconPackage,
-    IconRefresh,
     IconTruckDelivery,
 } from "@tabler/icons-react";
 
@@ -184,7 +183,7 @@ function RequestStatusBadge({ status }: { status: unknown }) {
     return (
         <span
             className={[
-                "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-black",
+                "inline-flex items-center rounded-full border px-3 py-1 text-xs font-black",
                 statusClass(status),
             ].join(" ")}
         >
@@ -200,45 +199,46 @@ function RequestCard({ row }: { row: ReqListRow }) {
         <Link
             href="/requisicoes"
             className="
-                group block rounded-2xl border border-gray-200 bg-white p-4 shadow-sm
+                group block rounded-2xl border border-gray-200 bg-white p-5 shadow-sm
                 transition-all hover:-translate-y-[1px] hover:shadow-md
                 dark:border-gray-800 dark:bg-gray-900
+                lg:col-span-3
             "
         >
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+            <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-black text-gray-950 dark:text-white">
+                        <span className="text-base font-black text-gray-950 dark:text-white">
                             {reqCode(row)}
                         </span>
 
                         <RequestStatusBadge status={row.status} />
 
                         {isTruthy(row.atrasada_24h) ? (
-                            <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+                            <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
                                 +24h
                             </span>
                         ) : null}
                     </div>
 
-                    <div className="mt-3 rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2 dark:border-sky-900/40 dark:bg-sky-950/30">
+                    <div className="mt-4 max-w-md rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-950/30">
                         <p className="text-[11px] font-black uppercase tracking-wide text-sky-700 dark:text-sky-300">
                             Solicitante
                         </p>
 
-                        <p className="mt-0.5 truncate text-lg font-black tracking-tight text-sky-950 dark:text-white">
+                        <p className="mt-1 truncate text-2xl font-black tracking-tight text-sky-950 dark:text-white">
                             {solicitante}
                         </p>
                     </div>
                 </div>
 
-                <div className="grid size-11 shrink-0 place-items-center rounded-full bg-gray-100 text-gray-700 transition-colors group-hover:bg-sky-600 group-hover:text-white dark:bg-gray-800 dark:text-gray-200">
-                    <IconTruckDelivery size={22} />
+                <div className="grid size-12 shrink-0 place-items-center rounded-full bg-gray-100 text-gray-700 transition-colors group-hover:bg-sky-600 group-hover:text-white dark:bg-gray-800 dark:text-gray-200">
+                    <IconTruckDelivery size={23} />
                 </div>
             </div>
 
-            <div className="mt-3 space-y-1.5 text-xs text-gray-600 dark:text-gray-300">
-                <p className="line-clamp-2 text-sm font-bold text-gray-900 dark:text-white">
+            <div className="mt-4 grid gap-2 text-sm text-gray-600 dark:text-gray-300 sm:grid-cols-2">
+                <p className="line-clamp-2 font-black text-gray-900 dark:text-white sm:col-span-2">
                     {row.itens_resumo || "Itens não informados"}
                 </p>
 
@@ -323,18 +323,6 @@ export default function RequisicaoPage() {
         });
     }, [rows]);
 
-    const totalPendentes = useMemo(() => {
-        return requisicoesAbertas.filter(
-            (row) => String(row.status || "").toUpperCase() === "PENDENTE"
-        ).length;
-    }, [requisicoesAbertas]);
-
-    const totalTransito = useMemo(() => {
-        return requisicoesAbertas.filter(
-            (row) => String(row.status || "").toUpperCase() === "EM_TRANSITO"
-        ).length;
-    }, [requisicoesAbertas]);
-
     return (
         <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
             <div className="mx-auto max-w-6xl px-5 py-5">
@@ -353,58 +341,29 @@ export default function RequisicaoPage() {
 
                 {/* ========= REQUISIÇÕES PENDENTES / EM TRÂNSITO ========= */}
                 <section className="mb-5">
-                    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 className="text-lg font-black tracking-tight text-gray-950 dark:text-white">
-                                Requisições em aberto
-                            </h2>
-
-                            <p className="mt-0.5 text-sm font-medium text-gray-500 dark:text-gray-400">
-                                Pendentes:{" "}
-                                <b className="text-amber-700 dark:text-amber-300">
-                                    {totalPendentes}
-                                </b>{" "}
-                                · Em trânsito:{" "}
-                                <b className="text-violet-700 dark:text-violet-300">
-                                    {totalTransito}
-                                </b>
-                            </p>
-                        </div>
-
-                        <button
-                            type="button"
-                            onClick={() => void loadRequisicoes()}
-                            disabled={loading}
-                            className="
-                                inline-flex h-10 items-center justify-center gap-2 rounded-xl
-                                border border-gray-200 bg-white px-3 text-sm font-bold
-                                text-gray-800 shadow-sm transition hover:bg-gray-50
-                                disabled:cursor-not-allowed disabled:opacity-60
-                                dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800
-                            "
-                        >
-                            <IconRefresh size={17} />
-                            Atualizar
-                        </button>
-                    </div>
-
                     {loading ? (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-                            Carregando requisições...
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+                            <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 lg:col-span-3">
+                                Carregando requisições...
+                            </div>
                         </div>
                     ) : error ? (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-800 shadow-sm dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
-                            {error}
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-bold text-rose-800 shadow-sm dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200 lg:col-span-3">
+                                {error}
+                            </div>
                         </div>
                     ) : requisicoesAbertas.length ? (
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
                             {requisicoesAbertas.map((row) => (
                                 <RequestCard key={row.id} row={row} />
                             ))}
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-                            Nenhuma requisição pendente ou em trânsito no momento.
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+                            <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 lg:col-span-3">
+                                Nenhuma requisição pendente ou em trânsito no momento.
+                            </div>
                         </div>
                     )}
                 </section>
