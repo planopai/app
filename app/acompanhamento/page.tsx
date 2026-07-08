@@ -407,6 +407,14 @@ type RoupaSnapshot = {
   roupa_propria: number;
 };
 
+const ROUPA_SCOPE_IDS = [
+  "roupa",
+  "roupa_produto_id",
+  "roupa_deposito_nome",
+  "roupa_codigo_barras",
+  "roupa_propria",
+];
+
 function scrubRoupaNoEditar(payload: any, original: RoupaSnapshot | null) {
   if (!original) return;
 
@@ -774,6 +782,7 @@ export default function AcompanhamentoPage() {
               msg.includes("Selecione um INVOL da lista") ||
               msg.includes("Depósito inválido") ||
               msg.includes("Dados inválidos") ||
+              msg.includes("Campo obrigatório após Corpo na Clínica") ||
               msg.includes("Confirmação obrigatória") ||
               msg.includes("Apenas Tanatopraxista");
 
@@ -1811,7 +1820,19 @@ export default function AcompanhamentoPage() {
 
     const aplicarEscopoNoPayload = (payload: any) => {
       if (payload.acao === "editar" && wizardRestrictIds) {
-        payload._wizard_restrict_ids = wizardRestrictIds;
+        let restrictIds = Array.from(new Set(wizardRestrictIds.map((id) => String(id))));
+
+        // ✅ Correção: ao editar a aba de Itens para trocar somente a URNA,
+        // a mesma aba também costuma conter "roupa" no escopo.
+        // Como scrubRoupaNoEditar remove roupa do payload quando ela NÃO mudou,
+        // o PHP recebia _wizard_restrict_ids com "roupa" mas sem o campo "roupa",
+        // e retornava: "Campo obrigatório após Corpo na Clínica: Roupa."
+        // Se a roupa não foi alterada, ela também precisa sair do escopo enviado ao backend.
+        if (wizardEditing && !roupaMudou) {
+          restrictIds = restrictIds.filter((id) => !ROUPA_SCOPE_IDS.includes(id));
+        }
+
+        payload._wizard_restrict_ids = restrictIds;
       }
 
       // Esses campos são marcadores internos do front. O PHP só precisa de _wizard_restrict_ids.
