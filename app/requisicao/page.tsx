@@ -9,6 +9,7 @@ import {
     IconPackage,
     IconTruckDelivery,
 } from "@tabler/icons-react";
+import { usePerms } from "../_perms/PermsProvider";
 
 /* ========= API ========= */
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
@@ -40,6 +41,13 @@ type ListResp = {
     rows?: ReqListRow[];
     msg?: string;
     need_login?: 1;
+};
+
+type QuickItem = {
+    title: string;
+    href: string;
+    slug: string;
+    icon: React.ElementType<{ size?: number }>;
 };
 
 async function safeJson<T>(r: Response): Promise<T> {
@@ -92,26 +100,30 @@ function QuickIcon({ children }: { children: React.ReactNode }) {
     );
 }
 
-/* ========= ITENS ========= */
-const items = [
+/* ========= ITENS COM PERMISSÃO ========= */
+const items: QuickItem[] = [
     {
         title: "Solicitar Produto",
         href: "/solicitar-produto",
+        slug: "solicitar-produto",
         icon: IconClipboardPlus,
     },
     {
         title: "Minhas Solicitações",
         href: "/minhas-solicitacoes",
+        slug: "minhas-solicitacoes",
         icon: IconClipboardList,
     },
     {
         title: "Requisições",
         href: "/requisicoes",
+        slug: "requisicoes",
         icon: IconClipboardList,
     },
     {
         title: "Dashboard Requisições",
         href: "/dashboard-requisicoes",
+        slug: "dashboard-requisicoes",
         icon: IconChartBar,
     },
 ];
@@ -197,19 +209,24 @@ function RequestStatusBadge({ status }: { status: unknown }) {
     );
 }
 
-function RequestCard({ row }: { row: ReqListRow }) {
+function RequestCard({
+    row,
+    canOpenRequisicoes,
+}: {
+    row: ReqListRow;
+    canOpenRequisicoes: boolean;
+}) {
     const solicitante = row.solicitante_nome || "Solicitante não informado";
 
-    return (
-        <Link
-            href="/requisicoes"
-            className="
-                group block rounded-2xl border border-gray-200 bg-white p-5 shadow-sm
-                transition-all hover:-translate-y-[1px] hover:shadow-md
-                dark:border-gray-800 dark:bg-gray-900
-                lg:col-span-3
-            "
-        >
+    const className = [
+        "group block rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:col-span-3",
+        canOpenRequisicoes
+            ? "transition-all hover:-translate-y-[1px] hover:shadow-md"
+            : "",
+    ].join(" ");
+
+    const content = (
+        <>
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -279,11 +296,23 @@ function RequestCard({ row }: { row: ReqListRow }) {
                     </p>
                 ) : null}
             </div>
-        </Link>
+        </>
     );
+
+    if (canOpenRequisicoes) {
+        return (
+            <Link href="/requisicoes" className={className}>
+                {content}
+            </Link>
+        );
+    }
+
+    return <article className={className}>{content}</article>;
 }
 
 export default function RequisicaoPage() {
+    const { perms, has } = usePerms();
+
     const [rows, setRows] = useState<ReqListRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -328,6 +357,9 @@ export default function RequisicaoPage() {
         });
     }, [rows]);
 
+    const actions = perms == null ? [] : items.filter((item) => has(item.slug));
+    const canOpenRequisicoes = perms != null && has("requisicoes");
+
     return (
         <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
             <div className="mx-auto max-w-6xl px-5 py-5">
@@ -345,6 +377,7 @@ export default function RequisicaoPage() {
                 </header>
 
                 {/* ========= REQUISIÇÕES PENDENTES / EM TRÂNSITO ========= */}
+                {/* Este bloco aparece para todos os usuários, independente das permissões dos botões. */}
                 <section className="mb-5">
                     {loading ? (
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
@@ -361,7 +394,11 @@ export default function RequisicaoPage() {
                     ) : requisicoesAbertas.length ? (
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
                             {requisicoesAbertas.map((row) => (
-                                <RequestCard key={row.id} row={row} />
+                                <RequestCard
+                                    key={row.id}
+                                    row={row}
+                                    canOpenRequisicoes={canOpenRequisicoes}
+                                />
                             ))}
                         </div>
                     ) : (
@@ -373,47 +410,57 @@ export default function RequisicaoPage() {
                     )}
                 </section>
 
-                {/* ========= GRID PADRÃO APP ========= */}
+                {/* ========= GRID PADRÃO APP COM PERMISSÕES ========= */}
                 <section>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                        {items.map(({ title, href, icon: Icon }) => (
-                            <Link
-                                key={href}
-                                href={href}
-                                className="
-                                    group flex flex-col items-center justify-center
-                                    gap-2.5
-                                    rounded-2xl
-                                    border border-gray-200
-                                    bg-white
-                                    px-3 py-4
-                                    shadow-sm
-                                    transition-all
-                                    hover:-translate-y-[1px]
-                                    hover:shadow-md
-                                    dark:border-gray-800 dark:bg-gray-900
-                                "
-                            >
-                                <QuickIcon>
-                                    <Icon size={22} />
-                                </QuickIcon>
-
-                                <span
+                    {perms == null ? (
+                        <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                            Carregando permissões...
+                        </div>
+                    ) : actions.length ? (
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                            {actions.map(({ title, href, icon: Icon }) => (
+                                <Link
+                                    key={href}
+                                    href={href}
                                     className="
-                                        text-center
-                                        text-[13px]
-                                        font-extrabold
-                                        leading-tight
-                                        tracking-tight
-                                        text-gray-900
-                                        dark:text-white
+                                        group flex flex-col items-center justify-center
+                                        gap-2.5
+                                        rounded-2xl
+                                        border border-gray-200
+                                        bg-white
+                                        px-3 py-4
+                                        shadow-sm
+                                        transition-all
+                                        hover:-translate-y-[1px]
+                                        hover:shadow-md
+                                        dark:border-gray-800 dark:bg-gray-900
                                     "
                                 >
-                                    {title}
-                                </span>
-                            </Link>
-                        ))}
-                    </div>
+                                    <QuickIcon>
+                                        <Icon size={22} />
+                                    </QuickIcon>
+
+                                    <span
+                                        className="
+                                            text-center
+                                            text-[13px]
+                                            font-extrabold
+                                            leading-tight
+                                            tracking-tight
+                                            text-gray-900
+                                            dark:text-white
+                                        "
+                                    >
+                                        {title}
+                                    </span>
+                                </Link>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                            Nenhuma opção disponível para o seu usuário.
+                        </div>
+                    )}
                 </section>
             </div>
         </div>
