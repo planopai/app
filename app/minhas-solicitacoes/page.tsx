@@ -2,14 +2,33 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 
+/**
+ * Tipo utilitário para representar IDs numéricos vindos da API.
+ *
+ * Usar um alias deixa o código mais legível, porque evita repetir `number`
+ * em todo lugar e deixa claro quando determinado campo representa uma chave
+ * de identificação no banco.
+ */
 type ID = number;
 
+/**
+ * Representa o usuário logado retornado pela API no carregamento inicial.
+ *
+ * Esse objeto é usado apenas para exibir informações básicas do usuário no topo
+ * da tela, como nome, usuário ou ID.
+ */
 type Me = {
     id: ID;
     nome: string;
     usuario: string;
 };
 
+/**
+ * Lista fechada dos status conhecidos pela aplicação.
+ *
+ * A API pode retornar outros valores como string, mas esses são os status
+ * esperados pelo front-end para aplicar labels, cores e regras de ação.
+ */
 type StatusId =
     | "PENDENTE"
     | "EM_SEPARACAO"
@@ -18,11 +37,23 @@ type StatusId =
     | "CANCELADA"
     | "RECUSADA";
 
+/**
+ * Representa uma opção de status exibida em filtros, badges e labels.
+ *
+ * `id` é o valor técnico usado pela API.
+ * `nome` é o texto amigável exibido ao usuário.
+ */
 type StatusOption = {
     id: StatusId;
     nome: string;
 };
 
+/**
+ * Formato esperado da resposta da API para inicialização da página.
+ *
+ * Essa chamada busca informações do usuário logado e a lista de status
+ * disponíveis. Caso a sessão esteja inválida, a API pode retornar `need_login`.
+ */
 type InitResp = {
     ok: boolean;
     me?: Me;
@@ -31,6 +62,13 @@ type InitResp = {
     need_login?: 1;
 };
 
+/**
+ * Representa uma requisição na listagem principal.
+ *
+ * Esse tipo contém os dados resumidos necessários para renderizar cada card
+ * de solicitação, como código, status, destino, origem, resumo dos itens,
+ * datas principais e possíveis motivos de recusa ou cancelamento.
+ */
 type ReqListRow = {
     id: ID;
     codigo?: string | null;
@@ -57,6 +95,13 @@ type ReqListRow = {
     motivo_cancelamento?: string | null;
 };
 
+/**
+ * Representa um item individual de uma requisição.
+ *
+ * A API retorna snapshots do produto, como nome e código de barras, para manter
+ * o histórico fiel ao momento da solicitação, mesmo que o cadastro do produto
+ * seja alterado depois.
+ */
 type ReqItem = {
     id: ID;
     requisicao_id: ID;
@@ -72,6 +117,12 @@ type ReqItem = {
     classificacao_nome?: string | null;
 };
 
+/**
+ * Representa um evento da linha do tempo da requisição.
+ *
+ * Cada evento registra uma mudança ou ação importante, como criação,
+ * separação, envio, recebimento, cancelamento ou recusa.
+ */
 type ReqEvento = {
     id: ID;
     requisicao_id: ID;
@@ -84,6 +135,12 @@ type ReqEvento = {
     criado_em: string;
 };
 
+/**
+ * Representa os detalhes completos de uma requisição.
+ *
+ * Estende os dados da listagem e adiciona campos mais completos, como nomes
+ * dos usuários responsáveis pelas etapas, itens e eventos da linha do tempo.
+ */
 type ReqDetalhe = ReqListRow & {
     solicitante_usuario?: string | null;
     separado_por_nome?: string | null;
@@ -96,6 +153,9 @@ type ReqDetalhe = ReqListRow & {
     eventos?: ReqEvento[];
 };
 
+/**
+ * Resposta da API para a listagem de solicitações do usuário logado.
+ */
 type ListResp = {
     ok: boolean;
     rows?: ReqListRow[];
@@ -103,6 +163,9 @@ type ListResp = {
     need_login?: 1;
 };
 
+/**
+ * Resposta da API para abertura dos detalhes de uma requisição específica.
+ */
 type DetailResp = {
     ok: boolean;
     row?: ReqDetalhe;
@@ -110,6 +173,10 @@ type DetailResp = {
     need_login?: 1;
 };
 
+/**
+ * Resposta padrão para operações que alteram dados, como cancelar requisição
+ * ou confirmar recebimento.
+ */
 type MutResp = {
     ok: boolean;
     msg?: string;
@@ -117,9 +184,27 @@ type MutResp = {
     need_login?: 1;
 };
 
+/**
+ * URL base do servidor da API.
+ *
+ * Mantida separada para facilitar manutenção caso o domínio mude no futuro.
+ */
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
+/**
+ * Endpoint específico usado por esta página.
+ *
+ * Todas as ações desta tela são enviadas para o mesmo arquivo PHP, mudando
+ * apenas o parâmetro `action` em GET ou POST.
+ */
 const API_BASE = `${ENDPOINT}/requisicoes.php`;
 
+/**
+ * Lista local de status usada como fallback.
+ *
+ * Caso a API não retorne a lista de status no `init`, a página continua
+ * funcionando com estes valores padrão.
+ */
 const STATUS_FALLBACK: StatusOption[] = [
     { id: "PENDENTE", nome: "Pendente" },
     { id: "EM_SEPARACAO", nome: "Em separação" },
@@ -129,27 +214,55 @@ const STATUS_FALLBACK: StatusOption[] = [
     { id: "RECUSADA", nome: "Recusada" },
 ];
 
+/**
+ * Converte qualquer valor recebido da API para número seguro.
+ *
+ * A função aceita números reais, strings no formato brasileiro e valores vazios.
+ * Isso evita quebrar a tela quando a API retorna quantidades como `"1,5"`,
+ * `"1.000,25"`, `null`, `undefined` ou strings vazias.
+ */
 function parseNum(v: unknown) {
     if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+
     const s = String(v ?? "").trim().replace(/\./g, "").replace(",", ".");
     const n = Number(s);
+
     return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Formata quantidades para o padrão brasileiro.
+ *
+ * Usa até três casas decimais, porque itens de estoque podem eventualmente
+ * trabalhar com frações, mas evita exibir casas desnecessárias quando o número
+ * é inteiro.
+ */
 function fmtQtd(v: unknown) {
     const n = parseNum(v);
+
     return new Intl.NumberFormat("pt-BR", {
         minimumFractionDigits: 0,
         maximumFractionDigits: 3,
     }).format(n);
 }
 
+/**
+ * Formata uma data/hora para exibição ao usuário.
+ *
+ * A API pode retornar datas com espaço entre data e hora, como
+ * `"2025-01-01 10:30:00"`. O JavaScript interpreta melhor quando há `T`,
+ * então a função normaliza esse formato antes de criar o objeto Date.
+ *
+ * Se a data estiver vazia, retorna `-`.
+ * Se a data for inválida, retorna o valor original para não ocultar informação.
+ */
 function fmtDateTime(value?: string | null) {
     if (!value) return "-";
 
     try {
         const normalized = value.includes("T") ? value : value.replace(" ", "T");
         const d = new Date(normalized);
+
         if (Number.isNaN(d.getTime())) return value;
 
         return new Intl.DateTimeFormat("pt-BR", {
@@ -161,21 +274,51 @@ function fmtDateTime(value?: string | null) {
     }
 }
 
+/**
+ * Resolve o nome amigável de um status.
+ *
+ * Primeiro tenta usar a lista retornada pela API, pois ela pode estar mais
+ * atualizada. Se não encontrar, usa o fallback local. Se ainda assim não achar,
+ * exibe o próprio código técnico.
+ */
 function statusLabel(status: string, options: StatusOption[]) {
     return options.find((s) => s.id === status)?.nome || STATUS_FALLBACK.find((s) => s.id === status)?.nome || status;
 }
 
+/**
+ * Define o texto de destino exibido nos cards e no modal de detalhes.
+ *
+ * A ordem de prioridade é:
+ * 1. Nome da unidade de destino;
+ * 2. Texto livre de destino;
+ * 3. ID da unidade de destino;
+ * 4. Texto padrão de não informado.
+ */
 function destinoLabel(row: ReqListRow | ReqDetalhe) {
     if (row.unidade_destino_nome) return row.unidade_destino_nome;
     if (row.unidade_destino_texto) return row.unidade_destino_texto;
     if (row.unidade_destino_id) return `Depósito #${row.unidade_destino_id}`;
+
     return "Não informado";
 }
 
+/**
+ * Retorna o código exibido para a requisição.
+ *
+ * Se a API já retornar um código oficial, ele é usado. Caso contrário, cria um
+ * código visual baseado no ID, com seis dígitos preenchidos com zero à esquerda.
+ */
 function reqCode(row: ReqListRow | ReqDetalhe) {
     return row.codigo || `REQ-${String(row.id).padStart(6, "0")}`;
 }
 
+/**
+ * Lê a resposta HTTP e garante que ela seja JSON.
+ *
+ * Essa função protege a aplicação contra respostas inesperadas, como uma página
+ * HTML de erro, aviso de PHP ou texto puro. Quando o conteúdo não é JSON, ela
+ * lança um erro com um trecho da resposta para facilitar diagnóstico.
+ */
 async function safeJson<T>(r: Response): Promise<T> {
     const ct = r.headers.get("content-type") || "";
 
@@ -187,6 +330,13 @@ async function safeJson<T>(r: Response): Promise<T> {
     return (await r.json()) as T;
 }
 
+/**
+ * Helper para chamadas GET ao endpoint de requisições.
+ *
+ * Recebe um objeto com parâmetros de query string, remove valores vazios ou
+ * indefinidos e monta a URL final. Também envia `credentials: "include"` para
+ * permitir que cookies de sessão sejam enviados junto da requisição.
+ */
 async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
     const u = new URL(API_BASE);
 
@@ -204,6 +354,12 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
     return await safeJson<T>(r);
 }
 
+/**
+ * Helper para chamadas POST ao endpoint de requisições.
+ *
+ * Envia o corpo como JSON e mantém `credentials: "include"` para que a API
+ * identifique o usuário logado pela sessão.
+ */
 async function apiPost<T>(body: Record<string, unknown>) {
     const r = await fetch(API_BASE, {
         method: "POST",
@@ -216,10 +372,22 @@ async function apiPost<T>(body: Record<string, unknown>) {
     return await safeJson<T>(r);
 }
 
+/**
+ * Componente base para cartões visuais da página.
+ *
+ * Centraliza o estilo comum de borda, fundo, sombra e arredondamento. Isso evita
+ * repetir classes Tailwind em todos os blocos e facilita mudanças futuras no
+ * visual dos cards.
+ */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
     return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
 }
 
+/**
+ * Componente wrapper para campos de formulário.
+ *
+ * Renderiza o label padronizado acima do campo recebido em `children`.
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
@@ -229,6 +397,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     );
 }
 
+/**
+ * Input de texto padronizado.
+ *
+ * Aceita todas as props normais de um `<input>` e acrescenta classes visuais
+ * comuns. A prop `className` continua disponível para customizações pontuais.
+ */
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     return (
         <input
@@ -242,6 +416,12 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     );
 }
 
+/**
+ * Textarea padronizado.
+ *
+ * Usado no modal de cancelamento para o usuário informar o motivo. Assim como o
+ * TextInput, aceita props nativas e permite sobrescrever ou adicionar classes.
+ */
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     return (
         <textarea
@@ -255,6 +435,12 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     );
 }
 
+/**
+ * Select padronizado.
+ *
+ * Usado principalmente no filtro de status. Mantém consistência visual com os
+ * demais campos de formulário da página.
+ */
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     return (
         <select
@@ -268,6 +454,15 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     );
 }
 
+/**
+ * Botão reutilizável da página.
+ *
+ * A prop `variant` controla o estilo visual:
+ * `solid` para ação principal,
+ * `soft` para ação secundária destacada,
+ * `ghost` para ação neutra,
+ * `danger` para ação destrutiva ou sensível, como cancelamento.
+ */
 function Button({
     children,
     variant = "solid",
@@ -293,10 +488,22 @@ function Button({
     );
 }
 
+/**
+ * Pequeno marcador visual em formato de cápsula.
+ *
+ * Serve como base para status, alerta de atraso e indicação de tipo da
+ * solicitação.
+ */
 function Pill({ children, className = "" }: { children: React.ReactNode; className?: string }) {
     return <span className={["inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold", className].join(" ")}>{children}</span>;
 }
 
+/**
+ * Badge colorido de status.
+ *
+ * Traduz o status técnico para texto amigável e aplica cores diferentes para
+ * facilitar identificação visual rápida na listagem e nos detalhes.
+ */
 function StatusBadge({ status, options }: { status: string; options: StatusOption[] }) {
     const cls =
         status === "PENDENTE"
@@ -316,6 +523,17 @@ function StatusBadge({ status, options }: { status: string; options: StatusOptio
     return <Pill className={cls}>{statusLabel(status, options)}</Pill>;
 }
 
+/**
+ * Modal genérico reutilizável.
+ *
+ * Responsabilidades principais:
+ * 1. Renderizar uma camada escura sobre a tela.
+ * 2. Exibir título, subtítulo opcional, botão de fechar e conteúdo.
+ * 3. Bloquear o scroll do body enquanto o modal estiver aberto.
+ *
+ * O bloqueio de scroll melhora a experiência em mobile, evitando que o fundo
+ * role enquanto o usuário interage com o modal.
+ */
 function Modal({
     open,
     title,
@@ -362,6 +580,12 @@ function Modal({
     );
 }
 
+/**
+ * Estado vazio padronizado.
+ *
+ * Usado quando não há requisições na listagem, quando a API não retorna itens
+ * no detalhe ou quando não há eventos de linha do tempo.
+ */
 function EmptyState({ title, text }: { title: string; text: string }) {
     return (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
@@ -371,6 +595,16 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     );
 }
 
+/**
+ * Card individual da listagem de solicitações.
+ *
+ * Este componente recebe uma linha resumida da API e decide quais informações
+ * mostrar e quais ações estão disponíveis para o status atual.
+ *
+ * Regras de ação:
+ * `PENDENTE` e `EM_SEPARACAO` podem ser canceladas pelo solicitante.
+ * `EM_TRANSITO` pode ter recebimento confirmado.
+ */
 function RequestCard({
     row,
     statusOptions,
@@ -451,6 +685,16 @@ function RequestCard({
     );
 }
 
+/**
+ * Modal de detalhes da requisição.
+ *
+ * Mostra uma visão completa da solicitação selecionada, incluindo:
+ * dados gerais, justificativa, motivos de recusa ou cancelamento, itens e linha
+ * do tempo.
+ *
+ * O componente recebe `row` como `null` enquanto os dados ainda estão sendo
+ * carregados, exibindo uma mensagem de carregamento nesse período.
+ */
 function DetailModal({
     open,
     row,
@@ -579,6 +823,15 @@ function DetailModal({
     );
 }
 
+/**
+ * Modal de cancelamento da solicitação.
+ *
+ * O usuário precisa informar um motivo antes de confirmar. Esse motivo é enviado
+ * para a API e deve ficar registrado no histórico da requisição.
+ *
+ * Este componente não executa a operação diretamente. Ele apenas coleta o motivo
+ * e chama `onConfirm`, deixando a página principal responsável pela chamada POST.
+ */
 function CancelModal({
     open,
     row,
@@ -618,34 +871,93 @@ function CancelModal({
     );
 }
 
+/**
+ * Página principal de "Minhas Solicitações".
+ *
+ * Responsabilidades:
+ * 1. Carregar usuário logado e opções de status.
+ * 2. Listar as requisições do usuário.
+ * 3. Aplicar filtro por status e busca textual.
+ * 4. Abrir detalhes de uma requisição.
+ * 5. Permitir cancelamento quando o status permitir.
+ * 6. Permitir confirmação de recebimento quando a requisição estiver em trânsito.
+ */
 export default function MinhasSolicitacoesPage() {
+    /**
+     * Dados do usuário logado.
+     *
+     * Usado apenas para exibir o usuário no cabeçalho.
+     */
     const [me, setMe] = useState<Me | null>(null);
+
+    /**
+     * Lista de status disponível para filtro e badges.
+     *
+     * Começa com o fallback local e pode ser substituída pela lista retornada
+     * pela API no carregamento inicial.
+     */
     const [statusOptions, setStatusOptions] = useState<StatusOption[]>(STATUS_FALLBACK);
 
+    /**
+     * Estados de carregamento e feedback.
+     *
+     * `loadingInit` controla o carregamento dos dados iniciais.
+     * `loadingRows` controla o carregamento da listagem.
+     * `saving` bloqueia ações enquanto uma mutação está em andamento.
+     * `err` exibe mensagens de erro.
+     * `okMsg` exibe mensagens de sucesso.
+     */
     const [loadingInit, setLoadingInit] = useState(true);
     const [loadingRows, setLoadingRows] = useState(false);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
     const [okMsg, setOkMsg] = useState("");
 
+    /**
+     * Dados da listagem e filtros.
+     *
+     * `rows` armazena as solicitações retornadas pela API.
+     * `filtroStatus` guarda o status selecionado no filtro.
+     * `filtroQ` guarda o texto livre da busca.
+     */
     const [rows, setRows] = useState<ReqListRow[]>([]);
     const [filtroStatus, setFiltroStatus] = useState<string>("");
     const [filtroQ, setFiltroQ] = useState("");
 
+    /**
+     * Estados do modal de detalhes.
+     *
+     * `detailOpen` controla se o modal está aberto.
+     * `detailLoading` indica se a requisição detalhada ainda está carregando.
+     * `detail` armazena os dados completos da requisição selecionada.
+     */
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detail, setDetail] = useState<ReqDetalhe | null>(null);
 
+    /**
+     * Estados do modal de cancelamento.
+     *
+     * `cancelRow` guarda qual requisição será cancelada.
+     * `cancelMotivo` guarda o texto digitado pelo usuário.
+     */
     const [cancelOpen, setCancelOpen] = useState(false);
     const [cancelRow, setCancelRow] = useState<ReqListRow | null>(null);
     const [cancelMotivo, setCancelMotivo] = useState("");
 
+    /**
+     * Carrega informações iniciais da página.
+     *
+     * Chama a API com `action: "init"` para buscar usuário logado e status.
+     * Em caso de falha, mostra mensagem de erro na tela.
+     */
     const loadInit = useCallback(async () => {
         setLoadingInit(true);
         setErr("");
 
         try {
             const data = await apiGet<InitResp>({ action: "init" });
+
             if (!data.ok) throw new Error(data.msg || "Falha ao carregar dados iniciais.");
 
             setMe(data.me || null);
@@ -657,6 +969,13 @@ export default function MinhasSolicitacoesPage() {
         }
     }, []);
 
+    /**
+     * Carrega as solicitações do usuário logado.
+     *
+     * Envia para a API os filtros atuais de status e busca. Valores vazios são
+     * convertidos para `undefined`, permitindo que o helper `apiGet` ignore esses
+     * parâmetros na URL.
+     */
     const loadMinhas = useCallback(async () => {
         setLoadingRows(true);
         setErr("");
@@ -670,6 +989,7 @@ export default function MinhasSolicitacoesPage() {
             });
 
             if (!data.ok) throw new Error(data.msg || "Falha ao carregar suas solicitações.");
+
             setRows(data.rows || []);
         } catch (e: any) {
             setErr(e?.message || "Não foi possível carregar suas solicitações.");
@@ -678,14 +998,30 @@ export default function MinhasSolicitacoesPage() {
         }
     }, [filtroQ, filtroStatus]);
 
+    /**
+     * Efeito executado uma única vez ao abrir a página.
+     *
+     * Carrega dados iniciais e a primeira listagem. A dependência é mantida vazia
+     * intencionalmente para não recarregar automaticamente a cada alteração nos
+     * filtros. Os filtros são aplicados manualmente pelo botão Atualizar ou pela
+     * tecla Enter no campo de busca.
+     */
     useEffect(() => {
         void loadInit();
         void loadMinhas();
+
         // Carrega uma vez ao abrir a página.
         // Os filtros são aplicados pelo botão Atualizar ou pela tecla Enter na busca.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    /**
+     * Abre o modal de detalhes de uma requisição.
+     *
+     * Primeiro abre o modal em estado de carregamento, depois busca os detalhes
+     * na API usando `action: "detalhar"`. Se a API falhar, fecha o modal e mostra
+     * a mensagem de erro na página.
+     */
     async function openDetail(id: ID) {
         setDetailOpen(true);
         setDetailLoading(true);
@@ -694,7 +1030,9 @@ export default function MinhasSolicitacoesPage() {
 
         try {
             const data = await apiGet<DetailResp>({ action: "detalhar", id });
+
             if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível abrir a requisição.");
+
             setDetail(data.row);
         } catch (e: any) {
             setErr(e?.message || "Não foi possível abrir a requisição.");
@@ -704,6 +1042,12 @@ export default function MinhasSolicitacoesPage() {
         }
     }
 
+    /**
+     * Prepara a abertura do modal de cancelamento.
+     *
+     * Limpa mensagens anteriores, define a requisição selecionada e zera o campo
+     * de motivo para evitar reaproveitar texto de outro cancelamento.
+     */
     function askCancel(row: ReqListRow) {
         setErr("");
         setOkMsg("");
@@ -712,10 +1056,20 @@ export default function MinhasSolicitacoesPage() {
         setCancelOpen(true);
     }
 
+    /**
+     * Confirma o cancelamento da requisição selecionada.
+     *
+     * Valida se existe uma requisição selecionada e se o motivo foi preenchido.
+     * Depois envia a operação para a API com `action: "cancelar_minha"`.
+     *
+     * Ao concluir com sucesso, fecha o modal, limpa o formulário, exibe mensagem
+     * positiva e recarrega a listagem para refletir o novo status.
+     */
     async function confirmCancel() {
         if (!cancelRow || saving) return;
 
         const motivo = cancelMotivo.trim();
+
         if (!motivo) {
             setErr("Informe o motivo do cancelamento.");
             return;
@@ -727,12 +1081,14 @@ export default function MinhasSolicitacoesPage() {
 
         try {
             const data = await apiPost<MutResp>({ action: "cancelar_minha", id: cancelRow.id, motivo });
+
             if (!data.ok) throw new Error(data.msg || "Não foi possível cancelar.");
 
             setCancelOpen(false);
             setCancelRow(null);
             setCancelMotivo("");
             setOkMsg(data.msg || "Requisição cancelada.");
+
             await loadMinhas();
         } catch (e: any) {
             setErr(e?.message || "Não foi possível cancelar a requisição.");
@@ -741,8 +1097,16 @@ export default function MinhasSolicitacoesPage() {
         }
     }
 
+    /**
+     * Confirma o recebimento de uma requisição em trânsito.
+     *
+     * Antes de enviar, usa `window.confirm` como proteção contra clique acidental.
+     * Se o usuário confirmar, chama a API com `action: "confirmar_recebimento"`
+     * e atualiza a listagem após sucesso.
+     */
     async function receiveReq(row: ReqListRow) {
         const ok = window.confirm(`Confirmar recebimento de ${reqCode(row)}?`);
+
         if (!ok) return;
 
         setSaving(true);
@@ -751,9 +1115,11 @@ export default function MinhasSolicitacoesPage() {
 
         try {
             const data = await apiPost<MutResp>({ action: "confirmar_recebimento", id: row.id });
+
             if (!data.ok) throw new Error(data.msg || "Não foi possível confirmar o recebimento.");
 
             setOkMsg(data.msg || "Recebimento confirmado.");
+
             await loadMinhas();
         } catch (e: any) {
             setErr(e?.message || "Não foi possível confirmar o recebimento.");
@@ -762,6 +1128,12 @@ export default function MinhasSolicitacoesPage() {
         }
     }
 
+    /**
+     * Limpa os filtros visuais.
+     *
+     * Esta função apenas limpa os estados locais. A listagem só será recarregada
+     * quando o usuário clicar em Atualizar ou pressionar Enter na busca.
+     */
     function clearFilters() {
         setFiltroStatus("");
         setFiltroQ("");
