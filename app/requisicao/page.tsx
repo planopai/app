@@ -100,6 +100,11 @@ const items = [
         icon: IconClipboardPlus,
     },
     {
+        title: "Minhas Solicitações",
+        href: "/minhas-solicitacoes",
+        icon: IconClipboardList,
+    },
+    {
         title: "Requisições",
         href: "/requisicoes",
         icon: IconClipboardList,
