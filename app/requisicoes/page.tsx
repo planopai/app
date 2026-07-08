@@ -2,21 +2,50 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
+/**
+ * Alias para IDs numéricos vindos da API.
+ *
+ * Facilita a leitura dos tipos, porque deixa claro quando um campo representa
+ * uma chave de identificação no banco, em vez de ser apenas um número comum.
+ */
 type ID = number;
 
+/**
+ * Status conhecidos pelo fluxo de requisições.
+ *
+ * Esses valores controlam labels, cores e regras de ação da tela.
+ */
 type StatusId = "PENDENTE" | "EM_SEPARACAO" | "EM_TRANSITO" | "ENTREGUE" | "CANCELADA" | "RECUSADA";
 
+/**
+ * Representa o usuário logado retornado pela API.
+ *
+ * Nesta página, é usado para exibir o operador atual no cabeçalho.
+ */
 type Me = {
     id: ID;
     nome: string;
     usuario: string;
 };
 
+/**
+ * Representa um depósito disponível para origem de envio.
+ *
+ * A tela usa essa lista no modal de envio para o operador escolher de qual
+ * depósito o material será separado.
+ */
 type Deposito = {
     id: ID;
     nome: string;
 };
 
+/**
+ * Representa o saldo de um produto dentro de um depósito.
+ *
+ * `quantidade` é o valor principal usado para validar se há estoque suficiente
+ * antes do envio. `minimo` e `maximo` existem no tipo porque podem vir da API,
+ * embora esta tela não use esses campos diretamente.
+ */
 type Saldo = {
     id: ID;
     produto_id: ID;
@@ -26,6 +55,13 @@ type Saldo = {
     maximo?: number | string;
 };
 
+/**
+ * Representa uma requisição na fila/listagem principal.
+ *
+ * Esse tipo contém os dados resumidos necessários para renderizar cada card
+ * operacional, como status, solicitante, destino, origem, resumo dos itens,
+ * datas importantes e motivos de recusa ou cancelamento.
+ */
 type ReqListRow = {
     id: ID;
     codigo?: string | null;
@@ -53,6 +89,12 @@ type ReqListRow = {
     motivo_cancelamento?: string | null;
 };
 
+/**
+ * Representa um item individual dentro de uma requisição.
+ *
+ * O campo `produto_nome_snapshot` preserva o nome do produto no momento da
+ * requisição, evitando que alterações futuras no cadastro mudem o histórico.
+ */
 type ReqItem = {
     id: ID;
     requisicao_id: ID;
@@ -68,6 +110,12 @@ type ReqItem = {
     classificacao_nome?: string | null;
 };
 
+/**
+ * Representa a requisição detalhada.
+ *
+ * Estende a linha resumida da listagem e adiciona os itens da requisição e os
+ * nomes dos usuários responsáveis por cada etapa.
+ */
 type ReqDetail = ReqListRow & {
     items?: ReqItem[];
     solicitante_usuario?: string | null;
@@ -78,6 +126,12 @@ type ReqDetail = ReqListRow & {
     cancelado_por_nome?: string | null;
 };
 
+/**
+ * Resposta da API para inicialização da tela.
+ *
+ * Essa chamada traz dados do usuário logado, depósitos disponíveis e saldos
+ * atuais, necessários para operar a fila.
+ */
 type InitResp = {
     ok: boolean;
     me?: Me;
@@ -87,6 +141,9 @@ type InitResp = {
     need_login?: 1;
 };
 
+/**
+ * Resposta da API para a listagem de requisições em andamento.
+ */
 type ListResp = {
     ok: boolean;
     rows?: ReqListRow[];
@@ -94,6 +151,9 @@ type ListResp = {
     need_login?: 1;
 };
 
+/**
+ * Resposta da API para o detalhamento de uma requisição específica.
+ */
 type DetailResp = {
     ok: boolean;
     row?: ReqDetail;
@@ -101,6 +161,11 @@ type DetailResp = {
     need_login?: 1;
 };
 
+/**
+ * Resposta padrão para ações que alteram o estado da requisição.
+ *
+ * Usada em iniciar separação, enviar material, confirmar recebimento e recusar.
+ */
 type ActionResp = {
     ok: boolean;
     msg?: string;
@@ -108,13 +173,36 @@ type ActionResp = {
     need_login?: 1;
 };
 
+/**
+ * Domínio base da API.
+ *
+ * Separar o endpoint em constante facilita manutenção caso o domínio mude no
+ * futuro.
+ */
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
+/**
+ * Endpoint usado por esta página.
+ *
+ * As operações são diferenciadas pelo parâmetro `action`, enviado via GET ou
+ * POST para o mesmo arquivo PHP.
+ */
 const API_BASE = `${ENDPOINT}/requisicoes.php`;
 
-// A tela mostra somente requisições em andamento.
-// ENTREGUE, RECUSADA e CANCELADA não aparecem aqui.
+/**
+ * Status que compõem a fila operacional.
+ *
+ * A tela mostra somente requisições em andamento.
+ * ENTREGUE, RECUSADA e CANCELADA não aparecem aqui.
+ */
 const STATUS_FILA = "PENDENTE,EM_SEPARACAO,EM_TRANSITO";
 
+/**
+ * Labels amigáveis para cada status conhecido.
+ *
+ * Esses textos são exibidos nos badges e ajudam a evitar que o usuário veja os
+ * códigos técnicos da API.
+ */
 const STATUS_LABEL: Record<StatusId, string> = {
     PENDENTE: "Pendente",
     EM_SEPARACAO: "Em separação",
@@ -124,6 +212,12 @@ const STATUS_LABEL: Record<StatusId, string> = {
     RECUSADA: "Recusada",
 };
 
+/**
+ * Classes visuais dos badges por status.
+ *
+ * Centralizar essas classes evita duplicação e mantém a aparência dos status
+ * consistente em toda a tela.
+ */
 const STATUS_BADGE_CLASS: Record<StatusId, string> = {
     PENDENTE: "border-amber-200 bg-amber-50 text-amber-800",
     EM_SEPARACAO: "border-sky-200 bg-sky-50 text-sky-800",
@@ -133,6 +227,13 @@ const STATUS_BADGE_CLASS: Record<StatusId, string> = {
     RECUSADA: "border-rose-200 bg-rose-50 text-rose-800",
 };
 
+/**
+ * Normaliza qualquer valor recebido para um StatusId conhecido.
+ *
+ * A API pode retornar string, null, undefined ou valores inesperados. Esta
+ * função protege o restante da interface garantindo que sempre haverá um status
+ * válido para labels, cores e regras de ação.
+ */
 function toStatus(v: unknown): StatusId {
     const s = String(v || "").toUpperCase();
 
@@ -150,19 +251,42 @@ function toStatus(v: unknown): StatusId {
     return "PENDENTE";
 }
 
+/**
+ * Retorna o texto amigável de um status.
+ *
+ * Usa `toStatus` antes de consultar o mapa, então também funciona quando a API
+ * envia status em formatos inesperados.
+ */
 function statusLabel(v: unknown) {
     return STATUS_LABEL[toStatus(v)] || String(v || "");
 }
 
+/**
+ * Retorna as classes Tailwind correspondentes ao status.
+ *
+ * Essa função é usada pelo componente Badge para aplicar a cor correta.
+ */
 function statusClass(v: unknown) {
     return STATUS_BADGE_CLASS[toStatus(v)] || STATUS_BADGE_CLASS.PENDENTE;
 }
 
+/**
+ * Converte valores numéricos vindos da API ou do formulário para number.
+ *
+ * A função aceita números em string com vírgula decimal, como `"10,5"`.
+ * Quando o valor não pode ser convertido, retorna 0 para evitar erro na tela.
+ */
 function asNumber(v: unknown) {
     const n = Number(String(v ?? "0").replace(",", "."));
     return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Formata um número para o padrão brasileiro.
+ *
+ * Usado para exibir quantidades solicitadas e saldos disponíveis no modal de
+ * envio. Por padrão, permite até três casas decimais.
+ */
 function numberBR(v: unknown, decimals = 3) {
     return new Intl.NumberFormat("pt-BR", {
         minimumFractionDigits: 0,
@@ -170,6 +294,13 @@ function numberBR(v: unknown, decimals = 3) {
     }).format(asNumber(v));
 }
 
+/**
+ * Converte valores decimais para o formato esperado pela API.
+ *
+ * O usuário ou a própria API podem trabalhar com valores brasileiros, como
+ * `"1.234,56"`. Para envio ao backend, a função remove separadores de milhar e
+ * troca vírgula decimal por ponto.
+ */
 function decimalToApi(v: string | number | null | undefined) {
     if (typeof v === "number") return Number.isFinite(v) ? String(v) : "0";
 
@@ -183,12 +314,23 @@ function decimalToApi(v: string | number | null | undefined) {
     return raw.replace(/[^0-9.\-]/g, "");
 }
 
+/**
+ * Formata data e hora para exibição em português do Brasil.
+ *
+ * A API pode retornar datas no formato `"YYYY-MM-DD HH:mm:ss"`. O JavaScript
+ * interpreta melhor datas com `T`, então a função normaliza o valor antes de
+ * criar o objeto Date.
+ *
+ * Se a data estiver vazia, retorna `-`. Se for inválida, retorna o valor
+ * original para não esconder informação útil para diagnóstico.
+ */
 function fmtDateTime(value?: string | null) {
     if (!value) return "-";
 
     try {
         const normalized = String(value).includes("T") ? String(value) : String(value).replace(" ", "T");
         const d = new Date(normalized);
+
         if (Number.isNaN(d.getTime())) return String(value);
 
         return new Intl.DateTimeFormat("pt-BR", {
@@ -200,20 +342,45 @@ function fmtDateTime(value?: string | null) {
     }
 }
 
+/**
+ * Resolve o texto do destino da requisição.
+ *
+ * Prioriza o nome cadastrado da unidade. Caso não exista, usa o texto livre
+ * retornado pela API. Se nenhum dos dois vier preenchido, exibe `-`.
+ */
 function destinationText(row?: ReqListRow | ReqDetail | null) {
     if (!row) return "-";
     return row.unidade_destino_nome || row.unidade_destino_texto || "-";
 }
 
+/**
+ * Retorna o código exibido da requisição.
+ *
+ * Se a API enviar `codigo`, ele é usado. Caso contrário, cria um código visual
+ * simples a partir do ID.
+ */
 function reqCode(row?: ReqListRow | ReqDetail | null) {
     if (!row) return "REQ";
     return row.codigo || `REQ-${row.id}`;
 }
 
+/**
+ * Converte diferentes representações de verdadeiro para boolean.
+ *
+ * A API pode retornar 1, "1", true ou "true". Essa função padroniza a leitura,
+ * usada principalmente para identificar requisições atrasadas há mais de 24h.
+ */
 function isTruthy(v: unknown) {
     return v === 1 || v === "1" || v === true || String(v).toLowerCase() === "true";
 }
 
+/**
+ * Lê a resposta HTTP garantindo que ela seja JSON.
+ *
+ * Se a API retornar HTML, texto puro ou um erro de servidor fora do formato
+ * esperado, a função lança uma mensagem com o início da resposta para facilitar
+ * manutenção e diagnóstico.
+ */
 async function safeJson<T>(r: Response): Promise<T> {
     const ct = r.headers.get("content-type") || "";
 
@@ -225,6 +392,13 @@ async function safeJson<T>(r: Response): Promise<T> {
     return (await r.json()) as T;
 }
 
+/**
+ * Helper para requisições GET.
+ *
+ * Monta a URL com query string a partir de um objeto, ignorando parâmetros
+ * vazios ou indefinidos. Também envia cookies de sessão com `credentials:
+ * "include"`, permitindo que a API identifique o usuário logado.
+ */
 async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
     const u = new URL(API_BASE);
 
@@ -242,6 +416,12 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
     return safeJson<T>(r);
 }
 
+/**
+ * Helper para requisições POST.
+ *
+ * Envia o corpo como JSON e inclui os cookies da sessão. É usado nas ações que
+ * alteram o estado da requisição.
+ */
 async function apiPost<T>(body: Record<string, unknown>) {
     const r = await fetch(API_BASE, {
         method: "POST",
@@ -254,10 +434,24 @@ async function apiPost<T>(body: Record<string, unknown>) {
     return safeJson<T>(r);
 }
 
+/**
+ * Componente base para blocos em formato de cartão.
+ *
+ * Centraliza borda, fundo, sombra e arredondamento. Assim, qualquer mudança
+ * visual nos cards pode ser feita em um único lugar.
+ */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
     return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
 }
 
+/**
+ * Botão reutilizável da página.
+ *
+ * `variant` define o estilo:
+ * `solid` para ação principal,
+ * `ghost` para ação secundária,
+ * `danger` para ação destrutiva ou sensível, como recusar uma requisição.
+ */
 function Button({
     children,
     variant = "solid",
@@ -281,6 +475,11 @@ function Button({
     );
 }
 
+/**
+ * Wrapper para campos de formulário.
+ *
+ * Renderiza um label padronizado acima do campo recebido em `children`.
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
@@ -290,6 +489,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     );
 }
 
+/**
+ * Select padronizado.
+ *
+ * Usado no modal de envio para escolher o depósito de origem. Aceita todas as
+ * props nativas de um `<select>`.
+ */
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     return (
         <select
@@ -303,6 +508,12 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     );
 }
 
+/**
+ * Textarea padronizado.
+ *
+ * Usado para observação de envio e motivo de recusa. Aceita todas as props
+ * nativas de um `<textarea>`.
+ */
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     return (
         <textarea
@@ -316,10 +527,25 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
     );
 }
 
+/**
+ * Badge visual para status.
+ *
+ * Usa as funções `statusLabel` e `statusClass` para transformar o status técnico
+ * em texto amigável e cor correspondente.
+ */
 function Badge({ status }: { status: unknown }) {
     return <span className={["inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold", statusClass(status)].join(" ")}>{statusLabel(status)}</span>;
 }
 
+/**
+ * Modal reutilizável.
+ *
+ * Responsabilidades:
+ * 1. Criar a camada escura sobre a tela.
+ * 2. Exibir título, botão de fechar e conteúdo.
+ * 3. Bloquear o scroll do body enquanto estiver aberto.
+ * 4. Permitir ajuste de largura máxima via `maxWidth`.
+ */
 function Modal({
     open,
     title,
@@ -362,6 +588,13 @@ function Modal({
     );
 }
 
+/**
+ * Estado vazio da fila.
+ *
+ * Aparece quando não há nenhuma requisição em andamento. Requisições entregues,
+ * recusadas ou canceladas saem automaticamente desta tela, então não aparecem
+ * como histórico aqui.
+ */
 function EmptyState() {
     return (
         <Card className="p-6 text-center">
@@ -371,26 +604,69 @@ function EmptyState() {
     );
 }
 
+/**
+ * Página principal de operação de requisições.
+ *
+ * Esta tela é voltada ao operador responsável pelo fluxo operacional:
+ * iniciar separação, enviar materiais, concluir recebimento e recusar
+ * requisições quando necessário.
+ */
 export default function OperarRequisicoesPage() {
+    /**
+     * Dados estruturais carregados no início.
+     *
+     * `me` identifica o operador logado.
+     * `depositos` alimenta o select de depósito de origem no envio.
+     * `saldos` permite validar se há quantidade suficiente antes do envio.
+     * `rows` contém a fila de requisições em andamento.
+     */
     const [me, setMe] = useState<Me | null>(null);
     const [depositos, setDepositos] = useState<Deposito[]>([]);
     const [saldos, setSaldos] = useState<Saldo[]>([]);
     const [rows, setRows] = useState<ReqListRow[]>([]);
 
+    /**
+     * Estados gerais de interface.
+     *
+     * `loading` controla o carregamento inicial ou atualização geral.
+     * `busy` bloqueia ações concorrentes enquanto uma operação está em andamento.
+     * `error` exibe mensagens de erro.
+     * `okMsg` exibe mensagens de sucesso.
+     */
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [okMsg, setOkMsg] = useState("");
 
+    /**
+     * Estados do modal de envio.
+     *
+     * `sendReq` guarda a requisição detalhada, já com itens.
+     * `sendDepositoId` guarda o depósito escolhido como origem.
+     * `sendObs` guarda uma observação opcional para o envio.
+     */
     const [sendOpen, setSendOpen] = useState(false);
     const [sendReq, setSendReq] = useState<ReqDetail | null>(null);
     const [sendDepositoId, setSendDepositoId] = useState<number>(0);
     const [sendObs, setSendObs] = useState("");
 
+    /**
+     * Estados do modal de recusa.
+     *
+     * `rejectReq` guarda a requisição que será recusada.
+     * `rejectReason` guarda o motivo obrigatório informado pelo operador.
+     */
     const [rejectOpen, setRejectOpen] = useState(false);
     const [rejectReq, setRejectReq] = useState<ReqListRow | null>(null);
     const [rejectReason, setRejectReason] = useState("");
 
+    /**
+     * Mapa de saldos por produto e depósito.
+     *
+     * A chave segue o formato `produto_id:deposito_id`. Isso permite consultar
+     * rapidamente o saldo disponível de cada item no depósito selecionado, sem
+     * precisar varrer o array de saldos a cada validação.
+     */
     const saldoMap = useMemo(() => {
         const map = new Map<string, number>();
 
@@ -401,6 +677,13 @@ export default function OperarRequisicoesPage() {
         return map;
     }, [saldos]);
 
+    /**
+     * Carrega dados iniciais da tela.
+     *
+     * Busca operador logado, lista de depósitos e saldos atuais. Esses dados são
+     * necessários antes de enviar uma requisição, pois o envio depende de origem
+     * e disponibilidade de estoque.
+     */
     const loadInit = useCallback(async () => {
         const data = await apiGet<InitResp>({ action: "init" });
 
@@ -411,6 +694,12 @@ export default function OperarRequisicoesPage() {
         setSaldos(data.saldos || []);
     }, []);
 
+    /**
+     * Carrega a fila de requisições em andamento.
+     *
+     * Usa `STATUS_FILA` para limitar a listagem aos status operacionais:
+     * pendente, em separação e em trânsito.
+     */
     const loadRows = useCallback(async () => {
         const data = await apiGet<ListResp>({
             action: "fila",
@@ -423,6 +712,12 @@ export default function OperarRequisicoesPage() {
         setRows(data.rows || []);
     }, []);
 
+    /**
+     * Atualiza todos os dados da tela.
+     *
+     * Recarrega tanto os dados estruturais quanto a fila. É usado no primeiro
+     * carregamento e no botão Atualizar.
+     */
     const refreshAll = useCallback(async () => {
         setLoading(true);
         setError("");
@@ -437,10 +732,20 @@ export default function OperarRequisicoesPage() {
         }
     }, [loadInit, loadRows]);
 
+    /**
+     * Executa o carregamento inicial quando a página é montada.
+     */
     useEffect(() => {
         void refreshAll();
     }, [refreshAll]);
 
+    /**
+     * Recarrega dados após uma ação bem sucedida.
+     *
+     * É usado depois de iniciar separação, enviar, concluir ou recusar. Recarregar
+     * os dados garante que a fila, os saldos e os status fiquem sincronizados com
+     * o backend.
+     */
     async function refreshAfterAction(msg?: string) {
         await loadInit();
         await loadRows();
@@ -448,6 +753,12 @@ export default function OperarRequisicoesPage() {
         if (msg) setOkMsg(msg);
     }
 
+    /**
+     * Inicia a separação de uma requisição pendente.
+     *
+     * Essa ação muda a requisição de PENDENTE para EM_SEPARACAO. Após sucesso,
+     * a tela é atualizada e orienta o operador para o próximo passo.
+     */
     async function startSeparation(row: ReqListRow) {
         if (busy) return;
 
@@ -468,6 +779,13 @@ export default function OperarRequisicoesPage() {
         }
     }
 
+    /**
+     * Prepara o modal de envio de material.
+     *
+     * Antes de enviar, a tela precisa buscar os detalhes da requisição para obter
+     * os itens. Depois disso, define o depósito de origem padrão quando possível
+     * e abre o modal.
+     */
     async function prepareSend(row: ReqListRow) {
         if (busy) return;
 
@@ -491,6 +809,19 @@ export default function OperarRequisicoesPage() {
         }
     }
 
+    /**
+     * Validação do envio de material.
+     *
+     * Verifica se:
+     * 1. A requisição detalhada foi carregada.
+     * 2. Existem itens na requisição.
+     * 3. Um depósito de origem foi selecionado.
+     * 4. Todas as quantidades solicitadas são válidas.
+     * 5. O depósito selecionado possui saldo suficiente para cada item.
+     *
+     * O uso de `useMemo` evita recalcular a validação inteira em todo render,
+     * recalculando somente quando mudam a requisição, o depósito ou os saldos.
+     */
     const sendValidation = useMemo(() => {
         if (!sendReq) return { ok: false, msg: "Requisição não carregada." };
         if (!sendReq.items?.length) return { ok: false, msg: "Requisição sem itens." };
@@ -508,6 +839,13 @@ export default function OperarRequisicoesPage() {
         return { ok: true, msg: "Pronto para enviar." };
     }, [saldoMap, sendDepositoId, sendReq]);
 
+    /**
+     * Confirma o envio do material.
+     *
+     * Envia para a API o depósito de origem, observação opcional e a lista de
+     * itens com quantidade enviada. Nesta versão, a quantidade enviada é igual à
+     * quantidade solicitada.
+     */
     async function confirmSend() {
         if (!sendReq || !sendValidation.ok || busy) return;
 
@@ -532,6 +870,7 @@ export default function OperarRequisicoesPage() {
             setSendOpen(false);
             setSendReq(null);
             setSendObs("");
+
             await refreshAfterAction(data.msg || "Material enviado. Próximo passo: concluir.");
         } catch (e: any) {
             setError(e?.message || "Erro ao enviar material.");
@@ -540,6 +879,13 @@ export default function OperarRequisicoesPage() {
         }
     }
 
+    /**
+     * Conclui uma requisição em trânsito.
+     *
+     * Antes de confirmar o recebimento, busca os detalhes para obter os itens.
+     * A quantidade recebida enviada à API usa a quantidade enviada, quando
+     * existir, ou a quantidade solicitada como fallback.
+     */
     async function finishRequest(row: ReqListRow) {
         if (busy) return;
 
@@ -570,6 +916,12 @@ export default function OperarRequisicoesPage() {
         }
     }
 
+    /**
+     * Abre o modal de recusa.
+     *
+     * Limpa mensagens anteriores e zera o motivo para evitar reaproveitar texto
+     * digitado em outra requisição.
+     */
     function openReject(row: ReqListRow) {
         setRejectReq(row);
         setRejectReason("");
@@ -578,6 +930,12 @@ export default function OperarRequisicoesPage() {
         setOkMsg("");
     }
 
+    /**
+     * Confirma a recusa da requisição.
+     *
+     * O motivo é obrigatório. Após sucesso, fecha o modal, limpa os estados e
+     * recarrega os dados para remover ou atualizar a requisição na fila.
+     */
     async function confirmReject() {
         if (!rejectReq || busy) return;
 
@@ -602,6 +960,7 @@ export default function OperarRequisicoesPage() {
             setRejectOpen(false);
             setRejectReq(null);
             setRejectReason("");
+
             await refreshAfterAction(data.msg || "Requisição recusada.");
         } catch (e: any) {
             setError(e?.message || "Erro ao recusar requisição.");
@@ -610,6 +969,13 @@ export default function OperarRequisicoesPage() {
         }
     }
 
+    /**
+     * Decide qual ação principal executar conforme o status atual.
+     *
+     * PENDENTE inicia separação.
+     * EM_SEPARACAO abre o fluxo de envio.
+     * EM_TRANSITO conclui a requisição.
+     */
     async function handleMainAction(row: ReqListRow) {
         const status = toStatus(row.status);
 
@@ -734,11 +1100,30 @@ export default function OperarRequisicoesPage() {
     );
 }
 
+/**
+ * Card operacional de uma requisição.
+ *
+ * Mostra os principais dados da requisição e oferece duas ações:
+ * ação principal do fluxo e recusa. A ação principal muda conforme o status:
+ * PENDENTE vira "Iniciar", EM_SEPARACAO vira "Enviar" e EM_TRANSITO vira
+ * "Concluir".
+ */
 function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: boolean; onMain: () => void; onReject: () => void }) {
     const status = toStatus(row.status);
+
+    /**
+     * Requisições só podem ser recusadas enquanto ainda não foram enviadas.
+     */
     const canReject = status === "PENDENTE" || status === "EM_SEPARACAO";
 
+    /**
+     * Texto do botão principal, calculado a partir do status atual.
+     */
     const mainLabel = status === "PENDENTE" ? "Iniciar" : status === "EM_SEPARACAO" ? "Enviar" : status === "EM_TRANSITO" ? "Concluir" : "Finalizada";
+
+    /**
+     * Texto auxiliar que orienta o operador sobre o próximo passo do fluxo.
+     */
     const nextText = status === "PENDENTE" ? "Próximo passo: enviar" : status === "EM_SEPARACAO" ? "Próximo passo: concluir" : status === "EM_TRANSITO" ? "Ao concluir, sai da tela" : "";
 
     return (
