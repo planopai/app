@@ -78,6 +78,10 @@ type HistoricoRow = {
     tipo: "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "AJUSTE" | "CADASTRO_PRODUTO";
     produto_id: ID;
     codigo_barras_snapshot: string;
+    lote_id?: ID | null;
+    numero_lote_snapshot?: string | null;
+    custo_unitario_snapshot?: string | number | null;
+    custo_total_snapshot?: string | number | null;
     quantidade: number | null;
     deposito_origem_id: ID | null;
     deposito_destino_id: ID | null;
@@ -328,7 +332,7 @@ const tabActions: TabAction[] = [
 
 type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
-type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number };
+type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number; custoUnitario: number };
 type SaidaItem = { id: number; payload: any; resumo: string };
 type TrfItem = { id: number; payload: any; resumo: string };
 
@@ -3143,12 +3147,13 @@ export default function Page() {
 
     // itens que serão confirmados no popup (snapshot)
     const [entradaConcluirItens, setEntradaConcluirItens] = useState<
-        Array<{ payload: any; resumo: string; nome: string; qtd: number }>
+        Array<{ payload: any; resumo: string; nome: string; qtd: number; custoUnitario: number }>
     >([]);
 
     const [entradaBarcode, setEntradaBarcode] = useState("");
     const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
     const [entradaQtd, setEntradaQtd] = useState<string>("1");
+    const [entradaCustoUnitario, setEntradaCustoUnitario] = useState<string>("R$ 0,00");
 
     // ✅ agora a observação fica visualmente abaixo da fila (mas continua sendo usada)
     const [entradaObs, setEntradaObs] = useState("");
@@ -3437,6 +3442,7 @@ export default function Page() {
         setEntradaFabFiltroId("Todos");
         setEntradaCatFiltroId("Todas");
         setEntradaQtd("1");
+        setEntradaCustoUnitario("R$ 0,00");
         setEntradaObs("");
     }
 
@@ -3447,6 +3453,7 @@ export default function Page() {
         setEntradaProdutoId(0);
         setEntradaProdQuery("");
         setEntradaQtd("1");
+        setEntradaCustoUnitario("R$ 0,00");
     }
 
     // ✅ NOVO: cancelar fecha e limpa tudo
@@ -3456,7 +3463,7 @@ export default function Page() {
         setEntradaOpen(false);
     }
 
-    function buildEntradaPayloadFromForm(): { payload: any; resumo: string; nome: string; qtd: number } | null {
+    function buildEntradaPayloadFromForm(): { payload: any; resumo: string; nome: string; qtd: number; custoUnitario: number } | null {
         if (!me) {
             alert("Sessão inválida. Recarregue a página.");
             return null;
@@ -3464,6 +3471,7 @@ export default function Page() {
 
         const deposito_id = Number(entradaDepositoId);
         const quantidade = clampInt(entradaQtd || "0");
+        const custo_unitario = parseBRLToNumber(entradaCustoUnitario);
         const produtoSelecionado = entradaProdutoExistente;
         const codigo_barras = String(produtoSelecionado?.codigo_barras || entradaBarcode).trim();
 
@@ -3471,21 +3479,23 @@ export default function Page() {
         if (!produtoSelecionado) return alert("Selecione um produto."), null;
         if (!codigo_barras) return alert("O produto selecionado não possui código de barras."), null;
         if (quantidade <= 0) return alert("Quantidade inválida."), null;
+        if (custo_unitario <= 0) return alert("Informe o preço de custo desta entrada."), null;
 
         const payload: any = {
             action: "entrada",
             deposito_id,
             quantidade,
             codigo_barras,
+            custo_unitario,
             observacao: entradaObs.trim() || undefined,
         };
 
         const nomeProduto = produtoSelecionado.nome || "";
 
-        const resumo = `${nomeProduto} — CB ${codigo_barras} — qtd ${quantidade} — Dep ${depById.get(deposito_id)?.nome || deposito_id
+        const resumo = `${nomeProduto} — CB ${codigo_barras} — qtd ${quantidade} — custo ${moneyBRL(custo_unitario)} — Dep ${depById.get(deposito_id)?.nome || deposito_id
             }`;
 
-        return { payload, resumo, nome: nomeProduto, qtd: quantidade };
+        return { payload, resumo, nome: nomeProduto, qtd: quantidade, custoUnitario: custo_unitario };
     }
 
 
@@ -3553,11 +3563,12 @@ export default function Page() {
 
             const nome = String(it.payload?.nome || prod?.nome || "(sem nome)");
             const qtd = clampInt(it.payload?.quantidade);
+            const custoUnitario = Number(it.payload?.custo_unitario || it.custoUnitario || 0);
 
             // ✅ aplica observação do lote no momento da conclusão
             const payload = obs ? { ...it.payload, observacao: obs } : { ...it.payload };
 
-            return { payload, resumo: it.resumo, nome, qtd };
+            return { payload, resumo: it.resumo, nome, qtd, custoUnitario };
         });
 
         // se o usuário deixou um item “no formulário” (barcode preenchido), inclui no snapshot também
@@ -3570,10 +3581,11 @@ export default function Page() {
 
             const nome = String(built.payload?.nome || prod?.nome || "(sem nome)");
             const qtd = clampInt(built.payload?.quantidade);
+            const custoUnitario = Number(built.payload?.custo_unitario || built.custoUnitario || 0);
 
             const payload = obs ? { ...built.payload, observacao: obs } : { ...built.payload };
 
-            base.push({ payload, resumo: built.resumo, nome, qtd });
+            base.push({ payload, resumo: built.resumo, nome, qtd, custoUnitario });
         }
 
         return base;
@@ -5922,6 +5934,8 @@ export default function Page() {
                                                                 </div>
                                                                 <div className="text-xs text-slate-500">
                                                                     CB {h.codigo_barras_snapshot}
+                                                                    {h.numero_lote_snapshot ? <> • Lote {h.numero_lote_snapshot}</> : null}
+                                                                    {h.custo_unitario_snapshot !== null && h.custo_unitario_snapshot !== undefined ? <> • Custo {moneyBRL(Number(h.custo_unitario_snapshot) || 0)}</> : null}
                                                                 </div>
                                                             </div>
 
@@ -6451,7 +6465,7 @@ export default function Page() {
                             ) : null}
                         </div>
 
-                        {/* 3ª linha: Quantidade + Adicionar à lista */}
+                        {/* 3ª linha: Quantidade + preço de custo */}
                         <Field label="Quantidade">
                             <TextInput
                                 type="text"
@@ -6460,6 +6474,14 @@ export default function Page() {
                                 value={entradaQtd}
                                 onChange={(e) => setEntradaQtd(e.target.value.replace(/\D/g, ""))}
                                 placeholder="1"
+                            />
+                        </Field>
+
+                        <Field label="Preço de custo desta entrada" hint="Começa zerado. Informe o novo custo do lote.">
+                            <TextInput
+                                value={entradaCustoUnitario}
+                                onChange={(e) => setEntradaCustoUnitario(maskBRLInput(e.target.value))}
+                                placeholder="R$ 0,00"
                             />
                         </Field>
 
@@ -6511,9 +6533,15 @@ export default function Page() {
                                             </p>
 
                                             {/* ✅ Quantidade maior e mais visível */}
-                                            <div className="mt-2 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                <span className="text-xs text-slate-600">Qtd</span>
-                                                <span className="text-lg font-bold leading-none text-slate-900">{it.qtd}</span>
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Qtd</span>
+                                                    <span className="text-lg font-bold leading-none text-slate-900">{it.qtd}</span>
+                                                </div>
+                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Custo</span>
+                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoUnitario || 0)}</span>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -6600,7 +6628,7 @@ export default function Page() {
                                     <div className="min-w-0">
                                         <p className="truncate text-sm font-semibold text-slate-900">{it.nome}</p>
                                         <p className="text-xs text-slate-500">
-                                            Quantidade: <b>{it.qtd}</b>
+                                            Quantidade: <b>{it.qtd}</b> • Custo: <b>{moneyBRL(it.custoUnitario || 0)}</b>
                                         </p>
                                     </div>
                                 </li>
