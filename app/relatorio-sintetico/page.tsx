@@ -521,7 +521,7 @@ export default function Page() {
     function exportarCsv() {
         const sep = ";";
         const header = [
-            "Produto",
+            "Produtos",
             "Código de barras",
             "Depósito",
             "Categoria",
