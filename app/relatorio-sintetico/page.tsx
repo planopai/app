@@ -1,13 +1,31 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type ID = number;
 
-type Deposito = { id: ID; nome: string };
-type Categoria = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em?: string };
-type Fabricante = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em?: string };
-type Classificacao = { id: ID; nome: string; ativo: 0 | 1 | number; atualizado_em?: string };
+type Deposito = {
+    id: ID;
+    nome: string;
+};
+
+type Categoria = {
+    id: ID;
+    nome: string;
+    ativo: 0 | 1 | number;
+};
+
+type Fabricante = {
+    id: ID;
+    nome: string;
+    ativo: 0 | 1 | number;
+};
+
+type Classificacao = {
+    id: ID;
+    nome: string;
+    ativo: 0 | 1 | number;
+};
 
 type Produto = {
     id: ID;
@@ -65,7 +83,6 @@ type LoteRow = {
     codigo_barras?: string | null;
     deposito_nome?: string | null;
     custo_total_atual?: string | number | null;
-    is_sintetico_sem_lote?: boolean;
 };
 
 type LotesResp = {
@@ -102,69 +119,29 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
-type ModoRelatorio = "consumo" | "estoque";
-type PeriodoConsumo = "dia" | "semana" | "mes" | "ano" | "personalizado";
-type VisaoRelatorio = "produto_deposito" | "produto";
-
-type PeriodoRange = {
-    inicio: Date | null;
-    fim: Date | null;
-    dias: number;
-    label: string;
-};
-
-type EstoqueRow = {
-    key: string;
-    produto_id: ID;
-    produto_nome: string;
-    codigo_barras: string;
-    deposito_id: ID | null;
+type EstoqueDeposito = {
+    deposito_id: ID;
     deposito_nome: string;
-    categoria_nome: string;
-    fabricante_nome: string;
-    classificacao_nome: string;
     quantidade: number;
-    valor_total: number;
+    minimo: number;
+    maximo: number;
+    lotes: number;
     custo_medio: number;
-    custo_min: number;
-    custo_max: number;
-    lotes_ativos: number;
+    valor_estoque: number;
     qtd_sem_lote: number;
-};
-
-type ConsumoRow = {
-    key: string;
-    produto_id: ID;
-    produto_nome: string;
-    codigo_barras: string;
-    deposito_id: ID | null;
-    deposito_nome: string;
-    categoria_nome: string;
-    fabricante_nome: string;
-    classificacao_nome: string;
-    consumo_total: number;
-    saidas: number;
-    media_dia: number;
-    projecao_semana: number;
-    projecao_mes: number;
-    projecao_ano: number;
-    estoque_atual: number;
-    custo_medio: number;
-    valor_consumido_estimado: number;
-    dias_cobertura: number | null;
-    sugestao_compra: number;
-    ultima_saida?: string | null;
 };
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
+const HISTORICO_LIMIT = 2000;
 
 function num(v: unknown): number {
     if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-    const s = String(v ?? "").trim();
-    if (!s) return 0;
 
-    const cleaned = s
+    const raw = String(v ?? "").trim();
+    if (!raw) return 0;
+
+    const cleaned = raw
         .replace(/R\$/gi, "")
         .replace(/\s/g, "")
         .replace(/[^0-9,.-]/g, "");
@@ -172,260 +149,140 @@ function num(v: unknown): number {
     if (!cleaned) return 0;
 
     if (cleaned.includes(",")) {
-        const br = cleaned.replace(/\./g, "").replace(",", ".");
-        const n = Number(br);
-        return Number.isFinite(n) ? n : 0;
+        const parsed = Number(cleaned.replace(/\./g, "").replace(",", "."));
+        return Number.isFinite(parsed) ? parsed : 0;
     }
 
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? n : 0;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function clampInt(v: unknown): number {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.floor(n));
+    const parsed = Number(v);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.floor(parsed));
 }
 
-function moneyBRL(n: number): string {
+function moneyBRL(value: number): string {
     try {
         return new Intl.NumberFormat("pt-BR", {
             style: "currency",
             currency: "BRL",
-        }).format(Number.isFinite(n) ? n : 0);
+        }).format(Number.isFinite(value) ? value : 0);
     } catch {
-        return `R$ ${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
+        return `R$ ${(Number.isFinite(value) ? value : 0).toFixed(2)}`;
     }
 }
 
-function intBR(n: number): string {
+function intBR(value: number): string {
     try {
-        return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(Number.isFinite(n) ? n : 0);
+        return new Intl.NumberFormat("pt-BR", {
+            maximumFractionDigits: 0,
+        }).format(Number.isFinite(value) ? value : 0);
     } catch {
-        return String(n);
+        return String(value);
     }
 }
 
-function decimalBR(n: number, digits = 1): string {
+function decimalBR(value: number, digits = 1): string {
     try {
         return new Intl.NumberFormat("pt-BR", {
             minimumFractionDigits: digits,
             maximumFractionDigits: digits,
-        }).format(Number.isFinite(n) ? n : 0);
+        }).format(Number.isFinite(value) ? value : 0);
     } catch {
-        return (Number.isFinite(n) ? n : 0).toFixed(digits).replace(".", ",");
+        return (Number.isFinite(value) ? value : 0).toFixed(digits).replace(".", ",");
     }
 }
 
 function fmtDateTime(iso?: string | null): string {
     if (!iso) return "";
-    try {
-        return new Intl.DateTimeFormat("pt-BR", {
-            dateStyle: "short",
-            timeStyle: "short",
-        }).format(new Date(iso));
-    } catch {
-        return String(iso);
-    }
+
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return String(iso);
+
+    return new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "short",
+    }).format(date);
 }
 
-function toDateSafe(v?: string | null): Date | null {
-    if (!v) return null;
-    const d = new Date(v);
-    return Number.isFinite(d.getTime()) ? d : null;
+function normalizeSearch(value: unknown): string {
+    return String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
 }
 
-function dateInputValue(d: Date): string {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
+function daysAgo(days: number): Date {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - days);
+    return date;
 }
 
-function startOfLocalDay(d: Date): Date {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-}
+async function safeJson<T>(response: Response): Promise<T> {
+    const contentType = response.headers.get("content-type") || "";
 
-function endOfLocalDay(d: Date): Date {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-
-function addDays(d: Date, days: number): Date {
-    const next = new Date(d);
-    next.setDate(next.getDate() + days);
-    return next;
-}
-
-function parseInputDate(v: string, end = false): Date | null {
-    if (!v) return null;
-    const [y, m, d] = v.split("-").map((x) => Number(x));
-    if (!y || !m || !d) return null;
-    const dt = new Date(y, m - 1, d);
-    return end ? endOfLocalDay(dt) : startOfLocalDay(dt);
-}
-
-function diffDaysInclusive(inicio: Date | null, fim: Date | null): number {
-    if (!inicio || !fim) return 1;
-    const a = startOfLocalDay(inicio).getTime();
-    const b = startOfLocalDay(fim).getTime();
-    if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return 1;
-    return Math.max(1, Math.floor((b - a) / 86400000) + 1);
-}
-
-function getPeriodoRange(periodo: PeriodoConsumo, dataIni: string, dataFim: string): PeriodoRange {
-    const hoje = new Date();
-    const fimHoje = endOfLocalDay(hoje);
-
-    if (periodo === "dia") {
-        const inicio = startOfLocalDay(hoje);
-        return { inicio, fim: fimHoje, dias: 1, label: "Hoje" };
-    }
-
-    if (periodo === "semana") {
-        const inicio = startOfLocalDay(addDays(hoje, -6));
-        return { inicio, fim: fimHoje, dias: 7, label: "Últimos 7 dias" };
-    }
-
-    if (periodo === "mes") {
-        const inicio = startOfLocalDay(addDays(hoje, -29));
-        return { inicio, fim: fimHoje, dias: 30, label: "Últimos 30 dias" };
-    }
-
-    if (periodo === "ano") {
-        const inicio = startOfLocalDay(addDays(hoje, -364));
-        return { inicio, fim: fimHoje, dias: 365, label: "Últimos 365 dias" };
-    }
-
-    const inicio = parseInputDate(dataIni, false);
-    const fim = parseInputDate(dataFim, true);
-
-    if (inicio && fim) {
-        return { inicio, fim, dias: diffDaysInclusive(inicio, fim), label: `${dataIni} até ${dataFim}` };
-    }
-
-    if (inicio && !fim) {
-        return { inicio, fim: fimHoje, dias: diffDaysInclusive(inicio, fimHoje), label: `${dataIni} até hoje` };
-    }
-
-    if (!inicio && fim) {
-        return { inicio: null, fim, dias: 1, label: `Até ${dataFim}` };
-    }
-
-    return { inicio: null, fim: null, dias: 1, label: "Todo histórico carregado" };
-}
-
-function isWithinRange(iso: string, range: PeriodoRange): boolean {
-    const d = toDateSafe(iso);
-    if (!d) return false;
-    if (range.inicio && d < range.inicio) return false;
-    if (range.fim && d > range.fim) return false;
-    return true;
-}
-
-function escapeCsvCell(v: unknown, sep = ";"): string {
-    const s = String(v ?? "");
-    const mustQuote = s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(sep);
-    const escaped = s.replace(/"/g, '""');
-    return mustQuote ? `"${escaped}"` : escaped;
-}
-
-async function safeJson<T>(r: Response): Promise<T> {
-    const ct = r.headers.get("content-type") || "";
-    if (!ct.includes("application/json")) {
-        const txt = await r.text().catch(() => "");
+    if (!contentType.includes("application/json")) {
+        const text = await response.text().catch(() => "");
         throw new Error(
-            `Resposta inesperada (${ct || "sem content-type"}). ${txt ? `Conteúdo: ${txt.slice(0, 160)}...` : ""}`.trim()
+            `Resposta inesperada (${contentType || "sem content-type"}). ${text ? `Conteúdo: ${text.slice(0, 160)}...` : ""
+                }`.trim()
         );
     }
-    return (await r.json()) as T;
+
+    return (await response.json()) as T;
 }
 
-async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
-    const u = new URL(API_BASE, window.location.origin);
-    Object.entries(qs).forEach(([k, v]) => {
-        if (v === undefined) return;
-        u.searchParams.set(k, String(v));
+async function apiGet<T>(query: Record<string, string | number | boolean | undefined>): Promise<T> {
+    const url = new URL(API_BASE, window.location.origin);
+
+    Object.entries(query).forEach(([key, value]) => {
+        if (value === undefined) return;
+        url.searchParams.set(key, String(value));
     });
 
-    const r = await fetch(u.toString(), {
+    const response = await fetch(url.toString(), {
         method: "GET",
         cache: "no-store",
         credentials: "include",
     });
 
-    return await safeJson<T>(r);
-}
-
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-    return (
-        <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-700">{label}</span>
-            {children}
-            {hint ? <span className="mt-1 block text-[11px] text-slate-500">{hint}</span> : null}
-        </label>
-    );
-}
-
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-    return (
-        <input
-            {...props}
-            className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 shadow-sm outline-none sm:text-sm",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
-                props.className || "",
-            ].join(" ")}
-        />
-    );
-}
-
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-    return (
-        <select
-            {...props}
-            className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 shadow-sm outline-none sm:text-sm",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
-                props.className || "",
-            ].join(" ")}
-        />
-    );
-}
-
-function Button({
-    children,
-    variant = "solid",
-    className = "",
-    ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" | "soft" }) {
-    const base =
-        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[16px] font-semibold shadow-sm outline-none sm:text-sm " +
-        "focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50";
-
-    const cls =
-        variant === "solid"
-            ? "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
-            : variant === "soft"
-                ? "border border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200"
-                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
-
-    return (
-        <button {...props} className={[base, cls, className].join(" ")}>
-            {children}
-        </button>
-    );
+    return safeJson<T>(response);
 }
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return (
+        <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>
+            {children}
+        </section>
+    );
 }
 
-function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function KpiCard({
+    label,
+    value,
+    hint,
+    emphasis = false,
+}: {
+    label: string;
+    value: string;
+    hint?: string;
+    emphasis?: boolean;
+}) {
     return (
-        <Panel className="p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-            <div className="mt-2 text-2xl font-black tracking-tight text-slate-950">{value}</div>
-            {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
+        <Panel className={emphasis ? "border-slate-900 bg-slate-950 p-4 text-white" : "p-4"}>
+            <div className={emphasis ? "text-xs font-bold uppercase tracking-wide text-slate-300" : "text-xs font-bold uppercase tracking-wide text-slate-500"}>
+                {label}
+            </div>
+            <div className={emphasis ? "mt-2 text-2xl font-black tracking-tight text-white" : "mt-2 text-2xl font-black tracking-tight text-slate-950"}>
+                {value}
+            </div>
+            {hint ? (
+                <div className={emphasis ? "mt-1 text-xs text-slate-300" : "mt-1 text-xs text-slate-500"}>{hint}</div>
+            ) : null}
         </Panel>
     );
 }
@@ -439,19 +296,36 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
     );
 }
 
-function SimpleProgress({ value, max, danger = false }: { value: number; max: number; danger?: boolean }) {
-    const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+function SearchIcon() {
     return (
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-            <div className={danger ? "h-2 rounded-full bg-rose-500" : "h-2 rounded-full bg-slate-900"} style={{ width: `${pct}%` }} />
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-5 w-5">
+            <path
+                d="m21 21-4.35-4.35m1.35-5.65a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
+}
+
+function ProductPlaceholder({ name }: { name: string }) {
+    const initial = name.trim().charAt(0).toUpperCase() || "P";
+
+    return (
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-2xl font-black text-slate-500 sm:h-24 sm:w-24">
+            {initial}
         </div>
     );
 }
 
 export default function Page() {
-    const [mounted, setMounted] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [err, setErr] = useState("");
+    const searchBoxRef = useRef<HTMLDivElement>(null);
+
+    const [loadingBase, setLoadingBase] = useState(true);
+    const [loadingHistorico, setLoadingHistorico] = useState(false);
+    const [erro, setErro] = useState("");
+    const [erroHistorico, setErroHistorico] = useState("");
 
     const [depositos, setDepositos] = useState<Deposito[]>([]);
     const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -462,871 +336,832 @@ export default function Page() {
     const [lotes, setLotes] = useState<LoteRow[]>([]);
     const [historico, setHistorico] = useState<HistoricoRow[]>([]);
 
-    const [modoRelatorio, setModoRelatorio] = useState<ModoRelatorio>("consumo");
-    const [q, setQ] = useState("");
-    const [depositoId, setDepositoId] = useState<ID>(0);
-    const [categoriaId, setCategoriaId] = useState<ID>(0);
-    const [fabricanteId, setFabricanteId] = useState<ID>(0);
-    const [classificacaoId, setClassificacaoId] = useState<ID>(0);
-    const [visao, setVisao] = useState<VisaoRelatorio>("produto_deposito");
-    const [mostrarSemLote, setMostrarSemLote] = useState(true);
-    const [periodoConsumo, setPeriodoConsumo] = useState<PeriodoConsumo>("mes");
-    const [consumoDataIni, setConsumoDataIni] = useState("");
-    const [consumoDataFim, setConsumoDataFim] = useState("");
-    const [diasCoberturaAlvo, setDiasCoberturaAlvo] = useState<number>(30);
+    const [busca, setBusca] = useState("");
+    const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<ID | null>(null);
+    const [listaAberta, setListaAberta] = useState(false);
 
-    const produtoById = useMemo(() => new Map(produtos.map((p) => [Number(p.id), p])), [produtos]);
-    const depositoById = useMemo(() => new Map(depositos.map((d) => [Number(d.id), d])), [depositos]);
-    const categoriaById = useMemo(() => new Map(categorias.map((c) => [Number(c.id), c])), [categorias]);
-    const fabricanteById = useMemo(() => new Map(fabricantes.map((f) => [Number(f.id), f])), [fabricantes]);
-    const classificacaoById = useMemo(() => new Map(classificacoes.map((c) => [Number(c.id), c])), [classificacoes]);
-
-    useEffect(() => {
-        setMounted(true);
-        const hoje = new Date();
-        setConsumoDataFim(dateInputValue(hoje));
-        setConsumoDataIni(dateInputValue(addDays(hoje, -29)));
-    }, []);
-
-    async function carregar() {
-        setLoading(true);
-        setErr("");
-
-        try {
-            const [init, lotesResp, historicoResp] = await Promise.all([
-                apiGet<InitResp>({ init: 1, _ts: Date.now() }),
-                apiGet<LotesResp>({ action: "lotes_listar", somente_com_saldo: 1, _ts: Date.now() }),
-                apiGet<HistoricoResp>({ historico: 1, tipo: "SAIDA", limit: 500, _ts: Date.now() }),
-            ]);
-
-            if (!init.ok) throw new Error(init.msg || "Falha ao carregar dados iniciais.");
-            if (!lotesResp.ok) throw new Error(lotesResp.msg || "Falha ao carregar lotes.");
-            if (!historicoResp.ok) throw new Error(historicoResp.msg || "Falha ao carregar histórico de saídas.");
-
-            setDepositos(init.depositos || []);
-            setCategorias((init.categorias || []).filter((c) => Number(c.ativo) === 1));
-            setFabricantes((init.fabricantes || []).filter((f) => Number(f.ativo) === 1));
-            setClassificacoes((init.classificacoes || []).filter((c) => Number(c.ativo) === 1));
-            setProdutos((init.produtos || []).filter((p) => Number(p.ativo) === 1));
-            setSaldos(init.saldos || []);
-            setLotes(lotesResp.rows || []);
-            setHistorico(historicoResp.rows || []);
-        } catch (e: any) {
-            setErr(e?.message || "Erro ao carregar relatório.");
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    useEffect(() => {
-        if (!mounted) return;
-        carregar();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mounted]);
-
-    const lotesComFallback = useMemo(() => {
-        const ativos = (lotes || [])
-            .map((l) => ({ ...l, quantidade_atual: clampInt(l.quantidade_atual), custo_unitario: num(l.custo_unitario) }))
-            .filter((l) => clampInt(l.quantidade_atual) > 0);
-
-        if (!mostrarSemLote) return ativos;
-
-        const loteQtyByProdDep = new Map<string, number>();
-        for (const l of ativos) {
-            const key = `${Number(l.produto_id)}::${Number(l.deposito_id)}`;
-            loteQtyByProdDep.set(key, (loteQtyByProdDep.get(key) || 0) + clampInt(l.quantidade_atual));
-        }
-
-        const fallback: LoteRow[] = [];
-        for (const s of saldos || []) {
-            const qtdSaldo = clampInt(s.quantidade);
-            if (qtdSaldo <= 0) continue;
-
-            const pid = Number(s.produto_id);
-            const depId = Number(s.deposito_id);
-            const key = `${pid}::${depId}`;
-            const qtdComLote = loteQtyByProdDep.get(key) || 0;
-            const qtdSemLote = qtdSaldo - qtdComLote;
-            if (qtdSemLote <= 0) continue;
-
-            const p = produtoById.get(pid);
-            const d = depositoById.get(depId);
-            const custo = num(p?.preco_custo || 0);
-
-            fallback.push({
-                id: -1 * (fallback.length + 1),
-                produto_id: pid,
-                deposito_id: depId,
-                numero_lote: "SEM_LOTE",
-                custo_unitario: custo,
-                quantidade_inicial: qtdSemLote,
-                quantidade_atual: qtdSemLote,
-                produto_nome: p?.nome || `Produto #${pid}`,
-                codigo_barras: p?.codigo_barras || "",
-                deposito_nome: d?.nome || `Depósito #${depId}`,
-                custo_total_atual: custo * qtdSemLote,
-                is_sintetico_sem_lote: true,
-            });
-        }
-
-        return [...ativos, ...fallback];
-    }, [lotes, mostrarSemLote, saldos, produtoById, depositoById]);
-
-    const lotesFiltrados = useMemo(() => {
-        const qq = q.trim().toLowerCase();
-
-        return lotesComFallback.filter((l) => {
-            const p = produtoById.get(Number(l.produto_id));
-            const dep = depositoById.get(Number(l.deposito_id));
-
-            if (depositoId && Number(l.deposito_id) !== Number(depositoId)) return false;
-            if (categoriaId && Number(p?.categoria_id || 0) !== Number(categoriaId)) return false;
-            if (fabricanteId && Number(p?.fabricante_id || 0) !== Number(fabricanteId)) return false;
-            if (classificacaoId && Number(p?.classificacao_id || 0) !== Number(classificacaoId)) return false;
-
-            if (qq) {
-                const cat = p?.categoria_nome || (p?.categoria_id ? categoriaById.get(Number(p.categoria_id))?.nome : "") || "";
-                const fab = p?.fabricante_nome || (p?.fabricante_id ? fabricanteById.get(Number(p.fabricante_id))?.nome : "") || "";
-                const cls = p?.classificacao_nome || (p?.classificacao_id ? classificacaoById.get(Number(p.classificacao_id))?.nome : "") || "";
-                const blob = [p?.nome, p?.codigo_barras, l.produto_nome, l.codigo_barras, dep?.nome, l.deposito_nome, l.numero_lote, cat, fab, cls]
-                    .filter(Boolean)
-                    .join(" ")
-                    .toLowerCase();
-
-                if (!blob.includes(qq)) return false;
-            }
-
-            return true;
-        });
-    }, [lotesComFallback, produtoById, depositoById, depositoId, categoriaId, fabricanteId, classificacaoId, q, categoriaById, fabricanteById, classificacaoById]);
-
-    const estoqueRows = useMemo<EstoqueRow[]>(() => {
-        const map = new Map<string, EstoqueRow>();
-
-        for (const l of lotesFiltrados) {
-            const pid = Number(l.produto_id);
-            const depId = Number(l.deposito_id);
-            const p = produtoById.get(pid);
-            const dep = depositoById.get(depId);
-            const qtd = clampInt(l.quantidade_atual);
-            const custo = num(l.custo_unitario);
-            if (qtd <= 0) continue;
-
-            const key = visao === "produto" ? `p:${pid}` : `p:${pid}:d:${depId}`;
-            const catNome = p?.categoria_nome || (p?.categoria_id ? categoriaById.get(Number(p.categoria_id))?.nome : "") || "";
-            const fabNome = p?.fabricante_nome || (p?.fabricante_id ? fabricanteById.get(Number(p.fabricante_id))?.nome : "") || "";
-            const clsNome = p?.classificacao_nome || (p?.classificacao_id ? classificacaoById.get(Number(p.classificacao_id))?.nome : "") || "";
-
-            if (!map.has(key)) {
-                map.set(key, {
-                    key,
-                    produto_id: pid,
-                    produto_nome: p?.nome || l.produto_nome || `Produto #${pid}`,
-                    codigo_barras: p?.codigo_barras || l.codigo_barras || "",
-                    deposito_id: visao === "produto" ? null : depId,
-                    deposito_nome: visao === "produto" ? "Todos" : dep?.nome || l.deposito_nome || `Depósito #${depId}`,
-                    categoria_nome: catNome,
-                    fabricante_nome: fabNome,
-                    classificacao_nome: clsNome,
-                    quantidade: 0,
-                    valor_total: 0,
-                    custo_medio: 0,
-                    custo_min: custo,
-                    custo_max: custo,
-                    lotes_ativos: 0,
-                    qtd_sem_lote: 0,
-                });
-            }
-
-            const row = map.get(key)!;
-            row.quantidade += qtd;
-            row.valor_total += qtd * custo;
-            row.custo_min = Math.min(row.custo_min, custo);
-            row.custo_max = Math.max(row.custo_max, custo);
-            row.lotes_ativos += l.is_sintetico_sem_lote ? 0 : 1;
-            row.qtd_sem_lote += l.is_sintetico_sem_lote ? qtd : 0;
-        }
-
-        return Array.from(map.values())
-            .map((r) => ({ ...r, custo_medio: r.quantidade > 0 ? r.valor_total / r.quantidade : 0 }))
-            .sort((a, b) => a.produto_nome.localeCompare(b.produto_nome, "pt-BR") || a.deposito_nome.localeCompare(b.deposito_nome, "pt-BR"));
-    }, [lotesFiltrados, produtoById, depositoById, categoriaById, fabricanteById, classificacaoById, visao]);
-
-    const resumoEstoque = useMemo(() => {
-        let totalUnidades = 0;
-        let valorTotal = 0;
-        let lotesAtivos = 0;
-        let qtdSemLote = 0;
-        const produtosSet = new Set<number>();
-        const depositosSet = new Set<number>();
-
-        for (const l of lotesFiltrados) {
-            const qtd = clampInt(l.quantidade_atual);
-            const custo = num(l.custo_unitario);
-            if (qtd <= 0) continue;
-
-            totalUnidades += qtd;
-            valorTotal += qtd * custo;
-            produtosSet.add(Number(l.produto_id));
-            depositosSet.add(Number(l.deposito_id));
-            if (l.is_sintetico_sem_lote) qtdSemLote += qtd;
-            else lotesAtivos++;
-        }
-
-        return {
-            totalUnidades,
-            valorTotal,
-            custoMedioGeral: totalUnidades > 0 ? valorTotal / totalUnidades : 0,
-            produtos: produtosSet.size,
-            depositos: depositosSet.size,
-            lotesAtivos,
-            qtdSemLote,
-        };
-    }, [lotesFiltrados]);
-
-    const consumoRange = useMemo(
-        () => getPeriodoRange(periodoConsumo, consumoDataIni, consumoDataFim),
-        [periodoConsumo, consumoDataIni, consumoDataFim]
+    const depositoById = useMemo(
+        () => new Map(depositos.map((deposito) => [Number(deposito.id), deposito])),
+        [depositos]
     );
 
-    const estoqueByKey = useMemo(() => {
-        const map = new Map<string, EstoqueRow>();
-        for (const r of estoqueRows) map.set(r.key, r);
-        return map;
-    }, [estoqueRows]);
+    const categoriaById = useMemo(
+        () => new Map(categorias.map((categoria) => [Number(categoria.id), categoria])),
+        [categorias]
+    );
 
-    const consumoRows = useMemo<ConsumoRow[]>(() => {
-        const map = new Map<string, ConsumoRow>();
-        const qq = q.trim().toLowerCase();
+    const fabricanteById = useMemo(
+        () => new Map(fabricantes.map((fabricante) => [Number(fabricante.id), fabricante])),
+        [fabricantes]
+    );
 
-        for (const h of historico || []) {
-            if (String(h.tipo || "").toUpperCase() !== "SAIDA") continue;
-            if (!isWithinRange(h.criado_em, consumoRange)) continue;
+    const classificacaoById = useMemo(
+        () => new Map(classificacoes.map((classificacao) => [Number(classificacao.id), classificacao])),
+        [classificacoes]
+    );
 
-            const pid = Number(h.produto_id || 0);
-            const depOrigemId = Number(h.deposito_origem_id || 0);
-            const qtd = clampInt(h.quantidade || 0);
-            if (pid <= 0 || qtd <= 0) continue;
+    const produtoSelecionado = useMemo(
+        () => produtos.find((produto) => Number(produto.id) === Number(produtoSelecionadoId)) || null,
+        [produtos, produtoSelecionadoId]
+    );
 
-            const p = produtoById.get(pid);
-            const dep = depositoById.get(depOrigemId);
+    async function carregarBase() {
+        setLoadingBase(true);
+        setErro("");
 
-            if (depositoId && depOrigemId !== Number(depositoId)) continue;
-            if (categoriaId && Number(p?.categoria_id || 0) !== Number(categoriaId)) continue;
-            if (fabricanteId && Number(p?.fabricante_id || 0) !== Number(fabricanteId)) continue;
-            if (classificacaoId && Number(p?.classificacao_id || 0) !== Number(classificacaoId)) continue;
+        try {
+            const [init, lotesResp] = await Promise.all([
+                apiGet<InitResp>({ init: 1, _ts: Date.now() }),
+                apiGet<LotesResp>({ action: "lotes_listar", somente_com_saldo: 1, _ts: Date.now() }),
+            ]);
 
-            const catNome = p?.categoria_nome || (p?.categoria_id ? categoriaById.get(Number(p.categoria_id))?.nome : "") || "";
-            const fabNome = p?.fabricante_nome || (p?.fabricante_id ? fabricanteById.get(Number(p.fabricante_id))?.nome : "") || "";
-            const clsNome = p?.classificacao_nome || (p?.classificacao_id ? classificacaoById.get(Number(p.classificacao_id))?.nome : "") || "";
+            if (!init.ok) throw new Error(init.msg || "Falha ao carregar produtos e saldos.");
+            if (!lotesResp.ok) throw new Error(lotesResp.msg || "Falha ao carregar os lotes.");
 
-            if (qq) {
-                const blob = [p?.nome, p?.codigo_barras, h.produto_nome, h.codigo_barras_snapshot, dep?.nome, h.deposito_origem_nome, h.observacao, catNome, fabNome, clsNome]
-                    .filter(Boolean)
-                    .join(" ")
-                    .toLowerCase();
+            const produtosAtivos = (init.produtos || []).filter((produto) => Number(produto.ativo) === 1);
 
-                if (!blob.includes(qq)) continue;
+            setDepositos(init.depositos || []);
+            setCategorias((init.categorias || []).filter((categoria) => Number(categoria.ativo) === 1));
+            setFabricantes((init.fabricantes || []).filter((fabricante) => Number(fabricante.ativo) === 1));
+            setClassificacoes((init.classificacoes || []).filter((classificacao) => Number(classificacao.ativo) === 1));
+            setProdutos(produtosAtivos);
+            setSaldos(init.saldos || []);
+            setLotes(lotesResp.rows || []);
+
+            if (
+                produtoSelecionadoId !== null &&
+                !produtosAtivos.some((produto) => Number(produto.id) === Number(produtoSelecionadoId))
+            ) {
+                setProdutoSelecionadoId(null);
+                setHistorico([]);
+                setBusca("");
+            }
+        } catch (error: unknown) {
+            setErro(error instanceof Error ? error.message : "Erro ao carregar a consulta de produtos.");
+        } finally {
+            setLoadingBase(false);
+        }
+    }
+
+    async function carregarHistoricoProduto(produtoId: ID) {
+        setLoadingHistorico(true);
+        setErroHistorico("");
+        setHistorico([]);
+
+        try {
+            const response = await apiGet<HistoricoResp>({
+                historico: 1,
+                tipo: "SAIDA",
+                produto_id: produtoId,
+                limit: HISTORICO_LIMIT,
+                _ts: Date.now(),
+            });
+
+            if (!response.ok) {
+                throw new Error(response.msg || "Falha ao carregar as saídas do produto.");
             }
 
-            const key = visao === "produto" ? `p:${pid}` : `p:${pid}:d:${depOrigemId}`;
-            const estoque = estoqueByKey.get(key);
-            const custoMedio = estoque?.custo_medio || num(p?.preco_custo || 0);
-            const estoqueAtual = estoque?.quantidade || 0;
+            const rows = (response.rows || [])
+                .filter(
+                    (row) =>
+                        Number(row.produto_id) === Number(produtoId) &&
+                        String(row.tipo || "").toUpperCase() === "SAIDA"
+                )
+                .sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime());
 
-            if (!map.has(key)) {
-                map.set(key, {
-                    key,
-                    produto_id: pid,
-                    produto_nome: p?.nome || h.produto_nome || `Produto #${pid}`,
-                    codigo_barras: p?.codigo_barras || h.codigo_barras_snapshot || "",
-                    deposito_id: visao === "produto" ? null : depOrigemId,
-                    deposito_nome: visao === "produto" ? "Todos" : dep?.nome || h.deposito_origem_nome || `Depósito #${depOrigemId}`,
-                    categoria_nome: catNome,
-                    fabricante_nome: fabNome,
-                    classificacao_nome: clsNome,
-                    consumo_total: 0,
-                    saidas: 0,
-                    media_dia: 0,
-                    projecao_semana: 0,
-                    projecao_mes: 0,
-                    projecao_ano: 0,
-                    estoque_atual: estoqueAtual,
-                    custo_medio: custoMedio,
-                    valor_consumido_estimado: 0,
-                    dias_cobertura: null,
-                    sugestao_compra: 0,
-                    ultima_saida: null,
-                });
+            setHistorico(rows);
+        } catch (error: unknown) {
+            setErroHistorico(error instanceof Error ? error.message : "Erro ao carregar as saídas do produto.");
+        } finally {
+            setLoadingHistorico(false);
+        }
+    }
+
+    useEffect(() => {
+        carregarBase();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        function handlePointerDown(event: MouseEvent) {
+            if (!searchBoxRef.current?.contains(event.target as Node)) {
+                setListaAberta(false);
             }
-
-            const row = map.get(key)!;
-            row.consumo_total += qtd;
-            row.saidas += 1;
-            row.valor_consumido_estimado += qtd * custoMedio;
-
-            const atual = toDateSafe(h.criado_em);
-            const ultima = toDateSafe(row.ultima_saida || "");
-            if (atual && (!ultima || atual > ultima)) row.ultima_saida = h.criado_em;
         }
 
-        const dias = Math.max(1, consumoRange.dias || 1);
-        const alvo = Math.max(1, clampInt(diasCoberturaAlvo) || 30);
+        document.addEventListener("mousedown", handlePointerDown);
+        return () => document.removeEventListener("mousedown", handlePointerDown);
+    }, []);
 
-        return Array.from(map.values())
-            .map((r) => {
-                const mediaDia = r.consumo_total / dias;
-                const diasCobertura = mediaDia > 0 ? r.estoque_atual / mediaDia : null;
+    const resultadosBusca = useMemo(() => {
+        const termo = normalizeSearch(busca);
+        if (!termo) return [];
+
+        return produtos
+            .map((produto) => {
+                const nome = normalizeSearch(produto.nome);
+                const codigo = normalizeSearch(produto.codigo_barras);
+                const descricao = normalizeSearch(produto.descricao);
+
+                let prioridade = 99;
+                if (codigo === termo) prioridade = 0;
+                else if (nome === termo) prioridade = 1;
+                else if (nome.startsWith(termo)) prioridade = 2;
+                else if (codigo.startsWith(termo)) prioridade = 3;
+                else if (nome.includes(termo)) prioridade = 4;
+                else if (codigo.includes(termo)) prioridade = 5;
+                else if (descricao.includes(termo)) prioridade = 6;
+
+                return { produto, prioridade };
+            })
+            .filter((item) => item.prioridade < 99)
+            .sort(
+                (a, b) =>
+                    a.prioridade - b.prioridade ||
+                    a.produto.nome.localeCompare(b.produto.nome, "pt-BR")
+            )
+            .slice(0, 12)
+            .map((item) => item.produto);
+    }, [busca, produtos]);
+
+    function selecionarProduto(produto: Produto) {
+        setProdutoSelecionadoId(Number(produto.id));
+        setBusca(produto.nome);
+        setListaAberta(false);
+        carregarHistoricoProduto(Number(produto.id));
+    }
+
+    function limparSelecao() {
+        setBusca("");
+        setProdutoSelecionadoId(null);
+        setHistorico([]);
+        setErroHistorico("");
+        setListaAberta(false);
+    }
+
+    const saldosProduto = useMemo(() => {
+        if (!produtoSelecionado) return [];
+
+        return saldos.filter(
+            (saldo) => Number(saldo.produto_id) === Number(produtoSelecionado.id)
+        );
+    }, [saldos, produtoSelecionado]);
+
+    const lotesProduto = useMemo(() => {
+        if (!produtoSelecionado) return [];
+
+        return lotes
+            .filter(
+                (lote) =>
+                    Number(lote.produto_id) === Number(produtoSelecionado.id) &&
+                    clampInt(lote.quantidade_atual) > 0
+            )
+            .sort((a, b) => {
+                const depositoA = depositoById.get(Number(a.deposito_id))?.nome || a.deposito_nome || "";
+                const depositoB = depositoById.get(Number(b.deposito_id))?.nome || b.deposito_nome || "";
+                return depositoA.localeCompare(depositoB, "pt-BR") || String(a.numero_lote).localeCompare(String(b.numero_lote), "pt-BR");
+            });
+    }, [lotes, produtoSelecionado, depositoById]);
+
+    const estoquePorDeposito = useMemo<EstoqueDeposito[]>(() => {
+        if (!produtoSelecionado) return [];
+
+        const custoCadastro = num(produtoSelecionado.preco_custo);
+
+        return saldosProduto
+            .map((saldo) => {
+                const depositoId = Number(saldo.deposito_id);
+                const quantidade = clampInt(saldo.quantidade);
+                const lotesDeposito = lotesProduto.filter(
+                    (lote) => Number(lote.deposito_id) === depositoId
+                );
+
+                const quantidadeLotes = lotesDeposito.reduce(
+                    (total, lote) => total + clampInt(lote.quantidade_atual),
+                    0
+                );
+
+                const valorLotes = lotesDeposito.reduce(
+                    (total, lote) =>
+                        total + clampInt(lote.quantidade_atual) * num(lote.custo_unitario),
+                    0
+                );
+
+                const custoMedioLotes = quantidadeLotes > 0 ? valorLotes / quantidadeLotes : custoCadastro;
+                const quantidadeCobertaPorLote = Math.min(quantidade, quantidadeLotes);
+                const quantidadeSemLote = Math.max(0, quantidade - quantidadeCobertaPorLote);
+                const valorEstoque =
+                    quantidadeCobertaPorLote * custoMedioLotes +
+                    quantidadeSemLote * custoCadastro;
 
                 return {
-                    ...r,
-                    media_dia: mediaDia,
-                    projecao_semana: mediaDia * 7,
-                    projecao_mes: mediaDia * 30,
-                    projecao_ano: mediaDia * 365,
-                    dias_cobertura: diasCobertura,
-                    sugestao_compra: Math.max(0, Math.ceil(mediaDia * alvo - r.estoque_atual)),
+                    deposito_id: depositoId,
+                    deposito_nome:
+                        depositoById.get(depositoId)?.nome || `Depósito #${depositoId}`,
+                    quantidade,
+                    minimo: clampInt(saldo.minimo),
+                    maximo: clampInt(saldo.maximo),
+                    lotes: lotesDeposito.length,
+                    custo_medio: quantidade > 0 ? valorEstoque / quantidade : custoCadastro,
+                    valor_estoque: valorEstoque,
+                    qtd_sem_lote: quantidadeSemLote,
                 };
             })
-            .sort((a, b) => b.sugestao_compra - a.sugestao_compra || b.consumo_total - a.consumo_total || a.produto_nome.localeCompare(b.produto_nome, "pt-BR"));
-    }, [
-        historico,
-        consumoRange,
-        q,
-        produtoById,
-        depositoById,
-        depositoId,
-        categoriaId,
-        fabricanteId,
-        classificacaoId,
-        categoriaById,
-        fabricanteById,
-        classificacaoById,
-        visao,
-        estoqueByKey,
-        diasCoberturaAlvo,
-    ]);
+            .filter((row) => row.quantidade > 0 || row.minimo > 0 || row.maximo > 0)
+            .sort((a, b) => b.quantidade - a.quantidade || a.deposito_nome.localeCompare(b.deposito_nome, "pt-BR"));
+    }, [produtoSelecionado, saldosProduto, lotesProduto, depositoById]);
 
-    const resumoConsumo = useMemo(() => {
-        let consumoTotal = 0;
-        let valorConsumido = 0;
-        let sugestaoCompra = 0;
-        let saidas = 0;
-        const produtosSet = new Set<number>();
+    const resumo = useMemo(() => {
+        if (!produtoSelecionado) return null;
 
-        for (const r of consumoRows) {
-            consumoTotal += r.consumo_total;
-            valorConsumido += r.valor_consumido_estimado;
-            sugestaoCompra += r.sugestao_compra;
-            saidas += r.saidas;
-            produtosSet.add(Number(r.produto_id));
-        }
+        const estoqueAtual = estoquePorDeposito.reduce(
+            (total, row) => total + row.quantidade,
+            0
+        );
 
-        const dias = Math.max(1, consumoRange.dias || 1);
+        const valorEstoque = estoquePorDeposito.reduce(
+            (total, row) => total + row.valor_estoque,
+            0
+        );
+
+        const qtdSemLote = estoquePorDeposito.reduce(
+            (total, row) => total + row.qtd_sem_lote,
+            0
+        );
+
+        const custoMedioCompra =
+            estoqueAtual > 0
+                ? valorEstoque / estoqueAtual
+                : lotesProduto.length > 0
+                    ? lotesProduto.reduce(
+                        (total, lote) =>
+                            total + clampInt(lote.quantidade_atual) * num(lote.custo_unitario),
+                        0
+                    ) /
+                    Math.max(
+                        1,
+                        lotesProduto.reduce(
+                            (total, lote) => total + clampInt(lote.quantidade_atual),
+                            0
+                        )
+                    )
+                    : num(produtoSelecionado.preco_custo);
+
+        const precoVenda = num(produtoSelecionado.valor);
+        const margemUnitaria = precoVenda - custoMedioCompra;
+        const margemPercentual = precoVenda > 0 ? (margemUnitaria / precoVenda) * 100 : 0;
+        const markupPercentual =
+            custoMedioCompra > 0 ? (margemUnitaria / custoMedioCompra) * 100 : null;
+
+        const saidasTotal = historico.reduce(
+            (total, movimento) => total + clampInt(movimento.quantidade),
+            0
+        );
+
+        const inicio30Dias = daysAgo(29);
+        const saidas30Dias = historico.reduce((total, movimento) => {
+            const data = new Date(movimento.criado_em);
+            if (!Number.isFinite(data.getTime()) || data < inicio30Dias) return total;
+            return total + clampInt(movimento.quantidade);
+        }, 0);
+
+        const mediaDiaria30Dias = saidas30Dias / 30;
+        const coberturaDias = mediaDiaria30Dias > 0 ? estoqueAtual / mediaDiaria30Dias : null;
+        const ultimaSaida = historico[0]?.criado_em || null;
 
         return {
-            consumoTotal,
-            valorConsumido,
-            sugestaoCompra,
-            saidas,
-            produtos: produtosSet.size,
-            mediaDia: consumoTotal / dias,
-            mediaMes: (consumoTotal / dias) * 30,
+            estoqueAtual,
+            valorEstoque,
+            qtdSemLote,
+            custoMedioCompra,
+            precoVenda,
+            margemUnitaria,
+            margemPercentual,
+            markupPercentual,
+            saidasTotal,
+            saidas30Dias,
+            mediaDiaria30Dias,
+            coberturaDias,
+            ultimaSaida,
+            movimentacoes: historico.length,
         };
-    }, [consumoRows, consumoRange]);
+    }, [produtoSelecionado, estoquePorDeposito, lotesProduto, historico]);
 
-    const topConsumoRows = useMemo(() => consumoRows.slice(0, 8), [consumoRows]);
-    const topConsumoMax = useMemo(() => Math.max(1, ...topConsumoRows.map((r) => r.consumo_total)), [topConsumoRows]);
-    const topCompraRows = useMemo(() => consumoRows.filter((r) => r.sugestao_compra > 0).slice(0, 8), [consumoRows]);
-    const topCompraMax = useMemo(() => Math.max(1, ...topCompraRows.map((r) => r.sugestao_compra)), [topCompraRows]);
+    const categoriaNome = produtoSelecionado
+        ? produtoSelecionado.categoria_nome ||
+        (produtoSelecionado.categoria_id
+            ? categoriaById.get(Number(produtoSelecionado.categoria_id))?.nome
+            : "") ||
+        ""
+        : "";
 
-    function limparFiltros() {
-        setQ("");
-        setDepositoId(0);
-        setCategoriaId(0);
-        setFabricanteId(0);
-        setClassificacaoId(0);
-    }
+    const fabricanteNome = produtoSelecionado
+        ? produtoSelecionado.fabricante_nome ||
+        (produtoSelecionado.fabricante_id
+            ? fabricanteById.get(Number(produtoSelecionado.fabricante_id))?.nome
+            : "") ||
+        ""
+        : "";
 
-    function exportarCsv() {
-        const sep = ";";
-
-        if (modoRelatorio === "consumo") {
-            const header = [
-                "Produto",
-                "Código de barras",
-                "Depósito",
-                "Categoria",
-                "Fabricante",
-                "Classificação",
-                "Período",
-                "Consumo no período",
-                "Média por dia",
-                "Projeção semana",
-                "Projeção mês",
-                "Projeção ano",
-                "Estoque atual",
-                "Dias de cobertura",
-                "Sugestão de compra",
-                "Custo médio",
-                "Valor consumido estimado",
-                "Saídas",
-                "Última saída",
-            ];
-
-            const lines = [header.map((h) => escapeCsvCell(h, sep)).join(sep)];
-
-            for (const r of consumoRows) {
-                lines.push(
-                    [
-                        r.produto_nome,
-                        r.codigo_barras,
-                        r.deposito_nome,
-                        r.categoria_nome,
-                        r.fabricante_nome,
-                        r.classificacao_nome,
-                        consumoRange.label,
-                        r.consumo_total,
-                        r.media_dia.toFixed(2).replace(".", ","),
-                        r.projecao_semana.toFixed(2).replace(".", ","),
-                        r.projecao_mes.toFixed(2).replace(".", ","),
-                        r.projecao_ano.toFixed(2).replace(".", ","),
-                        r.estoque_atual,
-                        r.dias_cobertura === null ? "" : r.dias_cobertura.toFixed(1).replace(".", ","),
-                        r.sugestao_compra,
-                        r.custo_medio.toFixed(2).replace(".", ","),
-                        r.valor_consumido_estimado.toFixed(2).replace(".", ","),
-                        r.saidas,
-                        r.ultima_saida ? fmtDateTime(r.ultima_saida) : "",
-                    ]
-                        .map((v) => escapeCsvCell(v, sep))
-                        .join(sep)
-                );
-            }
-
-            const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `relatorio_consumo_estoque_${new Date().toISOString().slice(0, 10)}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-            return;
-        }
-
-        const header = [
-            "Produto",
-            "Código de barras",
-            "Depósito",
-            "Categoria",
-            "Fabricante",
-            "Classificação",
-            "Quantidade",
-            "Custo médio ponderado",
-            "Valor em estoque",
-            "Menor custo em lote",
-            "Maior custo em lote",
-            "Lotes ativos",
-            "Qtd sem lote",
-        ];
-
-        const lines = [header.map((h) => escapeCsvCell(h, sep)).join(sep)];
-
-        for (const r of estoqueRows) {
-            lines.push(
-                [
-                    r.produto_nome,
-                    r.codigo_barras,
-                    r.deposito_nome,
-                    r.categoria_nome,
-                    r.fabricante_nome,
-                    r.classificacao_nome,
-                    r.quantidade,
-                    r.custo_medio.toFixed(2).replace(".", ","),
-                    r.valor_total.toFixed(2).replace(".", ","),
-                    r.custo_min.toFixed(2).replace(".", ","),
-                    r.custo_max.toFixed(2).replace(".", ","),
-                    r.lotes_ativos,
-                    r.qtd_sem_lote,
-                ]
-                    .map((v) => escapeCsvCell(v, sep))
-                    .join(sep)
-            );
-        }
-
-        const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `relatorio_estoque_sintetico_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-    }
-
-    if (!mounted) {
-        return (
-            <main className="min-h-screen bg-slate-50 p-3 text-slate-900 sm:p-6">
-                <div className="mx-auto max-w-7xl">
-                    <Panel className="p-6 text-sm text-slate-600">Carregando relatório...</Panel>
-                </div>
-            </main>
-        );
-    }
+    const classificacaoNome = produtoSelecionado
+        ? produtoSelecionado.classificacao_nome ||
+        (produtoSelecionado.classificacao_id
+            ? classificacaoById.get(Number(produtoSelecionado.classificacao_id))?.nome
+            : "") ||
+        ""
+        : "";
 
     return (
         <main className="min-h-screen bg-slate-50 p-3 text-slate-900 sm:p-6">
-            <div className="mx-auto max-w-7xl space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Estoque</p>
-                        <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Relatório de estoque e consumo</h1>
-                        <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                            Uma visão simples para compras: estoque atual, custo médio, consumo no período, cobertura e sugestão de reposição.
-                        </p>
-                    </div>
+            <div className="mx-auto max-w-6xl space-y-4">
+                <header>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Estoque
+                    </p>
+                    <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
+                        Consulta de produto
+                    </h1>
+                    <p className="mt-1 text-sm text-slate-600">
+                        Pesquise pelo nome ou código de barras para ver estoque, saídas, custos e preço de venda.
+                    </p>
+                </header>
 
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant="ghost" type="button" onClick={carregar} disabled={loading}>
-                            Atualizar
-                        </Button>
-                        <Button type="button" onClick={exportarCsv} disabled={loading || (modoRelatorio === "estoque" ? estoqueRows.length === 0 : consumoRows.length === 0)}>
-                            Exportar CSV
-                        </Button>
-                    </div>
-                </div>
-
-                {err ? (
+                {erro ? (
                     <Panel className="border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-                        <b>Erro:</b> {err}
+                        <b>Erro:</b> {erro}
                     </Panel>
                 ) : null}
 
-                {historico.length >= 500 ? (
-                    <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                        A API retornou 500 saídas. Se houver mais movimentos antigos no banco, o consumo anual ou personalizado pode ficar parcial.
-                    </Panel>
-                ) : null}
+                <div ref={searchBoxRef} className="relative z-20">
+                    <div className="relative">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+                            <SearchIcon />
+                        </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {modoRelatorio === "estoque" ? (
-                        <>
-                            <KpiCard label="Valor em estoque" value={moneyBRL(resumoEstoque.valorTotal)} hint={`${intBR(resumoEstoque.totalUnidades)} unidades`} />
-                            <KpiCard label="Custo médio geral" value={moneyBRL(resumoEstoque.custoMedioGeral)} hint="Média ponderada por lote" />
-                            <KpiCard label="Produtos" value={intBR(resumoEstoque.produtos)} hint="Itens com saldo no filtro" />
-                            <KpiCard label="Lotes ativos" value={intBR(resumoEstoque.lotesAtivos)} hint="Lotes com quantidade atual" />
-                        </>
-                    ) : (
-                        <>
-                            <KpiCard label="Consumo no período" value={intBR(resumoConsumo.consumoTotal)} hint={consumoRange.label} />
-                            <KpiCard label="Média diária" value={decimalBR(resumoConsumo.mediaDia, 2)} hint="Unidades por dia" />
-                            <KpiCard label="Sugestão de compra" value={intBR(resumoConsumo.sugestaoCompra)} hint={`${diasCoberturaAlvo} dias de cobertura`} />
-                            <KpiCard label="Valor consumido" value={moneyBRL(resumoConsumo.valorConsumido)} hint="Estimado pelo custo médio" />
-                        </>
-                    )}
+                        <input
+                            type="search"
+                            value={busca}
+                            disabled={loadingBase}
+                            onFocus={() => setListaAberta(true)}
+                            onChange={(event) => {
+                                const value = event.target.value;
+                                setBusca(value);
+                                setListaAberta(true);
+
+                                if (
+                                    produtoSelecionado &&
+                                    normalizeSearch(value) !== normalizeSearch(produtoSelecionado.nome)
+                                ) {
+                                    setProdutoSelecionadoId(null);
+                                    setHistorico([]);
+                                    setErroHistorico("");
+                                }
+                            }}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" && resultadosBusca[0]) {
+                                    event.preventDefault();
+                                    selecionarProduto(resultadosBusca[0]);
+                                }
+
+                                if (event.key === "Escape") {
+                                    setListaAberta(false);
+                                }
+                            }}
+                            placeholder={loadingBase ? "Carregando produtos..." : "Digite o produto ou código de barras"}
+                            className="h-14 w-full rounded-2xl border border-slate-300 bg-white pl-12 pr-12 text-base font-medium text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:ring-4 focus:ring-slate-200 disabled:cursor-wait disabled:bg-slate-100 sm:h-16 sm:text-lg"
+                            autoComplete="off"
+                        />
+
+                        {busca ? (
+                            <button
+                                type="button"
+                                onClick={limparSelecao}
+                                aria-label="Limpar pesquisa"
+                                className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-xl text-slate-400 hover:text-slate-700"
+                            >
+                                ×
+                            </button>
+                        ) : null}
+                    </div>
+
+                    {listaAberta && busca.trim() && !produtoSelecionado ? (
+                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                            {resultadosBusca.length === 0 ? (
+                                <div className="p-4 text-sm text-slate-500">
+                                    Nenhum produto encontrado.
+                                </div>
+                            ) : (
+                                <ul className="max-h-80 overflow-auto py-2">
+                                    {resultadosBusca.map((produto) => (
+                                        <li key={produto.id}>
+                                            <button
+                                                type="button"
+                                                onClick={() => selecionarProduto(produto)}
+                                                className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
+                                            >
+                                                <span className="min-w-0">
+                                                    <span className="block truncate font-bold text-slate-950">
+                                                        {produto.nome}
+                                                    </span>
+                                                    <span className="mt-0.5 block truncate text-xs text-slate-500">
+                                                        Código: {produto.codigo_barras || "sem código"}
+                                                    </span>
+                                                </span>
+                                                <span className="shrink-0 text-sm font-bold text-slate-700">
+                                                    {moneyBRL(num(produto.valor))}
+                                                </span>
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    ) : null}
                 </div>
 
-                <Panel className="p-4">
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant={modoRelatorio === "consumo" ? "solid" : "ghost"} type="button" onClick={() => setModoRelatorio("consumo")}>
-                            Consumo para compras
-                        </Button>
-                        <Button variant={modoRelatorio === "estoque" ? "solid" : "ghost"} type="button" onClick={() => setModoRelatorio("estoque")}>
-                            Estoque valorizado
-                        </Button>
-                        <Button variant="ghost" type="button" onClick={limparFiltros}>
-                            Limpar filtros
-                        </Button>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
-                        <div className="lg:col-span-2">
-                            <Field label="Buscar">
-                                <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Produto, código, depósito..." />
-                            </Field>
-                        </div>
-
-                        <Field label="Depósito">
-                            <Select value={depositoId} onChange={(e) => setDepositoId(Number(e.target.value))}>
-                                <option value={0}>Todos</option>
-                                {depositos.map((d) => (
-                                    <option key={d.id} value={d.id}>{d.nome}</option>
-                                ))}
-                            </Select>
-                        </Field>
-
-                        <Field label="Visão">
-                            <Select value={visao} onChange={(e) => setVisao(e.target.value as VisaoRelatorio)}>
-                                <option value="produto_deposito">Produto por depósito</option>
-                                <option value="produto">Produto consolidado</option>
-                            </Select>
-                        </Field>
-
-                        <Field label="Categoria">
-                            <Select value={categoriaId} onChange={(e) => setCategoriaId(Number(e.target.value))}>
-                                <option value={0}>Todas</option>
-                                {categorias.map((c) => (
-                                    <option key={c.id} value={c.id}>{c.nome}</option>
-                                ))}
-                            </Select>
-                        </Field>
-
-                        <Field label="Fabricante">
-                            <Select value={fabricanteId} onChange={(e) => setFabricanteId(Number(e.target.value))}>
-                                <option value={0}>Todos</option>
-                                {fabricantes.map((f) => (
-                                    <option key={f.id} value={f.id}>{f.nome}</option>
-                                ))}
-                            </Select>
-                        </Field>
-                    </div>
-
-                    <details className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3" open={modoRelatorio === "consumo"}>
-                        <summary className="cursor-pointer text-sm font-bold text-slate-700">Filtros de consumo e compra</summary>
-                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
-                            <Field label="Classificação">
-                                <Select value={classificacaoId} onChange={(e) => setClassificacaoId(Number(e.target.value))}>
-                                    <option value={0}>Todas</option>
-                                    {classificacoes.map((c) => (
-                                        <option key={c.id} value={c.id}>{c.nome}</option>
-                                    ))}
-                                </Select>
-                            </Field>
-
-                            <Field label="Período">
-                                <Select value={periodoConsumo} onChange={(e) => setPeriodoConsumo(e.target.value as PeriodoConsumo)}>
-                                    <option value="dia">Hoje</option>
-                                    <option value="semana">Últimos 7 dias</option>
-                                    <option value="mes">Últimos 30 dias</option>
-                                    <option value="ano">Últimos 365 dias</option>
-                                    <option value="personalizado">Personalizado</option>
-                                </Select>
-                            </Field>
-
-                            <Field label="Data inicial">
-                                <TextInput
-                                    type="date"
-                                    value={consumoDataIni}
-                                    onChange={(e) => {
-                                        setConsumoDataIni(e.target.value);
-                                        setPeriodoConsumo("personalizado");
-                                    }}
-                                />
-                            </Field>
-
-                            <Field label="Data final">
-                                <TextInput
-                                    type="date"
-                                    value={consumoDataFim}
-                                    onChange={(e) => {
-                                        setConsumoDataFim(e.target.value);
-                                        setPeriodoConsumo("personalizado");
-                                    }}
-                                />
-                            </Field>
-
-                            <Field label="Cobertura desejada">
-                                <Select value={diasCoberturaAlvo} onChange={(e) => setDiasCoberturaAlvo(Number(e.target.value))}>
-                                    <option value={15}>15 dias</option>
-                                    <option value={30}>30 dias</option>
-                                    <option value={45}>45 dias</option>
-                                    <option value={60}>60 dias</option>
-                                    <option value={90}>90 dias</option>
-                                    <option value={120}>120 dias</option>
-                                </Select>
-                            </Field>
-
-                            <div className="flex items-end">
-                                <label className="flex min-h-[42px] w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                    <input
-                                        type="checkbox"
-                                        checked={mostrarSemLote}
-                                        onChange={(e) => setMostrarSemLote(e.target.checked)}
-                                        className="h-4 w-4 rounded border-slate-300"
-                                    />
-                                    Incluir saldo sem lote
-                                </label>
+                {!produtoSelecionado ? (
+                    <Panel className="flex min-h-64 items-center justify-center p-8 text-center">
+                        <div className="max-w-md">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                                <SearchIcon />
                             </div>
-                        </div>
-                    </details>
-                </Panel>
-
-                {modoRelatorio === "consumo" ? (
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <Panel>
-                            <SectionHeader title="Mais consumidos" subtitle="Produtos com maior saída no período" />
-                            <div className="space-y-3 p-4">
-                                {topConsumoRows.length === 0 ? (
-                                    <p className="text-sm text-slate-500">Nenhuma saída encontrada para os filtros atuais.</p>
-                                ) : (
-                                    topConsumoRows.map((r) => (
-                                        <div key={r.key} className="space-y-1">
-                                            <div className="flex items-center justify-between gap-3 text-sm">
-                                                <div className="min-w-0">
-                                                    <div className="truncate font-semibold text-slate-950">{r.produto_nome}</div>
-                                                    <div className="truncate text-xs text-slate-500">{r.deposito_nome}</div>
-                                                </div>
-                                                <div className="shrink-0 font-bold text-slate-950">{intBR(r.consumo_total)}</div>
-                                            </div>
-                                            <SimpleProgress value={r.consumo_total} max={topConsumoMax} />
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </Panel>
-
-                        <Panel>
-                            <SectionHeader title="Comprar primeiro" subtitle={`Sugestão para ${diasCoberturaAlvo} dias de cobertura`} />
-                            <div className="space-y-3 p-4">
-                                {topCompraRows.length === 0 ? (
-                                    <p className="text-sm text-slate-500">Nenhuma compra sugerida para os filtros atuais.</p>
-                                ) : (
-                                    topCompraRows.map((r) => (
-                                        <div key={r.key} className="space-y-1">
-                                            <div className="flex items-center justify-between gap-3 text-sm">
-                                                <div className="min-w-0">
-                                                    <div className="truncate font-semibold text-slate-950">{r.produto_nome}</div>
-                                                    <div className="truncate text-xs text-slate-500">Estoque: {intBR(r.estoque_atual)} | cobertura: {r.dias_cobertura === null ? "sem consumo" : `${decimalBR(r.dias_cobertura, 1)} dias`}</div>
-                                                </div>
-                                                <div className="shrink-0 rounded-full bg-rose-50 px-2 py-1 text-xs font-black text-rose-700">Comprar {intBR(r.sugestao_compra)}</div>
-                                            </div>
-                                            <SimpleProgress value={r.sugestao_compra} max={topCompraMax} danger />
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </Panel>
-                    </div>
-                ) : null}
-
-                {resumoEstoque.qtdSemLote > 0 ? (
-                    <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                        Existem <b>{intBR(resumoEstoque.qtdSemLote)}</b> unidades com saldo maior que a quantidade encontrada em lotes. Essas unidades usam o preço de custo do cadastro como referência.
-                    </Panel>
-                ) : null}
-
-                {modoRelatorio === "estoque" ? (
-                    <Panel className="overflow-hidden">
-                        <SectionHeader title="Estoque valorizado" subtitle={loading ? "Carregando..." : `${intBR(estoqueRows.length)} linhas encontradas`} />
-                        <div className="overflow-auto">
-                            <table className="min-w-[1080px] w-full border-collapse text-sm">
-                                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                                    <tr>
-                                        <th className="border-b border-slate-200 px-4 py-3">Produto</th>
-                                        <th className="border-b border-slate-200 px-4 py-3">Depósito</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Qtd</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Custo médio</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Valor estoque</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Menor custo</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Maior custo</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Lotes</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Sem lote</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {loading ? (
-                                        <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={9}>Carregando relatório...</td></tr>
-                                    ) : estoqueRows.length === 0 ? (
-                                        <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={9}>Nenhum item encontrado.</td></tr>
-                                    ) : (
-                                        estoqueRows.map((r) => (
-                                            <tr key={r.key} className="odd:bg-white even:bg-slate-50/70 hover:bg-slate-100/70">
-                                                <td className="border-b border-slate-100 px-4 py-3 align-top">
-                                                    <div className="font-bold text-slate-950">{r.produto_nome}</div>
-                                                    <div className="mt-0.5 text-xs text-slate-500">CB: {r.codigo_barras || "sem código"}</div>
-                                                    <div className="mt-0.5 text-xs text-slate-500">{[r.categoria_nome, r.fabricante_nome, r.classificacao_nome].filter(Boolean).join(" | ")}</div>
-                                                </td>
-                                                <td className="border-b border-slate-100 px-4 py-3 align-top text-slate-700">{r.deposito_nome}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-bold">{intBR(r.quantidade)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-bold text-slate-950">{moneyBRL(r.custo_medio)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-black text-slate-950">{moneyBRL(r.valor_total)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top text-slate-700">{moneyBRL(r.custo_min)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top text-slate-700">{moneyBRL(r.custo_max)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top text-slate-700">{intBR(r.lotes_ativos)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">{r.qtd_sem_lote > 0 ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">{intBR(r.qtd_sem_lote)}</span> : <span className="text-slate-400">0</span>}</td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                            <h2 className="mt-4 text-lg font-bold text-slate-950">
+                                Selecione um produto
+                            </h2>
+                            <p className="mt-1 text-sm leading-6 text-slate-500">
+                                A consulta mostrará os dados consolidados do item, sem filtros adicionais.
+                            </p>
                         </div>
                     </Panel>
                 ) : (
-                    <Panel className="overflow-hidden">
-                        <SectionHeader title="Consumo para compras" subtitle={loading ? "Carregando..." : `${intBR(consumoRows.length)} linhas encontradas. Período: ${consumoRange.label}`} />
-                        <div className="overflow-auto">
-                            <table className="min-w-[1320px] w-full border-collapse text-sm">
-                                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                                    <tr>
-                                        <th className="border-b border-slate-200 px-4 py-3">Produto</th>
-                                        <th className="border-b border-slate-200 px-4 py-3">Depósito</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Consumo</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Média/dia</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Mês</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Ano</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Estoque</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Cobertura</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Comprar</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Custo médio</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Valor consumido</th>
-                                        <th className="border-b border-slate-200 px-4 py-3 text-right">Saídas</th>
-                                        <th className="border-b border-slate-200 px-4 py-3">Última saída</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {loading ? (
-                                        <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={13}>Carregando consumo...</td></tr>
-                                    ) : consumoRows.length === 0 ? (
-                                        <tr><td className="px-4 py-6 text-center text-slate-500" colSpan={13}>Nenhuma saída encontrada para os filtros e período selecionados.</td></tr>
-                                    ) : (
-                                        consumoRows.map((r) => (
-                                            <tr key={r.key} className="odd:bg-white even:bg-slate-50/70 hover:bg-slate-100/70">
-                                                <td className="border-b border-slate-100 px-4 py-3 align-top">
-                                                    <div className="font-bold text-slate-950">{r.produto_nome}</div>
-                                                    <div className="mt-0.5 text-xs text-slate-500">CB: {r.codigo_barras || "sem código"}</div>
-                                                    <div className="mt-0.5 text-xs text-slate-500">{[r.categoria_nome, r.fabricante_nome, r.classificacao_nome].filter(Boolean).join(" | ")}</div>
-                                                </td>
-                                                <td className="border-b border-slate-100 px-4 py-3 align-top text-slate-700">{r.deposito_nome}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-black text-slate-950">{intBR(r.consumo_total)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">{decimalBR(r.media_dia, 2)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-semibold">{decimalBR(r.projecao_mes, 1)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">{decimalBR(r.projecao_ano, 0)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-semibold">{intBR(r.estoque_atual)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">
-                                                    {r.dias_cobertura === null ? (
-                                                        <span className="text-slate-400">sem consumo</span>
-                                                    ) : (
-                                                        <span className={r.dias_cobertura < diasCoberturaAlvo ? "font-bold text-rose-700" : "text-slate-700"}>
-                                                            {decimalBR(r.dias_cobertura, 1)} dias
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">
-                                                    {r.sugestao_compra > 0 ? (
-                                                        <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-black text-rose-800">{intBR(r.sugestao_compra)}</span>
-                                                    ) : (
-                                                        <span className="text-slate-400">0</span>
-                                                    )}
-                                                </td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">{moneyBRL(r.custo_medio)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top font-semibold">{moneyBRL(r.valor_consumido_estimado)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">{intBR(r.saidas)}</td>
-                                                <td className="border-b border-slate-100 px-4 py-3 align-top text-slate-700">{r.ultima_saida ? fmtDateTime(r.ultima_saida) : ""}</td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Panel>
-                )}
+                    <>
+                        <Panel className="p-4 sm:p-5">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                                {produtoSelecionado.foto_url ? (
+                                    <img
+                                        src={produtoSelecionado.foto_url}
+                                        alt={produtoSelecionado.nome}
+                                        className="h-20 w-20 shrink-0 rounded-2xl border border-slate-200 bg-slate-50 object-cover sm:h-24 sm:w-24"
+                                    />
+                                ) : (
+                                    <ProductPlaceholder name={produtoSelecionado.nome} />
+                                )}
 
-                <Panel className="p-4 text-xs text-slate-500">
-                    Consumo: soma das saídas no período. Custo médio: média ponderada pelos lotes em estoque. Comprar: média diária vezes cobertura desejada, menos estoque atual.
-                </Panel>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div>
+                                            <h2 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                                                {produtoSelecionado.nome}
+                                            </h2>
+                                            <p className="mt-1 text-sm text-slate-500">
+                                                Código de barras: {produtoSelecionado.codigo_barras || "não informado"}
+                                            </p>
+                                        </div>
+
+                                        {produtoSelecionado.atualizado_em ? (
+                                            <span className="shrink-0 text-xs text-slate-400">
+                                                Atualizado em {fmtDateTime(produtoSelecionado.atualizado_em)}
+                                            </span>
+                                        ) : null}
+                                    </div>
+
+                                    {produtoSelecionado.descricao ? (
+                                        <p className="mt-3 text-sm leading-6 text-slate-600">
+                                            {produtoSelecionado.descricao}
+                                        </p>
+                                    ) : null}
+
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {[categoriaNome, fabricanteNome, classificacaoNome]
+                                            .filter(Boolean)
+                                            .map((label) => (
+                                                <span
+                                                    key={label}
+                                                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"
+                                                >
+                                                    {label}
+                                                </span>
+                                            ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </Panel>
+
+                        {erroHistorico ? (
+                            <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                Os dados de estoque e preço foram carregados, mas as saídas não puderam ser consultadas: {erroHistorico}
+                            </Panel>
+                        ) : null}
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            <KpiCard
+                                label="Estoque atual"
+                                value={resumo ? intBR(resumo.estoqueAtual) : "0"}
+                                hint={`${estoquePorDeposito.length} depósito(s) com cadastro de saldo`}
+                                emphasis
+                            />
+                            <KpiCard
+                                label="Quantidade de saída"
+                                value={loadingHistorico ? "..." : intBR(resumo?.saidasTotal || 0)}
+                                hint={
+                                    loadingHistorico
+                                        ? "Carregando movimentações"
+                                        : `${intBR(resumo?.movimentacoes || 0)} movimentação(ões) carregada(s)`
+                                }
+                            />
+                            <KpiCard
+                                label="Custo médio de compra"
+                                value={moneyBRL(resumo?.custoMedioCompra || 0)}
+                                hint="Ponderado pelos lotes atuais e saldo sem lote"
+                            />
+                            <KpiCard
+                                label="Preço de venda"
+                                value={moneyBRL(resumo?.precoVenda || 0)}
+                                hint="Valor cadastrado no produto"
+                            />
+                            <KpiCard
+                                label="Margem bruta unitária"
+                                value={moneyBRL(resumo?.margemUnitaria || 0)}
+                                hint={`${decimalBR(resumo?.margemPercentual || 0, 1)}% sobre a venda${resumo?.markupPercentual === null || resumo?.markupPercentual === undefined
+                                        ? ""
+                                        : ` | markup ${decimalBR(resumo.markupPercentual, 1)}%`
+                                    }`}
+                            />
+                            <KpiCard
+                                label="Valor em estoque"
+                                value={moneyBRL(resumo?.valorEstoque || 0)}
+                                hint={
+                                    resumo?.coberturaDias === null || resumo?.coberturaDias === undefined
+                                        ? "Sem saída nos últimos 30 dias"
+                                        : `Cobertura estimada: ${decimalBR(resumo.coberturaDias, 1)} dias`
+                                }
+                            />
+                        </div>
+
+                        {historico.length >= HISTORICO_LIMIT ? (
+                            <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                A consulta atingiu o limite de {intBR(HISTORICO_LIMIT)} movimentações. A quantidade total de saída pode estar parcial.
+                            </Panel>
+                        ) : null}
+
+                        {resumo && resumo.qtdSemLote > 0 ? (
+                            <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                Existem <b>{intBR(resumo.qtdSemLote)}</b> unidades sem cobertura por lote. Para elas, o custo cadastrado no produto foi usado no cálculo.
+                            </Panel>
+                        ) : null}
+
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                            <Panel className="overflow-hidden">
+                                <SectionHeader
+                                    title="Estoque por depósito"
+                                    subtitle="Quantidade, custo médio e valor atual do item"
+                                />
+
+                                <div className="overflow-auto">
+                                    <table className="w-full min-w-[680px] border-collapse text-sm">
+                                        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                                            <tr>
+                                                <th className="border-b border-slate-200 px-4 py-3">Depósito</th>
+                                                <th className="border-b border-slate-200 px-4 py-3 text-right">Qtd</th>
+                                                <th className="border-b border-slate-200 px-4 py-3 text-right">Mín.</th>
+                                                <th className="border-b border-slate-200 px-4 py-3 text-right">Máx.</th>
+                                                <th className="border-b border-slate-200 px-4 py-3 text-right">Custo médio</th>
+                                                <th className="border-b border-slate-200 px-4 py-3 text-right">Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {estoquePorDeposito.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                                                        Nenhum saldo encontrado para este produto.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                estoquePorDeposito.map((row) => (
+                                                    <tr key={row.deposito_id} className="odd:bg-white even:bg-slate-50/60">
+                                                        <td className="border-b border-slate-100 px-4 py-3">
+                                                            <div className="font-bold text-slate-950">{row.deposito_nome}</div>
+                                                            <div className="mt-0.5 text-xs text-slate-500">
+                                                                {row.lotes} lote(s)
+                                                                {row.qtd_sem_lote > 0
+                                                                    ? ` | ${intBR(row.qtd_sem_lote)} sem lote`
+                                                                    : ""}
+                                                            </div>
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-black text-slate-950">
+                                                            {intBR(row.quantidade)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right text-slate-600">
+                                                            {intBR(row.minimo)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right text-slate-600">
+                                                            {intBR(row.maximo)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-semibold">
+                                                            {moneyBRL(row.custo_medio)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-bold">
+                                                            {moneyBRL(row.valor_estoque)}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Panel>
+
+                            <Panel>
+                                <SectionHeader
+                                    title="Resumo de saídas"
+                                    subtitle="Leitura rápida do consumo do produto"
+                                />
+
+                                <div className="grid grid-cols-2 gap-3 p-4">
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                        <div className="text-xs font-semibold text-slate-500">Últimos 30 dias</div>
+                                        <div className="mt-1 text-xl font-black text-slate-950">
+                                            {loadingHistorico ? "..." : intBR(resumo?.saidas30Dias || 0)}
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500">unidades</div>
+                                    </div>
+
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                        <div className="text-xs font-semibold text-slate-500">Média diária</div>
+                                        <div className="mt-1 text-xl font-black text-slate-950">
+                                            {loadingHistorico ? "..." : decimalBR(resumo?.mediaDiaria30Dias || 0, 2)}
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500">últimos 30 dias</div>
+                                    </div>
+
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                        <div className="text-xs font-semibold text-slate-500">Cobertura</div>
+                                        <div className="mt-1 text-xl font-black text-slate-950">
+                                            {loadingHistorico
+                                                ? "..."
+                                                : resumo?.coberturaDias === null || resumo?.coberturaDias === undefined
+                                                    ? "Sem consumo"
+                                                    : `${decimalBR(resumo.coberturaDias, 1)} dias`}
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500">com o estoque atual</div>
+                                    </div>
+
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                        <div className="text-xs font-semibold text-slate-500">Última saída</div>
+                                        <div className="mt-1 text-sm font-black leading-6 text-slate-950">
+                                            {loadingHistorico
+                                                ? "Carregando..."
+                                                : resumo?.ultimaSaida
+                                                    ? fmtDateTime(resumo.ultimaSaida)
+                                                    : "Nenhuma saída"}
+                                        </div>
+                                    </div>
+                                </div>
+                            </Panel>
+                        </div>
+
+                        <Panel className="overflow-hidden">
+                            <SectionHeader
+                                title="Lotes atuais"
+                                subtitle={`${intBR(lotesProduto.length)} lote(s) com saldo para este produto`}
+                            />
+
+                            <div className="overflow-auto">
+                                <table className="w-full min-w-[780px] border-collapse text-sm">
+                                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                                        <tr>
+                                            <th className="border-b border-slate-200 px-4 py-3">Lote</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Depósito</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Qtd atual</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Custo unitário</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Custo total</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Atualização</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {lotesProduto.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                                                    Nenhum lote com saldo encontrado.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            lotesProduto.map((lote) => {
+                                                const quantidade = clampInt(lote.quantidade_atual);
+                                                const custo = num(lote.custo_unitario);
+                                                const deposito =
+                                                    depositoById.get(Number(lote.deposito_id))?.nome ||
+                                                    lote.deposito_nome ||
+                                                    `Depósito #${lote.deposito_id}`;
+
+                                                return (
+                                                    <tr key={lote.id} className="odd:bg-white even:bg-slate-50/60">
+                                                        <td className="border-b border-slate-100 px-4 py-3 font-bold text-slate-950">
+                                                            {lote.numero_lote || "Sem identificação"}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                            {deposito}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-black">
+                                                            {intBR(quantidade)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right">
+                                                            {moneyBRL(custo)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-bold">
+                                                            {moneyBRL(quantidade * custo)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-slate-600">
+                                                            {fmtDateTime(lote.atualizado_em || lote.criado_em)}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Panel>
+
+                        <Panel className="overflow-hidden">
+                            <SectionHeader
+                                title="Últimas saídas"
+                                subtitle={
+                                    loadingHistorico
+                                        ? "Carregando movimentações..."
+                                        : `Exibindo até 30 das ${intBR(historico.length)} movimentações carregadas`
+                                }
+                            />
+
+                            <div className="overflow-auto">
+                                <table className="w-full min-w-[980px] border-collapse text-sm">
+                                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                                        <tr>
+                                            <th className="border-b border-slate-200 px-4 py-3">Data</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Qtd</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Origem</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Destino</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Solicitante</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Operador</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Observação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {loadingHistorico ? (
+                                            <tr>
+                                                <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                                                    Carregando saídas do produto...
+                                                </td>
+                                            </tr>
+                                        ) : historico.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                                                    Nenhuma saída encontrada para este produto.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            historico.slice(0, 30).map((movimento) => (
+                                                <tr key={movimento.id} className="odd:bg-white even:bg-slate-50/60">
+                                                    <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                        {fmtDateTime(movimento.criado_em)}
+                                                    </td>
+                                                    <td className="border-b border-slate-100 px-4 py-3 text-right font-black text-slate-950">
+                                                        {intBR(clampInt(movimento.quantidade))}
+                                                    </td>
+                                                    <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                        {movimento.deposito_origem_nome ||
+                                                            (movimento.deposito_origem_id
+                                                                ? depositoById.get(Number(movimento.deposito_origem_id))?.nome
+                                                                : "") ||
+                                                            "Não informado"}
+                                                    </td>
+                                                    <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                        {movimento.destino_texto ||
+                                                            movimento.deposito_destino_nome ||
+                                                            "Não informado"}
+                                                    </td>
+                                                    <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                        {movimento.solicitante_nome || "Não informado"}
+                                                    </td>
+                                                    <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                        {movimento.operador_nome || "Não informado"}
+                                                    </td>
+                                                    <td className="max-w-sm border-b border-slate-100 px-4 py-3 text-slate-600">
+                                                        {movimento.observacao || ""}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Panel>
+
+                        <Panel className="p-4 text-xs leading-5 text-slate-500">
+                            O custo médio considera o custo dos lotes que ainda possuem saldo. Quando o saldo do produto é maior que a quantidade coberta pelos lotes, a diferença usa o preço de custo cadastrado. A quantidade de saída soma as movimentações retornadas pela API para o produto selecionado.
+                        </Panel>
+                    </>
+                )}
             </div>
         </main>
     );
