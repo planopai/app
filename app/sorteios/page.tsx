@@ -56,8 +56,21 @@ type ApiResp<T = Record<string, never>> = { ok: boolean; error?: string } & T;
 type NewSorteioForm = {
     titulo: string;
     premiosText: string;
-    scheduledAtInput: string;
 };
+
+type PremioResumo = {
+    nome: string;
+    quantidade: number;
+};
+
+type ExecutionSnapshot = {
+    titulo: string;
+    premios: string[];
+    resumo: PremioResumo[];
+    totalPremios: number;
+};
+
+type ConfirmationStep = "form" | "review" | "notification";
 
 type PageDataState = {
     latestSorteio: Sorteio | null;
@@ -67,7 +80,7 @@ type PageDataState = {
 
 type ModalStep = "hidden" | "progress" | "form";
 
-type SubmitKind = "idle" | "running" | "scheduling";
+type SubmitKind = "idle" | "running";
 
 const API_URL =
     process.env.NEXT_PUBLIC_SORTEIOS_API_URL ||
@@ -81,20 +94,6 @@ const OPTIONAL_ADMIN_TOKEN = process.env.NEXT_PUBLIC_SORTEIOS_ADMIN_TOKEN || "";
 
 const DEFAULT_TITLE = "Novo Sorteio";
 const PROGRESS_MESSAGE = "Verificando Associados Aptos a Participarem Do Sorteio.";
-
-function pad2(value: number) {
-    return String(value).padStart(2, "0");
-}
-
-function addOneHour(date = new Date()) {
-    return new Date(date.getTime() + 60 * 60 * 1000);
-}
-
-function toLocalInputValue(date: Date) {
-    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(
-        date.getHours()
-    )}:${pad2(date.getMinutes())}`;
-}
 
 function parseMysqlDateTime(mysqlDatetime?: string | null) {
     if (!mysqlDatetime) return null;
@@ -122,14 +121,7 @@ function parseMysqlDateTime(mysqlDatetime?: string | null) {
 
 function formatBR(mysqlDatetime?: string | null) {
     const dt = parseMysqlDateTime(mysqlDatetime);
-    return dt ? dt.toLocaleString("pt-BR") : mysqlDatetime || "—";
-}
-
-function localInputToMysql(value: string) {
-    if (!value) return "";
-    const [datePart, timePart] = value.split("T");
-    if (!datePart || !timePart) return "";
-    return `${datePart} ${timePart}:00`;
+    return dt ? dt.toLocaleString("pt-BR") : mysqlDatetime || "-";
 }
 
 function maskCpf(cpf: string) {
@@ -138,19 +130,31 @@ function maskCpf(cpf: string) {
     return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 }
 
-function uniqueTrimmedLines(text: string) {
-    const lines: string[] = [];
-    const seen = new Set<string>();
+function getPremiosList(text: string) {
+    return text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
 
-    for (const rawLine of text.split("\n")) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        if (seen.has(line)) continue;
-        seen.add(line);
-        lines.push(line);
+function summarizePremios(premios: string[]): PremioResumo[] {
+    const grouped = new Map<string, PremioResumo>();
+
+    for (const premio of premios) {
+        const key = premio.toLocaleLowerCase("pt-BR");
+        const current = grouped.get(key);
+
+        if (current) {
+            current.quantidade += 1;
+        } else {
+            grouped.set(key, {
+                nome: premio,
+                quantidade: 1,
+            });
+        }
     }
 
-    return lines;
+    return Array.from(grouped.values());
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -167,7 +171,6 @@ function getDefaultForm(): NewSorteioForm {
     return {
         titulo: DEFAULT_TITLE,
         premiosText: "",
-        scheduledAtInput: toLocalInputValue(addOneHour()),
     };
 }
 
@@ -308,44 +311,80 @@ function NovoSorteioModal({
     form,
     setForm,
     submitKind,
+    confirmationStep,
+    snapshot,
+    allowEditing,
     eligibleTotal,
     successMessage,
     errorMessage,
     onClose,
+    onReview,
+    onBackToForm,
+    onBackToReview,
+    onAdvanceToNotification,
     onRunNow,
-    onSchedule,
 }: {
     open: boolean;
     form: NewSorteioForm;
     setForm: React.Dispatch<React.SetStateAction<NewSorteioForm>>;
     submitKind: SubmitKind;
+    confirmationStep: ConfirmationStep;
+    snapshot: ExecutionSnapshot | null;
+    allowEditing: boolean;
     eligibleTotal: number | null;
     successMessage: string | null;
     errorMessage: string | null;
     onClose: () => void;
+    onReview: () => void;
+    onBackToForm: () => void;
+    onBackToReview: () => void;
+    onAdvanceToNotification: () => void;
     onRunNow: () => void;
-    onSchedule: () => void;
 }) {
     if (!open) return null;
 
-    const premiosList = uniqueTrimmedLines(form.premiosText);
-    const loading = submitKind !== "idle";
+    const premiosList = getPremiosList(form.premiosText);
+    const premiosResumo = summarizePremios(premiosList);
+    const loading = submitKind === "running";
+
+    const title =
+        confirmationStep === "form"
+            ? "Novo Sorteio"
+            : confirmationStep === "review"
+                ? "Revise o sorteio"
+                : "Confirmação final";
+
+    const subtitle =
+        confirmationStep === "form"
+            ? "Configure o sorteio. A execução só ocorrerá após duas confirmações."
+            : confirmationStep === "review"
+                ? "Confira o nome, os prêmios e as quantidades antes de continuar."
+                : "Esta é a última etapa antes da realização do sorteio.";
 
     return (
         <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px]">
             <div className="flex min-h-dvh items-center justify-center p-4">
-                <div className="flex w-full max-w-2xl max-h-[92dvh] flex-col overflow-hidden rounded-3xl border border-white/15 bg-white shadow-2xl dark:bg-gray-950">
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="novo-sorteio-title"
+                    className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/15 bg-white shadow-2xl dark:bg-gray-950"
+                >
                     <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
                         <div>
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                                Novo Sorteio
+                            <h3
+                                id="novo-sorteio-title"
+                                className="text-lg font-bold text-gray-900 dark:text-white"
+                            >
+                                {title}
                             </h3>
                             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                                Configure o sorteio e escolha entre realizar agora ou agendar.
+                                {subtitle}
                             </p>
                         </div>
 
                         <button
+                            type="button"
                             onClick={onClose}
                             disabled={loading}
                             className="rounded-xl border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
@@ -369,91 +408,228 @@ function NovoSorteioModal({
                             ) : null}
 
                             {errorMessage ? (
-                                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                                <div
+                                    role="alert"
+                                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200"
+                                >
                                     {errorMessage}
                                 </div>
                             ) : null}
 
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                        Nome do sorteio
-                                    </label>
-                                    <input
-                                        value={form.titulo}
-                                        onChange={(e) =>
-                                            setForm((prev) => ({ ...prev, titulo: e.target.value }))
-                                        }
-                                        maxLength={140}
-                                        placeholder="Ex.: Sorteio de Páscoa"
-                                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                                    />
-                                </div>
+                            {confirmationStep === "form" ? (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label
+                                            htmlFor="sorteio-titulo"
+                                            className="text-sm font-semibold text-gray-700 dark:text-gray-200"
+                                        >
+                                            Nome do sorteio
+                                        </label>
+                                        <input
+                                            id="sorteio-titulo"
+                                            value={form.titulo}
+                                            onChange={(event) =>
+                                                setForm((prev) => ({
+                                                    ...prev,
+                                                    titulo: event.target.value,
+                                                }))
+                                            }
+                                            maxLength={140}
+                                            placeholder="Ex.: Sorteio de Páscoa"
+                                            disabled={loading}
+                                            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                        />
+                                    </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                        Prêmios (1 por linha)
-                                    </label>
-                                    <textarea
-                                        value={form.premiosText}
-                                        onChange={(e) =>
-                                            setForm((prev) => ({
-                                                ...prev,
-                                                premiosText: e.target.value,
-                                            }))
-                                        }
-                                        rows={8}
-                                        placeholder={`Ex.:
-1 Televisor 50"
-1 Smartphone
-1 Air Fryer`}
-                                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                                    />
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                        Total único: <strong>{premiosList.length}</strong> prêmio(s)
+                                    <div className="space-y-2">
+                                        <label
+                                            htmlFor="sorteio-premios"
+                                            className="text-sm font-semibold text-gray-700 dark:text-gray-200"
+                                        >
+                                            Prêmios, 1 unidade por linha
+                                        </label>
+                                        <textarea
+                                            id="sorteio-premios"
+                                            value={form.premiosText}
+                                            onChange={(event) =>
+                                                setForm((prev) => ({
+                                                    ...prev,
+                                                    premiosText: event.target.value,
+                                                }))
+                                            }
+                                            rows={8}
+                                            placeholder={`Ex.:
+Televisor 50"
+Smartphone
+Air Fryer
+Air Fryer`}
+                                            disabled={loading}
+                                            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                        />
+                                        <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                                            <p>
+                                                Total: <strong>{premiosList.length}</strong>{" "}
+                                                unidade(s) em{" "}
+                                                <strong>{premiosResumo.length}</strong> tipo(s) de
+                                                prêmio.
+                                            </p>
+                                            <p>
+                                                Para sortear mais de uma unidade do mesmo prêmio,
+                                                repita o nome em linhas diferentes.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
+                            ) : null}
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                        Data/Hora para agendar
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        value={form.scheduledAtInput}
-                                        onChange={(e) =>
-                                            setForm((prev) => ({
-                                                ...prev,
-                                                scheduledAtInput: e.target.value,
-                                            }))
-                                        }
-                                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                                    />
+                            {confirmationStep === "review" && snapshot ? (
+                                <div className="space-y-5">
+                                    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-center text-sm font-extrabold uppercase tracking-wide text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                                        VERIFIQUE SE TODAS AS INFORMAÇÕES ESTÃO CORRETAS E CLIQUE
+                                        EM CONFIRMAR.
+                                    </div>
+
+                                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                            Sorteio
+                                        </p>
+                                        <p className="mt-1 text-base font-bold text-gray-900 dark:text-white">
+                                            {snapshot.titulo}
+                                        </p>
+                                    </div>
+
+                                    <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800">
+                                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                                            <thead className="bg-gray-50 dark:bg-gray-900">
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                                                        Prêmio
+                                                    </th>
+                                                    <th className="w-32 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                                                        Quantidade
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-gray-950">
+                                                {snapshot.resumo.map((premio) => (
+                                                    <tr key={premio.nome.toLocaleLowerCase("pt-BR")}>
+                                                        <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                            {premio.nome}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center text-sm font-bold text-gray-900 dark:text-gray-100">
+                                                            {premio.quantidade}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            <tfoot className="bg-gray-50 dark:bg-gray-900">
+                                                <tr>
+                                                    <td className="px-4 py-3 text-sm font-bold text-gray-800 dark:text-gray-200">
+                                                        Total de prêmios
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center text-sm font-extrabold text-gray-900 dark:text-white">
+                                                        {snapshot.totalPremios}
+                                                    </td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : null}
+
+                            {confirmationStep === "notification" && snapshot ? (
+                                <div className="space-y-5">
+                                    <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5 text-center text-sm font-extrabold uppercase leading-6 tracking-wide text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
+                                        AO CLICAR EM CONFIRMAR, TODOS OS ASSOCIADOS RECEBERÃO UMA
+                                        MENSAGEM COM O RESULTADO DO SORTEIO.
+                                    </div>
+
+                                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                                    Sorteio
+                                                </p>
+                                                <p className="mt-1 font-bold text-gray-900 dark:text-white">
+                                                    {snapshot.titulo}
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                                    Total
+                                                </p>
+                                                <p className="mt-1 text-lg font-extrabold text-gray-900 dark:text-white">
+                                                    {snapshot.totalPremios}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <p className="text-center text-sm text-gray-600 dark:text-gray-300">
+                                        Depois da confirmação, aguarde a conclusão sem fechar esta
+                                        janela.
+                                    </p>
+                                </div>
+                            ) : null}
                         </div>
                     </div>
 
                     <div className="border-t border-gray-200 px-6 py-4 dark:border-gray-800">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                            <button
-                                onClick={onSchedule}
-                                disabled={loading}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-950/30"
-                            >
-                                {submitKind === "scheduling" ? <Spinner size={16} /> : null}
-                                {submitKind === "scheduling" ? "Agendando..." : "Agendar"}
-                            </button>
+                        {confirmationStep === "form" ? (
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={onReview}
+                                    disabled={loading}
+                                    className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    Realizar Agora
+                                </button>
+                            </div>
+                        ) : null}
 
-                            <button
-                                onClick={onRunNow}
-                                disabled={loading}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                                {submitKind === "running" ? <Spinner size={16} /> : null}
-                                {submitKind === "running" ? "Realizando..." : "Realizar Agora"}
-                            </button>
-                        </div>
+                        {confirmationStep === "review" ? (
+                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                                <button
+                                    type="button"
+                                    onClick={onBackToForm}
+                                    disabled={loading || !allowEditing}
+                                    className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                >
+                                    Voltar e corrigir
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onAdvanceToNotification}
+                                    disabled={loading}
+                                    className="inline-flex items-center justify-center rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    Confirmar
+                                </button>
+                            </div>
+                        ) : null}
+
+                        {confirmationStep === "notification" ? (
+                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                                <button
+                                    type="button"
+                                    onClick={onBackToReview}
+                                    disabled={loading || !allowEditing}
+                                    className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                >
+                                    Voltar e revisar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onRunNow}
+                                    disabled={loading}
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {loading ? <Spinner size={16} /> : null}
+                                    {loading ? "Realizando..." : "Confirmar e realizar sorteio"}
+                                </button>
+                            </div>
+                        ) : null}
                     </div>
                 </div>
             </div>
@@ -467,6 +643,9 @@ export default function SorteiosAdminPage() {
     const statsAbortRef = useRef<AbortController | null>(null);
     const progressIntervalRef = useRef<number | null>(null);
     const progressTimeoutRef = useRef<number | null>(null);
+    const closeTimeoutRef = useRef<number | null>(null);
+    const pendingSorteioIdRef = useRef<number | null>(null);
+    const executionLockRef = useRef(false);
     const isMountedRef = useRef(true);
 
     const [pageLoading, setPageLoading] = useState(true);
@@ -485,6 +664,11 @@ export default function SorteiosAdminPage() {
 
     const [form, setForm] = useState<NewSorteioForm>(getDefaultForm());
     const [submitKind, setSubmitKind] = useState<SubmitKind>("idle");
+    const [confirmationStep, setConfirmationStep] =
+        useState<ConfirmationStep>("form");
+    const [executionSnapshot, setExecutionSnapshot] =
+        useState<ExecutionSnapshot | null>(null);
+    const [executionPrepared, setExecutionPrepared] = useState(false);
     const [modalError, setModalError] = useState<string | null>(null);
     const [modalSuccess, setModalSuccess] = useState<string | null>(null);
 
@@ -494,7 +678,8 @@ export default function SorteiosAdminPage() {
     const latestSorteio = pageData.latestSorteio;
     const history = pageData.history;
 
-    const premiosList = useMemo(() => uniqueTrimmedLines(form.premiosText), [form.premiosText]);
+    const premiosList = useMemo(() => getPremiosList(form.premiosText), [form.premiosText]);
+    const premiosResumo = useMemo(() => summarizePremios(premiosList), [premiosList]);
 
     const clearProgressTimers = useCallback(() => {
         if (progressIntervalRef.current !== null) {
@@ -541,12 +726,23 @@ export default function SorteiosAdminPage() {
     }, [clearProgressTimers]);
 
     const resetModalState = useCallback(() => {
+        if (closeTimeoutRef.current !== null) {
+            window.clearTimeout(closeTimeoutRef.current);
+            closeTimeoutRef.current = null;
+        }
+
         setForm(getDefaultForm());
         setEligibleTotal(null);
         setStatsError(null);
         setModalError(null);
         setModalSuccess(null);
         setSubmitKind("idle");
+        setConfirmationStep("form");
+        setExecutionSnapshot(null);
+        setExecutionPrepared(false);
+
+        pendingSorteioIdRef.current = null;
+        executionLockRef.current = false;
     }, []);
 
     const closeModal = useCallback(() => {
@@ -651,64 +847,142 @@ export default function SorteiosAdminPage() {
         }
     }, [finishProgressSmoothly, resetModalState, startProgressLoop]);
 
-    const createBaseSorteio = useCallback(
-        async (status: SorteioStatus) => {
-            const titulo = form.titulo.trim();
-            if (!titulo) {
-                throw new Error("Informe o nome do sorteio.");
-            }
+    const prepareReview = useCallback(() => {
+        setModalError(null);
+        setModalSuccess(null);
 
-            if (premiosList.length === 0) {
-                throw new Error("Informe pelo menos um prêmio.");
-            }
+        const titulo = form.titulo.trim();
 
-            if (status === "scheduled" && !form.scheduledAtInput) {
-                throw new Error("Informe a data e hora do agendamento.");
-            }
+        if (!titulo) {
+            setModalError("Informe o nome do sorteio.");
+            return;
+        }
 
-            const saveResp = await apiJson<ApiResp<{ id?: number }>>(
-                `${API_URL}?op=admin_save_sorteio`,
-                "POST",
-                {
-                    titulo,
-                    descricao: "",
-                    scheduled_at:
-                        status === "scheduled" ? localInputToMysql(form.scheduledAtInput) : "",
-                    status,
-                }
+        if (premiosList.length === 0) {
+            setModalError("Informe pelo menos um prêmio.");
+            return;
+        }
+
+        if (eligibleTotal !== null && premiosList.length > eligibleTotal) {
+            setModalError(
+                `Existem ${premiosList.length} prêmios, mas apenas ${eligibleTotal} associados elegíveis. Reduza a quantidade de prêmios antes de continuar.`
             );
+            return;
+        }
 
-            if (!saveResp?.ok || !saveResp.id) {
-                throw new Error(saveResp?.error || "Falha ao criar sorteio.");
+        setExecutionSnapshot({
+            titulo,
+            premios: [...premiosList],
+            resumo: premiosResumo.map((premio) => ({ ...premio })),
+            totalPremios: premiosList.length,
+        });
+        setConfirmationStep("review");
+    }, [eligibleTotal, form.titulo, premiosList, premiosResumo]);
+
+    const backToForm = useCallback(() => {
+        if (executionPrepared) return;
+
+        setModalError(null);
+        setModalSuccess(null);
+        setExecutionSnapshot(null);
+        setConfirmationStep("form");
+    }, [executionPrepared]);
+
+    const backToReview = useCallback(() => {
+        if (executionPrepared) return;
+
+        setModalError(null);
+        setModalSuccess(null);
+        setConfirmationStep("review");
+    }, [executionPrepared]);
+
+    const advanceToNotification = useCallback(() => {
+        if (!executionSnapshot) {
+            setModalError("Não foi possível preparar a confirmação do sorteio.");
+            setConfirmationStep("form");
+            return;
+        }
+
+        setModalError(null);
+        setModalSuccess(null);
+        setConfirmationStep("notification");
+    }, [executionSnapshot]);
+
+    const createBaseSorteio = useCallback(async (snapshot: ExecutionSnapshot) => {
+        const saveResp = await apiJson<ApiResp<{ id?: number }>>(
+            `${API_URL}?op=admin_save_sorteio`,
+            "POST",
+            {
+                titulo: snapshot.titulo,
+                descricao: "",
+                scheduled_at: "",
+                status: "draft",
             }
+        );
 
-            const sorteioId = saveResp.id;
+        if (!saveResp?.ok || !saveResp.id) {
+            throw new Error(saveResp?.error || "Falha ao criar sorteio.");
+        }
 
-            const premiosResp = await apiJson<ApiResp<{ premios_total?: number }>>(
-                `${API_URL}?op=admin_set_premios`,
-                "POST",
-                {
-                    sorteio_id: sorteioId,
-                    premios: premiosList,
-                }
-            );
+        const sorteioId = saveResp.id;
 
-            if (!premiosResp?.ok) {
-                throw new Error(premiosResp?.error || "Falha ao salvar prêmios.");
+        const premiosResp = await apiJson<ApiResp<{ premios_total?: number }>>(
+            `${API_URL}?op=admin_set_premios`,
+            "POST",
+            {
+                sorteio_id: sorteioId,
+                premios: snapshot.premios,
             }
+        );
 
-            return sorteioId;
-        },
-        [form.scheduledAtInput, form.titulo, premiosList]
-    );
+        if (!premiosResp?.ok) {
+            throw new Error(premiosResp?.error || "Falha ao salvar prêmios.");
+        }
+
+        return sorteioId;
+    }, []);
+
+    const finishSuccessfulRun = useCallback(async () => {
+        await refreshPageData();
+
+        if (!isMountedRef.current) return;
+
+        setModalSuccess("Sorteio realizado com sucesso.");
+        setModalError(null);
+        setSubmitKind("idle");
+
+        if (closeTimeoutRef.current !== null) {
+            window.clearTimeout(closeTimeoutRef.current);
+        }
+
+        closeTimeoutRef.current = window.setTimeout(() => {
+            if (!isMountedRef.current) return;
+            closeModal();
+        }, 1400);
+    }, [closeModal, refreshPageData]);
 
     const runNow = useCallback(async () => {
+        if (executionLockRef.current) return;
+
+        if (!executionSnapshot) {
+            setModalError("Revise as informações do sorteio antes de confirmar.");
+            setConfirmationStep("form");
+            return;
+        }
+
+        executionLockRef.current = true;
         setSubmitKind("running");
         setModalError(null);
         setModalSuccess(null);
 
+        let sorteioId = pendingSorteioIdRef.current;
+
         try {
-            const sorteioId = await createBaseSorteio("draft");
+            if (!sorteioId) {
+                sorteioId = await createBaseSorteio(executionSnapshot);
+                pendingSorteioIdRef.current = sorteioId;
+                setExecutionPrepared(true);
+            }
 
             const runResp = await apiJson<
                 ApiResp<{
@@ -726,48 +1000,39 @@ export default function SorteiosAdminPage() {
                 throw new Error(runResp?.error || "Falha ao realizar sorteio.");
             }
 
-            await refreshPageData();
-
-            if (!isMountedRef.current) return;
-
-            setModalSuccess("Sorteio realizado com sucesso.");
-            setSubmitKind("idle");
-
-            window.setTimeout(() => {
-                if (!isMountedRef.current) return;
-                closeModal();
-            }, 1200);
+            await finishSuccessfulRun();
         } catch (error) {
             if (!isMountedRef.current) return;
-            setModalError(getErrorMessage(error, "Falha ao realizar sorteio."));
+
+            let completedDespiteError = false;
+
+            if (sorteioId) {
+                try {
+                    const dashboard = await loadDashboard();
+                    completedDespiteError =
+                        dashboard.sorteio?.id === sorteioId &&
+                        sanitizeStatus(dashboard.sorteio.status) === "done";
+                } catch {
+                    completedDespiteError = false;
+                }
+            }
+
+            if (completedDespiteError) {
+                await finishSuccessfulRun();
+                return;
+            }
+
+            setModalError(
+                getErrorMessage(
+                    error,
+                    "Falha ao realizar sorteio. Não clique novamente até verificar a mensagem exibida."
+                )
+            );
             setSubmitKind("idle");
+        } finally {
+            executionLockRef.current = false;
         }
-    }, [closeModal, createBaseSorteio, refreshPageData]);
-
-    const scheduleDraw = useCallback(async () => {
-        setSubmitKind("scheduling");
-        setModalError(null);
-        setModalSuccess(null);
-
-        try {
-            await createBaseSorteio("scheduled");
-            await refreshPageData();
-
-            if (!isMountedRef.current) return;
-
-            setModalSuccess("Sorteio agendado com sucesso.");
-            setSubmitKind("idle");
-
-            window.setTimeout(() => {
-                if (!isMountedRef.current) return;
-                closeModal();
-            }, 1200);
-        } catch (error) {
-            if (!isMountedRef.current) return;
-            setModalError(getErrorMessage(error, "Falha ao agendar sorteio."));
-            setSubmitKind("idle");
-        }
-    }, [closeModal, createBaseSorteio, refreshPageData]);
+    }, [createBaseSorteio, executionSnapshot, finishSuccessfulRun, loadDashboard]);
 
     useEffect(() => {
         isMountedRef.current = true;
@@ -790,6 +1055,11 @@ export default function SorteiosAdminPage() {
             historyAbortRef.current?.abort();
             statsAbortRef.current?.abort();
             clearProgressTimers();
+
+            if (closeTimeoutRef.current !== null) {
+                window.clearTimeout(closeTimeoutRef.current);
+                closeTimeoutRef.current = null;
+            }
         };
     }, [clearProgressTimers, refreshPageData]);
 
@@ -822,12 +1092,18 @@ export default function SorteiosAdminPage() {
                 form={form}
                 setForm={setForm}
                 submitKind={submitKind}
+                confirmationStep={confirmationStep}
+                snapshot={executionSnapshot}
+                allowEditing={!executionPrepared}
                 eligibleTotal={eligibleTotal}
                 successMessage={modalSuccess}
                 errorMessage={modalError || statsError}
                 onClose={closeModal}
+                onReview={prepareReview}
+                onBackToForm={backToForm}
+                onBackToReview={backToReview}
+                onAdvanceToNotification={advanceToNotification}
                 onRunNow={() => void runNow()}
-                onSchedule={() => void scheduleDraw()}
             />
 
             <main className="min-h-screen bg-gray-50 px-4 py-6 font-[Nunito] dark:bg-gray-950 sm:px-6 xl:px-8">
@@ -839,12 +1115,13 @@ export default function SorteiosAdminPage() {
                                     Sorteios (Admin)
                                 </h1>
                                 <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                                    Visualize os sorteios realizados e crie um novo sorteio de forma
-                                    simples.
+                                    Visualize os sorteios realizados e execute novos sorteios com
+                                    confirmação em duas etapas.
                                 </p>
                             </div>
 
                             <button
+                                type="button"
                                 onClick={() => void openNovoSorteioFlow()}
                                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
                             >
@@ -880,9 +1157,6 @@ export default function SorteiosAdminPage() {
                                             Status
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                                            Agendado
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
                                             Executado
                                         </th>
                                     </tr>
@@ -892,7 +1166,7 @@ export default function SorteiosAdminPage() {
                                     {history.length === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan={5}
+                                                colSpan={4}
                                                 className="px-6 py-8 text-sm text-gray-600 dark:text-gray-300"
                                             >
                                                 Nenhum sorteio encontrado.
@@ -915,9 +1189,6 @@ export default function SorteiosAdminPage() {
                                                     >
                                                         {getStatusLabel(item.status)}
                                                     </span>
-                                                </td>
-                                                <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-200">
-                                                    {formatBR(item.scheduled_at)}
                                                 </td>
                                                 <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-200">
                                                     {formatBR(item.executed_at)}
