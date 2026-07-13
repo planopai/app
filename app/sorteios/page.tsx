@@ -53,9 +53,15 @@ type HistoryResp = {
 
 type ApiResp<T = Record<string, never>> = { ok: boolean; error?: string } & T;
 
+type PremioFormItem = {
+    id: string;
+    nome: string;
+    quantidade: number;
+};
+
 type NewSorteioForm = {
     titulo: string;
-    premiosText: string;
+    premios: PremioFormItem[];
 };
 
 type PremioResumo = {
@@ -130,31 +136,66 @@ function maskCpf(cpf: string) {
     return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 }
 
-function getPremiosList(text: string) {
-    return text
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
+function createPremioFormItem(id: string): PremioFormItem {
+    return {
+        id,
+        nome: "",
+        quantidade: 1,
+    };
 }
 
-function summarizePremios(premios: string[]): PremioResumo[] {
-    const grouped = new Map<string, PremioResumo>();
+function createClientPremioId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+
+    return `premio-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizePremioName(value: string) {
+    return value.trim().replace(/\s+/g, " ");
+}
+
+function getPremiosResumo(items: PremioFormItem[]): PremioResumo[] {
+    return items
+        .map((item) => ({
+            nome: normalizePremioName(item.nome),
+            quantidade: Number.isInteger(item.quantidade) ? item.quantidade : 0,
+        }))
+        .filter((item) => item.nome !== "");
+}
+
+function getTotalPremios(premios: PremioResumo[]) {
+    return premios.reduce((total, premio) => total + premio.quantidade, 0);
+}
+
+function expandPremios(premios: PremioResumo[]) {
+    const expanded: string[] = [];
 
     for (const premio of premios) {
-        const key = premio.toLocaleLowerCase("pt-BR");
-        const current = grouped.get(key);
-
-        if (current) {
-            current.quantidade += 1;
-        } else {
-            grouped.set(key, {
-                nome: premio,
-                quantidade: 1,
-            });
+        for (let index = 0; index < premio.quantidade; index += 1) {
+            expanded.push(premio.nome);
         }
     }
 
-    return Array.from(grouped.values());
+    return expanded;
+}
+
+function getDuplicatePremioNames(premios: PremioResumo[]) {
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+
+    for (const premio of premios) {
+        const key = premio.nome.toLocaleLowerCase("pt-BR");
+
+        if (seen.has(key)) {
+            duplicates.add(premio.nome);
+        } else {
+            seen.add(key);
+        }
+    }
+
+    return Array.from(duplicates);
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -170,7 +211,7 @@ function sanitizeStatus(value?: string | null): SorteioStatus {
 function getDefaultForm(): NewSorteioForm {
     return {
         titulo: DEFAULT_TITLE,
-        premiosText: "",
+        premios: [createPremioFormItem("premio-inicial")],
     };
 }
 
@@ -343,9 +384,53 @@ function NovoSorteioModal({
 }) {
     if (!open) return null;
 
-    const premiosList = getPremiosList(form.premiosText);
-    const premiosResumo = summarizePremios(premiosList);
+    const premiosResumo = getPremiosResumo(form.premios);
+    const totalPremios = getTotalPremios(premiosResumo);
     const loading = submitKind === "running";
+    const maxQuantidadePorPremio = Math.max(1, eligibleTotal ?? 999);
+    const ultimoPremio = form.premios[form.premios.length - 1];
+    const canAddPremio =
+        Boolean(ultimoPremio) &&
+        normalizePremioName(ultimoPremio.nome) !== "" &&
+        Number.isInteger(ultimoPremio.quantidade) &&
+        ultimoPremio.quantidade >= 1;
+
+    const updatePremio = (
+        premioId: string,
+        patch: Partial<Pick<PremioFormItem, "nome" | "quantidade">>
+    ) => {
+        setForm((prev) => ({
+            ...prev,
+            premios: prev.premios.map((premio) =>
+                premio.id === premioId ? { ...premio, ...patch } : premio
+            ),
+        }));
+    };
+
+    const addPremio = () => {
+        if (!canAddPremio) return;
+
+        setForm((prev) => ({
+            ...prev,
+            premios: [...prev.premios, createPremioFormItem(createClientPremioId())],
+        }));
+    };
+
+    const removePremio = (premioId: string) => {
+        setForm((prev) => {
+            if (prev.premios.length === 1) {
+                return {
+                    ...prev,
+                    premios: [createPremioFormItem("premio-inicial")],
+                };
+            }
+
+            return {
+                ...prev,
+                premios: prev.premios.filter((premio) => premio.id !== premioId),
+            };
+        });
+    };
 
     const title =
         confirmationStep === "form"
@@ -356,7 +441,7 @@ function NovoSorteioModal({
 
     const subtitle =
         confirmationStep === "form"
-            ? "Configure o sorteio. A execução só ocorrerá após duas confirmações."
+            ? "Cadastre cada prêmio com sua quantidade. A execução só ocorrerá após duas confirmações."
             : confirmationStep === "review"
                 ? "Confira o nome, os prêmios e as quantidades antes de continuar."
                 : "Esta é a última etapa antes da realização do sorteio.";
@@ -441,42 +526,124 @@ function NovoSorteioModal({
                                         />
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label
-                                            htmlFor="sorteio-premios"
-                                            className="text-sm font-semibold text-gray-700 dark:text-gray-200"
+                                    <div className="space-y-3">
+                                        <div>
+                                            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                                Prêmios
+                                            </h4>
+                                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                Informe o nome e a quantidade de cada tipo de prêmio.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            {form.premios.map((premio, index) => (
+                                                <div
+                                                    key={premio.id}
+                                                    className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60"
+                                                >
+                                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                                            Prêmio {index + 1}
+                                                        </span>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removePremio(premio.id)}
+                                                            disabled={loading}
+                                                            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300 dark:hover:bg-red-950/30"
+                                                        >
+                                                            Remover
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
+                                                        <div className="space-y-2">
+                                                            <label
+                                                                htmlFor={`premio-nome-${premio.id}`}
+                                                                className="text-xs font-semibold text-gray-600 dark:text-gray-300"
+                                                            >
+                                                                Nome do prêmio
+                                                            </label>
+                                                            <input
+                                                                id={`premio-nome-${premio.id}`}
+                                                                value={premio.nome}
+                                                                onChange={(event) =>
+                                                                    updatePremio(premio.id, {
+                                                                        nome: event.target.value,
+                                                                    })
+                                                                }
+                                                                maxLength={180}
+                                                                placeholder='Ex.: Televisor 50"'
+                                                                disabled={loading}
+                                                                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                                            />
+                                                        </div>
+
+                                                        <div className="space-y-2">
+                                                            <label
+                                                                htmlFor={`premio-quantidade-${premio.id}`}
+                                                                className="text-xs font-semibold text-gray-600 dark:text-gray-300"
+                                                            >
+                                                                Quantidade
+                                                            </label>
+                                                            <input
+                                                                id={`premio-quantidade-${premio.id}`}
+                                                                type="number"
+                                                                min={1}
+                                                                max={maxQuantidadePorPremio}
+                                                                inputMode="numeric"
+                                                                value={premio.quantidade}
+                                                                onChange={(event) => {
+                                                                    const parsed = Number.parseInt(
+                                                                        event.target.value,
+                                                                        10
+                                                                    );
+
+                                                                    updatePremio(premio.id, {
+                                                                        quantidade: Number.isNaN(parsed)
+                                                                            ? 1
+                                                                            : Math.min(
+                                                                                maxQuantidadePorPremio,
+                                                                                Math.max(1, parsed)
+                                                                            ),
+                                                                    });
+                                                                }}
+                                                                disabled={loading}
+                                                                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={addPremio}
+                                            disabled={loading || !canAddPremio}
+                                            className="inline-flex w-full items-center justify-center rounded-xl border border-dashed border-emerald-400 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/20"
                                         >
-                                            Prêmios, 1 unidade por linha
-                                        </label>
-                                        <textarea
-                                            id="sorteio-premios"
-                                            value={form.premiosText}
-                                            onChange={(event) =>
-                                                setForm((prev) => ({
-                                                    ...prev,
-                                                    premiosText: event.target.value,
-                                                }))
-                                            }
-                                            rows={8}
-                                            placeholder={`Ex.:
-Televisor 50"
-Smartphone
-Air Fryer
-Air Fryer`}
-                                            disabled={loading}
-                                            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                                        />
-                                        <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
-                                            <p>
-                                                Total: <strong>{premiosList.length}</strong>{" "}
-                                                unidade(s) em{" "}
-                                                <strong>{premiosResumo.length}</strong> tipo(s) de
-                                                prêmio.
+                                            + Adicionar próximo prêmio
+                                        </button>
+
+                                        {!canAddPremio ? (
+                                            <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                                                Preencha o nome do prêmio atual para adicionar o próximo.
                                             </p>
-                                            <p>
-                                                Para sortear mais de uma unidade do mesmo prêmio,
-                                                repita o nome em linhas diferentes.
-                                            </p>
+                                        ) : null}
+
+                                        <div className="rounded-xl bg-gray-100 px-4 py-3 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <span>
+                                                    Tipos cadastrados:{" "}
+                                                    <strong>{premiosResumo.length}</strong>
+                                                </span>
+                                                <span>
+                                                    Total de unidades:{" "}
+                                                    <strong>{totalPremios}</strong>
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -678,8 +845,8 @@ export default function SorteiosAdminPage() {
     const latestSorteio = pageData.latestSorteio;
     const history = pageData.history;
 
-    const premiosList = useMemo(() => getPremiosList(form.premiosText), [form.premiosText]);
-    const premiosResumo = useMemo(() => summarizePremios(premiosList), [premiosList]);
+    const premiosResumo = useMemo(() => getPremiosResumo(form.premios), [form.premios]);
+    const totalPremios = useMemo(() => getTotalPremios(premiosResumo), [premiosResumo]);
 
     const clearProgressTimers = useCallback(() => {
         if (progressIntervalRef.current !== null) {
@@ -858,26 +1025,64 @@ export default function SorteiosAdminPage() {
             return;
         }
 
-        if (premiosList.length === 0) {
-            setModalError("Informe pelo menos um prêmio.");
-            return;
-        }
+        const emptyPremioIndex = form.premios.findIndex(
+            (premio) => normalizePremioName(premio.nome) === ""
+        );
 
-        if (eligibleTotal !== null && premiosList.length > eligibleTotal) {
+        if (emptyPremioIndex >= 0) {
             setModalError(
-                `Existem ${premiosList.length} prêmios, mas apenas ${eligibleTotal} associados elegíveis. Reduza a quantidade de prêmios antes de continuar.`
+                `Informe o nome do prêmio ${emptyPremioIndex + 1} ou remova essa linha.`
             );
             return;
         }
 
+        if (premiosResumo.length === 0 || totalPremios === 0) {
+            setModalError("Informe pelo menos um prêmio.");
+            return;
+        }
+
+        const maxQuantidadePorPremio = Math.max(1, eligibleTotal ?? 999);
+        const invalidQuantityIndex = form.premios.findIndex(
+            (premio) =>
+                !Number.isInteger(premio.quantidade) ||
+                premio.quantidade < 1 ||
+                premio.quantidade > maxQuantidadePorPremio
+        );
+
+        if (invalidQuantityIndex >= 0) {
+            setModalError(
+                `Informe uma quantidade válida entre 1 e ${maxQuantidadePorPremio} para o prêmio ${invalidQuantityIndex + 1
+                }.`
+            );
+            return;
+        }
+
+        const duplicateNames = getDuplicatePremioNames(premiosResumo);
+
+        if (duplicateNames.length > 0) {
+            setModalError(
+                `O prêmio "${duplicateNames[0]}" foi cadastrado mais de uma vez. Mantenha uma única linha e ajuste a quantidade.`
+            );
+            return;
+        }
+
+        if (eligibleTotal !== null && totalPremios > eligibleTotal) {
+            setModalError(
+                `Existem ${totalPremios} unidades de prêmio, mas apenas ${eligibleTotal} associados elegíveis. Reduza as quantidades antes de continuar.`
+            );
+            return;
+        }
+
+        const premiosExpandidos = expandPremios(premiosResumo);
+
         setExecutionSnapshot({
             titulo,
-            premios: [...premiosList],
+            premios: premiosExpandidos,
             resumo: premiosResumo.map((premio) => ({ ...premio })),
-            totalPremios: premiosList.length,
+            totalPremios,
         });
         setConfirmationStep("review");
-    }, [eligibleTotal, form.titulo, premiosList, premiosResumo]);
+    }, [eligibleTotal, form.premios, form.titulo, premiosResumo, totalPremios]);
 
     const backToForm = useCallback(() => {
         if (executionPrepared) return;
