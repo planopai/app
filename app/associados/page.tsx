@@ -91,6 +91,10 @@ type ContractDetail = {
     local_auth: LocalAuth;
     beneficiarios?: BeneficiarioApi[];
     beneficiarios_count?: number;
+    access_map?: Record<
+        string,
+        Exclude<LocalAuth, null>
+    >;
     beneficiario: any | null;
     beneficiario_error?: string | null;
     contas_receber: any | null;
@@ -1241,13 +1245,38 @@ function DetailModalContent({
          * Nesse caso, a lista bruta que funcionava anteriormente
          * continua sendo utilizada.
          */
-        return mergeBeneficiariosLists(
-            normalizedList,
-            legacyRawList,
-        );
+        const merged =
+            mergeBeneficiariosLists(
+                normalizedList,
+                legacyRawList,
+            );
+
+        const accessMap =
+            detail?.access_map ?? {};
+
+        return merged.map((item) => {
+            const cpf =
+                getBeneficiarioCpf(item);
+
+            const auth =
+                cpf.length === 11
+                    ? accessMap[cpf] ?? null
+                    : null;
+
+            if (!auth) {
+                return item;
+            }
+
+            return {
+                ...item,
+                local_auth: auth,
+                has_access: true,
+            };
+        });
     }, [
         detail?.beneficiarios,
         detail?.beneficiario,
+        detail?.access_map,
     ]);
 
     const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
@@ -1892,6 +1921,66 @@ export default function AssociadosGeralPage() {
         await fetchDetail(selected);
     }, [fetchDetail, selected]);
 
+    const applySavedAccessToDetail = useCallback(
+        (
+            cpf: string,
+            localAuth: Exclude<LocalAuth, null>,
+        ) => {
+            setDetail((previous) => {
+                if (!previous) {
+                    return previous;
+                }
+
+                const nextBeneficiarios =
+                    previous.beneficiarios?.map(
+                        (item) => {
+                            if (
+                                getBeneficiarioCpf(item) !==
+                                cpf
+                            ) {
+                                return item;
+                            }
+
+                            return {
+                                ...item,
+                                local_auth: localAuth,
+                                has_access: true,
+                            };
+                        },
+                    );
+
+                const nextDetail: ContractDetail = {
+                    ...previous,
+                    beneficiarios:
+                        nextBeneficiarios ??
+                        previous.beneficiarios,
+                    access_map: {
+                        ...(previous.access_map ?? {}),
+                        [cpf]: localAuth,
+                    },
+                };
+
+                const selectedCpf = onlyDigits(
+                    selected?.cpf_cnpj || "",
+                );
+
+                const cacheKey =
+                    `${Number(selected?.id) || 0}|${selectedCpf}`;
+
+                detailCacheRef.current.set(
+                    cacheKey,
+                    nextDetail,
+                );
+
+                return nextDetail;
+            });
+        },
+        [
+            selected?.cpf_cnpj,
+            selected?.id,
+        ],
+    );
+
     const upsertAccess = useCallback(
         async (payload: { cpf: string; senha: string; email: string; telefone: string }) => {
             const cpf = onlyDigits(payload.cpf);
@@ -1932,7 +2021,34 @@ export default function AssociadosGeralPage() {
                 const data = await safeJson<any>(res);
                 if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao salvar acesso.");
 
-                toastMessage("ok", data.created ? "Acesso criado com sucesso!" : "Acesso atualizado com sucesso!");
+                const savedLocalAuth:
+                    Exclude<LocalAuth, null> =
+                    data.local_auth ?? {
+                        cpf,
+                        email,
+                        telefone: tel,
+                        email_verificado: 0,
+                        telefone_verificado: 0,
+                        tentativas: 0,
+                        bloqueado_ate: null,
+                        ultimo_login: null,
+                    };
+
+                /*
+                 * Atualiza a tag imediatamente, sem esperar uma nova
+                 * consulta ao servidor.
+                 */
+                applySavedAccessToDetail(
+                    cpf,
+                    savedLocalAuth,
+                );
+
+                toastMessage(
+                    "ok",
+                    data.created
+                        ? "Acesso criado com sucesso!"
+                        : "Acesso atualizado com sucesso!",
+                );
 
                 const selectedCpf = onlyDigits(
                     selected?.cpf_cnpj || "",
@@ -1957,6 +2073,7 @@ export default function AssociadosGeralPage() {
             accessTipo,
             accessNome,
             accessToken,
+            applySavedAccessToDetail,
         ]
     );
 
