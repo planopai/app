@@ -90,6 +90,7 @@ type ContractDetail = {
     titular_cpf?: string;
     local_auth: LocalAuth;
     beneficiarios?: BeneficiarioApi[];
+    beneficiarios_count?: number;
     beneficiario: any | null;
     beneficiario_error?: string | null;
     contas_receber: any | null;
@@ -185,10 +186,33 @@ function getBeneficiarioTipo(
         "",
     );
 
-    if (value === "T" || value === "TITULAR") return "T";
-    if (value === "D" || value === "DEPENDENTE") return "D";
-    if (value === "A" || value === "AGREGADO") return "A";
-    if (value === "P" || value === "PET") return "P";
+    if (value === "T" || value === "TITULAR") {
+        return "T";
+    }
+
+    if (
+        value === "D" ||
+        value === "DEPENDENTE" ||
+        value === "DEPENDENTES"
+    ) {
+        return "D";
+    }
+
+    if (
+        value === "A" ||
+        value === "AGREGADO" ||
+        value === "AGREGADOS"
+    ) {
+        return "A";
+    }
+
+    if (
+        value === "P" ||
+        value === "PET" ||
+        value === "PETS"
+    ) {
+        return "P";
+    }
 
     return "";
 }
@@ -352,6 +376,7 @@ function extractBeneficiariosList(
 
     const normalizeItem = (
         value: unknown,
+        inferredType: "" | "T" | "D" | "A" | "P" = "",
     ): BeneficiarioApi | null => {
         if (
             !value ||
@@ -368,7 +393,7 @@ function extractBeneficiariosList(
             x.tipo ??
             x.TipoBeneficiario ??
             x.tipoBeneficiario ??
-            "",
+            inferredType,
         );
 
         const Nome = String(
@@ -490,7 +515,38 @@ function extractBeneficiariosList(
         };
     };
 
-    const visit = (node: unknown): void => {
+    const inferTypeFromKey = (
+        key: string,
+    ): "" | "D" | "A" | "P" => {
+        const normalized = key
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9]/g, "")
+            .toUpperCase();
+
+        if (normalized.includes("DEPENDENTE")) {
+            return "D";
+        }
+
+        if (normalized.includes("AGREGADO")) {
+            return "A";
+        }
+
+        if (
+            normalized === "PET" ||
+            normalized === "PETS" ||
+            normalized.includes("LISTAPET")
+        ) {
+            return "P";
+        }
+
+        return "";
+    };
+
+    const visit = (
+        node: unknown,
+        inheritedType: "" | "T" | "D" | "A" | "P" = "",
+    ): void => {
         if (
             node &&
             typeof node === "object"
@@ -502,13 +558,16 @@ function extractBeneficiariosList(
         if (Array.isArray(node)) {
             for (const item of node) {
                 const normalized =
-                    normalizeItem(item);
+                    normalizeItem(
+                        item,
+                        inheritedType,
+                    );
 
                 if (normalized) {
                     output.push(normalized);
                 }
 
-                visit(item);
+                visit(item, inheritedType);
             }
 
             return;
@@ -522,13 +581,16 @@ function extractBeneficiariosList(
         }
 
         const normalized =
-            normalizeItem(node);
+            normalizeItem(
+                node,
+                inheritedType,
+            );
 
         if (normalized) {
             output.push(normalized);
         }
 
-        for (const value of Object.values(
+        for (const [key, value] of Object.entries(
             node as Record<string, unknown>,
         )) {
             if (
@@ -538,7 +600,13 @@ function extractBeneficiariosList(
                     typeof value === "object"
                 )
             ) {
-                visit(value);
+                const inferred =
+                    inferTypeFromKey(key);
+
+                visit(
+                    value,
+                    inferred || inheritedType,
+                );
             }
         }
     };
@@ -574,6 +642,91 @@ function extractBeneficiariosList(
         seen.add(key);
         return true;
     });
+}
+
+function mergeBeneficiariosLists(
+    ...lists: BeneficiarioApi[][]
+): BeneficiarioApi[] {
+    const merged = new Map<
+        string,
+        BeneficiarioApi
+    >();
+
+    for (const list of lists) {
+        for (const item of list) {
+            const tipo =
+                getBeneficiarioTipo(item);
+
+            if (!tipo) continue;
+
+            const nome = toUpperTrim(
+                item.Nome ??
+                item.nome ??
+                "",
+            );
+
+            const nascimento = String(
+                item.DataNascimento ??
+                item.dataNascimento ??
+                "",
+            ).slice(0, 10);
+
+            const key =
+                `${tipo}|${nome}|${nascimento}`;
+
+            const current =
+                merged.get(key);
+
+            if (!current) {
+                merged.set(key, item);
+                continue;
+            }
+
+            const currentCpf =
+                getBeneficiarioCpf(current);
+            const nextCpf =
+                getBeneficiarioCpf(item);
+
+            merged.set(key, {
+                ...current,
+                ...item,
+                Tipo: tipo,
+                tipo,
+                Nome:
+                    item.Nome ||
+                    item.nome ||
+                    current.Nome ||
+                    current.nome,
+                nome:
+                    item.nome ||
+                    item.Nome ||
+                    current.nome ||
+                    current.Nome,
+                CPF:
+                    nextCpf ||
+                    currentCpf,
+                cpf:
+                    nextCpf ||
+                    currentCpf,
+                Telefone:
+                    item.Telefone ||
+                    item.telefone ||
+                    item.celular ||
+                    current.Telefone ||
+                    current.telefone ||
+                    current.celular,
+                local_auth:
+                    item.local_auth ||
+                    current.local_auth ||
+                    null,
+                has_access:
+                    beneficiarioHasAccess(item) ||
+                    beneficiarioHasAccess(current),
+            });
+        }
+    }
+
+    return Array.from(merged.values());
 }
 
 const pickTitularFromList = (
@@ -1061,20 +1214,29 @@ function DetailModalContent({
     const hasAccess = !!local;
 
     const beneficiarios = useMemo(() => {
-        if (
-            Array.isArray(
+        const normalizedList =
+            extractBeneficiariosList(
                 detail?.beneficiarios,
-            )
-        ) {
-            return extractBeneficiariosList(
-                detail.beneficiarios,
             );
-        }
 
-        return extractBeneficiariosList(
-            detail?.beneficiario,
+        const legacyRawList =
+            extractBeneficiariosList(
+                detail?.beneficiario,
+            );
+
+        /*
+         * O campo normalizado pode chegar como [].
+         * Nesse caso, a lista bruta que funcionava anteriormente
+         * continua sendo utilizada.
+         */
+        return mergeBeneficiariosLists(
+            normalizedList,
+            legacyRawList,
         );
-    }, [detail]);
+    }, [
+        detail?.beneficiarios,
+        detail?.beneficiario,
+    ]);
 
     const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
     const dependentes = useMemo(() => pickDependentesFromList(beneficiarios), [beneficiarios]);
@@ -1220,7 +1382,17 @@ function DetailModalContent({
 
                 <div className="p-4">
                     {dependentes.length === 0 ? (
-                        <div className="text-sm text-muted-foreground">Nenhum dependente retornado.</div>
+                        <div className="grid gap-2">
+                            <div className="text-sm text-muted-foreground">
+                                Nenhum dependente ou agregado retornado.
+                            </div>
+
+                            {detail?.beneficiario_error ? (
+                                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+                                    {detail.beneficiario_error}
+                                </div>
+                            ) : null}
+                        </div>
                     ) : (
                         <>
                             <div className="hidden md:block overflow-auto rounded-2xl border bg-background">
