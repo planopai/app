@@ -139,6 +139,7 @@ type BeneficiarioApi = {
     local_auth?: LocalAuth;
     has_access?: boolean | number | string;
     cpf_disponivel?: boolean;
+    access_token?: string;
 };
 
 /* =========================
@@ -478,6 +479,12 @@ function extractBeneficiariosList(
                 >)
                 : null;
 
+        const access_token = String(
+            x.access_token ??
+            x.accessToken ??
+            "",
+        ).trim();
+
         const hasAccessRaw =
             x.has_access ??
             x.tem_acesso ??
@@ -512,6 +519,7 @@ function extractBeneficiariosList(
             has_access,
             cpf_disponivel:
                 CPF.length === 11,
+            access_token,
         };
     };
 
@@ -722,6 +730,10 @@ function mergeBeneficiariosLists(
                 has_access:
                     beneficiarioHasAccess(item) ||
                     beneficiarioHasAccess(current),
+                access_token:
+                    item.access_token ||
+                    current.access_token ||
+                    "",
             });
         }
     }
@@ -1675,6 +1687,7 @@ export default function AssociadosGeralPage() {
     const [accessCpfEditable, setAccessCpfEditable] = useState(false);
     const [accessTipo, setAccessTipo] = useState<"T" | "D" | "A">("T");
     const [accessNome, setAccessNome] = useState("");
+    const [accessToken, setAccessToken] = useState("");
 
     const headers = useMemo(() => ({ "Content-Type": "application/json" } as Record<string, string>), []);
 
@@ -1910,6 +1923,8 @@ export default function AssociadosGeralPage() {
                             Number(selected?.id) || 0,
                         tipo: accessTipo,
                         nome: accessNome,
+                        access_token:
+                            accessToken,
                     }),
                     cache: "no-store",
                 });
@@ -1941,6 +1956,7 @@ export default function AssociadosGeralPage() {
             selected?.id,
             accessTipo,
             accessNome,
+            accessToken,
         ]
     );
 
@@ -1955,6 +1971,7 @@ export default function AssociadosGeralPage() {
         setAccessCpfEditable(false);
         setAccessTipo("T");
         setAccessNome(selected?.nome || "Titular");
+        setAccessToken("");
         setAccessOpen(true);
     }, [
         detail?.local_auth,
@@ -2024,6 +2041,9 @@ export default function AssociadosGeralPage() {
             setAccessCpfEditable(false);
             setAccessTipo(tipo);
             setAccessNome(nome);
+            setAccessToken(
+                dep.access_token || "",
+            );
             setAccessOpen(true);
         },
         [],
