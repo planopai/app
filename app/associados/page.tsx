@@ -87,8 +87,11 @@ type LocalAuth = {
 
 type ContractDetail = {
     ok: boolean;
+    titular_cpf?: string;
     local_auth: LocalAuth;
+    beneficiarios?: BeneficiarioApi[];
     beneficiario: any | null;
+    beneficiario_error?: string | null;
     contas_receber: any | null;
 };
 
@@ -109,17 +112,32 @@ type PaginationInfo = {
 type BeneficiarioApi = {
     Tipo?: "T" | "D" | "A" | "P" | string;
     Nome?: string;
+    CPF?: string;
     DataNascimento?: string;
     Sexo?: "F" | "M" | "N" | string;
     Telefone?: string;
+    GrauParentesco?: string | null;
 
-    // tolerância para variações
+    // Tolerância para variações da API.
     tipo?: "T" | "D" | "A" | "P" | string;
     nome?: string;
+    cpf?: string;
+    Cpf?: string;
+    cpfCnpj?: string;
+    CpfCnpj?: string;
+    cpf_cnpj?: string;
+    CPFBeneficiario?: string;
+    cpfBeneficiario?: string;
+    documento?: string;
     dataNascimento?: string;
     sexo?: "F" | "M" | "N" | string;
     telefone?: string;
     celular?: string;
+    grauParentesco?: string | null;
+
+    local_auth?: LocalAuth;
+    has_access?: boolean | number | string;
+    cpf_disponivel?: boolean;
 };
 
 /* =========================
@@ -127,6 +145,75 @@ type BeneficiarioApi = {
 ========================= */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
 const toUpperTrim = (v: unknown) => String(v ?? "").trim().toUpperCase();
+
+function fmtCpf(value?: string): string {
+    const digits = onlyDigits(value || "");
+
+    if (digits.length !== 11) {
+        return value?.trim() || "-";
+    }
+
+    return digits.replace(
+        /(\d{3})(\d{3})(\d{3})(\d{2})/,
+        "$1.$2.$3-$4",
+    );
+}
+
+function getBeneficiarioCpf(
+    beneficiario?: BeneficiarioApi | null,
+): string {
+    return onlyDigits(
+        beneficiario?.CPF ??
+        beneficiario?.cpf ??
+        beneficiario?.Cpf ??
+        beneficiario?.cpfCnpj ??
+        beneficiario?.CpfCnpj ??
+        beneficiario?.cpf_cnpj ??
+        beneficiario?.CPFBeneficiario ??
+        beneficiario?.cpfBeneficiario ??
+        beneficiario?.documento ??
+        "",
+    );
+}
+
+function getBeneficiarioTipo(
+    beneficiario?: BeneficiarioApi | null,
+): "T" | "D" | "A" | "P" | "" {
+    const value = toUpperTrim(
+        beneficiario?.Tipo ??
+        beneficiario?.tipo ??
+        "",
+    );
+
+    if (value === "T" || value === "TITULAR") return "T";
+    if (value === "D" || value === "DEPENDENTE") return "D";
+    if (value === "A" || value === "AGREGADO") return "A";
+    if (value === "P" || value === "PET") return "P";
+
+    return "";
+}
+
+function beneficiarioHasAccess(
+    beneficiario?: BeneficiarioApi | null,
+): boolean {
+    if (beneficiario?.local_auth) return true;
+
+    const raw = beneficiario?.has_access;
+
+    if (typeof raw === "boolean") return raw;
+    if (typeof raw === "number") return raw > 0;
+
+    const value = String(raw ?? "")
+        .trim()
+        .toLowerCase();
+
+    return (
+        value === "1" ||
+        value === "true" ||
+        value === "sim" ||
+        value === "yes"
+    );
+}
 
 const safeText = (v: unknown) => {
     if (v === null || v === undefined) return "-";
@@ -255,76 +342,260 @@ function isValidTelefoneBR(telefone: string) {
 /* =========================
    Beneficiário parsing (Unypax)
 ========================= */
-function extractBeneficiariosList(payload: any): BeneficiarioApi[] {
+function extractBeneficiariosList(
+    payload: unknown,
+): BeneficiarioApi[] {
     if (!payload) return [];
 
-    const normalizeItem = (x: any): BeneficiarioApi => {
-        const Tipo = (x?.Tipo ?? x?.tipo ?? "") as BeneficiarioApi["Tipo"];
-        const Nome = (x?.Nome ?? x?.nome ?? "") as string;
-        const DataNascimento = (x?.DataNascimento ?? x?.dataNascimento ?? x?.data_nascimento ?? "") as string;
-        const Sexo = (x?.Sexo ?? x?.sexo ?? "") as BeneficiarioApi["Sexo"];
-        const Telefone = (x?.Telefone ?? x?.telefone ?? x?.celular ?? "") as string;
-        return { Tipo, Nome, DataNascimento, Sexo, Telefone };
+    const output: BeneficiarioApi[] = [];
+    const visited = new Set<unknown>();
+
+    const normalizeItem = (
+        value: unknown,
+    ): BeneficiarioApi | null => {
+        if (
+            !value ||
+            typeof value !== "object" ||
+            Array.isArray(value)
+        ) {
+            return null;
+        }
+
+        const x = value as Record<string, unknown>;
+
+        const Tipo = String(
+            x.Tipo ??
+            x.tipo ??
+            x.TipoBeneficiario ??
+            x.tipoBeneficiario ??
+            "",
+        );
+
+        const Nome = String(
+            x.Nome ??
+            x.nome ??
+            x.NomeBeneficiario ??
+            x.nomeBeneficiario ??
+            "",
+        ).trim();
+
+        const normalizedType = getBeneficiarioTipo({
+            Tipo,
+        });
+
+        if (
+            !Nome ||
+            !normalizedType
+        ) {
+            return null;
+        }
+
+        const CPF = onlyDigits(
+            String(
+                x.CPF ??
+                x.cpf ??
+                x.Cpf ??
+                x.CPFCNPJ ??
+                x.CpfCnpj ??
+                x.cpfCnpj ??
+                x.cpf_cnpj ??
+                x.CPFBeneficiario ??
+                x.cpfBeneficiario ??
+                x.Documento ??
+                x.documento ??
+                "",
+            ),
+        );
+
+        const DataNascimento = String(
+            x.DataNascimento ??
+            x.dataNascimento ??
+            x.data_nascimento ??
+            "",
+        );
+
+        const Sexo = String(
+            x.Sexo ??
+            x.sexo ??
+            "",
+        );
+
+        const Telefone = String(
+            x.Telefone ??
+            x.telefone ??
+            x.Fone ??
+            x.fone ??
+            x.Celular ??
+            x.celular ??
+            "",
+        );
+
+        const GrauParentesco =
+            String(
+                x.GrauParentesco ??
+                x.grauParentesco ??
+                x.Parentesco ??
+                x.parentesco ??
+                "",
+            ).trim() || null;
+
+        const localAuthRaw =
+            x.local_auth ??
+            x.localAuth ??
+            null;
+
+        const local_auth =
+            localAuthRaw &&
+                typeof localAuthRaw === "object"
+                ? (localAuthRaw as Exclude<
+                    LocalAuth,
+                    null
+                >)
+                : null;
+
+        const hasAccessRaw =
+            x.has_access ??
+            x.tem_acesso ??
+            x.acesso;
+
+        const has_access:
+            | boolean
+            | number
+            | string =
+            typeof hasAccessRaw === "boolean" ||
+                typeof hasAccessRaw === "number" ||
+                typeof hasAccessRaw === "string"
+                ? hasAccessRaw
+                : Boolean(local_auth);
+
+        return {
+            Tipo: normalizedType,
+            tipo: normalizedType,
+            Nome,
+            nome: Nome,
+            CPF,
+            cpf: CPF,
+            DataNascimento,
+            dataNascimento: DataNascimento,
+            Sexo,
+            sexo: Sexo,
+            Telefone,
+            telefone: Telefone,
+            GrauParentesco,
+            grauParentesco: GrauParentesco,
+            local_auth,
+            has_access,
+            cpf_disponivel:
+                CPF.length === 11,
+        };
     };
 
-    const looksLikeListItem = (x: any) =>
-        x &&
-        typeof x === "object" &&
-        ("Tipo" in x ||
-            "Nome" in x ||
-            "DataNascimento" in x ||
-            "Sexo" in x ||
-            "Telefone" in x ||
-            "tipo" in x ||
-            "nome" in x ||
-            "dataNascimento" in x ||
-            "sexo" in x ||
-            "telefone" in x ||
-            "celular" in x);
-
-    if (Array.isArray(payload)) return payload.filter(looksLikeListItem).map(normalizeItem);
-
-    if (typeof payload === "object") {
-        const candidates = [
-            "ListaBeneficiarios",
-            "listaBeneficiarios",
-            "ListaBeneficiário",
-            "listaBeneficiário",
-            "Beneficiarios",
-            "beneficiarios",
-            "items",
-            "itens",
-            "data",
-            "Data",
-        ];
-
-        for (const k of candidates) {
-            const v = (payload as any)?.[k];
-            if (Array.isArray(v)) {
-                const arr = v.filter(looksLikeListItem).map(normalizeItem);
-                if (arr.length) return arr;
-            }
+    const visit = (node: unknown): void => {
+        if (
+            node &&
+            typeof node === "object"
+        ) {
+            if (visited.has(node)) return;
+            visited.add(node);
         }
 
-        for (const key of Object.keys(payload)) {
-            const v = (payload as any)[key];
-            if (Array.isArray(v)) {
-                const arr = v.filter(looksLikeListItem).map(normalizeItem);
-                if (arr.length) return arr;
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                const normalized =
+                    normalizeItem(item);
+
+                if (normalized) {
+                    output.push(normalized);
+                }
+
+                visit(item);
+            }
+
+            return;
+        }
+
+        if (
+            !node ||
+            typeof node !== "object"
+        ) {
+            return;
+        }
+
+        const normalized =
+            normalizeItem(node);
+
+        if (normalized) {
+            output.push(normalized);
+        }
+
+        for (const value of Object.values(
+            node as Record<string, unknown>,
+        )) {
+            if (
+                Array.isArray(value) ||
+                (
+                    value &&
+                    typeof value === "object"
+                )
+            ) {
+                visit(value);
             }
         }
-    }
+    };
 
-    return [];
+    visit(payload);
+
+    const seen = new Set<string>();
+
+    return output.filter((item) => {
+        const cpf =
+            getBeneficiarioCpf(item);
+        const tipo =
+            getBeneficiarioTipo(item);
+        const nome =
+            toUpperTrim(
+                item.Nome ??
+                item.nome,
+            );
+        const nascimento =
+            String(
+                item.DataNascimento ??
+                item.dataNascimento ??
+                "",
+            );
+
+        const key =
+            cpf.length === 11
+                ? `${tipo}:CPF:${cpf}`
+                : `${tipo}:NOME:${nome}:${nascimento}`;
+
+        if (seen.has(key)) return false;
+
+        seen.add(key);
+        return true;
+    });
 }
 
-const pickTitularFromList = (list: BeneficiarioApi[]) =>
-    list.find((b) => String(b.Tipo ?? b.tipo ?? "").toUpperCase() === "T") ?? null;
+const pickTitularFromList = (
+    list: BeneficiarioApi[],
+) =>
+    list.find(
+        (item) =>
+            getBeneficiarioTipo(item) === "T",
+    ) ?? null;
 
-const pickDependentesFromList = (list: BeneficiarioApi[]) =>
-    list.filter((b) => {
-        const tipo = String(b.Tipo ?? b.tipo ?? "").toUpperCase();
-        return tipo === "D" || tipo === "A" || tipo === "P";
+const pickDependentesFromList = (
+    list: BeneficiarioApi[],
+) =>
+    list.filter((item) => {
+        const tipo =
+            getBeneficiarioTipo(item);
+
+        return (
+            tipo === "D" ||
+            tipo === "A" ||
+            tipo === "P"
+        );
     });
 
 function sexoLabel(s: any) {
@@ -495,7 +766,9 @@ function AccessModal({
                             autoComplete="off"
                         />
                         <div className="text-xs text-muted-foreground">
-                            {cpfEditable ? "Obrigatório (dependente não vem com CPF na API)." : "CPF do titular já definido."}
+                            {cpfEditable
+                                ? "Informe um CPF válido com 11 dígitos."
+                                : "CPF do associado definido automaticamente pelo cadastro."}
                         </div>
                     </div>
 
@@ -788,9 +1061,19 @@ function DetailModalContent({
     const hasAccess = !!local;
 
     const beneficiarios = useMemo(() => {
-        const raw = (detail as any)?.beneficiario ?? (detail as any)?.beneficiarios ?? (detail as any)?.ListaBeneficiarios;
-        const normalizedRaw = Array.isArray(raw) ? raw[0] : raw;
-        return extractBeneficiariosList(normalizedRaw);
+        if (
+            Array.isArray(
+                detail?.beneficiarios,
+            )
+        ) {
+            return extractBeneficiariosList(
+                detail.beneficiarios,
+            );
+        }
+
+        return extractBeneficiariosList(
+            detail?.beneficiario,
+        );
     }, [detail]);
 
     const titular = useMemo(() => pickTitularFromList(beneficiarios), [beneficiarios]);
@@ -900,7 +1183,8 @@ function DetailModalContent({
 
                             {titular ? (
                                 <div className="pt-2 text-xs text-muted-foreground">
-                                    <span className="font-medium text-foreground">Titular (Unypax):</span> {safeText(titular.Nome)} • Nasc:{" "}
+                                    <span className="font-medium text-foreground">Titular (Unypax):</span>{" "}
+                                    {safeText(titular.Nome)} • CPF: {fmtCpf(getBeneficiarioCpf(titular) || cpfDigits)} • Nasc:{" "}
                                     {fmtDateBR(titular.DataNascimento)} • Sexo: {sexoLabel(titular.Sexo)} • Tel: {safeText(titular.Telefone)}
                                 </div>
                             ) : null}
@@ -945,56 +1229,221 @@ function DetailModalContent({
                                         <tr>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Tipo</th>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Nome</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">CPF</th>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Nascimento</th>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Sexo</th>
                                             <th className="px-3 py-2 text-left whitespace-nowrap">Telefone</th>
+                                            <th className="px-3 py-2 text-left whitespace-nowrap">Acesso</th>
                                             <th className="px-3 py-2 text-right whitespace-nowrap">Ação</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {dependentes.map((d, idx) => (
-                                            <tr key={idx} className="border-b last:border-0">
-                                                <td className="px-3 py-2">{tipoLabel(d.Tipo)}</td>
-                                                <td className="px-3 py-2 font-medium">{safeText((d as any).Nome ?? (d as any).nome)}</td>
-                                                <td className="px-3 py-2">{fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento)}</td>
-                                                <td className="px-3 py-2">{sexoLabel((d as any).Sexo ?? (d as any).sexo)}</td>
-                                                <td className="px-3 py-2">{safeText((d as any).Telefone ?? (d as any).telefone)}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <button className={btnOutline + " py-1.5"} onClick={() => onOpenDepAccess(d)}>
-                                                        <IconLock className="size-4" />
-                                                        Criar acesso
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {dependentes.map((d, idx) => {
+                                            const cpf =
+                                                getBeneficiarioCpf(d);
+                                            const tipo =
+                                                getBeneficiarioTipo(d);
+                                            const hasAccess =
+                                                beneficiarioHasAccess(d);
+                                            const canCreateAccess =
+                                                (
+                                                    tipo === "D" ||
+                                                    tipo === "A"
+                                                ) &&
+                                                cpf.length === 11;
+
+                                            return (
+                                                <tr
+                                                    key={`${tipo}-${cpf || idx}-${d.Nome ?? d.nome ?? ""}`}
+                                                    className="border-b last:border-0"
+                                                >
+                                                    <td className="px-3 py-2">
+                                                        {tipoLabel(tipo)}
+                                                    </td>
+
+                                                    <td className="px-3 py-2 font-medium">
+                                                        {safeText(d.Nome ?? d.nome)}
+                                                    </td>
+
+                                                    <td className="px-3 py-2 whitespace-nowrap">
+                                                        {cpf.length === 11
+                                                            ? fmtCpf(cpf)
+                                                            : (
+                                                                <span className="text-amber-700 dark:text-amber-300">
+                                                                    Não retornado
+                                                                </span>
+                                                            )}
+                                                    </td>
+
+                                                    <td className="px-3 py-2">
+                                                        {fmtDateBR(
+                                                            d.DataNascimento ??
+                                                            d.dataNascimento,
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-3 py-2">
+                                                        {sexoLabel(
+                                                            d.Sexo ??
+                                                            d.sexo,
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-3 py-2">
+                                                        {safeText(
+                                                            d.Telefone ??
+                                                            d.telefone ??
+                                                            d.celular,
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-3 py-2">
+                                                        {tipo === "P" ? (
+                                                            <span className={badge + " border-muted bg-muted/30 text-muted-foreground"}>
+                                                                Não aplicável
+                                                            </span>
+                                                        ) : (
+                                                            <span className={accessBadge(hasAccess)}>
+                                                                {hasAccess ? (
+                                                                    <>
+                                                                        <IconCheck className="size-3" />
+                                                                        Com acesso
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <IconAlertTriangle className="size-3" />
+                                                                        Sem acesso
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-3 py-2 text-right">
+                                                        <button
+                                                            className={btnOutline + " py-1.5"}
+                                                            onClick={() => onOpenDepAccess(d)}
+                                                            disabled={!canCreateAccess}
+                                                            title={
+                                                                tipo === "P"
+                                                                    ? "Pets não recebem acesso por CPF."
+                                                                    : cpf.length !== 11
+                                                                        ? "O CPF não foi retornado pela API."
+                                                                        : "Criar ou atualizar acesso"
+                                                            }
+                                                        >
+                                                            <IconLock className="size-4" />
+                                                            {hasAccess ? "Atualizar acesso" : "Criar acesso"}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
 
                             <div className="md:hidden grid gap-2">
-                                {dependentes.map((d, idx) => (
-                                    <div key={idx} className="rounded-2xl border bg-background p-3">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <div className="text-xs text-muted-foreground">{tipoLabel(d.Tipo)}</div>
-                                                <div className="font-semibold truncate">{safeText((d as any).Nome ?? (d as any).nome ?? d.Nome)}</div>
-                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                    Nasc: {fmtDateBR((d as any).DataNascimento ?? (d as any).dataNascimento ?? d.DataNascimento)} • Sexo:{" "}
-                                                    {sexoLabel((d as any).Sexo ?? (d as any).sexo ?? d.Sexo)}
-                                                </div>
-                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                    <span className="font-medium text-foreground">Tel:</span>{" "}
-                                                    {safeText((d as any).Telefone ?? (d as any).telefone ?? d.Telefone)}
-                                                </div>
-                                            </div>
+                                {dependentes.map((d, idx) => {
+                                    const cpf =
+                                        getBeneficiarioCpf(d);
+                                    const tipo =
+                                        getBeneficiarioTipo(d);
+                                    const hasAccess =
+                                        beneficiarioHasAccess(d);
+                                    const canCreateAccess =
+                                        (
+                                            tipo === "D" ||
+                                            tipo === "A"
+                                        ) &&
+                                        cpf.length === 11;
 
-                                            <button className={btnOutline + " shrink-0 py-1.5"} onClick={() => onOpenDepAccess(d)}>
-                                                <IconLock className="size-4" />
-                                                Criar
-                                            </button>
+                                    return (
+                                        <div
+                                            key={`${tipo}-${cpf || idx}-${d.Nome ?? d.nome ?? ""}`}
+                                            className="rounded-2xl border bg-background p-3"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {tipoLabel(tipo)}
+                                                    </div>
+
+                                                    <div className="font-semibold truncate">
+                                                        {safeText(d.Nome ?? d.nome)}
+                                                    </div>
+
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        <span className="font-medium text-foreground">
+                                                            CPF:
+                                                        </span>{" "}
+                                                        {cpf.length === 11
+                                                            ? fmtCpf(cpf)
+                                                            : "Não retornado"}
+                                                    </div>
+
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        Nasc:{" "}
+                                                        {fmtDateBR(
+                                                            d.DataNascimento ??
+                                                            d.dataNascimento,
+                                                        )}{" "}
+                                                        • Sexo:{" "}
+                                                        {sexoLabel(
+                                                            d.Sexo ??
+                                                            d.sexo,
+                                                        )}
+                                                    </div>
+
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        <span className="font-medium text-foreground">
+                                                            Tel:
+                                                        </span>{" "}
+                                                        {safeText(
+                                                            d.Telefone ??
+                                                            d.telefone ??
+                                                            d.celular,
+                                                        )}
+                                                    </div>
+
+                                                    {tipo !== "P" && (
+                                                        <div className="mt-2">
+                                                            <span className={accessBadge(hasAccess)}>
+                                                                {hasAccess ? (
+                                                                    <>
+                                                                        <IconCheck className="size-3" />
+                                                                        Com acesso
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <IconAlertTriangle className="size-3" />
+                                                                        Sem acesso
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <button
+                                                    className={btnOutline + " shrink-0 py-1.5"}
+                                                    onClick={() => onOpenDepAccess(d)}
+                                                    disabled={!canCreateAccess}
+                                                    title={
+                                                        tipo === "P"
+                                                            ? "Pets não recebem acesso por CPF."
+                                                            : cpf.length !== 11
+                                                                ? "O CPF não foi retornado pela API."
+                                                                : "Criar ou atualizar acesso"
+                                                    }
+                                                >
+                                                    <IconLock className="size-4" />
+                                                    {hasAccess ? "Atualizar" : "Criar"}
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </>
                     )}
@@ -1052,6 +1501,8 @@ export default function AssociadosGeralPage() {
     const [accessEmail, setAccessEmail] = useState("");
     const [accessTelefone, setAccessTelefone] = useState("");
     const [accessCpfEditable, setAccessCpfEditable] = useState(false);
+    const [accessTipo, setAccessTipo] = useState<"T" | "D" | "A">("T");
+    const [accessNome, setAccessNome] = useState("");
 
     const headers = useMemo(() => ({ "Content-Type": "application/json" } as Record<string, string>), []);
 
@@ -1275,7 +1726,19 @@ export default function AssociadosGeralPage() {
                 const res = await fetch(url.toString(), {
                     method: "POST",
                     headers,
-                    body: JSON.stringify({ cpf, senha, email, telefone: tel }),
+                    body: JSON.stringify({
+                        cpf,
+                        senha,
+                        email,
+                        telefone: tel,
+                        titular_cpf: onlyDigits(
+                            selected?.cpf_cnpj || "",
+                        ),
+                        idContrato:
+                            Number(selected?.id) || 0,
+                        tipo: accessTipo,
+                        nome: accessNome,
+                    }),
                     cache: "no-store",
                 });
 
@@ -1283,12 +1746,30 @@ export default function AssociadosGeralPage() {
                 if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao salvar acesso.");
 
                 toastMessage("ok", data.created ? "Acesso criado com sucesso!" : "Acesso atualizado com sucesso!");
+
+                const selectedCpf = onlyDigits(
+                    selected?.cpf_cnpj || "",
+                );
+                const cacheKey = `${Number(selected?.id) || 0
+                    }|${selectedCpf}`;
+
+                detailCacheRef.current.delete(
+                    cacheKey,
+                );
+
                 await reloadDetail();
             } catch (e: any) {
                 toastMessage("err", e?.message || "Erro ao salvar acesso.");
             }
         },
-        [headers, reloadDetail]
+        [
+            headers,
+            reloadDetail,
+            selected?.cpf_cnpj,
+            selected?.id,
+            accessTipo,
+            accessNome,
+        ]
     );
 
     const openTitularAccess = useCallback(() => {
@@ -1300,19 +1781,81 @@ export default function AssociadosGeralPage() {
         setAccessEmail(local?.email || "");
         setAccessTelefone(local?.telefone || "");
         setAccessCpfEditable(false);
+        setAccessTipo("T");
+        setAccessNome(selected?.nome || "Titular");
         setAccessOpen(true);
-    }, [detail?.local_auth, selected?.cpf_cnpj]);
+    }, [
+        detail?.local_auth,
+        selected?.cpf_cnpj,
+        selected?.nome,
+    ]);
 
-    const openDepAccess = useCallback((dep: BeneficiarioApi) => {
-        const nome = safeText(dep?.Nome || dep?.nome || "Beneficiário");
+    const openDepAccess = useCallback(
+        (dep: BeneficiarioApi) => {
+            const nome = safeText(
+                dep?.Nome ??
+                dep?.nome ??
+                "Beneficiário",
+            );
 
-        setAccessTitle(`Criar acesso (${nome})`);
-        setAccessCpf("");
-        setAccessEmail("");
-        setAccessTelefone(dep?.Telefone || dep?.telefone || dep?.celular || "");
-        setAccessCpfEditable(true);
-        setAccessOpen(true);
-    }, []);
+            const cpf =
+                getBeneficiarioCpf(dep);
+            const tipo =
+                getBeneficiarioTipo(dep);
+
+            if (tipo === "P") {
+                toastMessage(
+                    "warn",
+                    "Pets não podem receber acesso por CPF.",
+                );
+                return;
+            }
+
+            if (
+                tipo !== "D" &&
+                tipo !== "A"
+            ) {
+                toastMessage(
+                    "warn",
+                    "Tipo de beneficiário inválido para criação de acesso.",
+                );
+                return;
+            }
+
+            if (cpf.length !== 11) {
+                toastMessage(
+                    "warn",
+                    "O CPF deste beneficiário não foi retornado pela Unypax.",
+                );
+                return;
+            }
+
+            const local =
+                dep.local_auth ?? null;
+
+            setAccessTitle(
+                `${local ? "Atualizar" : "Criar"} acesso (${nome})`,
+            );
+            setAccessCpf(cpf);
+            setAccessEmail(
+                local?.email || "",
+            );
+            setAccessTelefone(
+                local?.telefone ||
+                dep?.Telefone ||
+                dep?.telefone ||
+                dep?.celular ||
+                "",
+            );
+
+            // Mesmo comportamento do titular: CPF automático e bloqueado.
+            setAccessCpfEditable(false);
+            setAccessTipo(tipo);
+            setAccessNome(nome);
+            setAccessOpen(true);
+        },
+        [],
+    );
 
     const totalContratos = pagination?.totalItemCount ?? 0;
     const hasResults = filteredContracts.length > 0;
@@ -1339,7 +1882,7 @@ export default function AssociadosGeralPage() {
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Associados</h1>
-                    
+
                 </div>
 
                 <div className="flex items-center gap-2">
