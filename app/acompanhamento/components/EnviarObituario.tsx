@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     IconDownload,
     IconPhoto,
@@ -11,7 +11,6 @@ import {
 import * as QRCode from "qrcode";
 import Modal from "./Modal";
 import type { Registro } from "./types";
-import { Maiden_Orange } from "next/font/google";
 
 type ModeloKey =
     | "modelo01"
@@ -414,11 +413,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     });
 }
 
-function dataUrlToUint8Array(dataUrl: string) {
+function dataUrlParaBlob(dataUrl: string): Blob {
     const parts = String(dataUrl || "").split(",");
 
     if (parts.length < 2) {
-        throw new Error("Imagem inválida para gerar PDF.");
+        throw new Error("Imagem inválida.");
     }
 
     const header = parts[0] || "";
@@ -431,16 +430,51 @@ function dataUrlToUint8Array(dataUrl: string) {
         bytes[i] = binary.charCodeAt(i);
     }
 
-    return { bytes, mime };
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+
+    return new Blob([buffer], { type: mime });
 }
 
-function criarPdfA4ComImagem(dataUrl: string) {
-    const { bytes, mime } = dataUrlToUint8Array(dataUrl);
+function canvasParaBlob(
+    canvas: HTMLCanvasElement,
+    type = "image/jpeg",
+    quality = 0.92
+): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+        if (typeof canvas.toBlob !== "function") {
+            try {
+                resolve(dataUrlParaBlob(canvas.toDataURL(type, quality)));
+            } catch (error) {
+                reject(error);
+            }
+
+            return;
+        }
+
+        canvas.toBlob(
+            (blob) => {
+                if (blob) {
+                    resolve(blob);
+                    return;
+                }
+
+                reject(new Error("Não foi possível gerar o arquivo da imagem."));
+            },
+            type,
+            quality
+        );
+    });
+}
+
+async function criarPdfA4ComImagem(jpegBlob: Blob): Promise<Blob> {
+    const mime = String(jpegBlob.type || "").toLowerCase();
 
     if (mime !== "image/jpeg" && mime !== "image/jpg") {
         throw new Error("A imagem do A4 precisa estar em JPEG para gerar o PDF.");
     }
 
+    const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
     const encoder = new TextEncoder();
     const chunks: BlobPart[] = [];
     const offsets: number[] = [];
@@ -452,8 +486,6 @@ function criarPdfA4ComImagem(dataUrl: string) {
     };
 
     const addBytes = (value: Uint8Array) => {
-        // Converte explicitamente para ArrayBuffer para evitar erro do TypeScript
-        // com Uint8Array<ArrayBufferLike> em projetos com tipagem DOM mais restrita.
         const buffer = new ArrayBuffer(value.byteLength);
         new Uint8Array(buffer).set(value);
         chunks.push(buffer);
@@ -498,22 +530,114 @@ function criarPdfA4ComImagem(dataUrl: string) {
         addString(`${String(offsets[i] || 0).padStart(10, "0")} 00000 n \n`);
     }
 
-    addString(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+    addString(
+        `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+    );
 
     return new Blob(chunks, { type: "application/pdf" });
 }
 
-function baixarBlob(blob: Blob, filename: string) {
+function isDispositivoIOS() {
+    if (typeof navigator === "undefined") return false;
+
+    return (
+        /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
+}
+
+function navegadorPodeCompartilharArquivo(file: File) {
+    if (
+        typeof navigator === "undefined" ||
+        typeof navigator.share !== "function" ||
+        typeof navigator.canShare !== "function"
+    ) {
+        return false;
+    }
+
+    try {
+        return navigator.canShare({ files: [file] });
+    } catch {
+        return false;
+    }
+}
+
+function baixarBlob(
+    blob: Blob,
+    filename: string,
+    abrirEmNovaAba = false
+) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
 
     a.href = url;
     a.download = filename;
-    a.click();
+    a.rel = "noopener noreferrer";
+    a.style.display = "none";
 
+    if (abrirEmNovaAba) {
+        a.target = "_blank";
+    }
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    // O WebKit pode consumir a URL depois do clique. Revogar cedo demais
+    // faz algumas versões do iOS cancelarem a abertura ou o download.
     window.setTimeout(() => {
         URL.revokeObjectURL(url);
-    }, 1000);
+    }, 120_000);
+}
+
+async function compartilharOuBaixarArquivo(
+    blob: Blob,
+    filename: string,
+    title: string
+) {
+    if (isDispositivoIOS()) {
+        try {
+            const file = new File([blob], filename, {
+                type: blob.type || "application/octet-stream",
+                lastModified: Date.now(),
+            });
+
+            if (navegadorPodeCompartilharArquivo(file)) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title,
+                    });
+
+                    return;
+                } catch (error) {
+                    if (
+                        error instanceof DOMException &&
+                        error.name === "AbortError"
+                    ) {
+                        return;
+                    }
+
+                    console.warn(
+                        "O compartilhamento nativo falhou. Abrindo o arquivo como fallback:",
+                        error
+                    );
+                }
+            }
+        } catch (error) {
+            console.warn(
+                "Não foi possível preparar o arquivo para compartilhamento:",
+                error
+            );
+        }
+
+        // Em versões ou WebViews sem compartilhamento de arquivos, o conteúdo
+        // é aberto em outra aba para permitir Salvar Imagem ou Salvar em Arquivos.
+        baixarBlob(blob, filename, true);
+        return;
+    }
+
+    baixarBlob(blob, filename);
 }
 
 async function carregarImagemParaCanvas(src: string): Promise<HTMLImageElement> {
@@ -681,15 +805,6 @@ async function desenharQrLegadoLuzA4(
     ctx.restore();
 }
 
-function montarLinhaDataHora(data?: string, horaInicio?: string, horaFim?: string) {
-    const dataLimpa = String(data || "").trim();
-    const inicio = String(horaInicio || "").trim();
-    const fim = String(horaFim || "").trim();
-
-    const horario = inicio && fim ? `${inicio} às ${fim}` : inicio || fim;
-
-    return [dataLimpa, horario].filter(Boolean).join(" - ");
-}
 
 type DadosObituario = {
     nome: string;
@@ -806,6 +921,7 @@ export default function EnviarObituario({
     const [incluirQrLegado, setIncluirQrLegado] = useState(false);
 
     const [previewSrc, setPreviewSrc] = useState("");
+    const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState("");
 
@@ -813,8 +929,14 @@ export default function EnviarObituario({
     const [fraseA4Selecionada, setFraseA4Selecionada] = useState("0");
     const [fraseA4Personalizada, setFraseA4Personalizada] = useState("");
     const [previewA4Src, setPreviewA4Src] = useState("");
+    const [previewA4PdfBlob, setPreviewA4PdfBlob] = useState<Blob | null>(null);
     const [loadingA4, setLoadingA4] = useState(false);
     const [erroA4, setErroA4] = useState("");
+
+    const previewUrlRef = useRef("");
+    const previewA4UrlRef = useRef("");
+    const geracaoIdRef = useRef(0);
+    const geracaoA4IdRef = useRef(0);
 
     const registroUpdateKey = useMemo(() => getRegistroUpdateKey(registro), [registro]);
     const dados = useMemo(() => montarDados(registro), [registroUpdateKey]);
@@ -835,15 +957,39 @@ export default function EnviarObituario({
 
     useEffect(() => {
         if (!open) return;
+
+        geracaoIdRef.current += 1;
+
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = "";
+        }
+
         setPreviewSrc("");
+        setPreviewBlob(null);
         setErro("");
     }, [open, registroUpdateKey]);
+
+    useEffect(() => {
+        return () => {
+            geracaoIdRef.current += 1;
+            geracaoA4IdRef.current += 1;
+
+            if (previewUrlRef.current) {
+                URL.revokeObjectURL(previewUrlRef.current);
+            }
+
+            if (previewA4UrlRef.current) {
+                URL.revokeObjectURL(previewA4UrlRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (!open) return;
 
         const t = setTimeout(() => {
-            gerarObituario();
+            void gerarObituario();
         }, 250);
 
         return () => clearTimeout(t);
@@ -862,7 +1008,7 @@ export default function EnviarObituario({
         if (!openA4) return;
 
         const t = setTimeout(() => {
-            gerarObituarioA4();
+            void gerarObituarioA4();
         }, 250);
 
         return () => clearTimeout(t);
@@ -1047,21 +1193,30 @@ export default function EnviarObituario({
         ctx.restore();
     }
 
-    async function gerarObituario() {
+    async function gerarObituario(): Promise<Blob | null> {
         if (!registro) {
             setErro("Nenhum atendimento selecionado.");
-            return;
+            return null;
         }
 
         if (!dados.nome) {
             setErro("O atendimento não possui nome do falecido.");
-            return;
+            return null;
         }
+
+        const geracaoId = ++geracaoIdRef.current;
 
         try {
             setLoading(true);
             setErro("");
+
+            if (previewUrlRef.current) {
+                URL.revokeObjectURL(previewUrlRef.current);
+                previewUrlRef.current = "";
+            }
+
             setPreviewSrc("");
+            setPreviewBlob(null);
 
             await ensureFontLoaded(fontName || "Nunito");
 
@@ -1231,36 +1386,67 @@ export default function EnviarObituario({
                 );
             }
 
-            setPreviewSrc(canvas.toDataURL("image/jpeg", 0.92));
+            const blob = await canvasParaBlob(canvas, "image/jpeg", 0.92);
+
+            if (geracaoId !== geracaoIdRef.current) {
+                return null;
+            }
+
+            const objectUrl = URL.createObjectURL(blob);
+
+            if (previewUrlRef.current) {
+                URL.revokeObjectURL(previewUrlRef.current);
+            }
+
+            previewUrlRef.current = objectUrl;
+            setPreviewBlob(blob);
+            setPreviewSrc(objectUrl);
+
+            return blob;
         } catch (e: any) {
             console.error(e);
-            setErro(e?.message || "Não foi possível gerar o obituário.");
+
+            if (geracaoId === geracaoIdRef.current) {
+                setErro(e?.message || "Não foi possível gerar o obituário.");
+            }
+
+            return null;
         } finally {
-            setLoading(false);
+            if (geracaoId === geracaoIdRef.current) {
+                setLoading(false);
+            }
         }
     }
 
-
-    async function gerarObituarioA4(): Promise<string> {
+    async function gerarObituarioA4(): Promise<Blob | null> {
         if (!registro) {
             setErroA4("Nenhum atendimento selecionado.");
-            return "";
+            return null;
         }
 
         if (!dados.nome) {
             setErroA4("O atendimento não possui nome do falecido.");
-            return "";
+            return null;
         }
 
         if (!fraseA4Final) {
             setErroA4("Selecione uma frase ou escreva uma mensagem personalizada.");
-            return "";
+            return null;
         }
+
+        const geracaoId = ++geracaoA4IdRef.current;
 
         try {
             setLoadingA4(true);
             setErroA4("");
+
+            if (previewA4UrlRef.current) {
+                URL.revokeObjectURL(previewA4UrlRef.current);
+                previewA4UrlRef.current = "";
+            }
+
             setPreviewA4Src("");
+            setPreviewA4PdfBlob(null);
 
             await ensureFontLoaded(fontName || "Nunito");
 
@@ -1392,43 +1578,101 @@ export default function EnviarObituario({
 
             ctx.restore();
 
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-            setPreviewA4Src(dataUrl);
-            return dataUrl;
+            const imagemBlob = await canvasParaBlob(
+                canvas,
+                "image/jpeg",
+                0.92
+            );
+            const pdfBlob = await criarPdfA4ComImagem(imagemBlob);
+
+            if (geracaoId !== geracaoA4IdRef.current) {
+                return null;
+            }
+
+            const objectUrl = URL.createObjectURL(imagemBlob);
+
+            if (previewA4UrlRef.current) {
+                URL.revokeObjectURL(previewA4UrlRef.current);
+            }
+
+            previewA4UrlRef.current = objectUrl;
+            setPreviewA4PdfBlob(pdfBlob);
+            setPreviewA4Src(objectUrl);
+
+            return imagemBlob;
         } catch (e: any) {
             console.error(e);
-            setErroA4(e?.message || "Não foi possível gerar o obituário A4.");
-            return "";
+
+            if (geracaoId === geracaoA4IdRef.current) {
+                setErroA4(e?.message || "Não foi possível gerar o obituário A4.");
+            }
+
+            return null;
         } finally {
-            setLoadingA4(false);
+            if (geracaoId === geracaoA4IdRef.current) {
+                setLoadingA4(false);
+            }
         }
     }
 
     function abrirModalA4() {
+        geracaoA4IdRef.current += 1;
+
+        if (previewA4UrlRef.current) {
+            URL.revokeObjectURL(previewA4UrlRef.current);
+            previewA4UrlRef.current = "";
+        }
+
         setOpenA4(true);
         setErroA4("");
         setPreviewA4Src("");
+        setPreviewA4PdfBlob(null);
     }
 
-    async function baixarObituarioA4() {
-        const src = previewA4Src || (await gerarObituarioA4());
+    function baixarObituarioA4() {
+        if (!previewA4PdfBlob) {
+            setErroA4("Aguarde a geração do arquivo A4 antes de baixar.");
+            return;
+        }
 
-        if (!src) return;
+        const sufixo =
+            incluirQrLegado && !!legadoLuzUrl
+                ? "a4-com-qr"
+                : "a4-sem-qr";
 
-        const sufixo = incluirQrLegado && !!legadoLuzUrl ? "a4-com-qr" : "a4-sem-qr";
-        const pdf = criarPdfA4ComImagem(src);
+        const filename =
+            `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.pdf`;
 
-        baixarBlob(pdf, `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.pdf`);
+        void compartilharOuBaixarArquivo(
+            previewA4PdfBlob,
+            filename,
+            "Obituário A4"
+        ).catch((error) => {
+            console.error(error);
+            setErroA4("Não foi possível abrir ou baixar o arquivo A4.");
+        });
     }
 
     function baixarObituario() {
-        if (!previewSrc) return;
+        if (!previewBlob) {
+            setErro("Aguarde a geração da imagem antes de baixar.");
+            return;
+        }
 
-        const a = document.createElement("a");
-        a.href = previewSrc;
-        const sufixo = incluirQrLegado && !!legadoLuzUrl ? "com-qr" : "sem-qr";
-        a.download = `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.jpg`;
-        a.click();
+        const sufixo =
+            incluirQrLegado && !!legadoLuzUrl ? "com-qr" : "sem-qr";
+
+        const filename =
+            `${nomeArquivoSeguro(dados.nome)}-obituario-${sufixo}.jpg`;
+
+        void compartilharOuBaixarArquivo(
+            previewBlob,
+            filename,
+            "Obituário"
+        ).catch((error) => {
+            console.error(error);
+            setErro("Não foi possível abrir ou baixar o obituário.");
+        });
     }
 
     return (
@@ -1645,7 +1889,7 @@ export default function EnviarObituario({
                                     type="button"
                                     className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
                                     onClick={baixarObituario}
-                                    disabled={!previewSrc || loading}
+                                    disabled={!previewBlob || loading}
                                 >
                                     <IconDownload className="size-4" />
                                     Baixar Obituário
@@ -1794,7 +2038,7 @@ export default function EnviarObituario({
                                     type="button"
                                     className="inline-flex items-center justify-center gap-2 rounded-md bg-[#039adc] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
                                     onClick={baixarObituarioA4}
-                                    disabled={loadingA4}
+                                    disabled={!previewA4PdfBlob || loadingA4}
                                 >
                                     <IconDownload className="size-4" />
                                     Baixar A4
