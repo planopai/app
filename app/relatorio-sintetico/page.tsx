@@ -97,6 +97,9 @@ type HistoricoRow = {
     tipo: "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "AJUSTE" | "CADASTRO_PRODUTO" | string;
     produto_id: ID;
     codigo_barras_snapshot?: string | null;
+    numero_lote_snapshot?: string | null;
+    custo_unitario_snapshot?: string | number | null;
+    custo_total_snapshot?: string | number | null;
     quantidade: number | null;
     deposito_origem_id: ID | null;
     deposito_destino_id: ID | null;
@@ -119,6 +122,21 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
+type CustoMedioPasso = {
+    movimento_id: number;
+    criado_em: string;
+    numero_lote?: string | null;
+    quantidade_anterior: number;
+    quantidade_nova: number;
+    quantidade_acumulada: number;
+    valor_anterior: number;
+    valor_novo: number;
+    valor_acumulado: number;
+    custo_unitario_novo: number;
+    custo_medio: number;
+    custo_estimado: boolean;
+};
+
 type EstoqueDeposito = {
     deposito_id: ID;
     deposito_nome: string;
@@ -133,7 +151,7 @@ type EstoqueDeposito = {
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
-const HISTORICO_LIMIT = 2000;
+const HISTORICO_LIMIT = 500;
 
 function num(v: unknown): number {
     if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -335,6 +353,7 @@ export default function Page() {
     const [saldos, setSaldos] = useState<Saldo[]>([]);
     const [lotes, setLotes] = useState<LoteRow[]>([]);
     const [historico, setHistorico] = useState<HistoricoRow[]>([]);
+    const [entradas, setEntradas] = useState<HistoricoRow[]>([]);
 
     const [busca, setBusca] = useState("");
     const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<ID | null>(null);
@@ -394,6 +413,7 @@ export default function Page() {
             ) {
                 setProdutoSelecionadoId(null);
                 setHistorico([]);
+                setEntradas([]);
                 setBusca("");
             }
         } catch (error: unknown) {
@@ -407,21 +427,40 @@ export default function Page() {
         setLoadingHistorico(true);
         setErroHistorico("");
         setHistorico([]);
+        setEntradas([]);
 
         try {
-            const response = await apiGet<HistoricoResp>({
-                historico: 1,
-                tipo: "SAIDA",
-                produto_id: produtoId,
-                limit: HISTORICO_LIMIT,
-                _ts: Date.now(),
-            });
+            const produto = produtos.find((item) => Number(item.id) === Number(produtoId));
+            const termoBusca = String(produto?.codigo_barras || produto?.nome || "").trim();
 
-            if (!response.ok) {
-                throw new Error(response.msg || "Falha ao carregar as saídas do produto.");
+            const [saidasResp, entradasResp] = await Promise.all([
+                apiGet<HistoricoResp>({
+                    historico: 1,
+                    tipo: "SAIDA",
+                    produto_id: produtoId,
+                    q: termoBusca,
+                    limit: HISTORICO_LIMIT,
+                    _ts: Date.now(),
+                }),
+                apiGet<HistoricoResp>({
+                    historico: 1,
+                    tipo: "ENTRADA",
+                    produto_id: produtoId,
+                    q: termoBusca,
+                    limit: HISTORICO_LIMIT,
+                    _ts: Date.now() + 1,
+                }),
+            ]);
+
+            if (!saidasResp.ok) {
+                throw new Error(saidasResp.msg || "Falha ao carregar as saídas do produto.");
             }
 
-            const rows = (response.rows || [])
+            if (!entradasResp.ok) {
+                throw new Error(entradasResp.msg || "Falha ao carregar as entradas do produto.");
+            }
+
+            const saidasRows = (saidasResp.rows || [])
                 .filter(
                     (row) =>
                         Number(row.produto_id) === Number(produtoId) &&
@@ -429,9 +468,26 @@ export default function Page() {
                 )
                 .sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime());
 
-            setHistorico(rows);
+            const entradasRows = (entradasResp.rows || [])
+                .filter(
+                    (row) =>
+                        Number(row.produto_id) === Number(produtoId) &&
+                        String(row.tipo || "").toUpperCase() === "ENTRADA"
+                )
+                .sort(
+                    (a, b) =>
+                        new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime() ||
+                        Number(a.id) - Number(b.id)
+                );
+
+            setHistorico(saidasRows);
+            setEntradas(entradasRows);
         } catch (error: unknown) {
-            setErroHistorico(error instanceof Error ? error.message : "Erro ao carregar as saídas do produto.");
+            setErroHistorico(
+                error instanceof Error
+                    ? error.message
+                    : "Erro ao carregar as entradas e saídas do produto."
+            );
         } finally {
             setLoadingHistorico(false);
         }
@@ -495,6 +551,7 @@ export default function Page() {
         setBusca("");
         setProdutoSelecionadoId(null);
         setHistorico([]);
+        setEntradas([]);
         setErroHistorico("");
         setListaAberta(false);
     }
@@ -523,10 +580,72 @@ export default function Page() {
             });
     }, [lotes, produtoSelecionado, depositoById]);
 
+    const memoriaCustoMedio = useMemo(() => {
+        const custoCadastro = num(produtoSelecionado?.preco_custo);
+        let valorAcumulado = 0;
+        let quantidadeAcumulada = 0;
+        let entradasSemCusto = 0;
+
+        const passos: CustoMedioPasso[] = [];
+
+        for (const entrada of entradas) {
+            const quantidadeNova = clampInt(entrada.quantidade);
+            if (quantidadeNova <= 0) continue;
+
+            const custoSnapshot = num(entrada.custo_unitario_snapshot);
+            const custoUnitarioNovo = custoSnapshot > 0 ? custoSnapshot : custoCadastro;
+            const custoEstimado = custoSnapshot <= 0;
+
+            if (custoEstimado) entradasSemCusto += 1;
+
+            const totalSnapshot = num(entrada.custo_total_snapshot);
+            const valorNovo =
+                totalSnapshot > 0
+                    ? totalSnapshot
+                    : quantidadeNova * custoUnitarioNovo;
+
+            const valorAnterior = valorAcumulado;
+            const quantidadeAnterior = quantidadeAcumulada;
+
+            valorAcumulado = valorAnterior + valorNovo;
+            quantidadeAcumulada = quantidadeAnterior + quantidadeNova;
+
+            passos.push({
+                movimento_id: Number(entrada.id),
+                criado_em: entrada.criado_em,
+                numero_lote: entrada.numero_lote_snapshot,
+                quantidade_anterior: quantidadeAnterior,
+                quantidade_nova: quantidadeNova,
+                quantidade_acumulada: quantidadeAcumulada,
+                valor_anterior: valorAnterior,
+                valor_novo: valorNovo,
+                valor_acumulado: valorAcumulado,
+                custo_unitario_novo: custoUnitarioNovo,
+                custo_medio:
+                    quantidadeAcumulada > 0
+                        ? valorAcumulado / quantidadeAcumulada
+                        : custoCadastro,
+                custo_estimado: custoEstimado,
+            });
+        }
+
+        return {
+            passos,
+            valorAcumulado,
+            quantidadeAcumulada,
+            entradasSemCusto,
+            custoMedioCompra:
+                quantidadeAcumulada > 0
+                    ? valorAcumulado / quantidadeAcumulada
+                    : custoCadastro,
+            ultimaEntrada: passos.length > 0 ? passos[passos.length - 1] : null,
+        };
+    }, [entradas, produtoSelecionado]);
+
     const estoquePorDeposito = useMemo<EstoqueDeposito[]>(() => {
         if (!produtoSelecionado) return [];
 
-        const custoCadastro = num(produtoSelecionado.preco_custo);
+        const custoMedioCompra = memoriaCustoMedio.custoMedioCompra;
 
         return saldosProduto
             .map((saldo) => {
@@ -541,18 +660,9 @@ export default function Page() {
                     0
                 );
 
-                const valorLotes = lotesDeposito.reduce(
-                    (total, lote) =>
-                        total + clampInt(lote.quantidade_atual) * num(lote.custo_unitario),
-                    0
-                );
-
-                const custoMedioLotes = quantidadeLotes > 0 ? valorLotes / quantidadeLotes : custoCadastro;
                 const quantidadeCobertaPorLote = Math.min(quantidade, quantidadeLotes);
                 const quantidadeSemLote = Math.max(0, quantidade - quantidadeCobertaPorLote);
-                const valorEstoque =
-                    quantidadeCobertaPorLote * custoMedioLotes +
-                    quantidadeSemLote * custoCadastro;
+                const valorEstoque = quantidade * custoMedioCompra;
 
                 return {
                     deposito_id: depositoId,
@@ -562,14 +672,24 @@ export default function Page() {
                     minimo: clampInt(saldo.minimo),
                     maximo: clampInt(saldo.maximo),
                     lotes: lotesDeposito.length,
-                    custo_medio: quantidade > 0 ? valorEstoque / quantidade : custoCadastro,
+                    custo_medio: custoMedioCompra,
                     valor_estoque: valorEstoque,
                     qtd_sem_lote: quantidadeSemLote,
                 };
             })
             .filter((row) => row.quantidade > 0 || row.minimo > 0 || row.maximo > 0)
-            .sort((a, b) => b.quantidade - a.quantidade || a.deposito_nome.localeCompare(b.deposito_nome, "pt-BR"));
-    }, [produtoSelecionado, saldosProduto, lotesProduto, depositoById]);
+            .sort(
+                (a, b) =>
+                    b.quantidade - a.quantidade ||
+                    a.deposito_nome.localeCompare(b.deposito_nome, "pt-BR")
+            );
+    }, [
+        produtoSelecionado,
+        saldosProduto,
+        lotesProduto,
+        depositoById,
+        memoriaCustoMedio.custoMedioCompra,
+    ]);
 
     const resumo = useMemo(() => {
         if (!produtoSelecionado) return null;
@@ -579,33 +699,13 @@ export default function Page() {
             0
         );
 
-        const valorEstoque = estoquePorDeposito.reduce(
-            (total, row) => total + row.valor_estoque,
-            0
-        );
-
         const qtdSemLote = estoquePorDeposito.reduce(
             (total, row) => total + row.qtd_sem_lote,
             0
         );
 
-        const custoMedioCompra =
-            estoqueAtual > 0
-                ? valorEstoque / estoqueAtual
-                : lotesProduto.length > 0
-                    ? lotesProduto.reduce(
-                        (total, lote) =>
-                            total + clampInt(lote.quantidade_atual) * num(lote.custo_unitario),
-                        0
-                    ) /
-                    Math.max(
-                        1,
-                        lotesProduto.reduce(
-                            (total, lote) => total + clampInt(lote.quantidade_atual),
-                            0
-                        )
-                    )
-                    : num(produtoSelecionado.preco_custo);
+        const custoMedioCompra = memoriaCustoMedio.custoMedioCompra;
+        const valorEstoque = estoqueAtual * custoMedioCompra;
 
         const precoVenda = num(produtoSelecionado.valor);
         const margemUnitaria = precoVenda - custoMedioCompra;
@@ -634,6 +734,10 @@ export default function Page() {
             valorEstoque,
             qtdSemLote,
             custoMedioCompra,
+            valorComprasAcumulado: memoriaCustoMedio.valorAcumulado,
+            quantidadeCompradaAcumulada: memoriaCustoMedio.quantidadeAcumulada,
+            entradasCalculadas: memoriaCustoMedio.passos.length,
+            entradasSemCusto: memoriaCustoMedio.entradasSemCusto,
             precoVenda,
             margemUnitaria,
             margemPercentual,
@@ -645,7 +749,7 @@ export default function Page() {
             ultimaSaida,
             movimentacoes: historico.length,
         };
-    }, [produtoSelecionado, estoquePorDeposito, lotesProduto, historico]);
+    }, [produtoSelecionado, estoquePorDeposito, historico, memoriaCustoMedio]);
 
     const categoriaNome = produtoSelecionado
         ? produtoSelecionado.categoria_nome ||
@@ -714,6 +818,7 @@ export default function Page() {
                                 ) {
                                     setProdutoSelecionadoId(null);
                                     setHistorico([]);
+                                    setEntradas([]);
                                     setErroHistorico("");
                                 }
                             }}
@@ -849,7 +954,7 @@ export default function Page() {
 
                         {erroHistorico ? (
                             <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                Os dados de estoque e preço foram carregados, mas as saídas não puderam ser consultadas: {erroHistorico}
+                                Os dados de estoque e preço foram carregados, mas as entradas e saídas não puderam ser consultadas: {erroHistorico}
                             </Panel>
                         ) : null}
 
@@ -872,7 +977,7 @@ export default function Page() {
                             <KpiCard
                                 label="Custo médio de compra"
                                 value={moneyBRL(resumo?.custoMedioCompra || 0)}
-                                hint="Ponderado pelos lotes atuais e saldo sem lote"
+                                hint="V antigo + V novo, Q antiga + Q nova, depois V/Q"
                             />
                             <KpiCard
                                 label="Preço de venda"
@@ -883,8 +988,8 @@ export default function Page() {
                                 label="Margem bruta unitária"
                                 value={moneyBRL(resumo?.margemUnitaria || 0)}
                                 hint={`${decimalBR(resumo?.margemPercentual || 0, 1)}% sobre a venda${resumo?.markupPercentual === null || resumo?.markupPercentual === undefined
-                                        ? ""
-                                        : ` | markup ${decimalBR(resumo.markupPercentual, 1)}%`
+                                    ? ""
+                                    : ` | markup ${decimalBR(resumo.markupPercentual, 1)}%`
                                     }`}
                             />
                             <KpiCard
@@ -898,15 +1003,26 @@ export default function Page() {
                             />
                         </div>
 
-                        {historico.length >= HISTORICO_LIMIT ? (
+                        {historico.length >= HISTORICO_LIMIT || entradas.length >= HISTORICO_LIMIT ? (
                             <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                A consulta atingiu o limite de {intBR(HISTORICO_LIMIT)} movimentações. A quantidade total de saída pode estar parcial.
+                                A consulta atingiu o limite de {intBR(HISTORICO_LIMIT)} registros. O custo médio ou a quantidade total de saída pode estar parcial.
                             </Panel>
                         ) : null}
 
-                        {resumo && resumo.qtdSemLote > 0 ? (
+                        {resumo && resumo.entradasSemCusto > 0 ? (
                             <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                Existem <b>{intBR(resumo.qtdSemLote)}</b> unidades sem cobertura por lote. Para elas, o custo cadastrado no produto foi usado no cálculo.
+                                Existem <b>{intBR(resumo.entradasSemCusto)}</b> entrada(s) sem custo gravado no histórico. Nessas entradas, o cálculo usou o preço de custo atual do cadastro.
+                            </Panel>
+                        ) : null}
+
+                        {resumo ? (
+                            <Panel className="p-4">
+                                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    Memória acumulada do custo médio
+                                </div>
+                                <div className="mt-2 text-sm leading-6 text-slate-700">
+                                    V = <b>{moneyBRL(resumo.valorComprasAcumulado)}</b>, Q = <b>{intBR(resumo.quantidadeCompradaAcumulada)}</b>. O custo médio é V/Q, usando o acumulado anterior mais cada nova entrada.
+                                </div>
                             </Panel>
                         ) : null}
 
@@ -1019,6 +1135,80 @@ export default function Page() {
                                 </div>
                             </Panel>
                         </div>
+
+                        <Panel className="overflow-hidden">
+                            <SectionHeader
+                                title="Memória do custo médio"
+                                subtitle="Cada nova entrada soma o V e o Q anteriores; o resultado é recalculado por V/Q"
+                            />
+
+                            <div className="overflow-auto">
+                                <table className="w-full min-w-[1080px] border-collapse text-sm">
+                                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                                        <tr>
+                                            <th className="border-b border-slate-200 px-4 py-3">Data</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Lote</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Q antiga</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Q nova</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">V antigo</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">V novo</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">V / Q acumulados</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Novo custo médio</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {loadingHistorico ? (
+                                            <tr>
+                                                <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
+                                                    Carregando entradas do produto...
+                                                </td>
+                                            </tr>
+                                        ) : memoriaCustoMedio.passos.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
+                                                    Nenhuma entrada com quantidade foi encontrada. O custo cadastrado está sendo usado como fallback.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            [...memoriaCustoMedio.passos]
+                                                .reverse()
+                                                .slice(0, 30)
+                                                .map((passo) => (
+                                                    <tr key={passo.movimento_id} className="odd:bg-white even:bg-slate-50/60">
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                            {fmtDateTime(passo.criado_em)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
+                                                            {passo.numero_lote || "Não informado"}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right">
+                                                            {intBR(passo.quantidade_anterior)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-bold">
+                                                            {intBR(passo.quantidade_nova)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right">
+                                                            {moneyBRL(passo.valor_anterior)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right">
+                                                            {moneyBRL(passo.valor_novo)}
+                                                            {passo.custo_estimado ? (
+                                                                <div className="mt-0.5 text-[11px] text-amber-700">estimado</div>
+                                                            ) : null}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right text-slate-600">
+                                                            {moneyBRL(passo.valor_acumulado)} / {intBR(passo.quantidade_acumulada)}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3 text-right font-black text-slate-950">
+                                                            {moneyBRL(passo.custo_medio)}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Panel>
 
                         <Panel className="overflow-hidden">
                             <SectionHeader
@@ -1158,7 +1348,7 @@ export default function Page() {
                         </Panel>
 
                         <Panel className="p-4 text-xs leading-5 text-slate-500">
-                            O custo médio considera o custo dos lotes que ainda possuem saldo. Quando o saldo do produto é maior que a quantidade coberta pelos lotes, a diferença usa o preço de custo cadastrado. A quantidade de saída soma as movimentações retornadas pela API para o produto selecionado.
+                            O custo médio segue a memória acumulada das entradas: V antigo + V da nova compra, Q antiga + Q da nova compra e, ao final, V/Q. As saídas não reduzem essa memória de compra. O valor em estoque é o estoque atual multiplicado pelo custo médio calculado. Quando não há entradas válidas, a página usa o preço de custo cadastrado como fallback.
                         </Panel>
                     </>
                 )}
