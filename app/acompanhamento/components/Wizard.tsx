@@ -401,9 +401,7 @@ function EstoqueCombobox({
                 </div>
             </div>
 
-            <p className="mt-1 text-[11px] text-slate-500">
-                Dica: selecione o <b>local</b> e toque em <b>Selecionar</b>. A lista já abre pronta.
-            </p>
+            
 
             {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
 
@@ -1370,7 +1368,7 @@ export default function Wizard({
                                     }}
                                     footerHint={
                                         <>
-                                            Obs: a baixa do estoque acontece automaticamente ao registrar <b>Ínicio da Ornamentação (fase05)</b>.
+                                            
                                         </>
                                     }
                                 />
