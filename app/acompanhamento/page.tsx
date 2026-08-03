@@ -1,3 +1,4 @@
+// PAGE INFO ITENS FIX V1 — NÃO INFERE TERCEIRO PELOS CAMPOS MARCADOS COMO NÃO
 "use client";
 
 import React, {
@@ -195,12 +196,15 @@ function addTerceiroIdToSession(id: string | number | undefined | null) {
 /* ----------- resolve tipo a partir de um registro existente ----------- */
 function resolveTipoFromRegistro(r?: Registro | null): TipoAtendimento {
   if (!r) return "funerario";
-  if ((r as any)?.tipo_atendimento === "terceiro") return "terceiro";
-  const asst = (r.assistencia || "").toString().toLowerCase();
-  const tan = (r.tanato || "").toString().toLowerCase();
-  const orn = (r.ornamentacao || "").toString().toLowerCase();
-  if (asst === "não" && tan === "não" && orn === "não") return "terceiro";
-  return "funerario";
+
+  const tipoSalvo = String((r as any)?.tipo_atendimento ?? "")
+    .trim()
+    .toLowerCase();
+
+  // Um atendimento só é "terceiro" quando isso estiver explicitamente
+  // salvo no registro. Os campos Assistência, Tanatopraxia e Ornamentação
+  // podem estar todos como "Não" em um atendimento funerário normal.
+  return tipoSalvo === "terceiro" ? "terceiro" : "funerario";
 }
 
 /* -------------------- Config dinâmico por tipo -------------------- */
@@ -2410,6 +2414,13 @@ export default function AcompanhamentoPage() {
     [registros, infoId],
   );
 
+  // Os títulos do modal Info pertencem ao registro que está aberto.
+  // Isso evita herdar o tipo do último cadastro/wizard acessado.
+  const wizardStepTitlesInfo = useMemo(() => {
+    const tipoDoRegistro = resolveTipoFromRegistro(registroInfo);
+    return getWizardConfig(tipoDoRegistro).wizardStepTitles;
+  }, [registroInfo]);
+
   const registroCompartilhar = useMemo(
     () =>
       shareId != null
@@ -2424,10 +2435,21 @@ export default function AcompanhamentoPage() {
     return idx >= 0 ? idx : null;
   }, [registros, infoId]);
 
-  const abrirInfoPorId = useCallback((id: Registro["id"]) => {
-    setInfoId(id != null ? String(id) : null);
-    setInfoOpen(true);
-  }, []);
+  const abrirInfoPorId = useCallback(
+    (id: Registro["id"]) => {
+      const normalizedId = id != null ? String(id) : null;
+
+      const registro =
+        normalizedId != null
+          ? (registros.find((item) => String(item.id) === normalizedId) ?? null)
+          : null;
+
+      setTipoAtendimento(resolveTipoFromRegistro(registro));
+      setInfoId(normalizedId);
+      setInfoOpen(true);
+    },
+    [registros],
+  );
 
   const abrirCompartilharPorId = useCallback((id: Registro["id"]) => {
     setShareId(id != null ? String(id) : null);
@@ -2732,7 +2754,7 @@ export default function AcompanhamentoPage() {
         abrirWizard={abrirWizardFromInfo}
         abrirAssinatura={(idx, tipo) => abrirAssinaturaFromInfo(idx, tipo)}
         registro={registroInfo}
-        wizardStepTitles={wizardStepTitlesForTipo}
+        wizardStepTitles={wizardStepTitlesInfo}
       />
 
       <CompartilharModal
