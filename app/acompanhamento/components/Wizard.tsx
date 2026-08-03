@@ -1,3 +1,4 @@
+// UI ITENS V8 — NOME REALMENTE DENTRO DA BORDA DOS CHECKBOXES
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -118,6 +119,7 @@ type CheckboxChoiceOption = {
 
 function CheckboxChoiceGroup({
     inputId,
+    label,
     value,
     options,
     onChange,
@@ -126,6 +128,7 @@ function CheckboxChoiceGroup({
     ariaLabel,
 }: {
     inputId: string;
+    label: React.ReactNode;
     value: string;
     options: readonly CheckboxChoiceOption[];
     onChange: (value: string) => void;
@@ -147,31 +150,38 @@ function CheckboxChoiceGroup({
             {/* O page.tsx continua lendo o mesmo valor pelo mesmo ID. */}
             <input id={inputId} type="hidden" value={value} readOnly />
 
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                {options.map((option) => {
-                    const checked = value === option.value;
+            {/* Nome do item e opções ficam dentro da mesma borda e na mesma linha. */}
+            <div className="flex min-h-7 flex-nowrap items-center gap-3">
+                <div className="min-w-0 flex-1 text-sm font-medium leading-tight text-slate-800">
+                    {label}
+                </div>
 
-                    return (
-                        <label
-                            key={option.value}
-                            className={[
-                                "inline-flex cursor-pointer items-center gap-2 text-sm font-medium",
-                                checked ? "text-blue-700" : "text-slate-700",
-                                disabled ? "cursor-not-allowed" : "",
-                            ].join(" ")}
-                        >
-                            <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={disabled}
-                                onChange={() => onChange(option.value)}
-                                className="h-4 w-4 rounded border-slate-300 accent-blue-600"
-                                aria-label={`${ariaLabel}: ${option.label}`}
-                            />
-                            <span>{option.label}</span>
-                        </label>
-                    );
-                })}
+                <div className="flex shrink-0 items-center gap-4">
+                    {options.map((option) => {
+                        const checked = value === option.value;
+
+                        return (
+                            <label
+                                key={option.value}
+                                className={[
+                                    "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm font-medium",
+                                    checked ? "text-blue-700" : "text-slate-700",
+                                    disabled ? "cursor-not-allowed" : "",
+                                ].join(" ")}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={() => onChange(option.value)}
+                                    className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                                    aria-label={`${ariaLabel}: ${option.label}`}
+                                />
+                                <span>{option.label}</span>
+                            </label>
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );
@@ -1442,12 +1452,13 @@ export default function Wizard({
                     if (step.type === "async_urna" && step.id === "urna") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">
-                                    Urna
-                                    {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            Urna
+                                            {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId="wizard-urna-uso"
                                     ariaLabel="Urna"
                                     value={urnaUsoVal}
@@ -1551,12 +1562,13 @@ export default function Wizard({
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">
-                                    Roupa
-                                    {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            Roupa
+                                            {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId="wizard-roupa-uso"
                                     ariaLabel="Roupa"
                                     value={roupaUsoVal}
@@ -1714,12 +1726,13 @@ export default function Wizard({
                     if (step.id === "veu" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={veuVal}
@@ -1825,12 +1838,13 @@ export default function Wizard({
                     if (step.id === "cordao" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={cordaoVal}
@@ -2130,12 +2144,13 @@ export default function Wizard({
 
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {showRequiredStar && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {showRequiredStar && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={assistenciaVal}
@@ -2182,12 +2197,13 @@ export default function Wizard({
                     if (step.id === "tanato" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={tanatoVal}
@@ -2217,12 +2233,13 @@ export default function Wizard({
                     if (step.id === "ornamentacao" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={ornamentacaoVal}
@@ -2256,12 +2273,13 @@ export default function Wizard({
                     if (step.id === "invol" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={involVal}
@@ -2366,12 +2384,13 @@ export default function Wizard({
 
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
-                                    {step.label}
-                                    {isRequired("ornamentacao") && <span className="text-red-600"> *</span>}
-                                </label>
-
                                 <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired("ornamentacao") && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
                                     inputId={`wizard-${step.id}`}
                                     ariaLabel={step.label}
                                     value={ornamentacaoTipoVal}
