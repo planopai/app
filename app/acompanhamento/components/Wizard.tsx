@@ -1,7 +1,5 @@
 "use client";
 
-// UI ITENS: CHECKBOX SIM/NAO V2
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { Registro } from "./types";
@@ -1405,7 +1403,7 @@ export default function Wizard({
 
     return (
         <Modal open={open} onClose={onClose} ariaLabel="Wizard" maxWidth={740}>
-            <div className="flex items-center gap-2" data-wizard-ui="checkbox-itens-v2">
+            <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
                     <span
