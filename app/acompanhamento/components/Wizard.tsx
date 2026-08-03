@@ -111,6 +111,82 @@ function normalizarFotoSrc(src: any): string {
     return `${ENDPOINT}/${s.replace(/^\/+/, "")}`;
 }
 
+type CheckboxChoiceOption = {
+    value: string;
+    label: string;
+};
+
+function CheckboxChoiceGroup({
+    inputId,
+    value,
+    options,
+    onChange,
+    disabled,
+    hasError,
+    ariaLabel,
+}: {
+    inputId: string;
+    value: string;
+    options: readonly CheckboxChoiceOption[];
+    onChange: (value: string) => void;
+    disabled?: boolean;
+    hasError?: boolean;
+    ariaLabel: string;
+}) {
+    return (
+        <div
+            data-wizard-error={hasError ? "1" : "0"}
+            className={[
+                "rounded-lg border px-3 py-2",
+                hasError ? "border-red-500 bg-red-50/40" : "border-slate-200 bg-white",
+                disabled ? "opacity-60" : "",
+            ].join(" ")}
+            role="group"
+            aria-label={ariaLabel}
+        >
+            {/* O page.tsx continua lendo o mesmo valor pelo mesmo ID. */}
+            <input id={inputId} type="hidden" value={value} readOnly />
+
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                {options.map((option) => {
+                    const checked = value === option.value;
+
+                    return (
+                        <label
+                            key={option.value}
+                            className={[
+                                "inline-flex cursor-pointer items-center gap-2 text-sm font-medium",
+                                checked ? "text-blue-700" : "text-slate-700",
+                                disabled ? "cursor-not-allowed" : "",
+                            ].join(" ")}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={disabled}
+                                onChange={() => onChange(option.value)}
+                                className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                                aria-label={`${ariaLabel}: ${option.label}`}
+                            />
+                            <span>{option.label}</span>
+                        </label>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+const SIM_NAO_OPTIONS: readonly CheckboxChoiceOption[] = [
+    { value: "Sim", label: "Sim" },
+    { value: "Não", label: "Não" },
+];
+
+const ORNAMENTACAO_TIPO_OPTIONS: readonly CheckboxChoiceOption[] = [
+    { value: "Natural", label: "Natural" },
+    { value: "Artificial", label: "Artificial" },
+];
+
 
 /* =========================================================================
    Combobox genérico (estoque)
@@ -401,7 +477,7 @@ function EstoqueCombobox({
                 </div>
             </div>
 
-            
+
 
             {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
 
@@ -601,11 +677,18 @@ export default function Wizard({
     const [veuVal, setVeuVal] = useState<string>("");
     const [cordaoVal, setCordaoVal] = useState<string>("");
 
+    // Controle exclusivamente visual para mostrar ou esconder os seletores.
+    // Os dados continuam sendo gravados nos campos atuais de urna e roupa.
+    const [urnaUsoVal, setUrnaUsoVal] = useState<string>("");
+    const [roupaUsoVal, setRoupaUsoVal] = useState<string>("");
+
     // ✅ Velório: sala + velório online (condicional)
     const [salaVelorioVal, setSalaVelorioVal] = useState<string>("");
     const [velorioOnlineVal, setVelorioOnlineVal] = useState<string>("");
 
     const [assistenciaErro, setAssistenciaErro] = useState<string>("");
+    const [urnaUsoErro, setUrnaUsoErro] = useState<string>("");
+    const [roupaUsoErro, setRoupaUsoErro] = useState<string>("");
     const [urnaErro, setUrnaErro] = useState<string>("");
     const [roupaErro, setRoupaErro] = useState<string>("");
     const [involErro, setInvolErro] = useState<string>("");
@@ -631,6 +714,23 @@ export default function Wizard({
     const [depCordao, setDepCordao] = useState<DepCordao>("ARMARIO SANDRO");
 
     useEffect(() => {
+        if (!open) return;
+
+        const registroExistente = (wizardData as any).id != null;
+
+        const temUrna =
+            Number((wizardData as any).urna_produto_id ?? 0) > 0 ||
+            String((wizardData as any).urna ?? "").trim() !== "";
+
+        const temRoupa =
+            Number((wizardData as any).roupa_produto_id ?? 0) > 0 ||
+            String((wizardData as any).roupa ?? "").trim() !== "";
+
+        setUrnaUsoVal(temUrna ? "Sim" : registroExistente ? "Não" : "");
+        setRoupaUsoVal(temRoupa ? "Sim" : registroExistente ? "Não" : "");
+    }, [open, (wizardData as any).id]);
+
+    useEffect(() => {
         setOrnamentacaoVal(String((wizardData as any).ornamentacao ?? ""));
         setInvolVal(String((wizardData as any).invol ?? ""));
         setVeuVal(String((wizardData as any).veu ?? ""));
@@ -650,6 +750,8 @@ export default function Wizard({
     useEffect(() => {
         if (!open) return;
 
+        setUrnaUsoErro("");
+        setRoupaUsoErro("");
         setUrnaErro("");
         setRoupaErro("");
         setInvolErro("");
@@ -917,13 +1019,26 @@ export default function Wizard({
         return true;
     };
 
-    
-    // ✅ valida URNA
+
+    // ✅ valida URNA: a escolha visual Sim/Não é obrigatória quando as validações do Wizard estão ativas.
     const validarUrnaSeNecessario = () => {
         if (!urnaNoGrupoAtual) return true;
 
-        const req = isRequired("urna");
-        if (!req) {
+        if (!obrigatoriedadeAtiva) {
+            setUrnaUsoErro("");
+            setUrnaErro("");
+            return true;
+        }
+
+        if (!isSimNao(urnaUsoVal)) {
+            setUrnaUsoErro('Marque "Sim" ou "Não" em Urna.');
+            setUrnaErro("");
+            return false;
+        }
+
+        setUrnaUsoErro("");
+
+        if (urnaUsoVal === "Não") {
             setUrnaErro("");
             return true;
         }
@@ -940,12 +1055,25 @@ export default function Wizard({
         return true;
     };
 
-    // ✅ valida ROUPA
+    // ✅ valida ROUPA: a escolha visual Sim/Não é obrigatória quando as validações do Wizard estão ativas.
     const validarRoupaSeNecessario = () => {
         if (!roupaNoGrupoAtual) return true;
 
-        const req = isRequired("roupa");
-        if (!req) {
+        if (!obrigatoriedadeAtiva) {
+            setRoupaUsoErro("");
+            setRoupaErro("");
+            return true;
+        }
+
+        if (!isSimNao(roupaUsoVal)) {
+            setRoupaUsoErro('Marque "Sim" ou "Não" em Roupa.');
+            setRoupaErro("");
+            return false;
+        }
+
+        setRoupaUsoErro("");
+
+        if (roupaUsoVal === "Não") {
             setRoupaErro("");
             return true;
         }
@@ -1306,78 +1434,116 @@ export default function Wizard({
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {grupoSteps.map((step) => {
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
+                    if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
 
                     /* ===========================
-                       URNA (async)
+                       URNA (checkbox Sim/Não + seletor async)
                        =========================== */
                     if (step.type === "async_urna" && step.id === "urna") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <EstoqueCombobox
-                                    inputId="wizard-urna"
-                                    label="Urna"
-                                    required={isRequired(step.id)}
-                                    placeholder={step.placeholder || "Selecione no estoque…"}
-                                    initialValue={String((wizardData as any).urna ?? "")}
+                                <label className="mb-1 block text-sm font-medium">
+                                    Urna
+                                    {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
+                                </label>
+
+                                <CheckboxChoiceGroup
+                                    inputId="wizard-urna-uso"
+                                    ariaLabel="Urna"
+                                    value={urnaUsoVal}
+                                    options={SIM_NAO_OPTIONS}
                                     disabled={wizardSubmitting}
-                                    depositoLabel="Local da Urna"
-                                    depositoOptions={[
-                                        { value: "MEMORIAL", label: "MEMORIAL" },
-                                        { value: "FUNERARIA", label: "FUNERARIA" },
-                                    ]}
-                                    depositoValue={depUrna}
-                                    onChangeDeposito={(v) => {
-                                        const next = normalizeDepUrna(v);
-                                        setDepUrna(next);
+                                    hasError={!!urnaUsoErro}
+                                    onChange={(v) => {
+                                        setUrnaUsoVal(v);
+                                        setUrnaUsoErro("");
+
+                                        if (v === "Não") {
+                                            setWizardData((prev: any) => ({
+                                                ...prev,
+                                                urna: "",
+                                                urna_deposito_nome: "",
+                                                urna_produto_id: 0,
+                                                urna_codigo_barras: "",
+                                            }));
+                                            setUrnaErro("");
+                                            return;
+                                        }
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
-                                            urna: "",
-                                            urna_deposito_nome: next,
-                                            urna_produto_id: 0,
-                                            urna_codigo_barras: "",
-                                        }));
-
-                                        validarUrnaSeNecessario();
-                                    }}
-                                    action="urnas_buscar"
-                                    errorText={urnaErro}
-                                    onBlurValidate={validarUrnaSeNecessario}
-                                    onTypingInvalidate={(typed) => {
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            urna: typed,
-                                            urna_deposito_nome: depUrna,
-                                            urna_produto_id: 0,
-                                            urna_codigo_barras: "",
+                                            urna_deposito_nome:
+                                                String(prev?.urna_deposito_nome ?? "").trim() || depUrna,
                                         }));
                                     }}
-                                    onSelectRow={(it) => {
-                                        const pid = getPidFromRow(it);
-                                        const cb = String((it as any).codigo_barras || "").trim();
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            urna: String(it.nome || "").trim(),
-                                            urna_deposito_nome: depUrna,
-                                            urna_produto_id: pid,
-                                            urna_codigo_barras: cb,
-                                        }));
-
-                                        setUrnaErro("");
-                                    }}
-                                    footerHint={
-                                        <>
-                                            
-                                        </>
-                                    }
                                 />
+
+                                {urnaUsoErro && <div className="mt-1 text-xs text-red-600">{urnaUsoErro}</div>}
+
+                                {urnaUsoVal === "Sim" && (
+                                    <div className="mt-3">
+                                        <EstoqueCombobox
+                                            inputId="wizard-urna"
+                                            label="Urna para selecionar"
+                                            required={obrigatoriedadeAtiva}
+                                            placeholder={step.placeholder || "Selecione no estoque…"}
+                                            initialValue={String((wizardData as any).urna ?? "")}
+                                            disabled={wizardSubmitting}
+                                            depositoLabel="Local da Urna"
+                                            depositoOptions={[
+                                                { value: "MEMORIAL", label: "MEMORIAL" },
+                                                { value: "FUNERARIA", label: "FUNERARIA" },
+                                            ]}
+                                            depositoValue={depUrna}
+                                            onChangeDeposito={(v) => {
+                                                const next = normalizeDepUrna(v);
+                                                setDepUrna(next);
+
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    urna: "",
+                                                    urna_deposito_nome: next,
+                                                    urna_produto_id: 0,
+                                                    urna_codigo_barras: "",
+                                                }));
+
+                                                validarUrnaSeNecessario();
+                                            }}
+                                            action="urnas_buscar"
+                                            errorText={urnaErro}
+                                            onBlurValidate={validarUrnaSeNecessario}
+                                            onTypingInvalidate={(typed) => {
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    urna: typed,
+                                                    urna_deposito_nome: depUrna,
+                                                    urna_produto_id: 0,
+                                                    urna_codigo_barras: "",
+                                                }));
+                                            }}
+                                            onSelectRow={(it) => {
+                                                const pid = getPidFromRow(it);
+                                                const cb = String((it as any).codigo_barras || "").trim();
+
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    urna: String(it.nome || "").trim(),
+                                                    urna_deposito_nome: depUrna,
+                                                    urna_produto_id: pid,
+                                                    urna_codigo_barras: cb,
+                                                }));
+
+                                                setUrnaErro("");
+                                            }}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         );
                     }
 
                     /* ===========================
-                       ROUPA (async + ROUPA PRÓPRIA)
+                       ROUPA (checkbox Sim/Não + seletor async)
                        =========================== */
                     if (step.type === "async_roupa" && step.id === "roupa") {
                         const roupaAtual = String((wizardData as any).roupa ?? "");
@@ -1385,47 +1551,30 @@ export default function Wizard({
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <EstoqueCombobox
-                                    inputId="wizard-roupa"
-                                    label="Roupa"
-                                    required={isRequired(step.id)}
-                                    placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
-                                    initialValue={String((wizardData as any).roupa ?? "")}
+                                <label className="mb-1 block text-sm font-medium">
+                                    Roupa
+                                    {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
+                                </label>
+
+                                <CheckboxChoiceGroup
+                                    inputId="wizard-roupa-uso"
+                                    ariaLabel="Roupa"
+                                    value={roupaUsoVal}
+                                    options={SIM_NAO_OPTIONS}
                                     disabled={wizardSubmitting}
-                                    depositoLabel="Local da Roupa:"
-                                    depositoOptions={[
-                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
-                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
-                                        { value: "FUNERARIA", label: "FUNERARIA" },
-                                    ]}
-                                    depositoValue={depRoupa}
-                                    onChangeDeposito={(v) => {
-                                        const next = normalizeDepRoupa(v);
-                                        setDepRoupa(next);
+                                    hasError={!!roupaUsoErro}
+                                    onChange={(v) => {
+                                        setRoupaUsoVal(v);
+                                        setRoupaUsoErro("");
 
-                                        if (isRoupaPropria((wizardData as any).roupa)) return;
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            roupa: "",
-                                            roupa_deposito_nome: next,
-                                            roupa_produto_id: 0,
-                                            roupa_codigo_barras: "",
-                                        }));
-
-                                        validarRoupaSeNecessario();
-                                    }}
-                                    action="roupas_buscar"
-                                    errorText={roupaErro}
-                                    onBlurValidate={validarRoupaSeNecessario}
-                                    onTypingInvalidate={(typed) => {
-                                        if (typed && isRoupaPropria(typed)) {
+                                        if (v === "Não") {
                                             setWizardData((prev: any) => ({
                                                 ...prev,
-                                                roupa: "ROUPA PRÓPRIA",
+                                                roupa: "",
                                                 roupa_deposito_nome: "",
                                                 roupa_produto_id: 0,
                                                 roupa_codigo_barras: "",
+                                                roupa_propria: 0,
                                             }));
                                             setRoupaErro("");
                                             return;
@@ -1433,105 +1582,170 @@ export default function Wizard({
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
-                                            roupa: typed,
-                                            roupa_deposito_nome: depRoupa,
-                                            roupa_produto_id: 0,
-                                            roupa_codigo_barras: "",
+                                            roupa_deposito_nome:
+                                                isRoupaPropria(prev?.roupa)
+                                                    ? ""
+                                                    : String(prev?.roupa_deposito_nome ?? "").trim() || depRoupa,
                                         }));
                                     }}
-                                    onSelectRow={(it) => {
-                                        const pid = getPidFromRow(it);
-                                        const cb = String((it as any).codigo_barras || "").trim();
+                                />
 
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            roupa: String(it.nome || "").trim(),
-                                            roupa_deposito_nome: depRoupa,
-                                            roupa_produto_id: pid,
-                                            roupa_codigo_barras: cb,
-                                            roupa_propria: 0,
-                                        }));
-                                    }}
-                                    extraButtons={
-                                        <>
-                                            <button
-                                                type="button"
-                                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
-                                                disabled={wizardSubmitting}
-                                                onClick={() => {
+                                {roupaUsoErro && <div className="mt-1 text-xs text-red-600">{roupaUsoErro}</div>}
+
+                                {roupaUsoVal === "Sim" && (
+                                    <div className="mt-3">
+                                        <EstoqueCombobox
+                                            inputId="wizard-roupa"
+                                            label="Roupa para selecionar"
+                                            required={obrigatoriedadeAtiva}
+                                            placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
+                                            initialValue={String((wizardData as any).roupa ?? "")}
+                                            disabled={wizardSubmitting}
+                                            depositoLabel="Local da Roupa"
+                                            depositoOptions={[
+                                                { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                                { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                                { value: "FUNERARIA", label: "FUNERARIA" },
+                                            ]}
+                                            depositoValue={depRoupa}
+                                            onChangeDeposito={(v) => {
+                                                const next = normalizeDepRoupa(v);
+                                                setDepRoupa(next);
+
+                                                if (isRoupaPropria((wizardData as any).roupa)) return;
+
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    roupa: "",
+                                                    roupa_deposito_nome: next,
+                                                    roupa_produto_id: 0,
+                                                    roupa_codigo_barras: "",
+                                                }));
+
+                                                validarRoupaSeNecessario();
+                                            }}
+                                            action="roupas_buscar"
+                                            errorText={roupaErro}
+                                            onBlurValidate={validarRoupaSeNecessario}
+                                            onTypingInvalidate={(typed) => {
+                                                if (typed && isRoupaPropria(typed)) {
                                                     setWizardData((prev: any) => ({
                                                         ...prev,
                                                         roupa: "ROUPA PRÓPRIA",
                                                         roupa_deposito_nome: "",
                                                         roupa_produto_id: 0,
                                                         roupa_codigo_barras: "",
-                                                        roupa_propria: 1,
                                                     }));
-
-                                                    const el = document.getElementById("wizard-roupa") as HTMLInputElement | null;
-                                                    if (el) {
-                                                        el.value = "ROUPA PRÓPRIA";
-                                                        el.dispatchEvent(new Event("input", { bubbles: true }));
-                                                        el.dispatchEvent(new Event("change", { bubbles: true }));
-                                                        el.blur();
-                                                    }
-
                                                     setRoupaErro("");
-                                                    requestAnimationFrame(() => validarRoupaSeNecessario());
-                                                }}
-                                            >
-                                                Usar ROUPA PRÓPRIA
-                                            </button>
+                                                    return;
+                                                }
 
-                                            {isPropria ? (
-                                                <span className="text-[11px] text-slate-500 self-center">Roupa própria não usa estoque.</span>
-                                            ) : null}
-                                        </>
-                                    }
-                                />
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    roupa: typed,
+                                                    roupa_deposito_nome: depRoupa,
+                                                    roupa_produto_id: 0,
+                                                    roupa_codigo_barras: "",
+                                                }));
+                                            }}
+                                            onSelectRow={(it) => {
+                                                const pid = getPidFromRow(it);
+                                                const cb = String((it as any).codigo_barras || "").trim();
+
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    roupa: String(it.nome || "").trim(),
+                                                    roupa_deposito_nome: depRoupa,
+                                                    roupa_produto_id: pid,
+                                                    roupa_codigo_barras: cb,
+                                                    roupa_propria: 0,
+                                                }));
+
+                                                setRoupaErro("");
+                                            }}
+                                            extraButtons={
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                        disabled={wizardSubmitting}
+                                                        onClick={() => {
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                roupa: "ROUPA PRÓPRIA",
+                                                                roupa_deposito_nome: "",
+                                                                roupa_produto_id: 0,
+                                                                roupa_codigo_barras: "",
+                                                                roupa_propria: 1,
+                                                            }));
+
+                                                            const el = document.getElementById("wizard-roupa") as HTMLInputElement | null;
+                                                            if (el) {
+                                                                el.value = "ROUPA PRÓPRIA";
+                                                                el.dispatchEvent(new Event("input", { bubbles: true }));
+                                                                el.dispatchEvent(new Event("change", { bubbles: true }));
+                                                                el.blur();
+                                                            }
+
+                                                            setRoupaErro("");
+                                                            requestAnimationFrame(() => validarRoupaSeNecessario());
+                                                        }}
+                                                    >
+                                                        Usar ROUPA PRÓPRIA
+                                                    </button>
+
+                                                    {isPropria ? (
+                                                        <span className="self-center text-[11px] text-slate-500">
+                                                            Roupa própria não usa estoque.
+                                                        </span>
+                                                    ) : null}
+                                                </>
+                                            }
+                                        />
+                                    </div>
+                                )}
                             </div>
                         );
                     }
 
                     /* ===========================
-                       VÉU (select controlado)
+                       VÉU (checkbox Sim/Não)
                        =========================== */
                     if (step.id === "veu" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
 
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={veuSelectErro || veuErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${veuSelectErro || veuErro ? "border-red-500" : ""
-                                        }`}
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
                                     value={veuVal}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!(veuSelectErro || veuErro)}
+                                    onChange={(v) => {
                                         setVeuVal(v);
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             veu: v,
-                                            ...(v !== "Sim" ? { veu_deposito_nome: "", veu_produto_id: 0, veu_codigo_barras: "", veu_item: "" } : {}),
+                                            ...(v !== "Sim"
+                                                ? {
+                                                    veu_deposito_nome: "",
+                                                    veu_produto_id: 0,
+                                                    veu_codigo_barras: "",
+                                                    veu_item: "",
+                                                }
+                                                : {}),
                                         }));
 
-                                        if (isSimNao(v)) setVeuSelectErro("");
+                                        setVeuSelectErro("");
                                         if (v !== "Sim") setVeuErro("");
                                     }}
-                                    onBlur={() => validarVeuSelect()}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
 
                                 {veuSelectErro && <div className="mt-1 text-xs text-red-600">{veuSelectErro}</div>}
                                 {veuErro && <div className="mt-1 text-xs text-red-600">{veuErro}</div>}
@@ -1606,46 +1820,43 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       CORDÃO (select controlado)
+                       CORDÃO (checkbox Sim/Não)
                        =========================== */
                     if (step.id === "cordao" && step.type === "select") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                </label>
 
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={cordaoSelectErro || cordaoErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${cordaoSelectErro || cordaoErro ? "border-red-500" : ""
-                                        }`}
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
                                     value={cordaoVal}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!(cordaoSelectErro || cordaoErro)}
+                                    onChange={(v) => {
                                         setCordaoVal(v);
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             cordao: v,
                                             ...(v !== "Sim"
-                                                ? { cordao_deposito_nome: "", cordao_produto_id: 0, cordao_codigo_barras: "", cordao_item: "" }
+                                                ? {
+                                                    cordao_deposito_nome: "",
+                                                    cordao_produto_id: 0,
+                                                    cordao_codigo_barras: "",
+                                                    cordao_item: "",
+                                                }
                                                 : {}),
                                         }));
 
-                                        if (isSimNao(v)) setCordaoSelectErro("");
+                                        setCordaoSelectErro("");
                                         if (v !== "Sim") setCordaoErro("");
                                     }}
-                                    onBlur={() => validarCordaoSelect()}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
 
                                 {cordaoSelectErro && <div className="mt-1 text-xs text-red-600">{cordaoSelectErro}</div>}
                                 {cordaoErro && <div className="mt-1 text-xs text-red-600">{cordaoErro}</div>}
@@ -1912,7 +2123,7 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       assistencia (controlado)
+                       assistência (checkbox Sim/Não)
                        =========================== */
                     if (step.id === "assistencia" && step.type === "select") {
                         const showRequiredStar = isRequired(step.id) || requireAssistencia;
@@ -1924,32 +2135,25 @@ export default function Wizard({
                                     {showRequiredStar && <span className="text-red-600"> *</span>}
                                 </label>
 
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={assistenciaErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${assistenciaErro ? "border-red-500" : ""
-                                        }`}
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
                                     value={assistenciaVal}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!assistenciaErro}
+                                    onChange={(v) => {
                                         setAssistenciaVal(v);
-                                        if (isSimNao(v)) setAssistenciaErro("");
+                                        setAssistenciaErro("");
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            assistencia: v,
+                                        }));
+
                                         if (v === "Não") setMateriaisOpen(false);
                                     }}
-                                    onBlur={() => {
-                                        if (assistenciaNoGrupoAtual) validarAssistencia();
-                                    }}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
 
                                 {assistenciaErro && <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>}
 
@@ -1973,7 +2177,7 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       tanato (controlado)
+                       tanatopraxia (checkbox Sim/Não)
                        =========================== */
                     if (step.id === "tanato" && step.type === "select") {
                         return (
@@ -1982,30 +2186,25 @@ export default function Wizard({
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-red-600"> *</span>}
                                 </label>
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={tanatoSelectErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${tanatoSelectErro ? "border-red-500" : ""
-                                        }`}
+
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
                                     value={tanatoVal}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
-                                        setTanatoVal(v);
-                                        setWizardData((prev: any) => ({ ...prev, tanato: v }));
-                                        if (isSimNao(v)) setTanatoSelectErro("");
-                                    }}
-                                    onBlur={() => validarTanatoSelect()}
+                                    options={SIM_NAO_OPTIONS}
                                     disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
+                                    hasError={!!tanatoSelectErro}
+                                    onChange={(v) => {
+                                        setTanatoVal(v);
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            tanato: v,
+                                        }));
+                                        setTanatoSelectErro("");
+
+                                        if (v !== "Sim") setArrumacaoOpen(false);
+                                    }}
+                                />
 
                                 {tanatoSelectErro && <div className="mt-1 text-xs text-red-600">{tanatoSelectErro}</div>}
                             </div>
@@ -2013,7 +2212,7 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       ornamentacao (controlado)
+                       ornamentação (checkbox Sim/Não)
                        =========================== */
                     if (step.id === "ornamentacao" && step.type === "select") {
                         return (
@@ -2023,14 +2222,14 @@ export default function Wizard({
                                     {isRequired(step.id) && <span className="text-red-600"> *</span>}
                                 </label>
 
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={ornamentacaoSelectErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoSelectErro ? "border-red-500" : ""
-                                        }`}
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
                                     value={ornamentacaoVal}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!ornamentacaoSelectErro}
+                                    onChange={(v) => {
                                         setOrnamentacaoVal(v);
 
                                         setWizardData((prev: any) => ({
@@ -2039,28 +2238,20 @@ export default function Wizard({
                                             ...(v !== "Sim" ? { ornamentacao_tipo: "" } : {}),
                                         }));
 
-                                        if (isSimNao(v)) setOrnamentacaoSelectErro("");
+                                        setOrnamentacaoSelectErro("");
+                                        if (v !== "Sim") setOrnamentacaoTipoErro("");
                                     }}
-                                    onBlur={() => validarOrnamentacaoSelect()}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
 
-                                {ornamentacaoSelectErro && <div className="mt-1 text-xs text-red-600">{ornamentacaoSelectErro}</div>}
+                                {ornamentacaoSelectErro && (
+                                    <div className="mt-1 text-xs text-red-600">{ornamentacaoSelectErro}</div>
+                                )}
                             </div>
                         );
                     }
 
                     /* ===========================
-                       INVOL (select controlado)
+                       INVOL (checkbox Sim/Não)
                        =========================== */
                     if (step.id === "invol" && step.type === "select") {
                         return (
@@ -2069,37 +2260,34 @@ export default function Wizard({
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-red-600"> *</span>}
                                 </label>
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={involSelectErro || involErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${involSelectErro ? "border-red-500" : ""
-                                        }`}
+
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
                                     value={involVal}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!(involSelectErro || involErro)}
+                                    onChange={(v) => {
                                         setInvolVal(v);
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
                                             invol: v,
-                                            ...(v !== "Sim" ? { invol_deposito_nome: "", invol_produto_id: 0, invol_codigo_barras: "", invol_item: "" } : {}),
+                                            ...(v !== "Sim"
+                                                ? {
+                                                    invol_deposito_nome: "",
+                                                    invol_produto_id: 0,
+                                                    invol_codigo_barras: "",
+                                                    invol_item: "",
+                                                }
+                                                : {}),
                                         }));
 
-                                        if (isSimNao(v)) setInvolSelectErro("");
+                                        setInvolSelectErro("");
                                         if (v !== "Sim") setInvolErro("");
                                     }}
-                                    onBlur={() => validarInvolSelect()}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {["Sim", "Não"].map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
 
                                 {involSelectErro && <div className="mt-1 text-xs text-red-600">{involSelectErro}</div>}
                             </div>
@@ -2171,39 +2359,37 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       ornamentacao_tipo (select)
+                       tipo de ornamentação (checkbox Natural/Artificial)
                        =========================== */
                     if (step.id === "ornamentacao_tipo" && step.type === "select") {
+                        const ornamentacaoTipoVal = String((wizardData as any).ornamentacao_tipo ?? "");
+
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1 block text-sm font-medium">
+                                    {step.label}
+                                    {isRequired("ornamentacao") && <span className="text-red-600"> *</span>}
+                                </label>
 
-                                <select
-                                    id={`wizard-${step.id}`}
-                                    data-wizard-error={ornamentacaoTipoErro ? "1" : "0"}
-                                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${ornamentacaoTipoErro ? "border-red-500" : ""
-                                        }`}
-                                    value={String((wizardData as any).ornamentacao_tipo ?? "")}
-                                    onChange={(e) => {
-                                        const v = e.target.value;
-                                        setWizardData((prev: any) => ({ ...prev, ornamentacao_tipo: v }));
-                                        if (v) setOrnamentacaoTipoErro("");
-                                    }}
-                                    onBlur={() => validarOrnamentacaoTipoSeNecessario()}
+                                <CheckboxChoiceGroup
+                                    inputId={`wizard-${step.id}`}
+                                    ariaLabel={step.label}
+                                    value={ornamentacaoTipoVal}
+                                    options={ORNAMENTACAO_TIPO_OPTIONS}
                                     disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
+                                    hasError={!!ornamentacaoTipoErro}
+                                    onChange={(v) => {
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            ornamentacao_tipo: v,
+                                        }));
+                                        setOrnamentacaoTipoErro("");
+                                    }}
+                                />
 
-                                    {(step.options || ["Natural", "Artificial"]).filter(Boolean).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                {ornamentacaoTipoErro && <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>}
+                                {ornamentacaoTipoErro && (
+                                    <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>
+                                )}
                             </div>
                         );
                     }

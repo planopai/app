@@ -1439,17 +1439,24 @@ export default function AcompanhamentoPage() {
         velorioOnline === "Sim" || velorioOnline === "Não" ? velorioOnline : "";
     }
 
-    // ✅ URNA META: NÃO usa DOM. Mantém o que está no wizardData.
-    // (Wizard.tsx atualiza wizardData no momento da seleção da urna.)
+    // ✅ URNA META: não usa DOM. Mantém o que está no wizardData.
+    // Urna vazia significa que o usuário marcou "Não" no Wizard.
+    const urnaTxt = String(next?.urna ?? "").trim();
     const pid = Number(next?.urna_produto_id ?? 0) || 0;
-    if (pid > 0) {
+
+    if (urnaTxt === "") {
+      next.urna = "";
+      next.urna_deposito_nome = "";
+      next.urna_produto_id = 0;
+      next.urna_codigo_barras = "";
+    } else if (pid > 0) {
       const dep = String(next?.urna_deposito_nome ?? "MEMORIAL")
         .trim()
         .toUpperCase();
       next.urna_deposito_nome = dep === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
       next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
     } else {
-      // se digitou urna mas não selecionou produto => mantém pid 0 (wizard valida e PHP também)
+      // Se houver texto sem seleção real do estoque, mantém pid 0 para a validação bloquear.
       next.urna_produto_id = 0;
       next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
       next.urna_deposito_nome =
@@ -2005,20 +2012,23 @@ export default function AcompanhamentoPage() {
       const extraPayload =
         opts?.extra && typeof opts.extra === "object" ? opts.extra : {};
 
-      // ✅ trava fase05 sem metas necessárias (urna/roupa/invol/insumos) + exige online
+      // ✅ trava fase05 quando um item marcado como utilizado estiver sem metas válidas, além de exigir conexão
       if (statusCode === "fase05") {
         const reg = registros.find(
           (x) => String(x.id) === String(acaoId),
         ) as any;
 
-        // URNA (sempre exige)
-        const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
-        if (urnaPid <= 0) {
-          setAcaoMsg({
-            ok: false,
-            text: "Antes de iniciar a Ornamentação (fase05), edite o atendimento e SELECIONE a urna na lista (clique em uma opção).",
-          });
-          return false;
+        // URNA: valida apenas quando o atendimento possui urna selecionada.
+        const urnaTxt = String(reg?.urna ?? "").trim();
+        if (urnaTxt !== "") {
+          const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
+          if (urnaPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Urna: selecione uma urna válida na lista do estoque.",
+            });
+            return false;
+          }
         }
 
         // ✅ ROUPA (se não for própria)
@@ -2180,7 +2190,7 @@ export default function AcompanhamentoPage() {
         }
       }
 
-      // ✅ fase05: dar baixa automática (URNA + ROUPA + INVOL + INSUMOS) antes de mudar status
+      // ✅ fase05: dá baixa apenas nos itens realmente selecionados antes de mudar o status
       if (statusCode === "fase05") {
         try {
           setAcaoSubmitting(true);
@@ -2190,8 +2200,12 @@ export default function AcompanhamentoPage() {
           ) as any;
           const registro_id = String(acaoId);
 
-          // 1) URNA
-          await baixarItensFase05({ registro_id, tipo: "URNA" });
+          // 1) URNA, somente quando houver urna selecionada.
+          const urnaTxt = String(reg?.urna ?? "").trim();
+          const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
+          if (urnaTxt !== "" && urnaPid > 0) {
+            await baixarItensFase05({ registro_id, tipo: "URNA" });
+          }
 
           // 2) ROUPA (se não for própria)
           const roupaTxt = String(reg?.roupa ?? "").trim();
