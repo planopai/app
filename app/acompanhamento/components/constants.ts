@@ -132,7 +132,7 @@ export const steps = [
     { label: "Velório Online", id: "velorio_online", type: "select", options: ["", "Sim", "Não"] },
 
     // Mantido no final para não deslocar os índices antigos usados pelo fluxo "terceiro".
-    { label: "KIT LANCHE", id: "kit_lanche", type: "select", options: ["", "Sim", "Não"] },
+    { label: "Kit Lanche", id: "kit_lanche", type: "select", options: ["", "Sim", "Não"] },
 ] as const;
 
 /**
