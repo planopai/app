@@ -1922,7 +1922,7 @@ export default function Wizard({
                                         </>
                                     }
                                     inputId="wizard-kit_lanche"
-                                    ariaLabel="KIT LANCHE"
+                                    ariaLabel="Kit Lanche"
                                     value={kitLancheVal}
                                     options={SIM_NAO_OPTIONS}
                                     disabled={wizardSubmitting}
