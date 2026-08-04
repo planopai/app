@@ -300,6 +300,18 @@ function formatDateOnlyBR(mysqlDatetime?: string | null) {
     return dt ? dt.toLocaleDateString("pt-BR") : "-";
 }
 
+function formatDateLongBR(mysqlDatetime?: string | null) {
+    const dt = parseMysqlDateTime(mysqlDatetime);
+
+    if (!dt) return "-";
+
+    return dt.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+    });
+}
+
 function sanitizePdfFileName(value: string) {
     const safe = value
         .normalize("NFD")
@@ -1303,26 +1315,43 @@ export default function SorteiosAdminPage() {
                 y += 7;
 
                 if (includeIntroduction) {
+                    const dataPorExtenso = formatDateLongBR(sorteio.executed_at);
                     const declaration =
-                        "Eu_____________________________________________________________________, Declaro, para os devidos fins, que os prêmios relacionados abaixo foram entregues aos associados sorteados ou aos responsáveis identificados no ato da retirada, referentes ao sorteio acima, realizado pelo PAI - Plano Assistencial Integrado.";
-                    const declarationLines = doc.splitTextToSize(declaration, contentWidth);
-                    doc.text(declarationLines, marginX, y);
-                    y += declarationLines.length * 4.2 + 4;
-
-                    const authorization =
-                        "Autorizo a utilização de meu nome, imagem e som de voz exclusivamente para divulgação institucional e promocional da entrega do prêmio pelo PAI.";
-                    const authorizationLines = doc.splitTextToSize(
-                        authorization,
+                        `Eu: ________________________________________________, declaro, para os devidos fins, que presenciei a realização do sorteio no dia ${dataPorExtenso}, no escritório do PAI - Plano Assistencial Integrado, localizado na Avenida Clériston Andrade, nº 135, Centro, Barreiras - BA. Declaro, ainda, que o sorteio foi realizado de forma eletrônica, por meio do aplicativo do associado, de maneira justa e transparente, entre os associados que mantêm as parcelas do plano em dia.`;
+                    const declarationLines = doc.splitTextToSize(
+                        declaration,
                         contentWidth
                     );
-                    doc.text(authorizationLines, marginX, y);
-                    y += authorizationLines.length * 4.2 + 5;
-                }
 
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(10);
-                doc.text("SORTEADOS", pageWidth / 2, y, { align: "center" });
-                y += 4;
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(9.5);
+                    doc.text(declarationLines, marginX, y, {
+                        align: "justify",
+                        maxWidth: contentWidth,
+                    });
+                    y += declarationLines.length * 4.4 + 7;
+
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(11);
+                    const premiosTitle = `PRÊMIOS SORTEADOS NO DIA ${dataPorExtenso.toLocaleUpperCase(
+                        "pt-BR"
+                    )}:`;
+                    const premiosTitleLines = doc.splitTextToSize(
+                        premiosTitle,
+                        contentWidth
+                    );
+                    doc.text(premiosTitleLines, pageWidth / 2, y, {
+                        align: "center",
+                    });
+                    y += premiosTitleLines.length * 4.8 + 3;
+                } else {
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(10);
+                    doc.text("CONTINUAÇÃO DOS SORTEADOS", pageWidth / 2, y, {
+                        align: "center",
+                    });
+                    y += 4;
+                }
 
                 return y;
             };
