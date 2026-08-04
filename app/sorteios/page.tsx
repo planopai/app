@@ -61,6 +61,11 @@ type ContractsByCpfsResp = {
     consultados?: number;
     encontrados?: number;
     error?: string;
+    detail?: string;
+    request_errors?: Record<
+        string,
+        Array<{ http?: number | null; error?: string | null }>
+    >;
 };
 
 type ApiResp<T = Record<string, never>> = { ok: boolean; error?: string } & T;
@@ -301,11 +306,18 @@ async function apiJson<T = unknown>(
 
     const parsed =
         typeof data === "object" && data !== null
-            ? (data as { ok?: boolean; error?: string })
+            ? (data as { ok?: boolean; error?: string; detail?: string })
             : { ok: false, error: "Resposta inválida do servidor" };
 
     if (!res.ok) {
-        throw new Error(parsed.error || `Erro HTTP ${res.status}`);
+        const serverMessage = [parsed.error, parsed.detail]
+            .filter((value): value is string => Boolean(value?.trim()))
+            .join(": ");
+
+        throw new Error(
+            serverMessage ||
+            `Erro HTTP ${res.status}. O servidor não retornou uma mensagem JSON válida.`
+        );
     }
 
     return data as T;
@@ -1306,8 +1318,14 @@ export default function SorteiosAdminPage() {
                         ? ` e mais ${cpfsSemContrato.length - 5}`
                         : "";
 
+                const houveFalhaDeConsulta = Object.keys(
+                    contractsResp.request_errors || {}
+                ).length > 0;
+
                 throw new Error(
-                    `Não foi possível localizar o número correto do contrato para: ${lista}${restante}. O PDF não foi gerado para evitar informações incorretas.`
+                    houveFalhaDeConsulta
+                        ? `A consulta à Unypax falhou para: ${lista}${restante}. Tente novamente em alguns instantes.`
+                        : `Não foi possível localizar o número correto do contrato para: ${lista}${restante}. O PDF não foi gerado para evitar informações incorretas.`
                 );
             }
 
