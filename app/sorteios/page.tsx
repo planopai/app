@@ -352,19 +352,30 @@ function sanitizePdfFileName(value: string) {
 }
 
 async function loadImageAsDataUrl(url: string): Promise<string> {
-    const response = await fetch(url, { cache: "force-cache" });
-    if (!response.ok) {
-        throw new Error(`Não foi possível carregar a logomarca (${response.status}).`);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+
+    try {
+        const response = await fetch(url, {
+            cache: "force-cache",
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`Não foi possível carregar a logomarca (${response.status}).`);
+        }
+
+        const blob = await response.blob();
+
+        return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(new Error("Falha ao converter a logomarca."));
+            reader.readAsDataURL(blob);
+        });
+    } finally {
+        window.clearTimeout(timeoutId);
     }
-
-    const blob = await response.blob();
-
-    return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Falha ao converter a logomarca."));
-        reader.readAsDataURL(blob);
-    });
 }
 
 function Spinner({ size = 18 }: { size?: number }) {
@@ -1275,18 +1286,45 @@ export default function SorteiosAdminPage() {
                 )
             );
 
-            const contractsResp = await apiJson<ContractsByCpfsResp>(
-                `${API_URL}?op=admin_contracts_by_cpfs`,
-                "POST",
-                {
-                    sorteio_id: sorteio.id,
-                    cpfs,
-                }
+            const contractsController = new AbortController();
+            const contractsTimeoutId = window.setTimeout(
+                () => contractsController.abort(),
+                35000
             );
 
+            let contractsResp: ContractsByCpfsResp;
+
+            try {
+                contractsResp = await apiJson<ContractsByCpfsResp>(
+                    `${API_URL}?op=admin_contracts_by_cpfs`,
+                    "POST",
+                    {
+                        sorteio_id: sorteio.id,
+                        cpfs,
+                    },
+                    contractsController.signal
+                );
+            } catch (error) {
+                if ((error as { name?: string })?.name === "AbortError") {
+                    throw new Error(
+                        "A consulta dos contratos ultrapassou 35 segundos e foi cancelada. Tente novamente."
+                    );
+                }
+                throw error;
+            } finally {
+                window.clearTimeout(contractsTimeoutId);
+            }
+
             if (!contractsResp?.ok) {
+                const serverMessage = [
+                    contractsResp?.error,
+                    contractsResp?.detail,
+                ]
+                    .filter((value): value is string => Boolean(value?.trim()))
+                    .join(": ");
+
                 throw new Error(
-                    contractsResp?.error ||
+                    serverMessage ||
                     "Não foi possível consultar os contratos dos ganhadores."
                 );
             }
