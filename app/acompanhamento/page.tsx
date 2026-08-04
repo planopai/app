@@ -1,4 +1,4 @@
-// PAGE INFO ITENS FIX V1 — NÃO INFERE TERCEIRO PELOS CAMPOS MARCADOS COMO NÃO
+// PAGE INFO ITENS FIX V2 - KIT LANCHE COM BAIXA AUTOMATICA
 "use client";
 
 import React, {
@@ -62,7 +62,7 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 
 // ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
-type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "INSUMOS";
+type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "INSUMOS";
 
 function isSim(v: any): boolean {
   const s = String(v ?? "")
@@ -705,6 +705,9 @@ export default function AcompanhamentoPage() {
           cordao_produto_id: Number(it?.cordao_produto_id ?? 0) || 0,
           cordao_codigo_barras: String(it?.cordao_codigo_barras ?? ""),
           cordao_item: String(it?.cordao_item ?? ""),
+
+          // KIT LANCHE
+          kit_lanche: String(it?.kit_lanche ?? "Não"),
 
           // ✅ INSUMOS (novo formato dentro do arrumacao_json)
           arrumacao_json: String(it?.arrumacao_json ?? ""),
@@ -2232,7 +2235,16 @@ export default function AcompanhamentoPage() {
             await baixarItensFase05({ registro_id, tipo: "CORDAO" });
           }
 
-          // 6) INSUMOS
+          // 6) KIT LANCHE
+          // Produto fixo: código de barras 678560, depósito ALMOXARIFADO.
+          if (isSim(reg?.kit_lanche)) {
+            await baixarItensFase05({
+              registro_id,
+              tipo: "KIT_LANCHE",
+            });
+          }
+
+          // 7) INSUMOS
           const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
           if (ins && ins.itens.length > 0) {
             await baixarItensFase05({

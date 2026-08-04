@@ -51,6 +51,17 @@ type HistoryResp = {
     error?: string;
 };
 
+type ContractsByCpfsResp = {
+    ok: boolean;
+    sorteio_id?: number;
+    contratos?: Record<string, string | number>;
+    nomes?: Record<string, string>;
+    nao_encontrados?: string[];
+    consultados?: number;
+    encontrados?: number;
+    error?: string;
+};
+
 type ApiResp<T = Record<string, never>> = { ok: boolean; error?: string } & T;
 
 type PremioFormItem = {
@@ -136,6 +147,10 @@ function maskCpf(cpf: string) {
     const digits = cpf.replace(/\D+/g, "");
     if (digits.length !== 11) return cpf;
     return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+}
+
+function onlyDigits(value: string) {
+    return value.replace(/\D+/g, "");
 }
 
 function createPremioFormItem(id: string): PremioFormItem {
@@ -1239,6 +1254,42 @@ export default function SorteiosAdminPage() {
         setPdfError(null);
 
         try {
+            const cpfs = Array.from(
+                new Set(
+                    resultados
+                        .map((resultado) => onlyDigits(resultado.cpf))
+                        .filter((cpf) => cpf.length === 11)
+                )
+            );
+
+            const contractsResp = await apiJson<ContractsByCpfsResp>(
+                `${API_URL}?op=admin_contracts_by_cpfs`,
+                "POST",
+                {
+                    sorteio_id: sorteio.id,
+                    cpfs,
+                }
+            );
+
+            if (!contractsResp?.ok) {
+                throw new Error(
+                    contractsResp?.error ||
+                    "Não foi possível consultar os contratos dos ganhadores."
+                );
+            }
+
+            const contratosPorCpf: Record<string, string> = {};
+            Object.entries(contractsResp.contratos || {}).forEach(
+                ([cpf, contrato]) => {
+                    const cpfKey = onlyDigits(cpf);
+                    const contratoValue = String(contrato ?? "").trim();
+
+                    if (cpfKey.length === 11 && contratoValue !== "") {
+                        contratosPorCpf[cpfKey] = contratoValue;
+                    }
+                }
+            );
+
             const { jsPDF } = await import("jspdf");
 
             let logoDataUrl: string | null = null;
@@ -1382,11 +1433,11 @@ export default function SorteiosAdminPage() {
                 doc.text(`CPF: ${maskCpf(resultado.cpf)}`, marginX, y);
                 y += 7;
 
-                doc.text(
-                    "CONTRATO: _________________________________________________",
-                    marginX,
-                    y
-                );
+                const cpfKey = onlyDigits(resultado.cpf);
+                const numeroContrato =
+                    contratosPorCpf[cpfKey] || "NÃO LOCALIZADO";
+
+                doc.text(`CONTRATO: ${numeroContrato}`, marginX, y);
                 y += 8;
 
                 doc.text("DATA DA RETIRADA DO PRÊMIO: ____/____/________", marginX, y);

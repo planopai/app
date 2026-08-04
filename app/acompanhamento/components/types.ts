@@ -12,12 +12,12 @@ export type MateriaisItemState = {
     categoria_id?: number | string;
 
     // extras do formato novo (opcionais)
-    item_id?: number | string; // quando key for subitem, pode referenciar o item pai
+    item_id?: number | string;
     tipo?: "item" | "subitem" | string;
     raw_id?: number | string;
 };
 
-export type MateriaisState = Record<string, MateriaisItemState>; // key = string (id antigo ou "item:X"/"subitem:Y")
+export type MateriaisState = Record<string, MateriaisItemState>;
 
 export type SubItem = {
     id: number | string;
@@ -64,30 +64,20 @@ export type ArrumacaoState = {
 };
 
 /**
- * Metas de estoque por item (URNA / ROUPA / INVOL / VÉU / CORDAO)
+ * Metas de estoque por item.
  */
 export type DepositoNomeUrna = "MEMORIAL" | "FUNERARIA";
 export type DepositoNomeArmario = "ARMARIO SANDRO" | "ARMARIO ILDO";
 export type DepositoNomeRoupa = DepositoNomeArmario | "FUNERARIA";
 export type DepositoNomeInvol = DepositoNomeArmario;
-
-// ✅ Véu sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
 export type DepositoNomeVeu = DepositoNomeArmario | "FUNERARIA";
-
-// ✅ Cordão sai de: ARMARIO SANDRO | ARMARIO ILDO | FUNERARIA
 export type DepositoNomeCordao = DepositoNomeArmario | "FUNERARIA";
 
-// ✅ Sala do Velório
 export type SalaVelorio = "Sala 01" | "Sala 02" | "Sala 03";
 export type VelorioOnline = "Sim" | "Não";
 
 /**
  * Registro (sepultamentos)
- * - inclui colunas de velório: sala_velorio / velorio_online
- * - inclui colunas: urna_* / roupa_* / invol_* / veu_* / cordao_*
- * - inclui dados do falecido/responsável:
- *   data_nascimento / data_falecimento / foto_falecido / nome_responsavel / cpf_responsavel
- * - mantém [k:string]: any para compatibilidade com colunas antigas
  */
 export type Registro = {
     id?: number | string;
@@ -100,16 +90,12 @@ export type Registro = {
     religiao?: string;
     convenio?: string;
 
-    // =========================
-    // ✅ DADOS DO FALECIDO / RESPONSÁVEL
-    // =========================
     data_nascimento?: string;
     data_falecimento?: string;
     foto_falecido?: string;
     nome_responsavel?: string;
     cpf_responsavel?: string;
 
-    // textos (mostrados no wizard)
     urna?: string;
     roupa?: string;
     invol?: string;
@@ -120,11 +106,12 @@ export type Registro = {
     ornamentacao?: string;
     ornamentacao_tipo?: string;
 
+    // KIT LANCHE: resposta visual Sim ou Não.
+    // Produto 678560 e depósito ALMOXARIFADO são resolvidos no backend.
+    kit_lanche?: string;
+
     tipo_atendimento?: "funerario" | "terceiro";
 
-    // =========================
-    // ✅ VELÓRIO / SEPULTAMENTO
-    // =========================
     local?: string;
     local_velorio?: string;
     sala_velorio?: SalaVelorio | string;
@@ -139,60 +126,38 @@ export type Registro = {
     observacao_velorio01?: string;
     observacao_velorio02?: string;
 
-    // jsons persistidos no banco
     materiais_json?: string;
     arrumacao_json?: string;
 
-    // estados usados no front
     materiais?: MateriaisState;
     arrumacao?: ArrumacaoState;
 
-    // =========================
-    // ✅ META URNA (estoque)
-    // =========================
     urna_deposito_nome?: DepositoNomeUrna | string;
     urna_produto_id?: number;
     urna_codigo_barras?: string;
 
-    // =========================
-    // ✅ META ROUPA (estoque)
-    // =========================
     roupa_deposito_nome?: DepositoNomeRoupa | string;
     roupa_produto_id?: number;
     roupa_codigo_barras?: string;
     roupa_propria?: number | boolean | string;
 
-    // =========================
-    // ✅ META INVOL (estoque)
-    // =========================
     invol_deposito_nome?: DepositoNomeInvol | string;
     invol_produto_id?: number;
     invol_codigo_barras?: string;
-
-    // texto exibido no wizard (usado no front)
     invol_item?: string;
 
-    // =========================
-    // ✅ META VÉU (estoque)
-    // =========================
-    veu?: string; // "Sim" | "Não"
-    veu_item?: string; // nome exibido no wizard (ex: "VEU SIMPLES - RENASCER")
+    veu?: string;
+    veu_item?: string;
     veu_deposito_nome?: DepositoNomeVeu | string;
     veu_produto_id?: number;
     veu_codigo_barras?: string;
 
-    // =========================
-    // ✅ META CORDAO SAO FRANCISCO (estoque)
-    // =========================
-    cordao?: string; // "Sim" | "Não"
-    cordao_item?: string; // nome exibido no wizard (ex: "CORDAO SAO FRANCISCO")
+    cordao?: string;
+    cordao_item?: string;
     cordao_deposito_nome?: DepositoNomeCordao | string;
     cordao_produto_id?: number;
     cordao_codigo_barras?: string;
 
-    // =========================
-    // ✅ FOTOS OBRIGATÓRIAS DAS AÇÕES
-    // =========================
     foto_fim_ornamentacao_url?: string;
     foto_fim_ornamentacao_path?: string;
     foto_fim_ornamentacao_em?: string;
@@ -202,9 +167,6 @@ export type Registro = {
     foto_entrega_corpo_em?: string;
     foto_entrega_corpo_usuario?: string;
 
-    // =========================
-    // ✅ ASSINATURAS / TERMOS
-    // =========================
     assinatura_responsavel?: string;
     assinatura_requerente?: string;
     assinatura_responsavel_nome?: string;

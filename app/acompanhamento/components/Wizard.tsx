@@ -1,4 +1,4 @@
-// UI ITENS V8 — NOME REALMENTE DENTRO DA BORDA DOS CHECKBOXES
+// UI ITENS V9 - KIT LANCHE SIM/NAO COM BAIXA FIXA NO BACKEND
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -686,6 +686,7 @@ export default function Wizard({
     const [involVal, setInvolVal] = useState<string>("");
     const [veuVal, setVeuVal] = useState<string>("");
     const [cordaoVal, setCordaoVal] = useState<string>("");
+    const [kitLancheVal, setKitLancheVal] = useState<string>("");
 
     // Controle exclusivamente visual para mostrar ou esconder os seletores.
     // Os dados continuam sendo gravados nos campos atuais de urna e roupa.
@@ -711,6 +712,7 @@ export default function Wizard({
     const [involSelectErro, setInvolSelectErro] = useState<string>("");
     const [veuSelectErro, setVeuSelectErro] = useState<string>("");
     const [cordaoSelectErro, setCordaoSelectErro] = useState<string>("");
+    const [kitLancheSelectErro, setKitLancheSelectErro] = useState<string>("");
     const [velorioOnlineErro, setVelorioOnlineErro] = useState<string>("");
 
     // ✅ erro do tipo (Natural/Artificial) quando ornamentacao = Sim
@@ -745,6 +747,7 @@ export default function Wizard({
         setInvolVal(String((wizardData as any).invol ?? ""));
         setVeuVal(String((wizardData as any).veu ?? ""));
         setCordaoVal(String((wizardData as any).cordao ?? ""));
+        setKitLancheVal(String((wizardData as any).kit_lanche ?? ""));
         setSalaVelorioVal(String((wizardData as any).sala_velorio ?? ""));
         setVelorioOnlineVal(String((wizardData as any).velorio_online ?? ""));
     }, [
@@ -753,6 +756,7 @@ export default function Wizard({
         (wizardData as any).invol,
         (wizardData as any).veu,
         (wizardData as any).cordao,
+        (wizardData as any).kit_lanche,
         (wizardData as any).sala_velorio,
         (wizardData as any).velorio_online,
     ]);
@@ -775,6 +779,7 @@ export default function Wizard({
         setInvolSelectErro("");
         setVeuSelectErro("");
         setCordaoSelectErro("");
+        setKitLancheSelectErro("");
         setVelorioOnlineErro("");
 
         // ✅ limpa erro do Natural/Artificial
@@ -898,6 +903,7 @@ export default function Wizard({
     const involSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "invol"), [grupoSteps]);
     const veuSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu"), [grupoSteps]);
     const cordaoSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
+    const kitLancheNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "kit_lanche"), [grupoSteps]);
     const velorioOnlineNoGrupoAtual = useMemo(
         () => grupoSteps.some((s) => s.id === "local_velorio" || s.id === "sala_velorio" || s.id === "velorio_online"),
         [grupoSteps]
@@ -973,6 +979,19 @@ export default function Wizard({
             return true;
         }
         setCordaoSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const validarKitLancheSelect = () => {
+        if (!kitLancheNoGrupoAtual) return true;
+        if (!isRequired("kit_lanche")) return true;
+
+        if (isSimNao(kitLancheVal)) {
+            setKitLancheSelectErro("");
+            return true;
+        }
+
+        setKitLancheSelectErro('Selecione "Sim" ou "Não".');
         return false;
     };
 
@@ -1311,6 +1330,10 @@ export default function Wizard({
             scrollToFirstError();
             return;
         }
+        if (!validarKitLancheSelect()) {
+            scrollToFirstError();
+            return;
+        }
         if (!validarVelorioOnlineSeNecessario()) {
             scrollToFirstError();
             return;
@@ -1372,6 +1395,10 @@ export default function Wizard({
             return;
         }
         if (!validarCordaoSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarKitLancheSelect()) {
             scrollToFirstError();
             return;
         }
@@ -1874,6 +1901,45 @@ export default function Wizard({
 
                                 {cordaoSelectErro && <div className="mt-1 text-xs text-red-600">{cordaoSelectErro}</div>}
                                 {cordaoErro && <div className="mt-1 text-xs text-red-600">{cordaoErro}</div>}
+                            </div>
+                        );
+                    }
+
+
+                    /* ===========================
+                       KIT LANCHE (checkbox Sim/Não)
+                       Produto fixo no backend:
+                       código de barras 678560, depósito ALMOXARIFADO.
+                       =========================== */
+                    if (step.id === "kit_lanche" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
+                                    inputId="wizard-kit_lanche"
+                                    ariaLabel="KIT LANCHE"
+                                    value={kitLancheVal}
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!kitLancheSelectErro}
+                                    onChange={(v) => {
+                                        setKitLancheVal(v);
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            kit_lanche: v,
+                                        }));
+                                        setKitLancheSelectErro("");
+                                    }}
+                                />
+
+                                {kitLancheSelectErro && (
+                                    <div className="mt-1 text-xs text-red-600">{kitLancheSelectErro}</div>
+                                )}
                             </div>
                         );
                     }

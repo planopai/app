@@ -9,15 +9,19 @@ export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamen
  * A escolha visual Sim ou Não é controlada no Wizard.tsx:
  * - Sim: mostra o seletor de estoque.
  * - Não: salva o campo principal vazio e limpa os metadados.
+ *
+ * KIT LANCHE usa apenas Sim ou Não. O produto, o código de barras e o
+ * depósito são fixos no backend e não são exibidos no Wizard.
  */
 export const wizardStepIndexes = [
     // Atendimento
     [0, 29, 27, 28, 2, 3, 30, 31, 1, 23],
 
     // Itens
-    // urna, roupa, veu, veu_item, cordao, cordao_item, assistencia,
-    // tanato, ornamentacao, tipo, invol, invol_item, arrumacao, observações
-    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24],
+    // urna, roupa, veu, veu_item, cordao, cordao_item, kit_lanche,
+    // assistencia, tanato, ornamentacao, tipo, invol, invol_item,
+    // arrumacao, observações
+    [4, 5, 6, 7, 8, 9, 34, 10, 11, 12, 13, 14, 15, 16, 24],
 
     // Velório
     [18, 32, 33, 19, 21, 20, 22, 25],
@@ -126,12 +130,15 @@ export const steps = [
 
     { label: "Sala do Velório", id: "sala_velorio", type: "select", options: ["", "Sala 01", "Sala 02", "Sala 03"] },
     { label: "Velório Online", id: "velorio_online", type: "select", options: ["", "Sim", "Não"] },
+
+    // Mantido no final para não deslocar os índices antigos usados pelo fluxo "terceiro".
+    { label: "KIT LANCHE", id: "kit_lanche", type: "select", options: ["", "Sim", "Não"] },
 ] as const;
 
 /**
  * Obrigatórios incondicionais após Corpo na Clínica.
  *
- * Urna e Roupa não aparecem aqui porque agora são condicionais:
+ * Urna e Roupa não aparecem aqui porque são condicionais:
  * o Wizard exige a seleção do estoque apenas quando o usuário marca Sim.
  */
 export const obrigatorios = [
@@ -151,6 +158,7 @@ export const obrigatorios = [
     "invol",
     "veu",
     "cordao",
+    "kit_lanche",
 ];
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
