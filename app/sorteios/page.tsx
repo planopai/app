@@ -100,6 +100,8 @@ const OPTIONAL_ADMIN_TOKEN = process.env.NEXT_PUBLIC_SORTEIOS_ADMIN_TOKEN || "";
 
 const DEFAULT_TITLE = "Novo Sorteio";
 const PROGRESS_MESSAGE = "Verificando Associados Aptos a Participarem Do Sorteio.";
+const DECLARACAO_LOGO_URL =
+    "https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1";
 
 function parseMysqlDateTime(mysqlDatetime?: string | null) {
     if (!mysqlDatetime) return null;
@@ -291,6 +293,38 @@ async function apiJson<T = unknown>(
     }
 
     return data as T;
+}
+
+function formatDateOnlyBR(mysqlDatetime?: string | null) {
+    const dt = parseMysqlDateTime(mysqlDatetime);
+    return dt ? dt.toLocaleDateString("pt-BR") : "-";
+}
+
+function sanitizePdfFileName(value: string) {
+    const safe = value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+
+    return safe || "sorteio";
+}
+
+async function loadImageAsDataUrl(url: string): Promise<string> {
+    const response = await fetch(url, { cache: "force-cache" });
+    if (!response.ok) {
+        throw new Error(`Não foi possível carregar a logomarca (${response.status}).`);
+    }
+
+    const blob = await response.blob();
+
+    return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Falha ao converter a logomarca."));
+        reader.readAsDataURL(blob);
+    });
 }
 
 function Spinner({ size = 18 }: { size?: number }) {
@@ -817,6 +851,8 @@ export default function SorteiosAdminPage() {
 
     const [pageLoading, setPageLoading] = useState(true);
     const [pageError, setPageError] = useState<string | null>(null);
+    const [pdfGenerating, setPdfGenerating] = useState(false);
+    const [pdfError, setPdfError] = useState<string | null>(null);
     const [pageData, setPageData] = useState<PageDataState>({
         latestSorteio: null,
         latestResultados: [],
@@ -847,6 +883,10 @@ export default function SorteiosAdminPage() {
 
     const premiosResumo = useMemo(() => getPremiosResumo(form.premios), [form.premios]);
     const totalPremios = useMemo(() => getTotalPremios(premiosResumo), [premiosResumo]);
+
+    const canGenerateDeclaration =
+        sanitizeStatus(latestSorteio?.status) === "done" &&
+        latestResultados.length > 0;
 
     const clearProgressTimers = useCallback(() => {
         if (progressIntervalRef.current !== null) {
@@ -1166,6 +1206,205 @@ export default function SorteiosAdminPage() {
         }, 1400);
     }, [closeModal, refreshPageData]);
 
+    const downloadDeclaracaoEntrega = useCallback(async () => {
+        if (pdfGenerating) return;
+
+        if (sanitizeStatus(latestSorteio?.status) !== "done" || !latestSorteio) {
+            setPdfError("A declaração só pode ser gerada após a realização do sorteio.");
+            return;
+        }
+
+        if (latestResultados.length === 0) {
+            setPdfError("Não há ganhadores disponíveis para gerar a declaração.");
+            return;
+        }
+
+        // Referências locais: a geração do PDF não altera o sorteio nem o banco.
+        const sorteio = latestSorteio;
+        const resultados = [...latestResultados];
+
+        setPdfGenerating(true);
+        setPdfError(null);
+
+        try {
+            const { jsPDF } = await import("jspdf");
+
+            let logoDataUrl: string | null = null;
+            try {
+                logoDataUrl = await loadImageAsDataUrl(DECLARACAO_LOGO_URL);
+            } catch {
+                // Se a imagem externa bloquear CORS, o PDF continua com o nome PAI.
+                logoDataUrl = null;
+            }
+
+            const doc = new jsPDF({
+                orientation: "portrait",
+                unit: "mm",
+                format: "a4",
+                compress: true,
+            });
+
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const marginX = 15;
+            const contentWidth = pageWidth - marginX * 2;
+            const footerY = pageHeight - 8;
+
+            const drawHeader = (includeIntroduction: boolean) => {
+                let y = 12;
+
+                if (logoDataUrl) {
+                    const logoFormat = logoDataUrl.startsWith("data:image/jpeg")
+                        ? "JPEG"
+                        : "PNG";
+                    doc.addImage(
+                        logoDataUrl,
+                        logoFormat,
+                        marginX,
+                        y,
+                        45,
+                        11.25,
+                        undefined,
+                        "FAST"
+                    );
+                } else {
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(18);
+                    doc.text("PAI", marginX, y + 8);
+                }
+
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(13);
+                doc.text("DECLARAÇÃO DE ENTREGA DE PRÊMIOS", pageWidth / 2, y + 8, {
+                    align: "center",
+                });
+
+                y += 19;
+                doc.setDrawColor(90);
+                doc.setLineWidth(0.35);
+                doc.line(marginX, y, pageWidth - marginX, y);
+                y += 7;
+
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5);
+                const titleLines = doc.splitTextToSize(
+                    `SORTEIO: ${sorteio.titulo.toUpperCase()}`,
+                    contentWidth
+                );
+                doc.text(titleLines, marginX, y);
+                y += titleLines.length * 4.2 + 1;
+
+                doc.setFont("helvetica", "normal");
+                doc.text(
+                    `REALIZADO EM: ${formatDateOnlyBR(sorteio.executed_at)}`,
+                    marginX,
+                    y
+                );
+                y += 7;
+
+                if (includeIntroduction) {
+                    const declaration =
+                        "Declaro, para os devidos fins, que os prêmios relacionados abaixo foram entregues aos associados sorteados ou aos responsáveis identificados no ato da retirada, referentes ao sorteio acima, realizado pelo PAI - Plano Assistencial Integrado.";
+                    const declarationLines = doc.splitTextToSize(declaration, contentWidth);
+                    doc.text(declarationLines, marginX, y);
+                    y += declarationLines.length * 4.2 + 4;
+
+                    const authorization =
+                        "Autorizo a utilização de meu nome, imagem e som de voz exclusivamente para divulgação institucional e promocional da entrega do prêmio pelo PAI.";
+                    const authorizationLines = doc.splitTextToSize(
+                        authorization,
+                        contentWidth
+                    );
+                    doc.text(authorizationLines, marginX, y);
+                    y += authorizationLines.length * 4.2 + 5;
+                }
+
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(10);
+                doc.text("SORTEADOS", pageWidth / 2, y, { align: "center" });
+                y += 4;
+
+                return y;
+            };
+
+            let y = drawHeader(true);
+
+            resultados.forEach((resultado, index) => {
+                const headline = `${index + 1}. ${resultado.premio_nome.toUpperCase()} - ${resultado.nome.toUpperCase()}`;
+                const headlineLines = doc.splitTextToSize(headline, contentWidth);
+                const blockHeight = 51 + Math.max(0, headlineLines.length - 1) * 4.2;
+
+                if (y + blockHeight > footerY - 4) {
+                    doc.addPage();
+                    y = drawHeader(false);
+                }
+
+                doc.setDrawColor(145);
+                doc.setLineWidth(0.25);
+                doc.line(marginX, y, pageWidth - marginX, y);
+                y += 5.5;
+
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5);
+                doc.text(headlineLines, marginX, y);
+                y += headlineLines.length * 4.2 + 2;
+
+                doc.setFont("helvetica", "normal");
+                doc.text(`CPF: ${maskCpf(resultado.cpf)}`, marginX, y);
+                y += 7;
+
+                doc.text(
+                    "CONTRATO: _________________________________________________",
+                    marginX,
+                    y
+                );
+                y += 8;
+
+                doc.text("DATA DA RETIRADA DO PRÊMIO: ____/____/________", marginX, y);
+                y += 8;
+
+                doc.text(
+                    "GRAU DE PARENTESCO: _________________________________________",
+                    marginX,
+                    y
+                );
+                y += 9;
+
+                doc.text(
+                    "ASSINATURA DO RESPONSÁVEL: _________________________________",
+                    marginX,
+                    y
+                );
+                y += 9;
+            });
+
+            const totalPages = doc.getNumberOfPages();
+            for (let page = 1; page <= totalPages; page += 1) {
+                doc.setPage(page);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8);
+                doc.setTextColor(95);
+                doc.text(
+                    `PAI - Plano Assistencial Integrado | Página ${page} de ${totalPages}`,
+                    pageWidth / 2,
+                    footerY,
+                    { align: "center" }
+                );
+                doc.setTextColor(0);
+            }
+
+            doc.save(
+                `${sanitizePdfFileName(sorteio.titulo)}-declaracao-entrega-premios.pdf`
+            );
+        } catch (error) {
+            setPdfError(
+                getErrorMessage(error, "Falha ao gerar a declaração de entrega dos prêmios.")
+            );
+        } finally {
+            setPdfGenerating(false);
+        }
+    }, [latestResultados, latestSorteio, pdfGenerating]);
+
     const runNow = useCallback(async () => {
         if (executionLockRef.current) return;
 
@@ -1325,18 +1564,40 @@ export default function SorteiosAdminPage() {
                                 </p>
                             </div>
 
-                            <button
-                                type="button"
-                                onClick={() => void openNovoSorteioFlow()}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                            >
-                                Novo Sorteio
-                            </button>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                {canGenerateDeclaration ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => void downloadDeclaracaoEntrega()}
+                                        disabled={pdfGenerating}
+                                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-emerald-300 dark:hover:bg-emerald-950/20"
+                                    >
+                                        {pdfGenerating ? <Spinner size={16} /> : null}
+                                        {pdfGenerating
+                                            ? "Gerando declaração..."
+                                            : "Declaração de Entrega"}
+                                    </button>
+                                ) : null}
+
+                                <button
+                                    type="button"
+                                    onClick={() => void openNovoSorteioFlow()}
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                                >
+                                    Novo Sorteio
+                                </button>
+                            </div>
                         </div>
 
                         {pageError ? (
                             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
                                 {pageError}
+                            </div>
+                        ) : null}
+
+                        {pdfError ? (
+                            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                                {pdfError}
                             </div>
                         ) : null}
                     </header>
