@@ -1304,7 +1304,7 @@ export default function SorteiosAdminPage() {
 
                 if (includeIntroduction) {
                     const declaration =
-                        "Declaro, para os devidos fins, que os prêmios relacionados abaixo foram entregues aos associados sorteados ou aos responsáveis identificados no ato da retirada, referentes ao sorteio acima, realizado pelo PAI - Plano Assistencial Integrado.";
+                        "Eu_____________________________________________________________________, Declaro, para os devidos fins, que os prêmios relacionados abaixo foram entregues aos associados sorteados ou aos responsáveis identificados no ato da retirada, referentes ao sorteio acima, realizado pelo PAI - Plano Assistencial Integrado.";
                     const declarationLines = doc.splitTextToSize(declaration, contentWidth);
                     doc.text(declarationLines, marginX, y);
                     y += declarationLines.length * 4.2 + 4;
